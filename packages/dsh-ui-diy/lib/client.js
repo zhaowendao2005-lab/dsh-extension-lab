@@ -48,7 +48,7 @@ window.__ModuleLoader__.load({
               if (typeof ref !== "string" || !/^[A-Za-z0-9._/-]+$/.test(ref) || ref.includes("..")) {
                 throw new Error("扩展清单包含无效版本引用");
               }
-              return { ...item, spec: "https://github.com/zhaowendao2005-lab/dsh-extension-lab.git#" + encodeURIComponent(ref) + "&path:" + item.path };
+              return { ...item, spec: "git+https://github.com/zhaowendao2005-lab/dsh-extension-lab.git#" + ref + "&path:/" + item.path };
             });
             if (active) { setItems(safeItems); setStatus("ready"); }
           })

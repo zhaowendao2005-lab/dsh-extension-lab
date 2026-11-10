@@ -39,7 +39,7 @@ Publish a root-level `marketplace.json` with this shape:
 
 Each path must point to a standalone DSH bundle package with its own `package.json` containing a `dsh.bundle.patch` manifest entry, compatibility range, and built exports. `ref` is an optional Git branch, tag, or commit; it defaults to `main`. DSH users discover packages here and explicitly install them; listing an entry never installs or enables it.
 
-Production market installs use the selected package subdirectory and `ref` from this Git repository. Keep package versions and catalog versions in sync. Do not put local paths or development-only entries in this file.
+Production market installs use the selected package subdirectory and `ref` from this Git repository. Each install hands DSH the spec `git+https://github.com/zhaowendao2005-lab/dsh-extension-lab.git#<ref>&path:/<path>`; the `git+` prefix, the `.git` suffix and the leading slash after `path:` are required by the Host install flow. A branch or tag is allowed as `<ref>`; pin production tags such as `version-1.0.1` so an install is reproducible. Keep package versions and catalog versions in sync. Do not put local paths or development-only entries in this file.
 
 ## Local development
 
