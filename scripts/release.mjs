@@ -59,8 +59,13 @@ function requireMainBranch() {
 }
 
 function statusPaths() {
-  const status = capture("git", ["status", "--porcelain=v1", "--untracked-files=all"]);
-  return status ? status.split("\n").map((line) => line.slice(3)) : [];
+  // Read raw output: trimming would eat the leading space of an unstaged
+  // change (" M file"), shifting the path slice.
+  const status = execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return status.split("\n").filter(Boolean).map((line) => line.slice(3));
 }
 
 function requireCleanTree() {
