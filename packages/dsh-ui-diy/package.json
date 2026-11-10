@@ -1,0 +1,43 @@
+{
+  "name": "dsh-ui-diy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Private DSH extension market and Swiss-modernist dialog styling.",
+  "type": "module",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/preview.mjs",
+    "shots": "node scripts/shots.mjs",
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "check:selectors": "node scripts/check-selectors.mjs",
+    "build:dev": "node scripts/build.mjs --development",
+    "build:production": "node scripts/build.mjs --production",
+    "test": "node scripts/build.mjs --check && node scripts/check-contrast.mjs && node scripts/check-selectors.mjs && node scripts/preview.mjs --quiet && node scripts/shots.mjs"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0",
+    "node": "^22.19.0 || >=24.0.0"
+  }
+}

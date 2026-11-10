@@ -1,0 +1,544 @@
+/* ===========================================================================
+   dsh-ui-diy — Swiss modernist dialogs for DeepSeek Harness
+   ---------------------------------------------------------------------------
+   Scope
+     * Centered modal panels:  div[role="presentation"] > div[role="dialog"][aria-modal="true"]
+       (settings + the generic Modal primitive + the archive manager dialog)
+     * The settings dialog specifically:  [data-shortcut-modal="settings"]
+     * The archive manager panel:         .dsham_modalDialog
+
+   Swiss modernism 2.0 rules applied here:
+     strict grid · paper/ink only · hairline rules · square corners ·
+     one accent · typographic hierarchy · no decoration, no shadow, no blur.
+   The markup, ARIA attributes and keyboard behaviour are untouched: this sheet
+   only re-skins what the app already renders.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1. Palette — paper, ink, hairline, a single pale-green accent.
+   --------------------------------------------------------------------------- */
+:root {
+  --swiss-font: "Helvetica Neue", Helvetica, Inter, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+
+  --swiss-paper: #faf9f6;
+  --swiss-paper-2: #f1f0ec;
+  --swiss-ink: #0a0a0b;
+  --swiss-ink-2: #5c5c57;
+  --swiss-hairline: #d8d6cf;
+  --swiss-accent: #9ccc65;
+  /* bars that sit on an inverted (ink) surface need to read against ink, not
+     against paper; in the dark theme the inverted cell is light, so the bar
+     turns deep green instead of pale */
+  --swiss-bar: #9ccc65;
+  --swiss-mask: rgba(10, 10, 11, 0.55);
+}
+
+body[data-ds-dark-theme] {
+  --swiss-paper: #121213;
+  --swiss-paper-2: #1b1b1d;
+  --swiss-ink: #f4f3ef;
+  --swiss-ink-2: #a3a39c;
+  --swiss-hairline: #33332f;
+  --swiss-accent: #a5d6a7;
+  --swiss-bar: #4a7c22;
+  --swiss-mask: rgba(0, 0, 0, 0.66);
+}
+
+/* ---------------------------------------------------------------------------
+   2. Scrim — flat, dark, translucent. No background blur anywhere.
+   --------------------------------------------------------------------------- */
+div[role="presentation"] {
+  --dsw-alias-bg-mask-1: var(--swiss-mask);
+  --dsw-mask-blur: none;
+}
+
+div[role="presentation"] > div[aria-hidden="true"] {
+  background: var(--swiss-mask) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Scoped token layer.
+   Everything below the panel root inherits these; nothing outside the dialog
+   is affected. Radius tokens collapse to zero, which squares every primitive
+   that sizes its corners through --dsw-radius-*.
+   --------------------------------------------------------------------------- */
+[data-shortcut-modal="settings"],
+.dsham_modalDialog,
+div[role="presentation"] > div[role="dialog"][aria-modal="true"] {
+  /* geometry */
+  --dsw-radius-xs: 0px;
+  --dsw-radius-sm: 0px;
+  --dsw-radius-md: 0px;
+  --dsw-radius-lg: 0px;
+  --dsw-radius-xl: 0px;
+  --dsw-radius-panel: 0px;
+  --dsw-corner-shape: square;
+
+  /* type */
+  --dsw-font-family: var(--swiss-font);
+  --dsh-font-family-text-default: var(--swiss-font);
+
+  /* surfaces */
+  --dsw-alias-bg-base: var(--swiss-paper);
+  --dsw-alias-bg-layer-1: var(--swiss-paper);
+  --dsw-alias-bg-layer-2: var(--swiss-paper);
+  --dsw-alias-bg-layer-3: var(--swiss-paper-2);
+  --dsw-alias-bg-overlay: var(--swiss-paper);
+  --dsw-alias-bg-module-platform: var(--swiss-paper-2);
+  --dsw-alias-settings-card-fill: var(--swiss-paper-2);
+  --dsw-alias-settings-card-stroke: var(--swiss-hairline);
+
+  /* hairline rules */
+  --dsw-alias-border-l1: var(--swiss-hairline);
+  --dsw-alias-border-l2: var(--swiss-hairline);
+  --dsw-alias-border-l3: var(--swiss-hairline);
+  --dsw-alias-border-l4: var(--swiss-hairline);
+
+  /* type colour */
+  --dsw-alias-label-primary: var(--swiss-ink);
+  --dsw-alias-label-secondary: var(--swiss-ink-2);
+  --dsw-alias-label-tertiary: var(--swiss-ink-2);
+  --dsw-alias-label-dimmed: var(--swiss-ink-2);
+  --dsw-alias-label-primary-foreground: var(--swiss-paper);
+
+  /* interaction */
+  --dsw-alias-interactive-bg-hover: var(--swiss-paper-2);
+  --dsw-alias-interactive-bg-active: var(--swiss-hairline);
+  --dsw-specific-sidebar-nav-item-active: var(--swiss-ink);
+
+  /* brand collapses to ink: primary actions are black, not blue */
+  --dsw-alias-brand-primary: var(--swiss-ink);
+  --dsw-alias-brand-primary-new-color: var(--swiss-ink);
+  --dsw-alias-button-primary-fill: var(--swiss-ink);
+  --dsw-alias-button-primary-hover: var(--swiss-ink-2);
+  --dsw-alias-button-contrast-fill: var(--swiss-ink);
+  --dsh-button-outline-color: var(--swiss-ink);
+  --dsw-focus-ring-color: var(--swiss-ink);
+  --dsw-alias-switch-thumb: var(--swiss-ink-2);
+
+  /* chassis */
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--swiss-hairline);
+  background: var(--swiss-paper) !important;
+  color: var(--swiss-ink);
+  font-family: var(--swiss-font);
+  -webkit-font-smoothing: antialiased;
+  corner-shape: square;
+}
+
+/* ---------------------------------------------------------------------------
+   4. Settings dialog — 80% of the application window.
+   The overlay gains the frame's top clearance so the panel centres in the
+   content area instead of the raw viewport (macOS desktop: 68px).
+   --------------------------------------------------------------------------- */
+div[role="presentation"]:has(> [data-shortcut-modal="settings"]) {
+  box-sizing: border-box;
+  padding-top: var(--dsh-frame-overlay-top, 0px);
+}
+
+[data-shortcut-modal="settings"] {
+  box-sizing: border-box !important;
+  width: 80vw !important;
+  height: 80vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-top: 3px solid var(--swiss-accent) !important;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden;
+}
+
+/* masthead: one line of page furniture spanning the dialog */
+[data-shortcut-modal="settings"] > div:first-child {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 64px;
+  padding: 0 24px !important;
+  border-bottom: 1px solid var(--swiss-hairline);
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--swiss-ink) !important;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+[data-shortcut-modal="settings"] > div:first-child::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-right: 12px;
+  background: var(--swiss-accent);
+}
+
+/* header (holds the close button; the slot may also contribute actions) */
+[data-shortcut-modal="settings"] > nav + div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 64px;
+  padding: 0 16px 0 24px !important;
+  border-bottom: 1px solid var(--swiss-hairline);
+}
+
+/* only the close button is a direct child; slot actions keep their own size */
+[data-shortcut-modal="settings"] > nav + div > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 0 !important;
+  border: 1px solid transparent !important;
+  color: var(--swiss-ink);
+}
+
+[data-shortcut-modal="settings"] > nav + div > button:hover {
+  background: var(--swiss-paper-2) !important;
+  border-color: var(--swiss-hairline) !important;
+}
+
+[data-shortcut-modal="settings"] > nav + div > button:focus-visible {
+  border-color: var(--swiss-ink) !important;
+}
+
+/* navigation rail: numbered, hairline-separated, inverted selected cell */
+[data-shortcut-modal="settings"] > nav {
+  padding: 0 !important;
+  border-right: 1px solid var(--swiss-hairline);
+  overflow: hidden;
+}
+
+[data-shortcut-modal="settings"] > nav > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0 !important;
+  padding: 12px 0 0 !important;
+  counter-reset: swissnav;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--swiss-hairline) transparent;
+}
+
+[data-shortcut-modal="settings"] > nav button {
+  counter-increment: swissnav;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  height: 44px;
+  padding: 0 16px 0 20px !important;
+  border-radius: 0 !important;
+  border-bottom: 1px solid var(--swiss-hairline);
+  background: transparent !important;
+  color: var(--swiss-ink-2) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* icons are decoration here: the numbered grid replaces them */
+[data-shortcut-modal="settings"] > nav button > span:has(> svg) {
+  display: none !important;
+}
+
+[data-shortcut-modal="settings"] > nav button::before {
+  content: counter(swissnav, decimal-leading-zero);
+  flex: none;
+  width: 20px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--swiss-ink-2);
+}
+
+[data-shortcut-modal="settings"] > nav button:not([aria-current="true"]):hover {
+  background: var(--swiss-paper-2) !important;
+  color: var(--swiss-ink) !important;
+}
+
+[data-shortcut-modal="settings"] > nav button[aria-current="true"] {
+  background: var(--swiss-ink) !important;
+  color: var(--swiss-paper) !important;
+  box-shadow: inset 4px 0 0 0 var(--swiss-bar);
+}
+
+[data-shortcut-modal="settings"] > nav button[aria-current="true"]::before {
+  color: var(--swiss-paper);
+  opacity: 0.65;
+}
+
+/* segmented control: the indicator sits behind the tabs, so the selected cell
+   is painted here instead of relying on the (now paper-coloured) indicator */
+[data-shortcut-modal="settings"] [role="tablist"] {
+  border: 1px solid var(--swiss-hairline);
+  background: transparent !important;
+  padding: 3px;
+}
+
+[data-shortcut-modal="settings"] [role="tablist"] [role="tab"] {
+  color: var(--swiss-ink-2) !important;
+  font-size: 13px !important;
+  letter-spacing: 0.02em;
+}
+
+[data-shortcut-modal="settings"] [role="tablist"] [role="tab"][aria-selected="true"] {
+  background: var(--swiss-ink) !important;
+  color: var(--swiss-paper) !important;
+}
+
+/* content column */
+[data-shortcut-modal="settings"] > nav + div + div {
+  padding: 32px 40px 48px !important;
+  overflow-y: auto;
+  background: var(--swiss-paper);
+  scrollbar-width: thin;
+  scrollbar-color: var(--swiss-hairline) transparent;
+}
+
+[data-shortcut-modal="settings"] > nav + div + div > * {
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* the slot may wrap the section in one more div; the app caps sections at
+   720px, so reach that level too and let the content column breathe */
+[data-shortcut-modal="settings"] > nav + div + div > * > * {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+}
+
+[data-shortcut-modal="settings"] > nav + div + div :is(h1, h2, h3) {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---------------------------------------------------------------------------
+   5. Generic dialogs (confirmation cards, archive manager, future modals).
+   Shell only — their intrinsic width is preserved.
+   --------------------------------------------------------------------------- */
+div[role="presentation"] > div[role="dialog"][aria-modal="true"]:not(
+    [data-shortcut-modal="settings"]
+  ),
+.dsham_modalDialog {
+  border-top: 2px solid var(--swiss-accent) !important;
+}
+
+/* archive manager: also 80% of the window */
+.dsham_modalDialog {
+  width: 80vw !important;
+  max-width: none !important;
+  max-height: 80vh !important;
+}
+
+/* the two compact confirm cards of the archive manager stay compact */
+.dsham_sidebarCard {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--swiss-hairline) !important;
+  background: var(--swiss-paper) !important;
+  color: var(--swiss-ink) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   6. Primitive corrections — literals the token layer cannot reach.
+   --------------------------------------------------------------------------- */
+div[role="presentation"] [role="switch"],
+div[role="presentation"] [role="switch"] *,
+.dsham_modalDialog [role="switch"],
+.dsham_modalDialog [role="switch"] *,
+[data-shortcut-modal="settings"] [role="switch"],
+[data-shortcut-modal="settings"] [role="switch"] * {
+  border-radius: 0 !important;
+  corner-shape: square !important;
+}
+
+div[role="presentation"] input[type="checkbox"],
+div[role="presentation"] input[type="radio"],
+.dsham_modalDialog input[type="checkbox"],
+.dsham_modalDialog input[type="radio"],
+[data-shortcut-modal="settings"] input[type="checkbox"],
+[data-shortcut-modal="settings"] input[type="radio"] {
+  accent-color: var(--swiss-ink);
+}
+
+/* ---------------------------------------------------------------------------
+   7. Touch-ups outside dialogs: menus and non-modal popovers are squared off
+   but keep the app's own palette so they still read as "the app", not as a
+   dialog.
+   --------------------------------------------------------------------------- */
+[role="menu"],
+[role="menu"] [role="menuitem"],
+div[role="dialog"]:not([aria-modal="true"]) {
+  border-radius: 0 !important;
+}
+
+/* ---------------------------------------------------------------------------
+   8. Plugin market full-screen mode: its own rules ask for 100vw. Ours carry
+   !important, so hand the full-screen case back explicitly.
+   --------------------------------------------------------------------------- */
+[data-shortcut-modal="settings"]:has([data-dsh-market-fullscreen="true"]) {
+  width: 100vw !important;
+  height: 100vh !important;
+  border: 0 !important;
+}
+
+/* ---------------------------------------------------------------------------
+   9. Narrow windows. The app's own <=767px rules only apply to web sessions
+   (`html:not([data-windows-titlebar]):not([data-platform="darwin"])`), so a
+   resized desktop window needs its own breakpoints.
+   --------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  /* full-bleed: no frame clearance, the panel owns the whole window */
+  div[role="presentation"]:has(> [data-shortcut-modal="settings"]) {
+    padding-top: 0;
+  }
+
+  [data-shortcut-modal="settings"] {
+    width: 100vw !important;
+    height: 100vh !important;
+    border: 0 !important;
+    border-top: 3px solid var(--swiss-accent) !important;
+    grid-template-columns: 200px minmax(0, 1fr) !important;
+  }
+
+  [data-shortcut-modal="settings"] > nav + div + div {
+    padding: 24px 20px 40px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  /* single column: title + close share the top bar, the rail turns horizontal.
+     The app's own area names are hashed, so this breakpoint owns its own
+     template and places each child by name. */
+  [data-shortcut-modal="settings"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: 64px auto minmax(0, 1fr) !important;
+    grid-template-areas: "title" "nav" "options" !important;
+  }
+
+  [data-shortcut-modal="settings"] > div:first-child {
+    grid-area: title;
+    border-bottom: 0;
+    padding-right: 64px !important;
+  }
+
+  [data-shortcut-modal="settings"] > nav {
+    grid-area: nav;
+    border-right: 0;
+    border-top: 1px solid var(--swiss-hairline);
+    border-bottom: 1px solid var(--swiss-hairline);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  [data-shortcut-modal="settings"] > nav > div {
+    flex-direction: row;
+    padding: 0 !important;
+    overflow: visible;
+  }
+
+  [data-shortcut-modal="settings"] > nav button {
+    width: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--swiss-hairline);
+    white-space: nowrap;
+    box-shadow: none !important;
+  }
+
+  [data-shortcut-modal="settings"] > nav button[aria-current="true"] {
+    box-shadow: inset 0 -3px 0 0 var(--swiss-bar) !important;
+  }
+
+  /* the header only carries the close button: float it over the title bar */
+  [data-shortcut-modal="settings"] > nav + div {
+    grid-area: title;
+    align-self: start;
+    justify-self: end;
+    height: 64px;
+    padding: 0 16px !important;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  [data-shortcut-modal="settings"] > nav + div + div {
+    grid-area: options;
+    padding: 20px 16px 40px !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   10. Accessibility.
+   --------------------------------------------------------------------------- */
+[data-shortcut-modal="settings"] :focus-visible,
+div[role="presentation"] > div[role="dialog"][aria-modal="true"] :focus-visible,
+.dsham_modalDialog :focus-visible {
+  outline: 2px solid var(--swiss-ink) !important;
+  outline-offset: 2px !important;
+}
+
+[data-shortcut-modal="settings"] > nav button[aria-current="true"]:focus-visible {
+  outline-color: var(--swiss-paper) !important;
+  outline-offset: -3px !important;
+}
+
+[data-shortcut-modal="settings"] a,
+div[role="presentation"] > div[role="dialog"][aria-modal="true"] a,
+.dsham_modalDialog a {
+  color: var(--swiss-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-shortcut-modal="settings"] *,
+  div[role="presentation"] > div[role="dialog"][aria-modal="true"] *,
+  .dsham_modalDialog * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+.dsh-market {
+  color: var(--swiss-ink, #0a0a0b);
+  padding: 24px 28px;
+  min-height: 240px;
+}
+.dsh-market-header { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--swiss-hairline, #d8d6cf); }
+.dsh-market-header h2, .dsh-market-item h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.dsh-market-header p, .dsh-market-item p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; }
+.dsh-market-header input { width: min(280px, 45%); min-height: 36px; padding: 6px 10px; border: 1px solid var(--swiss-hairline, #d8d6cf); border-radius: 0; background: transparent; color: inherit; }
+.dsh-market-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+.dsh-market-item { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-width: 0; padding: 18px 0; border-bottom: 1px solid var(--swiss-hairline, #d8d6cf); }
+.dsh-market-copy { min-width: 0; }
+.dsh-market-item p { max-width: 58ch; opacity: .78; }
+.dsh-market-item code { display: inline-block; margin-top: 10px; font-size: 11px; opacity: .65; }
+.dsh-market-install { flex: 0 0 auto; min-height: 34px; padding: 0 14px; border: 1px solid currentColor; border-radius: 0; background: transparent; color: inherit; cursor: pointer; }
+.dsh-market-install:hover { background: var(--swiss-accent, #9ccc65); }
+.dsh-market-install:disabled { opacity: .5; cursor: not-allowed; }
+.dsh-market-message { padding: 24px 0; font-size: 13px; }
+@media (max-width: 640px) {
+  .dsh-market { padding: 18px 16px; }
+  .dsh-market-header { align-items: stretch; flex-direction: column; }
+  .dsh-market-header input { width: 100%; }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "extensions": [
+    {
+      "name": "dsh-ui-diy",
+      "title": "dsh-ui-diy",
+      "description": "私有 DSH 专属扩展商城与 Swiss 对话框样式。",
+      "version": "1.0.0",
+      "path": "packages/dsh-ui-diy",
+      "ref": "version-1"
+    }
+  ]
+}
