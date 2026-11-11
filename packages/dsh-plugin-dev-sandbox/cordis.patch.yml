@@ -1,9 +1,7 @@
-- op: add
-  path: /bundles/dsh-plugin-dev-sandbox
-  value:
-    name: dsh-plugin-dev-sandbox
-    title: 插件开发沙箱
-    description: DSH 插件开发调试工具
-    exports:
-      .: ./lib/index.js
-      ./client: ./lib/client.js
+# dsh bundle patch: inserts this plugin into a profile's layer stack.
+# The row loads the package's main entry as the host half (a plain Cordis
+# plugin); the `dsh.client` declaration in package.json makes the web app load
+# ./client as the browser half.
+- insert:
+    - id: dsh-plugin-dev-sandbox
+      name: dsh-plugin-dev-sandbox

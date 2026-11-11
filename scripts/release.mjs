@@ -23,18 +23,25 @@ function packageFile(name) {
   return path.join(root, "packages", name, "package.json");
 }
 
+/**
+ * Publish may only ship files that belong to the released packages: the catalog,
+ * each package's manifest/patch/README, and everything a build emits or reads
+ * (`lib/`, `src/`, `scripts/`, `test/`). A package may legitimately grow new
+ * host modules (for example `lib/host.js`), so the build output is matched by
+ * prefix instead of by an exhaustive file list.
+ * @returns a predicate deciding whether a repository-relative path is releasable.
+ */
 function allowedPublishChanges() {
-  const files = new Set(["marketplace.json"]);
+  const exact = new Set(["marketplace.json", "scripts/release.mjs"]);
+  const prefixes = [];
   for (const name of packageNames) {
-    files.add("packages/" + name + "/package.json");
-    files.add("packages/" + name + "/lib/client.js");
-    files.add("packages/" + name + "/lib/index.js");
-    files.add("packages/" + name + "/scripts/build.mjs");
-    files.add("packages/" + name + "/src/client.template.js");
-    files.add("packages/" + name + "/README.md");
+    const dir = "packages/" + name + "/";
+    exact.add(dir + "package.json");
+    exact.add(dir + "cordis.patch.yml");
+    exact.add(dir + "README.md");
+    for (const sub of ["lib/", "src/", "scripts/", "test/"]) prefixes.push(dir + sub);
   }
-  files.add("scripts/release.mjs");
-  return files;
+  return (file) => exact.has(file) || prefixes.some((prefix) => file.startsWith(prefix));
 }
 
 let packageNames = [];
@@ -97,7 +104,7 @@ function requireCleanTree() {
 function requireOnlyReleaseFiles() {
   const allowed = allowedPublishChanges();
   const paths = statusPaths();
-  const unexpected = paths.filter((file) => !allowed.has(file));
+  const unexpected = paths.filter((file) => !allowed(file));
   if (unexpected.length) {
     throw new Error("publish refused; unrelated changes are present:\n  " + unexpected.join("\n  "));
   }
@@ -218,7 +225,7 @@ async function publish(args) {
 
   const names = packages.map(({ manifest }) => manifest.name + " " + manifest.version).join(", ");
   if (changed.length) {
-    run("git", ["add", "--", ...allowedPublishChanges()]);
+    run("git", ["add", "--", ...changed]);
     run("git", ["commit", "-m", "Release " + names]);
   } else {
     console.log("release: catalog already pins " + tag + "; tagging the current commit");

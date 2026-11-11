@@ -23,7 +23,7 @@
       "name": "dsh-plugin-dev-sandbox",
       "title": "DSH Plugin Dev Sandbox",
       "description": "DSH 插件开发沙箱与调试面板",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "path": "packages/dsh-plugin-dev-sandbox",
       "ref": "version-2.2.0",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-2.2.0&path:/packages/dsh-plugin-dev-sandbox"
