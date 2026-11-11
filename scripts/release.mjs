@@ -134,7 +134,7 @@ function verifyRemoteRef(entry) {
   const result = spawnSync(
     "git",
     ["ls-remote", "--exit-code", "https://github.com/" + repository + ".git", "refs/tags/" + ref],
-    { cwd: root, stdio: "ignore", timeout: 15000 },
+    { cwd: root, stdio: "ignore", timeout: 90000 },
   );
   if (result.status !== 0) {
     throw new Error(entry.name + ": remote GitHub tag does not exist: " + ref);

@@ -7,6 +7,7 @@
  * verbatim. Copying only `index.js` would leave its `./host.js` import dangling
  * and the whole bundle would be skipped at boot with ERR_MODULE_NOT_FOUND.
  */
+import { build } from 'esbuild';
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,10 @@ for (const file of sources) {
   if (!content.includes("export ")) throw new Error(`host module ${file} exports nothing`);
   await writeFile(path.join(outDir, file), content.endsWith("\n") ? content : content + "\n");
 }
-await writeFile(path.join(outDir, "client.js"), template.endsWith("\n") ? template : template + "\n");
+await build({ entryPoints: [path.join(srcDir, CLIENT_TEMPLATE)], outfile: path.join(outDir, 'client.js'), bundle: true, platform: 'browser', format: 'iife', target: 'es2022', minify: true });
+// Minified dependency templates can retain EOL spaces; keep generated diffs clean.
+const clientPath = path.join(outDir, 'client.js');
+const clientBundle = await readFile(clientPath, 'utf8');
+await writeFile(clientPath, clientBundle.replace(/[\t ]+$/gm, ''));
 
 console.log(`built dsh-plugin-dev-sandbox (${sources.join(", ")} + client.js)`);

@@ -10,7 +10,7 @@
 | --- | --- |
 | `packages/extension-lab-manager` | 市场管理器：读取 `marketplace.json`，在 DSH 里提供安装 / 更新入口 |
 | `packages/dsh-ui-enhancements` | 独立 UI 样式增强（对话框、控件、主题细节），带截图与对比度校验 |
-| `packages/dsh-plugin-dev-sandbox` | 插件开发沙箱：工作区隔离的 `DSH_HOME`、宿主管理、右侧调试面板 |
+| `packages/dsh-plugin-dev-sandbox` | 按 DSH 会话绑定插件目录；提供独立 profile 的 DSH 调试实例与右侧调试面板（不是 OS 安全沙箱） |
 
 ## 环境要求
 
@@ -43,7 +43,7 @@ packages/<name>/
 | --- | --- |
 | `pnpm dev` | 三个包都按**开发态**构建；manager 内嵌带 `link:` spec 的目录，市场页可直接装本地包 |
 | `pnpm build` | 三个包都按**生产态**构建；产物里不含任何本地路径 |
-| `pnpm test` | 客户端构建自检 + 对比度 / 选择器 / 截图校验 + 宿主单元测试 |
+| `pnpm test` | 客户端构建自检 + 对比度 / 选择器 / 截图校验 + 宿主单元测试；真实插件包 DSH smoke 需显式开启 |
 | `pnpm release:check` | 校验包版本、目录版本、`spec` 与远端 tag 是否一致（会访问 GitHub） |
 | `pnpm release:prepare -- --tag version-2.3.0` | 把目录里所有条目的 `ref` / `spec` 固定到该 tag，然后构建并测试 |
 | `pnpm release:publish -- --tag version-2.3.0` | 再测一遍 → 提交 → 打标签 → 推送 main 和 tag → 建 GitHub Release |
@@ -106,13 +106,13 @@ packages/<name>/
 
 ### 6. 测试与验收
 
-26. 宿主逻辑抽成纯函数导出，用 `node:test` 覆盖（参考 `packages/dsh-plugin-dev-sandbox/test/host.test.mjs` 的 `sandboxHome` / `resolveSandboxHome` / manager 三例）。
-27. 客户端 UI 改动必须跑 `pnpm --dir packages/dsh-ui-enhancements test`（构建自检、对比度、选择器、截图）。
-28. 发布前 `pnpm release:check` 必须通过：它会用 `git ls-remote` 验证 `spec` 里的远端 tag 真实存在。
+26. `dsh-plugin-dev-sandbox` 的纯 Host 管理器用 `node:test` 覆盖会话绑定隔离、路径/链接校验、环境清理、进程并发与退出清理；禁止只测已废弃的 helper 或占位子进程。
+27. 客户端 UI 改动必须跑 `pnpm --dir packages/dsh-ui-enhancements test`（构建自检、对比度、选择器、截图）；涉及新插件 UI 时还需在 DSH Web GUI 验证会话切换、面板交互和错误状态。
+28. 发布前 `pnpm release:check` 必须通过：它会用 `git ls-remote` 验证 `spec` 里的远端 tag 真实存在。需要真实 DSH 插件集成验收的功能，须另跑针对当前包（非通用 fixture）的 `DSH_SANDBOX_PLUGIN_SMOKE=1` smoke，并验证 Host apply、Typert 注册、Remote mount 和资源加载。
 
 ### 7. 不入库的内容
 
-`.dsh_plugin_dev/`、`.dsh-plugin-dev.json`、`node_modules/`、`extracted_files/`（官方 app.asar 本地解包）、各包 `preview/out/` 截图产物 —— 已在根或包级 `.gitignore` 中忽略，不要为了「方便」提交它们。
+`.dsh/`（会话绑定与沙箱运行时，可能含本地状态）、`.dsh_plugin_dev/`、`.dsh-plugin-dev.json`、`node_modules/`、`extracted_files/`（官方 app.asar 本地解包）、各包 `preview/out/` 截图产物 —— 已在根或包级 `.gitignore` 中忽略，不要为了「方便」提交它们。
 
 ## 目录格式（marketplace.json）
 
@@ -199,5 +199,5 @@ pnpm run release:check
 | 安装成功但界面没变化 | 客户端插件需刷新页面，宿主插件需重启 DSH |
 | 装好了但哪都找不到入口 | 十有八九是 bundle patch 格式错（见规则 20）或宿主入口 import 缺文件（见规则 29）；用 `DSH_HOME=/tmp/x dsh --profile y --dump-config` 能看到合成后的行是否出现 |
 
-29. 宿主侧允许拆成多个文件，但 `scripts/build.mjs` 必须把 `src/*.js` **全部**拷进 `lib/`。只拷 `index.js` 会留下悬空的 `import "./host.js"`，bundle 在启动时以 `ERR_MODULE_NOT_FOUND` 被跳过，和 patch 写错一样表现为「静默不加载」。
-30. 客户端注册要按「一个入口失败不影响其余入口」来写：每个 `ctx.effect` / `ctx.slots.register` 用 `safe()` 包一层并 `console.warn`，这样将来 DSH 改名某个 API 时，损坏的是单个面板而不是整个模块。
+29. 宿主入口允许拆成多个文件；`scripts/build.mjs` 必须把 `src/*.js`（客户端模板除外）全部拷进 `lib/`。只拷 `index.js` 会留下悬空 import，导致 Host 在启动时因 `ERR_MODULE_NOT_FOUND` 不加载。
+30. 客户端注册使用官方 `ctx.effect` 管理资源生命周期，且必须让 API/注册错误显式失败；不要用吞掉异常的 `safe()` 包装。静默降级会把真实契约错误伪装成「偶发没有入口」，无法可靠验收。

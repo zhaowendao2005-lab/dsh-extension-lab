@@ -1,3 +1,6 @@
+# 会话开发绑定与隔离运行时（不得提交凭据或日志）
+.dsh/
+.playwright-cli/
 .dsh_plugin_dev/
 .dsh-plugin-dev.json
 # DSH 开发环境与依赖
@@ -19,7 +22,6 @@ build/
 .stylelintcache
 
 # DSH/VS Code 特定配置
-.dsh_plugin_dev/
 .vscode/
 .idea/
 *.local
