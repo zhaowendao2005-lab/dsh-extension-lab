@@ -1,8 +1,8 @@
 {
-  "name": "dsh-ui-diy",
-  "version": "1.0.1",
+  "name": "dsh-ui-enhancements",
+  "version": "1.0.0",
   "private": true,
-  "description": "Private DSH extension market and Swiss-modernist dialog styling.",
+  "description": "Standalone Swiss-modernist dialog and UI styling for DSH.",
   "type": "module",
   "exports": {
     ".": "./lib/index.js",
@@ -29,10 +29,7 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-theme",
-        "@deepseek-ai/dsh-client-ui-plugin-manager"
-      ],
+      "inject": [],
       "platform": "web"
     }
   },

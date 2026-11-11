@@ -2,12 +2,20 @@
   "schemaVersion": 1,
   "extensions": [
     {
-      "name": "dsh-ui-diy",
-      "title": "dsh-ui-diy",
-      "description": "私有 DSH 专属扩展商城与 Swiss 对话框样式。",
-      "version": "1.0.1",
-      "path": "packages/dsh-ui-diy",
-      "ref": "version-1.0.1"
+      "name": "extension-lab-manager",
+      "title": "Extension Lab Manager",
+      "description": "私有扩展市场、安装与更新管理器。",
+      "version": "1.0.0",
+      "path": "packages/extension-lab-manager",
+      "ref": "version-2.0.0"
+    },
+    {
+      "name": "dsh-ui-enhancements",
+      "title": "DSH UI Enhancements",
+      "description": "Swiss-modernist dialog and interface enhancements for DSH.",
+      "version": "1.0.0",
+      "path": "packages/dsh-ui-enhancements",
+      "ref": "version-2.0.0"
     }
   ]
 }

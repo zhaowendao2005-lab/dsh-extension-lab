@@ -5,14 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const packageDir = path.join(root, "packages/dsh-ui-diy");
-const packageFile = path.join(packageDir, "package.json");
 const catalogFile = path.join(root, "marketplace.json");
-const allowedPublishChanges = new Set([
-  "marketplace.json",
-  "packages/dsh-ui-diy/package.json",
-  "packages/dsh-ui-diy/lib/client.js",
-]);
 
 function run(command, args, options = {}) {
   execFileSync(command, args, { cwd: root, stdio: "inherit", ...options });
@@ -26,18 +19,41 @@ async function readJson(file) {
   return JSON.parse(await readFile(file, "utf8"));
 }
 
+function packageFile(name) {
+  return path.join(root, "packages", name, "package.json");
+}
+
+function allowedPublishChanges() {
+  const files = new Set(["marketplace.json"]);
+  for (const name of packageNames) {
+    files.add("packages/" + name + "/package.json");
+    files.add("packages/" + name + "/lib/client.js");
+  }
+  return files;
+}
+
+let packageNames = [];
+
 async function loadRelease() {
-  const manifest = await readJson(packageFile);
   const catalog = await readJson(catalogFile);
-  const entry = catalog.extensions?.find((item) => item.name === manifest.name);
-  if (!entry) throw new Error("marketplace.json has no entry for " + manifest.name);
-  if (entry.path !== "packages/" + manifest.name) {
-    throw new Error("marketplace path must be packages/" + manifest.name);
+  const entries = catalog.extensions;
+  if (!Array.isArray(entries) || !entries.length) throw new Error("marketplace.json has no extensions");
+  packageNames = entries.map((entry) => entry.name);
+  const packages = [];
+  for (const entry of entries) {
+    const manifest = await readJson(packageFile(entry.name));
+    if (entry.path !== "packages/" + entry.name) {
+      throw new Error("marketplace path must be packages/" + entry.name);
+    }
+    if (manifest.name !== entry.name) {
+      throw new Error("package name mismatch for " + entry.name);
+    }
+    if (entry.version !== manifest.version) {
+      throw new Error("package.json and marketplace.json versions differ for " + entry.name);
+    }
+    packages.push({ manifest, entry });
   }
-  if (entry.version !== manifest.version) {
-    throw new Error("package.json and marketplace.json versions differ");
-  }
-  return { manifest, catalog, entry };
+  return { catalog, packages };
 }
 
 function parseOptions(args) {
@@ -74,8 +90,9 @@ function requireCleanTree() {
 }
 
 function requireOnlyReleaseFiles() {
+  const allowed = allowedPublishChanges();
   const paths = statusPaths();
-  const unexpected = paths.filter((file) => !allowedPublishChanges.has(file));
+  const unexpected = paths.filter((file) => !allowed.has(file));
   if (unexpected.length) {
     throw new Error("publish refused; unrelated changes are present:\n  " + unexpected.join("\n  "));
   }
@@ -95,22 +112,29 @@ function validateTag(tag) {
   }
 }
 
-async function check() {
-  const { manifest, entry } = await loadRelease();
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(manifest.version)) {
-    throw new Error("package version must be a semantic version");
+function buildAndTest() {
+  for (const name of packageNames) {
+    run("pnpm", ["--dir", "packages/" + name, "run", "build"]);
   }
-  if (!entry.ref) throw new Error("marketplace entry must pin its release ref");
-  validateTag(entry.ref);
-  console.log(manifest.name + " " + manifest.version + " -> " + entry.ref + " (" + entry.path + ")");
+  run("pnpm", ["test"]);
+}
+
+async function check() {
+  const { packages } = await loadRelease();
+  for (const { manifest, entry } of packages) {
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(manifest.version)) {
+      throw new Error(manifest.name + ": version must be semantic");
+    }
+    if (!entry.ref) throw new Error(entry.name + ": marketplace entry must pin its release ref");
+    validateTag(entry.ref);
+    console.log(manifest.name + " " + manifest.version + " -> " + entry.ref + " (" + entry.path + ")");
+  }
 }
 
 async function prepare(args) {
   const options = parseOptions(args);
-  const version = options.version;
   const tag = options.tag;
-  if (!version || !tag) throw new Error("usage: pnpm run release:prepare -- --version 2.0.0 --tag version-2");
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error("--version must be semantic, for example 2.0.0");
+  if (!tag) throw new Error("usage: pnpm run release:prepare -- --tag version-2");
   validateTag(tag);
   requireMainBranch();
   requireCleanTree();
@@ -119,19 +143,11 @@ async function prepare(args) {
   if (divergence !== "0\t0") throw new Error("local main must match origin/main before preparing a release");
   if (tagExists(tag)) throw new Error("tag already exists: " + tag);
 
-  const manifest = await readJson(packageFile);
-  const catalog = await readJson(catalogFile);
-  const entry = catalog.extensions?.find((item) => item.name === manifest.name);
-  if (!entry) throw new Error("marketplace.json has no entry for " + manifest.name);
-  if (entry.path !== "packages/" + manifest.name) throw new Error("unexpected marketplace package path");
-  manifest.version = version;
-  entry.version = version;
-  entry.ref = tag;
-  await writeFile(packageFile, JSON.stringify(manifest, null, 2) + "\n");
+  const { catalog } = await loadRelease();
+  for (const entry of catalog.extensions) entry.ref = tag;
   await writeFile(catalogFile, JSON.stringify(catalog, null, 2) + "\n");
 
-  run("pnpm", ["--dir", "packages/dsh-ui-diy", "run", "build"]);
-  run("pnpm", ["--dir", "packages/dsh-ui-diy", "test"]);
+  buildAndTest();
   console.log("Release prepared. Review the diff, then run: pnpm run release:publish -- --tag " + tag);
 }
 
@@ -141,22 +157,25 @@ async function publish(args) {
   if (!tag) throw new Error("usage: pnpm run release:publish -- --tag version-2");
   validateTag(tag);
   requireMainBranch();
-  const { manifest, entry } = await loadRelease();
-  if (entry.ref !== tag) throw new Error("catalog ref must equal the requested tag");
+  const { packages } = await loadRelease();
+  for (const { entry } of packages) {
+    if (entry.ref !== tag) throw new Error("catalog ref must equal the requested tag: " + entry.name);
+  }
   if (tagExists(tag)) throw new Error("tag already exists: " + tag);
   requireOnlyReleaseFiles();
   run("gh", ["auth", "status"]);
-  run("pnpm", ["--dir", "packages/dsh-ui-diy", "test"]);
+  run("pnpm", ["test"]);
 
-  run("git", ["add", "--", ...allowedPublishChanges]);
-  run("git", ["commit", "-m", "Release dsh-ui-diy " + manifest.version]);
-  run("git", ["tag", "-a", tag, "-m", "dsh-ui-diy " + manifest.version]);
+  const names = packages.map(({ manifest }) => manifest.name + " " + manifest.version).join(", ");
+  run("git", ["add", "--", ...allowedPublishChanges()]);
+  run("git", ["commit", "-m", "Release " + names]);
+  run("git", ["tag", "-a", tag, "-m", names]);
   run("git", ["push", "origin", "main"]);
   run("git", ["push", "origin", tag]);
   run("gh", [
     "release", "create", tag,
-    "--title", "dsh-ui-diy " + manifest.version,
-    "--notes", "Release dsh-ui-diy " + manifest.version + " from packages/dsh-ui-diy. The marketplace entry is pinned to this tag.",
+    "--title", names,
+    "--notes", "Release " + names + ". Marketplace entries are pinned to this tag.",
   ]);
 }
 
