@@ -6,7 +6,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "dev": "pnpm --dir packages/extension-lab-manager run build:dev && pnpm --dir packages/dsh-ui-enhancements run build:dev",
+    "dev": "pnpm --dir packages/extension-lab-manager run build:dev && pnpm --dir packages/dsh-ui-enhancements run build:dev && pnpm --dir packages/dsh-plugin-dev-sandbox run build",
     "build": "pnpm --dir packages/extension-lab-manager run build && pnpm --dir packages/dsh-ui-enhancements run build && pnpm --dir packages/dsh-plugin-dev-sandbox run build",
     "test": "pnpm --dir packages/dsh-ui-enhancements test && pnpm --dir packages/extension-lab-manager run build -- --check && pnpm --dir packages/dsh-plugin-dev-sandbox test",
     "release:check": "node scripts/release.mjs check",

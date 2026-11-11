@@ -147,6 +147,19 @@ function buildAndTest() {
   run("pnpm", ["test"]);
 }
 
+async function assertReleaseArtifacts() {
+  for (const name of packageNames) {
+    for (const file of ["client.js", "index.js"]) {
+      const target = path.join(root, "packages", name, "lib", file);
+      const text = await readFile(target, "utf8").catch(() => "");
+      if (!text) throw new Error(name + ": missing built artifact lib/" + file + "; run pnpm build");
+      if (text.includes("link:")) {
+        throw new Error(name + ": lib/" + file + " contains a development link: spec; run pnpm build");
+      }
+    }
+  }
+}
+
 async function check() {
   const { packages } = await loadRelease();
   for (const { manifest, entry } of packages) {
@@ -158,6 +171,7 @@ async function check() {
     verifyRemoteRef(entry);
     console.log(manifest.name + " " + manifest.version + " -> " + entry.ref + " (" + entry.path + ")");
   }
+  await assertReleaseArtifacts();
 }
 
 async function prepare(args) {
@@ -200,6 +214,7 @@ async function publish(args) {
   const changed = requireOnlyReleaseFiles();
   run("gh", ["auth", "status"]);
   run("pnpm", ["test"]);
+  await assertReleaseArtifacts();
 
   const names = packages.map(({ manifest }) => manifest.name + " " + manifest.version).join(", ");
   if (changed.length) {
