@@ -10,7 +10,7 @@
   },
   "files": [
     "lib",
-    "cordis.patch.yml",
+    "integration",
     "README.md"
   ],
   "scripts": {
@@ -20,7 +20,7 @@
   "dsh": {
     "manifestVersion": 1,
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./integration/cordis.patch.yml"
     },
     "client": {
       "inject": [

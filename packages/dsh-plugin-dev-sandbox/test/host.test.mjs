@@ -5,7 +5,7 @@ import os from "node:os";
 import { mkdtemp, mkdir, readFile, writeFile, realpath, rm, symlink, link, chmod, unlink, stat } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { runInNewContext } from "node:vm";
-import { createSandboxManager } from "../src/host.js";
+import { createSandboxManager } from "../backend/manager.js";
 
 const nodeSpec = (source) => ({ command: process.execPath, args: ["-e", source] });
 const hold = nodeSpec("setInterval(() => {}, 1000)");

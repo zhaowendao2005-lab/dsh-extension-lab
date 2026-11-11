@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { symbols } from '@deepseek-ai/cordis';
-import { assertOwnerInvocation, apply, PluginDevService, sessionInput } from '../src/index.js';
-import { hostContribution } from '../src/remote.js';
+import { assertOwnerInvocation, apply, PluginDevService, sessionInput } from '../backend/index.js';
+import { hostContribution } from '../backend/contract.js';
 
 const sessionId = 'session-123';
 const agent = { session: { id: sessionId, header: { cwd: '/workspace/project' } } };
@@ -43,7 +43,7 @@ test('Remote execute dispatches only through an owner-scoped Cordis receiver', a
   const service = new PluginDevService(ctx, manager);
   const owner = service[symbols.extend]({ ctx: { ...ctx, invocation: { peer: { principal: { kind: 'owner' } } } } });
   assert.deepEqual(await owner.execute({ sessionId, action: 'status' }), { binding: null });
-  assert.deepEqual(calls, [{ workspaceRoot: '/workspace/project', sessionId, pluginPath: undefined, commandId: undefined }]);
+  assert.deepEqual(calls, [{ workspaceRoot: '/workspace/project', sessionId }]);
   const nonOwner = service[symbols.extend]({ ctx: { ...ctx, invocation: { peer: { principal: { kind: 'shared' } } } } });
   await assert.rejects(nonOwner.execute({ sessionId, action: 'status' }), /Only the owner/);
   assert.equal(calls.length, 1);
@@ -57,6 +57,9 @@ test('Host apply registers its Service, Typert contribution, tool, and disposer'
   const tools = [];
   const ctx = {
     reflect: { provide: (name, service) => provided.set(name, service) },
+    get: () => undefined,
+    inject: () => {},
+    logger: { warn() {} },
     typert: { register: (contribution) => { contributions.push(contribution); return () => effects.push('typert disposed'); } },
     tools: { register: (tool) => tools.push(tool) },
     sandboxPolicy: {},

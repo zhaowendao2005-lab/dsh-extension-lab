@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { rm } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runInNewContext } from 'node:vm';
-import { createSandboxManager } from '../src/host.js';
+import { createSandboxManager } from '../backend/manager.js';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sessionId = `smoke-${process.pid}-${Date.now().toString(36)}`;
