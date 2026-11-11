@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-dev-sandbox",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "Session-bound DSH plugin development sandbox and debug panel.",
   "type": "module",
