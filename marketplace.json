@@ -7,7 +7,7 @@
       "description": "私有扩展市场、安装与更新管理器。",
       "version": "1.0.1",
       "path": "packages/extension-lab-manager",
-      "ref": "version-2.1.0"
+      "ref": "version-2.1.1"
     },
     {
       "name": "dsh-ui-enhancements",
@@ -15,7 +15,7 @@
       "description": "Swiss-modernist dialog and interface enhancements for DSH.",
       "version": "1.0.0",
       "path": "packages/dsh-ui-enhancements",
-      "ref": "version-2.1.0"
+      "ref": "version-2.1.1"
     }
   ]
 }
