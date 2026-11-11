@@ -9,5 +9,5 @@ export function Section({ id, title, count, expanded, onToggle, children }) {
       h('span', { className: 'pds-section-caret' }, expanded ? '⌄' : '›'),
       h('span', { className: 'pds-section-title' }, title),
       count === undefined ? null : h('span', { className: 'pds-section-count' }, count)),
-    expanded ? h('div', { id: `pds-${id}` }, children) : null);
+    expanded ? h('div', { id: `pds-${id}`, className: 'pds-section-body' }, children) : null);
 }

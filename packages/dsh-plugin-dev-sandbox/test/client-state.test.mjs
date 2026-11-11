@@ -62,3 +62,67 @@ test('RemoteResult failures become visible and do not poison the next action', a
   unsubscribe();
   store.dispose();
 });
+
+const openTerminals = () => ({
+  binding: { sessionId: 'session-D' },
+  runtime: { state: 'stopped', pid: null, url: null, error: null },
+  terminals: [{ id: 't1', state: 'running' }, { id: 't2', state: 'running' }],
+  logs: [],
+});
+
+test('closing a terminal is optimistic, keeps the panel idle, and settles on the snapshot', async () => {
+  let snapshot = openTerminals();
+  let release;
+  const datasource = {
+    status: async () => structuredClone(snapshot),
+    terminalClose: (terminalId) => new Promise((resolve) => {
+      release = () => {
+        snapshot = { ...snapshot, terminals: snapshot.terminals.filter((terminal) => terminal.id !== terminalId) };
+        resolve(structuredClone(snapshot));
+      };
+    }),
+  };
+  const store = createSandboxStore({ sessionId: 'session-D', delay: 60_000, datasource });
+  const unsubscribe = store.subscribe(() => {});
+  await tick();
+  store.selectTerminal('t2');
+
+  const pending = store.closeTerminal('t2');
+  const immediate = store.getSnapshot();
+  assert.deepEqual(immediate.ui.closing, ['t2'], 'the tab is hidden before the Host answers');
+  assert.equal(immediate.ui.activeTerminal, 't1', 'the neighbour becomes active');
+  assert.equal(immediate.busy, false, 'one close must not disable the panel');
+  assert.equal(immediate.snapshot.terminals.length, 2, 'the snapshot is still the Host truth');
+
+  assert.equal(await store.closeTerminal('t2'), undefined, 'a second click on the same tab is ignored');
+  assert.deepEqual(store.getSnapshot().ui.closing, ['t2']);
+
+  release();
+  await pending;
+  const settled = store.getSnapshot();
+  assert.deepEqual(settled.ui.closing, []);
+  assert.equal(settled.snapshot.terminals.length, 1);
+  assert.equal(settled.ui.activeTerminal, 't1');
+  unsubscribe();
+  store.dispose();
+});
+
+test('a failed close restores the tab, the selection, and the error', async () => {
+  const datasource = {
+    status: async () => structuredClone(openTerminals()),
+    terminalClose: async () => { throw new Error('terminal is not running'); },
+  };
+  const store = createSandboxStore({ sessionId: 'session-E', delay: 60_000, datasource });
+  const unsubscribe = store.subscribe(() => {});
+  await tick();
+  store.selectTerminal('t2');
+  await store.closeTerminal('t2');
+  const state = store.getSnapshot();
+  assert.deepEqual(state.ui.closing, []);
+  assert.equal(state.ui.activeTerminal, 't2');
+  assert.equal(state.error, 'terminal is not running');
+  assert.equal(state.busy, false);
+  assert.equal(state.snapshot.terminals.length, 2);
+  unsubscribe();
+  store.dispose();
+});

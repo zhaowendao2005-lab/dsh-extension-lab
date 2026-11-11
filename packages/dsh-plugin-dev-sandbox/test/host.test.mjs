@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdtemp, mkdir, readFile, writeFile, realpath, rm, symlink, link, chmod, unlink, stat } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import { PassThrough } from "node:stream";
 import { runInNewContext } from "node:vm";
 import { createSandboxManager } from "../backend/manager.js";
 
@@ -572,4 +573,36 @@ test("invalid explicit launcher specs are captured as runtime errors", async (t)
   assert.equal(result.runtime.state, "error");
   assert.equal(result.runtime.pid, null);
   assert.match(result.runtime.error, /Launch spec must be/);
+});
+
+/** A terminal provider that records its specs and exits at once, so specs can be asserted. */
+function recordingTerminals(specs) {
+  return {
+    terminalEnvironment: async () => ({ platform: "posix", defaultShell: "/bin/sh" }),
+    resolveExecutable: async (executable) => executable,
+    spawnTerminal: async (spec) => {
+      specs.push(spec);
+      const output = new PassThrough();
+      output.end();
+      return { pid: 4321, output, done: Promise.resolve({ exitCode: 0, signal: null }),
+        write: async () => {}, terminate: async () => {}, resize: async () => {} };
+    },
+  };
+}
+
+test("PTY close grace is shorter than the sandbox stop timeout and stays configurable", async (t) => {
+  const f = await fixture(t);
+  const specs = [];
+  const manager = f.makeManager({ subprocess: recordingTerminals(specs), stopTimeoutMs: 1000 });
+  await manager.bind({ ...f.input, pluginPath: f.pluginPath });
+  await manager.terminalCreate({ ...f.input, rows: 24, cols: 80 });
+  await manager.terminalCreate({ ...f.input, rows: 24, cols: 80, commandId: "build" });
+  assert.equal(specs[0].graceMs, 250);
+  assert.equal(specs[1].graceMs, 250);
+  assert.equal(specs[1].argv.at(-1), "pnpm run build");
+
+  const custom = [];
+  const tuned = f.makeManager({ subprocess: recordingTerminals(custom), terminalGraceMs: 40 });
+  await tuned.terminalCreate({ ...f.input, rows: 24, cols: 80 });
+  assert.equal(custom[0].graceMs, 40);
 });

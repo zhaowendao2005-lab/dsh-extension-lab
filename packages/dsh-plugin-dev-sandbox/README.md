@@ -9,7 +9,7 @@
 - **调试**：插件运行（启动/停止独立 DSH）、构建/测试/检查三组 package script，点击即真实执行并回显有界日志。
 - **提供商与模型**：按 provider → model 展开勾选。选择写入 `.dsh/plugin-dev/<sessionId>/models.json`；启动沙箱时把选中 provider 的 profile（模型与参数）写入 overlay patch，并把对应凭据复制到沙箱 `$DSH_HOME/.credentials.yaml`（权限 0600，停止沙箱即删除）。
 
-右侧是真实 PTY 终端，由 xterm.js 渲染：`+` 在插件目录新建终端，光标就在终端里，键盘输入直接写入 PTY stdin（不再有底部输入行），`×` 关闭会 `terminate()` 并等待进程组静默。终端字节由 Host 每终端环形缓冲 + 字符游标提供（`terminalPoll` 从客户端自己的 offset 续读，落后过多时返回 `dropped`），窗口尺寸变化通过 `terminalResize` 同步到 PTY。
+右侧是真实 PTY 终端，由 xterm.js 渲染：`+` 在插件目录新建终端，光标就在终端里，键盘输入直接写入 PTY stdin（不再有底部输入行）。`×` 先在面板上立刻移除该标签并切到相邻终端，再由 Host `terminate()` 并等待进程组静默，失败（如终端已不在）会把标签和选中状态回滚并显示错误。PTY 的 SIGTERM/SIGKILL 宽限期是独立选项 `terminalGraceMs`（默认 250ms，交互式 shell 普遍忽略 SIGTERM，长宽限只会推迟本来就要发的 SIGKILL），与实例/脚本停止用的 `stopTimeoutMs` 分开。终端字节由 Host 每终端环形缓冲 + 字符游标提供（`terminalPoll` 从客户端自己的 offset 续读，落后过多时返回 `dropped`），窗口尺寸变化通过 `terminalResize` 同步到 PTY。
 
 ## 目录结构
 

@@ -6,7 +6,10 @@ import { TerminalView } from './terminals/TerminalView.js';
 /** Right column: terminal tabs plus whichever terminal is active. */
 export function WorkPane({ store, state }) {
   const snapshot = state.snapshot;
-  const terminals = snapshot?.terminals ?? [];
+  // A closing tab disappears immediately; the Host still owns its PTY until the
+  // kill round trip finishes, so it is filtered out instead of waiting for a snapshot.
+  const closing = state.ui.closing ?? [];
+  const terminals = (snapshot?.terminals ?? []).filter((terminal) => !closing.includes(terminal.id));
   const active = activeTerminalOf(terminals, state.ui.activeTerminal);
   return h('section', { className: 'pds-work', 'aria-label': '终端' },
     h(TerminalTabs, {

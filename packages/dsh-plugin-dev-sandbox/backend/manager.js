@@ -196,7 +196,11 @@ function validateSpec(spec) {
  * function(context) returning it, for tests/explicit embedders only. The default
  * launcher ALWAYS starts real DSH; there is no Node placeholder fallback.
  * context: {workspaceRoot,sessionId,pluginPath,runtimeHome,overlayPath,env,commandId?}.
- * Other options: env (source to scrub), maxLogBytes, maxLogEntries, stopTimeoutMs.
+ * Other options: env (source to scrub), maxLogBytes, maxLogEntries, stopTimeoutMs,
+ * terminalGraceMs. stopTimeoutMs bounds instance/command shutdown; terminalGraceMs
+ * bounds each PTY SIGTERM/SIGKILL round, and is deliberately shorter because
+ * interactive shells ignore SIGTERM (the host probe: zsh/bash/sh all survive it),
+ * so a long grace only delays the SIGKILL the PTY needs anyway.
  * This is profile/process isolation, not a boundary against malicious plugins.
  * Filesystem checks reject existing links, but cannot defeat hostile concurrent
  * filesystem mutations; untrusted code must use a real OS/container sandbox.
@@ -205,6 +209,7 @@ export function createSandboxManager(options = {}) {
   const maxLogBytes = positiveInteger(options.maxLogBytes, DEFAULT_LOG_BYTES, "maxLogBytes");
   const maxLogEntries = positiveInteger(options.maxLogEntries, 400, "maxLogEntries");
   const stopTimeoutMs = positiveInteger(options.stopTimeoutMs, 1000, "stopTimeoutMs");
+  const terminalGraceMs = positiveInteger(options.terminalGraceMs, 250, "terminalGraceMs");
   const sessions = new Map();
   const queues = new Map();
   let disposed = false;
@@ -489,7 +494,7 @@ export function createSandboxManager(options = {}) {
       : commandArguments(shell, platform, `pnpm run ${input.commandId}`);
     validateSpec({ command: argv[0], args: argv.slice(1) });
     return { argv, cwd: ctx.pluginPath, env, rows: input.rows, cols: input.cols,
-      terminalType: "xterm-256color", graceMs: stopTimeoutMs };
+      terminalType: "xterm-256color", graceMs: terminalGraceMs };
   }
 
   async function startTerminal(item, terminal, spec) {

@@ -13,6 +13,8 @@ const initialUi = () => ({
   providers: {},
   selectedNode: null,
   activeTerminal: null,
+  // Tabs the user closed that the Host is still tearing down.
+  closing: [],
 });
 
 export function createSandboxStore({ execute, sessionId, delay = 2000, datasource } = {}) {
@@ -145,8 +147,38 @@ export function createSandboxStore({ execute, sessionId, delay = 2000, datasourc
         : terminals.at(-1);
       if (created?.id) publishUi(() => ({ activeTerminal: created.id }));
     },
+    /**
+     * Closing a tab is optimistic. Killing a PTY is a SIGTERM/SIGKILL round trip
+     * that can never beat a click, so the tab leaves the strip at once and the
+     * Host's snapshot settles it afterwards. This bypasses `perform` on purpose:
+     * one close must not disable the whole panel, and a second close must not be
+     * dropped while the first one is still in flight. A failed close rolls back.
+     */
     closeTerminal(id) {
-      return perform(() => source.terminalClose(id));
+      const closing = state.ui.closing ?? [];
+      if (disposed || !id || closing.includes(id)) return Promise.resolve(undefined);
+      const terminals = state.snapshot?.terminals ?? [];
+      const index = terminals.findIndex((terminal) => terminal.id === id);
+      if (index < 0) return Promise.resolve(undefined);
+      const neighbour = terminals[index + 1] ?? terminals[index - 1] ?? null;
+      const previous = state.ui.activeTerminal;
+      publishUi(() => ({
+        closing: [...closing, id],
+        activeTerminal: previous === id ? neighbour?.id ?? null : previous,
+      }));
+      return (async () => {
+        try {
+          const value = await source.terminalClose(id);
+          if (value && typeof value === 'object' && 'runtime' in value) applySnapshot(value);
+          return value;
+        } catch (error) {
+          publish({ error: error.message, loading: false });
+          publishUi(() => ({ activeTerminal: previous }));
+          return undefined;
+        } finally {
+          publishUi((ui) => ({ closing: (ui.closing ?? []).filter((item) => item !== id) }));
+        }
+      })();
     },
     // Terminal I/O bypasses `perform`: keystrokes must not flip the panel into a
     // busy state or race the polling snapshot. The PTY is the source of truth.
