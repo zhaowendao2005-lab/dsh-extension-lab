@@ -1,6 +1,6 @@
 {
   "name": "extension-lab-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Private DSH extension catalog manager with install and update actions.",
   "type": "module",
