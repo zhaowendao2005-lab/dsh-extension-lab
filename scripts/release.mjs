@@ -96,7 +96,7 @@ function requireOnlyReleaseFiles() {
   if (unexpected.length) {
     throw new Error("publish refused; unrelated changes are present:\n  " + unexpected.join("\n  "));
   }
-  if (!paths.length) throw new Error("no prepared release changes found");
+  return paths;
 }
 
 function tagExists(tag) {
@@ -162,13 +162,17 @@ async function publish(args) {
     if (entry.ref !== tag) throw new Error("catalog ref must equal the requested tag: " + entry.name);
   }
   if (tagExists(tag)) throw new Error("tag already exists: " + tag);
-  requireOnlyReleaseFiles();
+  const changed = requireOnlyReleaseFiles();
   run("gh", ["auth", "status"]);
   run("pnpm", ["test"]);
 
   const names = packages.map(({ manifest }) => manifest.name + " " + manifest.version).join(", ");
-  run("git", ["add", "--", ...allowedPublishChanges()]);
-  run("git", ["commit", "-m", "Release " + names]);
+  if (changed.length) {
+    run("git", ["add", "--", ...allowedPublishChanges()]);
+    run("git", ["commit", "-m", "Release " + names]);
+  } else {
+    console.log("release: catalog already pins " + tag + "; tagging the current commit");
+  }
   run("git", ["tag", "-a", tag, "-m", names]);
   run("git", ["push", "origin", "main"]);
   run("git", ["push", "origin", tag]);
