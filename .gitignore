@@ -1,0 +1,27 @@
+.dsh_plugin_dev/
+.dsh-plugin-dev.json
+# DSH 开发环境与依赖
+node_modules/
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 构建产物与缓存
+dist/
+lib/
+build/
+.turbo/
+.eslintcache
+.stylelintcache
+
+# DSH/VS Code 特定配置
+.dsh_plugin_dev/
+.vscode/
+.idea/
+*.local
+
+# 开发实例产生的文件
+tmp/
+*.tmp

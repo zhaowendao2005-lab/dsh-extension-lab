@@ -18,11 +18,14 @@ if (production) {
   };
 } else {
   const catalog = JSON.parse(await readFile(catalogFile, "utf8"));
+  const workspaceRoot = path.resolve(
+    process.env.DSH_EXTENSION_LAB_ROOT || path.resolve(root, "../.."),
+  );
   market = {
     mode: "development",
     extensions: catalog.extensions.map((item) => ({
       ...item,
-      spec: "link:/Volumes/Lenovo/dsh-extension-lab/" + item.path,
+      spec: "link:" + path.resolve(workspaceRoot, item.path),
     })),
   };
 }

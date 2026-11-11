@@ -30,10 +30,14 @@ window.__ModuleLoader__.load({
       ) {
         throw new Error("扩展清单包含无效条目");
       }
-      // For link: (dev mode) specs pass them through directly.
-      // For production use github: shorthand so the host's specPackageName
-      // matches the profile's recorded "github:..." dependency correctly.
-      if (item.spec) return item.spec;
+      // Explicit specs are authoritative. The catalog is fetched remotely, so reject
+      // empty or whitespace-containing values before passing them to the Host.
+      if (item.spec) {
+        if (typeof item.spec !== "string" || !item.spec.trim() || /\s/.test(item.spec)) {
+          throw new Error("扩展清单包含无效安装地址");
+        }
+        return item.spec;
+      }
       const ref = item.ref || "main";
       if (typeof ref !== "string" || !/^[A-Za-z0-9._/-]+$/.test(ref) || ref.includes("..")) {
         throw new Error("扩展清单包含无效版本引用");

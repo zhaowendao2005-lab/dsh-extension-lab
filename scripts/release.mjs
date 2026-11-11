@@ -28,7 +28,11 @@ function allowedPublishChanges() {
   for (const name of packageNames) {
     files.add("packages/" + name + "/package.json");
     files.add("packages/" + name + "/lib/client.js");
+    files.add("packages/" + name + "/scripts/build.mjs");
+    files.add("packages/" + name + "/src/client.template.js");
+    files.add("packages/" + name + "/README.md");
   }
+  files.add("scripts/release.mjs");
   return files;
 }
 
@@ -106,6 +110,23 @@ function tagExists(tag) {
   return remote.length > 0;
 }
 
+function verifyRemoteRef(entry) {
+  const match = /^github:([^/#]+\/[^#]+)#([^&]+)&path:\/(.+)$/.exec(entry.spec || "");
+  if (!match || match[3] !== entry.path) {
+    throw new Error(entry.name + ": spec must be a github spec matching its path");
+  }
+  const [, repository, ref] = match;
+  validateTag(ref);
+  const result = spawnSync(
+    "git",
+    ["ls-remote", "--exit-code", "https://github.com/" + repository + ".git", "refs/tags/" + ref],
+    { cwd: root, stdio: "ignore", timeout: 15000 },
+  );
+  if (result.status !== 0) {
+    throw new Error(entry.name + ": remote GitHub tag does not exist: " + ref);
+  }
+}
+
 function validateTag(tag) {
   if (!/^version-[A-Za-z0-9][A-Za-z0-9._-]*$/.test(tag)) {
     throw new Error("tag must use the version-N format, for example version-2");
@@ -127,6 +148,7 @@ async function check() {
     }
     if (!entry.ref) throw new Error(entry.name + ": marketplace entry must pin its release ref");
     validateTag(entry.ref);
+    verifyRemoteRef(entry);
     console.log(manifest.name + " " + manifest.version + " -> " + entry.ref + " (" + entry.path + ")");
   }
 }
