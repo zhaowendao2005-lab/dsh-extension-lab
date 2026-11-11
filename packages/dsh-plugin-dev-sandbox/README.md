@@ -4,7 +4,7 @@
 
 ## 入口与操作
 
-绑定会话的对话页标题区显示「插件沙箱」入口，右侧面板提供状态、启动/停止、插件 `package.json` 中脚本的运行、日志查看和解除绑定。未绑定的会话不显示入口。模型工具 `plugin_dev` 与面板共用同一组 Host 操作；工具动作限定为当前 Agent 会话，浏览器 Remote 仅允许 DSH owner 调用。
+右侧栏的标签选择页（guide）里有「插件沙箱」卡片，点开即打开面板；面板提供状态、启动/停止、插件 `package.json` 中脚本的运行、日志查看和解除绑定。未绑定的会话打开面板会显示绑定指引。面板固定使用 VS Code 浅色配色，自绘 `.pds-*` 样式，不跟随宿主深浅主题。模型工具 `plugin_dev` 与面板共用同一组 Host 操作；工具动作限定为当前 Agent 会话，浏览器 Remote 仅允许 DSH owner 调用。
 
 `bind` 接受相对当前工作区的插件目录。目录必须位于原始工作区内、包含有效 `package.json` 和包入口；脚本通过精确 `commandId` 选择，不把脚本内容当 shell 命令拼接。`status` 只返回当前会话绑定、可运行脚本、运行状态和有界日志。
 
@@ -17,7 +17,7 @@
 
 ## API 与结构
 
-包通过 `ctx.typert.register(hostContribution)` 注册显式 Typert 描述符；客户端通过 `ctx.remote.$mount(remoteInfo)` 挂载同一描述符。两个容易踩的契约点：`$mount` 不会把方法挂到 `ctx.remote` 上，而是安装名为 `remote.<namespace>` 的 Cordis 服务（这里必须 `ctx.inject(['remote.pluginDev'], …)` 后取 `ctx.get('remote.pluginDev')`）；Gateway 的 invocation 只能从 scoped `this.ctx.invocation` 读取，`this.invocation` 恒为 undefined。Host 实现为 Cordis `Service`，owner 检查对缺少 invocation 的情况 fail closed；抛出的 `RemoteError` 必须带第三个 `details` 参数（`{}` 也可），否则连接层解析 `server-response` 失败，客户端只能看到 `invalid server-response failure`。客户端入口用 ModuleLoader 和官方 `conversation.session.header.utilities`、`sidebar.right.pane.tab`、`sidebarRightTabs` API，不使用全局左侧栏。
+包通过 `ctx.typert.register(hostContribution)` 注册显式 Typert 描述符；客户端通过 `ctx.remote.$mount(remoteInfo)` 挂载同一描述符。两个容易踩的契约点：`$mount` 不会把方法挂到 `ctx.remote` 上，而是安装名为 `remote.<namespace>` 的 Cordis 服务（这里必须 `ctx.inject(['remote.pluginDev'], …)` 后取 `ctx.get('remote.pluginDev')`）；Gateway 的 invocation 只能从 scoped `this.ctx.invocation` 读取，`this.invocation` 恒为 undefined。Host 实现为 Cordis `Service`，owner 检查对缺少 invocation 的情况 fail closed；抛出的 `RemoteError` 必须带第三个 `details` 参数（`{}` 也可），否则连接层解析 `server-response` 失败，客户端只能看到 `invalid server-response failure`。客户端入口用 ModuleLoader 和官方 `sidebarRightTabs.register({ guide: [...] })` 的 guide 卡片、`sidebar.right.pane.tab` 座位，不使用全局左侧栏，也不再占用会话标题区。
 
 - `src/host.js`：纯 Node 会话目录、绑定、真实 DSH/脚本进程生命周期
 - `src/index.js`：Host `apply`、会话解析、Cordis Service、模型工具和 Remote
@@ -32,6 +32,6 @@
 
 在真实 GUI 中验证会话入口和交互需要安装/加载构建产物，并在有绑定插件的会话中测试。
 
-已完成的真实端到端回归（临时独立预览实例 + Playwright 操作页面，非 mock）：boot 无 entry 失败、绑定会话出现「插件沙箱」入口、未绑定/移除绑定后入口消失、右侧面板读取绑定与脚本列表、启动沙箱得到独立 DSH URL 并确认 `runtime/stdout` 日志、运行 `build` 脚本得到 `Process exited: 0`、停止后状态回到「已停止」且子进程退出、`官方终端` 打开当前会话终端 tab。回归脚本未提交（放在 `.dsh/`，已被忽略）。
+已完成的真实端到端回归（临时独立预览实例 + Playwright 操作页面，非 mock）：boot 无 entry 失败、guide 页出现「插件沙箱」卡片、点开后在右侧页签中加载面板、面板读取绑定与脚本列表、启动沙箱得到独立 DSH URL 并确认 `runtime/stdout` 日志、运行 `build` 脚本得到 `Process exited: 0`、停止后状态回到「已停止」且子进程退出、`官方终端` 打开当前会话终端 tab。回归脚本未提交（放在 `.dsh/`，已被忽略）。
 
 仍未验收：模型工具 `plugin_dev` 的真实调用路径（预览实例无可用模型凭据，未跑通 LLM 轮次）；`官方终端` 的环境不等同沙箱 `DSH_HOME`；插件代码仍以当前用户权限运行，profile 隔离不等于 OS 安全沙箱。
