@@ -5,12 +5,17 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const template = await readFile(path.join(root, "src/client.template.js"), "utf8");
+const css = await readFile(path.join(root, "src/styles.css"), "utf8");
 const catalogFile = path.resolve(root, "../../marketplace.json");
-const marker = "__MARKET_CONFIG__";
+
 const production = !process.argv.includes("--development");
 let market;
 if (production) {
-  market = { mode: "production", catalogUrl: "https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/marketplace.json" };
+  market = {
+    mode: "production",
+    catalogUrl:
+      "https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/marketplace.json",
+  };
 } else {
   const catalog = JSON.parse(await readFile(catalogFile, "utf8"));
   market = {
@@ -21,7 +26,12 @@ if (production) {
     })),
   };
 }
-const built = template.replace(marker, JSON.stringify(market));
+
+// Replace both markers in a single pass
+let built = template
+  .replace("__MARKET_CONFIG__", JSON.stringify(market))
+  .replace("__MARKET_CSS__", JSON.stringify(css));
+
 const out = path.join(root, "lib/client.js");
 if (process.argv.includes("--check")) {
   const current = await readFile(out, "utf8").catch(() => "");
