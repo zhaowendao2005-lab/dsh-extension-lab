@@ -7,8 +7,8 @@
       "description": "私有扩展市场、安装与更新管理器。",
       "version": "1.0.2",
       "path": "packages/extension-lab-manager",
-      "ref": "version-3.0.0",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.0.0&path:/packages/extension-lab-manager"
+      "ref": "version-3.1.0",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.1.0&path:/packages/extension-lab-manager"
     },
     {
       "name": "dsh-ui-enhancements",
@@ -16,17 +16,17 @@
       "description": "Swiss-modernist dialog and interface enhancements for DSH.",
       "version": "1.0.0",
       "path": "packages/dsh-ui-enhancements",
-      "ref": "version-3.0.0",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.0.0&path:/packages/dsh-ui-enhancements"
+      "ref": "version-3.1.0",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.1.0&path:/packages/dsh-ui-enhancements"
     },
     {
       "name": "dsh-plugin-dev-sandbox",
       "title": "DSH Plugin Dev Sandbox",
       "description": "DSH 插件开发沙箱与调试面板",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "path": "packages/dsh-plugin-dev-sandbox",
-      "ref": "version-3.0.0",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.0.0&path:/packages/dsh-plugin-dev-sandbox"
+      "ref": "version-3.1.0",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.1.0&path:/packages/dsh-plugin-dev-sandbox"
     }
   ]
 }

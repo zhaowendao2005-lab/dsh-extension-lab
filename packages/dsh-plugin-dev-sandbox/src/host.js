@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { randomUUID } from "node:crypto";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DEFAULT_LOG_BYTES = 64 * 1024;
@@ -55,16 +56,27 @@ async function readJson(target, optional = false) {
   } finally { await handle.close(); }
 }
 
-async function writeSafe(target, content) {
+async function writeSafe(target, content, mode = 0o600) {
   await regularFile(target);
   // Never truncate before verifying the opened inode (including hard links).
-  const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW || 0), 0o600);
+  const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW || 0), mode);
   try {
     const info = await handle.stat();
     if (!info.isFile() || info.nlink !== 1) throw new Error(`Unsafe output file: ${target}`);
     await handle.truncate(0);
     await handle.writeFile(content, "utf8");
+    // A pre-existing file keeps its mode; credentials-local refuses group/other bits.
+    if ((info.mode & 0o077) !== 0) await handle.chmod(mode);
   } finally { await handle.close(); }
+}
+
+/** Credentials copied into the sandbox DSH home; values never leave the Host. */
+function credentialsDocument(entries) {
+  const refs = entries.filter((entry) => entry && typeof entry.ref === "string"
+    && /^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.ref) && typeof entry.value === "string" && entry.value.length > 0);
+  if (refs.length === 0) return null;
+  const lines = refs.map(({ ref, value }) => `  ${ref}: ${JSON.stringify(value)}`);
+  return `version: 1\nrefs:\n${lines.join("\n")}\n`;
 }
 
 function positiveInteger(value, fallback, name) {
@@ -97,6 +109,46 @@ function cleanEnvironment(source, home) {
   return env;
 }
 
+function terminalId(value) {
+  if (typeof value !== "string" || !SESSION_ID.test(value)) {
+    throw new TypeError("Invalid terminalId: use 1-128 letters, digits, underscores or hyphens, starting with a letter or digit");
+  }
+  return value;
+}
+
+function terminalDimension(value, fallback, name) {
+  const dimension = positiveInteger(value, fallback, name);
+  if (dimension > 1000) throw new TypeError(`${name} must not exceed 1000`);
+  return dimension;
+}
+
+function terminalOverrides(env) {
+  // The subprocess service merges overrides onto its own ambient environment.
+  // Tombstones prevent that merge from restoring anything our scrub omitted
+  // (notably NODE_OPTIONS, AUTH/COOKIE names, and the parent's DSH_* facts).
+  // Apply the isolated environment last so our new DSH_HOME/HOME survive.
+  const overrides = { ...Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined])), ...env };
+  // Windows merges names case-insensitively. Put each isolated value after any
+  // differently-cased tombstone, otherwise a later `home: undefined` could erase
+  // HOME and let shell defaults point back to the user's profile.
+  for (const name of ["DSH_HOME", "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "PWD"]) {
+    delete overrides[name];
+    for (const key of Object.keys(overrides)) if (key.toUpperCase() === name) overrides[key] = undefined;
+    overrides[name] = env[name];
+  }
+  return overrides;
+}
+
+function terminalArguments(shell, platform) {
+  const name = (platform === "windows" ? path.win32 : path).basename(shell).toLowerCase().replace(/\.exe$/, "");
+  if (name === "bash") return [shell, "--noprofile", "--norc", "-i"];
+  if (name === "zsh") return [shell, "-f", "-i"];
+  if (name === "fish") return [shell, "--no-config", "-i"];
+  if (name === "pwsh" || name === "powershell") return [shell, "-NoLogo", "-NoProfile"];
+  if (name === "cmd") return [shell, "/d", "/q"];
+  return platform === "windows" ? [shell] : [shell, "-i"];
+}
+
 function exportedEntry(value) {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(exportedEntry).find(Boolean);
@@ -126,9 +178,14 @@ function validateSpec(spec) {
  * {binding: null|{sessionId,pluginPath,name}, commands:[{id,title,command}],
  *  runtime:{state,pid,url,error,exitCode,signal,dshHome},
  *  command:{state,id,pid,exitCode,signal,error},
- *  logs:[{time,source,stream,text}]}.
+ *  terminals:[{id,state,pid,exitCode,signal,error}],
+ *  logs:[{time,source,stream,text,terminalId?}]}.
  * runtime states: stopped/starting/running/exited/error;
  * command states: idle/running/exited/error. dispose resolves undefined.
+ * terminalCreate({...,terminalId?,rows?,cols?}), terminalWrite({...,terminalId,data})
+ * and terminalClose({...,terminalId}) return that same snapshot. PTYs require
+ * options.subprocess (the official ctx.subprocess service); there is no pipe or
+ * child_process substitute. Terminal states: starting/running/exited/error/closed.
  *
  * options.launchSpec and options.commandSpec accept {command,args} or an async
  * function(context) returning it, for tests/explicit embedders only. The default
@@ -159,7 +216,8 @@ export function createSandboxManager(options = {}) {
     if (!(await lstat(root)).isDirectory()) throw new Error("workspaceRoot must be a directory");
     const base = path.join(root, ".dsh", "plugin-dev", input.sessionId);
     return { workspaceRoot: root, sessionId: input.sessionId, base,
-      bindingPath: path.join(base, "binding.json"), runtimeHome: path.join(base, "runtime"),
+      bindingPath: path.join(base, "binding.json"), modelsPath: path.join(base, "models.json"),
+      runtimeHome: path.join(base, "runtime"), credentialsPath: path.join(base, "runtime", ".credentials.yaml"),
       overlayPath: path.join(base, "overlay.yml"), key: JSON.stringify([root, input.sessionId]) };
   }
 
@@ -173,12 +231,14 @@ export function createSandboxManager(options = {}) {
       if (await directory(loc.runtimeHome)) await directory(path.join(loc.runtimeHome, leaf), create);
     }
     await regularFile(loc.bindingPath);
+    await regularFile(loc.modelsPath);
     await regularFile(loc.overlayPath);
   }
 
   function record(loc) {
     if (!sessions.has(loc.key)) sessions.set(loc.key, { loc, runtime: runtimeState(loc.runtimeHome), command: commandState(),
-      runtimeProcess: null, commandProcess: null, logs: [], logBytes: 0, urlTail: "" });
+      runtimeProcess: null, commandProcess: null, terminals: new Map(), models: [], modelsLoaded: false,
+      credentialRefs: [], logs: [], logBytes: 0, urlTail: "" });
     return sessions.get(loc.key);
   }
 
@@ -221,17 +281,36 @@ export function createSandboxManager(options = {}) {
   function snapshot(item, bound) {
     return { binding: bound ? { ...bound.binding } : null,
       commands: bound ? bound.commands.map((command) => ({ ...command })) : [],
-      runtime: { ...item.runtime }, command: { ...item.command }, logs: item.logs.map((line) => ({ ...line })) };
+      runtime: { ...item.runtime }, command: { ...item.command },
+      terminals: [...item.terminals.values()].map((terminal) => ({ ...terminal.state })),
+      models: item.models.map((model) => ({ ...model })),
+      credentials: item.credentialRefs.map((ref) => ({ ref })),
+      logs: item.logs.map((line) => ({ ...line })) };
   }
 
-  function log(item, source, stream, raw) {
+  async function loadModels(loc, item) {
+    if (item.modelsLoaded) return item.models;
+    const saved = await readJson(loc.modelsPath, true);
+    if (saved !== null) {
+      if (!saved || Array.isArray(saved) || typeof saved !== "object" || Object.keys(saved).length !== 1 || !Array.isArray(saved.selected)) {
+        throw new Error("Invalid models.json");
+      }
+      item.models = saved.selected
+        .filter((entry) => entry && typeof entry === "object" && typeof entry.provider === "string" && typeof entry.model === "string")
+        .map((entry) => ({ provider: entry.provider, model: entry.model }));
+    }
+    item.modelsLoaded = true;
+    return item.models;
+  }
+
+  function log(item, source, stream, raw, terminalId) {
     let text = String(raw);
     if (Buffer.byteLength(text) > maxLogBytes) {
       text = Buffer.from(text).subarray(-maxLogBytes).toString("utf8");
       while (Buffer.byteLength(text) > maxLogBytes) text = text.slice(1);
     }
     if (!text) return;
-    const entry = { time: new Date().toISOString(), source, stream, text };
+    const entry = { time: new Date().toISOString(), source, stream, text, ...(terminalId === undefined ? {} : { terminalId }) };
     item.logs.push(entry);
     item.logBytes += Buffer.byteLength(text);
     while (item.logs.length > maxLogEntries || item.logBytes > maxLogBytes) {
@@ -258,7 +337,7 @@ export function createSandboxManager(options = {}) {
       env: cleanEnvironment(options.env || process.env, loc.runtimeHome), ...(commandId === undefined ? {} : { commandId }) };
   }
 
-  async function overlay(loc, bound) {
+  async function overlay(loc, bound, modelPatches) {
     const manifest = bound.manifest;
     const exportsRoot = manifest.exports && typeof manifest.exports === "object" && !Array.isArray(manifest.exports) && Object.hasOwn(manifest.exports, ".")
       ? manifest.exports["."] : manifest.exports;
@@ -268,7 +347,15 @@ export function createSandboxManager(options = {}) {
       throw new Error("Plugin entry must resolve to a file inside its package and workspace");
     }
     await checkPaths(loc, true);
-    await writeSafe(loc.overlayPath, `# Temporary plugin-dev overlay; never installed in the parent profile.\n- insert:\n    - id: ${JSON.stringify(`plugin-dev-${loc.sessionId}`)}\n      name: ${JSON.stringify(pathToFileURL(entryPath).href)}\n`);
+    const lines = ["# Temporary plugin-dev overlay; never installed in the parent profile.",
+      "- insert:", `    - id: ${JSON.stringify(`plugin-dev-${loc.sessionId}`)}`,
+      `      name: ${JSON.stringify(pathToFileURL(entryPath).href)}`];
+    // Flow-style JSON is also valid YAML; JSON.stringify keeps every value quoted safely.
+    for (const patch of modelPatches ?? []) {
+      if (!patch || typeof patch.id !== "string" || !patch.id) continue;
+      lines.push(`- id: ${JSON.stringify(patch.id)}`, `  config: ${JSON.stringify(patch.config ?? {})}`);
+    }
+    await writeSafe(loc.overlayPath, `${lines.join("\n")}\n`);
   }
 
   async function start(item, kind, spec, ctx) {
@@ -362,10 +449,111 @@ export function createSandboxManager(options = {}) {
     }
   }
 
+  function terminalFailure(item, terminal, error) {
+    terminal.state.state = "error";
+    terminal.state.error = error instanceof Error ? error.message : String(error);
+    log(item, "terminal", "system", terminal.state.error, terminal.state.id);
+  }
+
+  async function terminalSpec(ctx, input) {
+    const subprocess = options.subprocess;
+    if (typeof subprocess?.spawnTerminal !== "function") {
+      throw new Error("True PTY terminals require the official subprocess.spawnTerminal service");
+    }
+    const environment = typeof subprocess.terminalEnvironment === "function"
+      ? await subprocess.terminalEnvironment() : {};
+    const platform = environment.platform || (process.platform === "win32" ? "windows" : "posix");
+    let shell = environment.defaultShell || (platform === "windows" ? ctx.env.ComSpec || "cmd.exe" : ctx.env.SHELL || "/bin/sh");
+    if (typeof shell !== "string" || !shell || shell.includes("\0")) throw new Error("Invalid terminal default shell");
+    const env = terminalOverrides({ ...ctx.env, PWD: ctx.pluginPath });
+    if (typeof subprocess.resolveExecutable === "function") shell = await subprocess.resolveExecutable(shell, env);
+    const argv = terminalArguments(shell, platform);
+    validateSpec({ command: argv[0], args: argv.slice(1) });
+    return { argv, cwd: ctx.pluginPath, env, rows: input.rows, cols: input.cols,
+      terminalType: "xterm-256color", graceMs: stopTimeoutMs };
+  }
+
+  async function startTerminal(item, terminal, spec) {
+    const handle = await options.subprocess.spawnTerminal(spec);
+    terminal.handle = handle;
+    terminal.state.pid = handle.pid ?? null;
+    terminal.state.state = "running";
+    // Attach a rejection handler immediately: provider/spawn failures may reject
+    // done independently of the Readable's end/error events.
+    terminal.done = Promise.resolve(handle.done).then((outcome) => {
+      const state = terminal.state;
+      state.pid = null;
+      state.exitCode = outcome?.exitCode ?? null;
+      state.signal = outcome?.signal ?? null;
+      if (!terminal.stopping && state.state !== "error") {
+        const success = state.exitCode === 0 && state.signal === null;
+        state.state = success ? "exited" : "error";
+        state.error = success ? null : `Terminal exited ${state.signal ? `with signal ${state.signal}` : `with code ${state.exitCode ?? "unknown"}`}`;
+      }
+      log(item, "terminal", "system", `Terminal exited: ${state.exitCode ?? state.signal ?? "unknown"}`, state.id);
+    }, (error) => {
+      terminal.state.pid = null;
+      terminalFailure(item, terminal, error);
+    });
+    handle.output.setEncoding("utf8");
+    terminal.outputDone = (async () => {
+      try {
+        // The official handle exposes a Node Readable (PassThrough), not events
+        // from node-pty itself. Drain continuously; only our bounded log survives.
+        for await (const chunk of handle.output) log(item, "terminal", "stdout", chunk, terminal.state.id);
+      } catch (error) {
+        terminalFailure(item, terminal, error);
+        // Do not await here: termination itself waits for this reader to drain.
+        void terminateTerminal(item, terminal).catch(() => {});
+      }
+    })();
+    // A shell exit is not proof that every foreground/background member is gone.
+    // Keep provider ownership until its awaited managed-range cleanup succeeds.
+    void terminal.done.then(() => terminateTerminal(item, terminal)).catch(() => {});
+  }
+
+  async function terminateTerminal(item, terminal) {
+    if (!terminal?.handle) return;
+    if (terminal.cleanup) return terminal.cleanup;
+    terminal.stopping = true;
+    const cleanup = (async () => {
+      try {
+        await terminal.handle.terminate();
+        await Promise.all([terminal.done, terminal.outputDone]);
+        terminal.handle = null;
+        terminal.state.pid = null;
+        if (["starting", "running"].includes(terminal.state.state)) terminal.state.state = "closed";
+      } catch (error) {
+        terminalFailure(item, terminal, error);
+        throw error;
+      }
+    })();
+    terminal.cleanup = cleanup;
+    try { await cleanup; }
+    finally { if (terminal.cleanup === cleanup) terminal.cleanup = null; }
+  }
+
+  async function settleCleanup(operations) {
+    const results = await Promise.allSettled(operations);
+    const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
+    if (failures.length) throw new AggregateError(failures, "Sandbox process cleanup failed");
+  }
+
   async function stopItem(item) {
-    await Promise.all([terminate(item.runtimeProcess), terminate(item.commandProcess)]);
+    await settleCleanup([terminate(item.runtimeProcess), terminate(item.commandProcess),
+      ...[...item.terminals.values()].map((terminal) => terminateTerminal(item, terminal))]);
     item.runtimeProcess = null; item.commandProcess = null;
     item.runtime = runtimeState(item.loc.runtimeHome); item.command = commandState(); item.urlTail = "";
+    item.terminals.clear();
+    await clearCredentials(item);
+  }
+
+  // Copied secrets must not outlive the process that needed them.
+  async function clearCredentials(item) {
+    item.credentialRefs = [];
+    const target = item.loc.credentialsPath;
+    if (!inside(item.loc.workspaceRoot, target)) return;
+    if (await regularFile(target)) await unlink(target);
   }
 
   return {
@@ -381,12 +569,29 @@ export function createSandboxManager(options = {}) {
       });
     },
     async status(input) {
-      return serialized(input, async (loc, item) => snapshot(item, await binding(loc)));
+      return serialized(input, async (loc, item) => {
+        await loadModels(loc, item);
+        return snapshot(item, await binding(loc));
+      });
+    },
+    async saveModels(input) {
+      return serialized(input, async (loc, item) => {
+        const selected = Array.isArray(input.selectedModels) ? input.selectedModels : [];
+        if (selected.some((entry) => !entry || typeof entry.provider !== "string" || typeof entry.model !== "string")) {
+          throw new TypeError("selectedModels must be an array of {provider, model} strings");
+        }
+        await checkPaths(loc, true);
+        await writeSafe(loc.modelsPath, `${JSON.stringify({ selected: selected.map(({ provider, model }) => ({ provider, model })) }, null, 2)}\n`);
+        item.models = selected.map(({ provider, model }) => ({ provider, model }));
+        item.modelsLoaded = true;
+        return snapshot(item, await binding(loc));
+      });
     },
     async launch(input) {
       return serialized(input, async (loc, item) => {
         const bound = await binding(loc);
         if (!bound) throw new Error("No plugin is bound to this session");
+        await loadModels(loc, item);
         if (["starting", "running"].includes(item.runtime.state) && item.runtimeProcess?.pluginPath === bound.binding.pluginPath) {
           return snapshot(item, bound);
         }
@@ -394,7 +599,15 @@ export function createSandboxManager(options = {}) {
         item.runtime = { ...runtimeState(loc.runtimeHome), state: "starting" }; item.urlTail = "";
         try {
           const ctx = await context(loc, bound);
-          await overlay(loc, bound);
+          await overlay(loc, bound, input.modelPatches);
+          const document = credentialsDocument(Array.isArray(input.credentials) ? input.credentials : []);
+          if (document) {
+            await checkPaths(loc, true);
+            await writeSafe(loc.credentialsPath, document, 0o600);
+            item.credentialRefs = document.match(/^ {2}([A-Za-z_][A-Za-z0-9_]*): /gm)?.map((line) => line.trim().slice(0, -1)) ?? [];
+          } else {
+            await clearCredentials(item);
+          }
           // --patch belongs to the launcher; flags after --host are forwarded
           // to the web app, which rejects a trailing --patch as unknown.
           const spec = validateSpec(options.launchSpec === undefined
@@ -428,6 +641,74 @@ export function createSandboxManager(options = {}) {
         return snapshot(item, bound);
       });
     },
+    async terminalCreate(input) {
+      return serialized(input, async (loc, item) => {
+        const id = terminalId(input.terminalId ?? `terminal-${randomUUID()}`);
+        const rows = terminalDimension(input.rows, 24, "rows");
+        const cols = terminalDimension(input.cols, 80, "cols");
+        const bound = await binding(loc);
+        if (!bound) throw new Error("No plugin is bound to this session");
+        // A manually replaced binding must not preserve terminals from the old
+        // package, even if this request creates an unrelated new terminal id.
+        await settleCleanup([...item.terminals.values()]
+          .filter((terminal) => terminal.pluginPath !== bound.binding.pluginPath)
+          .map((terminal) => terminateTerminal(item, terminal)));
+        const previous = item.terminals.get(id);
+        if (previous?.state.state === "running" && previous.pluginPath === bound.binding.pluginPath) {
+          return snapshot(item, bound);
+        }
+        await terminateTerminal(item, previous);
+        const terminal = { pluginPath: bound.binding.pluginPath, handle: null, cleanup: null, stopping: false,
+          done: Promise.resolve(), outputDone: Promise.resolve(),
+          state: { id, state: "starting", pid: null, exitCode: null, signal: null, error: null } };
+        item.terminals.set(id, terminal);
+        try {
+          const ctx = await context(loc, bound);
+          await startTerminal(item, terminal, await terminalSpec(ctx, { rows, cols }));
+        } catch (error) {
+          terminalFailure(item, terminal, error);
+          // A provider may have allocated a PTY before stream setup fails. Never
+          // discard that handle; cleanup failure stays visible and retryable.
+          await terminateTerminal(item, terminal);
+        }
+        return snapshot(item, bound);
+      });
+    },
+    async terminalWrite(input) {
+      return serialized(input, async (loc, item) => {
+        const id = terminalId(input.terminalId);
+        if (typeof input.data !== "string" || Buffer.byteLength(input.data) > 64 * 1024) {
+          throw new TypeError("Terminal data must be a string of at most 64 KiB");
+        }
+        const terminal = item.terminals.get(id);
+        if (!terminal) throw new Error("Unknown terminalId for this session");
+        const bound = await binding(loc);
+        if (!bound || terminal.pluginPath !== bound.binding.pluginPath) {
+          await terminateTerminal(item, terminal);
+          throw new Error("Terminal does not belong to the current plugin binding");
+        }
+        if (!terminal.handle || terminal.stopping || terminal.state.state !== "running") {
+          throw new Error("Terminal is not running");
+        }
+        try { await terminal.handle.write(input.data); }
+        catch (error) {
+          terminalFailure(item, terminal, error);
+          await terminateTerminal(item, terminal);
+        }
+        return snapshot(item, bound);
+      });
+    },
+    async terminalClose(input) {
+      return serialized(input, async (loc, item) => {
+        const terminal = item.terminals.get(terminalId(input.terminalId));
+        if (terminal) {
+          // Clean up before reading a possibly deleted or corrupt manifest.
+          await terminateTerminal(item, terminal);
+          terminal.state.state = "closed";
+        }
+        return snapshot(item, await binding(loc));
+      });
+    },
     async stop(input) {
       return serialized(input, async (loc, item) => {
         // Stop owned processes even if a plugin removed/corrupted its manifest.
@@ -453,11 +734,18 @@ export function createSandboxManager(options = {}) {
         disposed = true;
         disposal = (async () => {
           await Promise.allSettled([...queues.values()]);
-          await Promise.all([...sessions.values()].map(stopItem));
+          await settleCleanup([...sessions.values()].map(stopItem));
           sessions.clear();
         })();
       }
-      await disposal;
+      const current = disposal;
+      try { await current; }
+      catch (error) {
+        // Keep new operations disabled, but allow a later dispose() to retry
+        // provider cleanup that failed instead of losing the retained handles.
+        if (disposal === current) disposal = undefined;
+        throw error;
+      }
     },
   };
 }

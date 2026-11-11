@@ -29,16 +29,20 @@ export function createSandboxStore(execute, sessionId, delay = 2000) {
       return () => { listeners.delete(listener); if (!listeners.size) clearInterval(timer); };
     },
     async action(action, fields) {
-      if (value.busy || disposed) return;
+      if (value.busy || disposed) return undefined;
       // Invalidate older reads; they may finish after this action.
       revision++;
       publish({ busy: true, error: null });
       try {
-        const snapshot = await call(action, fields);
-        publish({ snapshot, loading: false });
-      } catch (error) { publish({ error: error.message, loading: false }); }
+        const result = await call(action, fields);
+        // Session actions answer with the shared snapshot; catalog-style reads do not.
+        if (result && typeof result === 'object' && 'runtime' in result) publish({ snapshot: result, loading: false });
+        else publish({ loading: false });
+        return result;
+      } catch (error) { publish({ error: error.message, loading: false }); return undefined; }
       finally { publish({ busy: false }); }
     },
+    request: call,
     refresh,
     dispose() { disposed = true; clearInterval(timer); listeners.clear(); },
   };

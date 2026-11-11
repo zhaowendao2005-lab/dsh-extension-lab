@@ -10,158 +10,206 @@ window.__ModuleLoader__.load({
     const KIND = 'plugin-sandbox';
     const TITLE = '插件沙箱';
     const STYLE_ID = 'dsh-plugin-dev-sandbox-style';
+    const cleanTerminal = text => String(text || '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '')
+      .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')
+      .replace(/\u001b[@-Z\\-_]/g, '')
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
 
-    // VS Code light theme. The page paints its own surface: the right column is a
-    // page of the window, not a raised card over the host's theme.
     const CSS = `
-.pds{--pds-bg:#fff;--pds-fg:#3b3b3b;--pds-dim:#6b6b6b;--pds-faint:#8a8a8a;--pds-border:#e5e5e5;--pds-soft:#f0f0f0;--pds-strong:#cecece;--pds-hover:#f3f3f3;--pds-accent:#007acc;--pds-accent-hover:#0062a3;--pds-danger:#b5202c;--pds-ok:#388a34;--pds-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--pds-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;height:100%;overflow:auto;background:var(--pds-bg);color:var(--pds-fg);font:13px var(--pds-sans);display:flex;flex-direction:column}
-.pds *{box-sizing:border-box}
-.pds-header{padding:12px 14px;border-bottom:1px solid var(--pds-border);display:flex;flex-direction:column;gap:3px}
-.pds-title{font-weight:600;font-size:13px}
-.pds-path{font:11px var(--pds-mono);color:var(--pds-dim);overflow-wrap:anywhere}
-.pds-meta{font:11px var(--pds-sans);color:var(--pds-faint)}
-.pds-body{padding:10px 14px;display:flex;flex-direction:column;gap:8px}
-.pds-status{display:flex;align-items:center;gap:8px;font-size:12px}
-.pds-dot{width:8px;height:8px;border-radius:4px;flex:none;background:var(--pds-faint)}
-.pds-dot[data-state=running]{background:var(--pds-ok)}
-.pds-dot[data-state=starting]{background:#d18616}
-.pds-dot[data-state=error]{background:var(--pds-danger)}
-.pds-pid{font:11px var(--pds-mono);color:var(--pds-faint)}
-.pds-actions{display:flex;flex-wrap:wrap;gap:6px}
-.pds-btn{height:26px;padding:0 10px;border:1px solid var(--pds-strong);border-radius:2px;background:var(--pds-hover);color:var(--pds-fg);font:12px var(--pds-sans);cursor:pointer}
-.pds-btn:hover:not(:disabled){background:#e8e8e8}
-.pds-btn:focus-visible{outline:1px solid var(--pds-accent);outline-offset:1px}
-.pds-btn:disabled{opacity:.55;cursor:default}
-.pds-btn[data-primary]{border-color:var(--pds-accent);background:var(--pds-accent);color:#fff}
-.pds-btn[data-primary]:hover:not(:disabled){background:var(--pds-accent-hover)}
-.pds-anchor{color:var(--pds-accent);font-size:12px;text-decoration:none}
-.pds-anchor:hover{text-decoration:underline}
-.pds-alert{margin:0;padding:8px 10px;background:#fdf3f4;border:1px solid #f0c9cd;border-radius:2px;color:var(--pds-danger);font-size:12px;overflow-wrap:anywhere}
-.pds-section{border-top:1px solid var(--pds-border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
-.pds-section>h4{margin:0;font:600 12px var(--pds-sans);color:var(--pds-dim)}
-.pds-list{margin:0;padding:0;list-style:none}
-.pds-row{display:flex;align-items:center;gap:10px;padding:5px 4px;border-bottom:1px solid var(--pds-soft)}
-.pds-row:hover{background:var(--pds-hover)}
-.pds-row-name{font:12px var(--pds-mono);overflow-wrap:anywhere}
-.pds-row-cmd{font:11px var(--pds-mono);color:var(--pds-faint);white-space:pre-wrap;overflow-wrap:anywhere}
-.pds-note{margin:0;font-size:11px;color:var(--pds-faint);line-height:1.6}
-.pds-hint{margin:0;font-size:12px;color:var(--pds-dim);line-height:1.6}
-.pds-details{border-top:1px solid var(--pds-border);padding:10px 14px}
-.pds-details>summary{cursor:pointer;font:600 12px var(--pds-sans);color:var(--pds-dim)}
-.pds-details[open]>summary{margin-bottom:8px}
-.pds-code{font:11px var(--pds-mono);color:var(--pds-dim);overflow-wrap:anywhere}
-.pds-log{margin:0;padding:8px 10px;background:#f8f8f8;border:1px solid var(--pds-border);border-radius:2px;color:#333;font:11.5px/1.6 var(--pds-mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto}
-.pds-footer{margin-top:auto;border-top:1px solid var(--pds-border);padding:10px 14px;display:flex;gap:6px;align-items:center}
-.pds-footer-note{font-size:12px;color:var(--pds-dim)}
+.pds{--bg:#fff;--fg:#333;--muted:#6b6b6b;--faint:#8a8a8a;--line:#dedede;--soft:#f5f5f5;--hover:#eaf3fb;--blue:#007acc;--green:#388a34;--red:#b5202c;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;height:100%;min-height:0;background:var(--bg);color:var(--fg);font:12px var(--sans);display:flex;flex-direction:column;overflow:hidden}
+.pds *{box-sizing:border-box}.pds button{font:inherit;color:inherit}.pds-head{height:34px;flex:none;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 10px}.pds-head-title{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-head-meta{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:45%}.pds-head-button{border:0;background:transparent;width:24px;height:24px;cursor:pointer;color:var(--muted)}.pds-head-button:hover,.pds-icon-button:hover{background:var(--hover);color:var(--fg)}
+.pds-toolbar{height:32px;flex:none;display:flex;align-items:center;gap:5px;padding:0 8px;border-bottom:1px solid var(--line)}.pds-button{height:23px;padding:0 8px;border:1px solid #c8c8c8;border-radius:2px;background:#f7f7f7;cursor:pointer;white-space:nowrap}.pds-button:hover:not(:disabled){background:var(--hover)}.pds-button:focus-visible,.pds-icon-button:focus-visible,.pds-tree-row:focus-visible,.pds-terminal-tab:focus-visible,.pds-section-head:focus-visible{outline:1px solid var(--blue);outline-offset:-2px}.pds-button:disabled{opacity:.45;cursor:default}.pds-button.primary{background:var(--blue);border-color:var(--blue);color:white}.pds-button.danger{color:var(--red)}
+.pds-main{display:flex;flex:1;min-height:0}.pds-side{width:232px;min-width:180px;max-width:46%;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:#fafafa}.pds-side-scroll{flex:1;min-height:0;overflow:auto;padding:4px 0 8px}.pds-section{border-bottom:1px solid var(--line)}.pds-section-head{width:100%;height:26px;border:0;background:transparent;display:flex;align-items:center;gap:6px;padding:0 8px;cursor:pointer;font-weight:600;color:#3c3c3c;text-align:left}.pds-section-head:hover{background:#eee}.pds-section-caret{width:10px;color:#777;flex:none}.pds-section-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-section-count{font:10px var(--mono);color:var(--muted)}
+.pds-tree{padding:2px 0 4px}.pds-tree-row{width:100%;min-height:25px;padding:3px 8px 3px calc(9px + var(--depth,0)*14px);display:flex;align-items:center;gap:6px;text-align:left;border:0;background:transparent;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pds-tree-row:hover:not(:disabled){background:#eee}.pds-tree-row:disabled{opacity:.45;cursor:default}.pds-tree-row[aria-selected=true]{background:#cce8ff;color:#111}.pds-tree-caret{width:10px;color:#777;flex:none}.pds-tree-glyph{width:14px;text-align:center;color:#687782;flex:none}.pds-tree-label{overflow:hidden;text-overflow:ellipsis;flex:1}.pds-tree-state{font:10px var(--mono);color:var(--muted)}
+.pds-models{padding:2px 0 6px}.pds-model-provider{width:100%;min-height:25px;border:0;background:transparent;display:flex;align-items:center;gap:6px;padding:3px 8px;cursor:pointer;text-align:left}.pds-model-provider:hover{background:#eee}.pds-model-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-model-count{font:10px var(--mono);color:var(--muted)}.pds-model-list{padding:1px 0 3px}.pds-model-item{display:flex;align-items:flex-start;gap:6px;padding:3px 8px 3px 26px;cursor:pointer}.pds-model-item:hover{background:#eee}.pds-model-item input{margin:1px 0 0;flex:none;accent-color:var(--blue)}.pds-model-label{display:flex;flex-direction:column;min-width:0}.pds-model-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-model-desc{color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-model-hint{padding:4px 10px 6px;color:var(--muted);font-size:10px;line-height:1.5}.pds-model-error{padding:4px 10px;color:var(--red);font-size:11px}
+.pds-work{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}.pds-status{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-status[data-state=running]{color:var(--blue)}.pds-status[data-state=error]{color:var(--red)}.pds-empty{color:#888;font:12px var(--sans);padding:18px}.pds-alert{padding:7px 10px;margin:6px;background:#fff2f2;border:1px solid #edc5c8;color:var(--red)}
+.pds-terminal{flex:1;min-height:0;display:flex;flex-direction:column}.pds-termbar{height:30px;flex:none;background:#f6f6f6;border-bottom:1px solid var(--line);display:flex;align-items:stretch;overflow-x:auto}.pds-terminal-tab{border:0;border-right:1px solid var(--line);background:transparent;min-width:110px;max-width:190px;padding:0 6px 0 9px;display:flex;align-items:center;gap:6px;cursor:pointer}.pds-terminal-tab[aria-selected=true]{background:#fff;border-top:2px solid var(--blue)}.pds-terminal-tab-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}.pds-term-state{font:9px var(--mono);color:var(--muted);flex:none}.pds-icon-button{width:21px;height:21px;border:0;background:transparent;border-radius:2px;cursor:pointer;color:#777;flex:none}.pds-term-add{margin:auto 4px}.pds-terminal-content{flex:1;min-height:0;display:flex;flex-direction:column;background:#fff}.pds-term-output{flex:1;min-height:0;overflow:auto;margin:0;padding:7px 10px;color:#333;font:11px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}.pds-term-input{height:27px;flex:none;display:flex;border-top:1px solid #eee}.pds-term-prompt{padding:5px 8px;color:var(--blue);font:11px var(--mono)}.pds-term-input input{flex:1;min-width:0;border:0;outline:0;background:white;font:11px var(--mono);color:var(--fg)}.pds-term-empty{padding:12px;color:var(--muted);font-size:11px;line-height:1.6}
 `;
 
-    const labels = { stopped: '已停止', starting: '启动中', running: '运行中', exited: '已退出', error: '失败', idle: '空闲' };
     const useStore = store => React.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+    const runtimeLabel = state => state === 'running' ? '运行中' : state === 'starting' ? '启动中' : state === 'exited' ? '已退出' : state === 'error' ? '启动失败' : '已停止';
+    const terminalLabel = state => state === 'running' ? '●' : state === 'starting' ? '◌' : state === 'error' ? '✕' : '';
 
-    function Btn({ children, onClick, disabled, primary }) {
-      return h('button', {
-        type: 'button', className: 'pds-btn', onClick: disabled ? undefined : onClick, disabled: disabled || undefined,
-        'data-primary': primary ? '' : undefined,
-      }, children);
+    function Section({ id, title, count, expanded, onToggle, children }) {
+      return h('section', { className: 'pds-section' },
+        h('button', { type: 'button', className: 'pds-section-head', 'aria-expanded': expanded, 'aria-controls': `${ID}-${id}`, onClick: onToggle },
+          h('span', { className: 'pds-section-caret' }, expanded ? '⌄' : '›'),
+          h('span', { className: 'pds-section-title' }, title),
+          count === undefined ? null : h('span', { className: 'pds-section-count' }, count)),
+        expanded ? h('div', { id: `${ID}-${id}` }, children) : null);
     }
 
-    function DebugPanel({ sessionId, store, useTabInfo }) {
+    function ModelSettings({ store, selected, credentials, disabled }) {
+      const [catalog, setCatalog] = React.useState({ loading: true, error: null, providers: [] });
+      const [open, setOpen] = React.useState({});
+      React.useEffect(() => {
+        let cancelled = false;
+        store.request('models').then(
+          value => { if (!cancelled) setCatalog({ loading: false, error: null, providers: value?.providers || [] }); },
+          error => { if (!cancelled) setCatalog({ loading: false, error: error.message, providers: [] }); },
+        );
+        return () => { cancelled = true; };
+      }, [store]);
+      const chosen = new Set(selected.map(item => `${item.provider}\u0000${item.model}`));
+      const toggle = (provider, model, checked) => {
+        const next = checked
+          ? [...selected.filter(item => !(item.provider === provider && item.model === model)), { provider, model }]
+          : selected.filter(item => !(item.provider === provider && item.model === model));
+        void store.action('saveModels', { selectedModels: next });
+      };
+      if (catalog.loading) return h('div', { className: 'pds-model-hint' }, '正在读取模型目录…');
+      if (catalog.error) return h('div', { className: 'pds-model-error' }, catalog.error);
+      return h('div', { className: 'pds-models' },
+        catalog.providers.map(provider => {
+          const isOpen = open[provider.id] === true;
+          const count = provider.models.filter(model => chosen.has(`${provider.id}\u0000${model.id}`)).length;
+          return h('div', { key: provider.id },
+            h('button', { type: 'button', className: 'pds-model-provider', 'aria-expanded': isOpen, onClick: () => setOpen(value => ({ ...value, [provider.id]: !isOpen })) },
+              h('span', { className: 'pds-tree-caret' }, isOpen ? '⌄' : '›'),
+              h('span', { className: 'pds-model-name' }, provider.name || provider.id),
+              h('span', { className: 'pds-model-count' }, count ? `${count}/${provider.models.length}` : String(provider.models.length))),
+            provider.error ? h('div', { className: 'pds-model-error' }, provider.error) : null,
+            isOpen ? h('div', { className: 'pds-model-list' }, provider.models.map(model => {
+              const key = `${provider.id}\u0000${model.id}`;
+              return h('label', { key: model.id, className: 'pds-model-item' },
+                h('input', { type: 'checkbox', checked: chosen.has(key), disabled, onChange: event => toggle(provider.id, model.id, event.target.checked) }),
+                h('span', { className: 'pds-model-label' },
+                  h('span', { className: 'pds-model-id' }, model.name || model.id),
+                  model.description ? h('span', { className: 'pds-model-desc' }, model.description) : null));
+            })) : null);
+        }),
+        h('div', { className: 'pds-model-hint' },
+          '勾选的模型与参数会写入沙箱 profile；启动时把对应凭据复制到沙箱 .credentials.yaml（权限 0600），沙箱停止即删除。',
+          credentials.length ? ` 已复制 ${credentials.length} 个凭据。` : ''),
+      );
+    }
+
+    function DebugPanel({ store }) {
       const state = useStore(store);
-      const { tab } = useTabInfo();
       const snapshot = state.snapshot;
-      const [confirmUnbind, setConfirmUnbind] = React.useState(false);
-      const action = (name, fields) => () => { void store.action(name, fields); };
-      const error = state.error && h('p', { role: 'alert', className: 'pds-alert' }, state.error);
-
-      if (!snapshot?.binding) return h('div', { className: 'pds' },
-        h('div', { className: 'pds-header' }, h('span', { className: 'pds-title' }, TITLE)),
-        h('div', { className: 'pds-body' }, error,
-          h('p', { className: 'pds-hint' }, state.loading ? '正在读取当前会话绑定…'
-            : '当前会话还没有绑定插件。绑定在会话激活时由 agent 写入插件身份与本地目录（plugin_dev / action=bind），写入后这里会直接显示该插件；若模型侧没有 plugin_dev 工具，重启一次 DSH 让 Host 插件生效。'),
-          h('div', { className: 'pds-actions' }, h(Btn, { onClick: () => { void store.refresh(); } }, '刷新'), h(Btn, { onClick: () => tab.actions.close() }, '关闭'))));
-
-      const { binding, runtime, command, commands, logs } = snapshot;
-      const running = runtime.state === 'running' || runtime.state === 'starting';
+      const [expanded, setExpanded] = React.useState({ debug: true, models: false });
+      const [openGroups, setOpenGroups] = React.useState({ runtime: true, builds: true, tests: true, checks: true });
+      const [selected, setSelected] = React.useState(null);
+      const [activeTerminal, setActiveTerminal] = React.useState(null);
+      const [terminalInput, setTerminalInput] = React.useState('');
+      const binding = snapshot?.binding;
+      const runtime = snapshot?.runtime;
+      const runtimeState = runtime?.state || 'stopped';
+      const commands = snapshot?.commands || [];
+      const terminals = snapshot?.terminals || [];
+      const terminalLogs = snapshot?.logs || [];
+      const selectedModels = snapshot?.models || [];
+      const active = terminals.find(item => item.id === activeTerminal) || terminals[0];
+      const groupOf = item => /test|spec/i.test(item.id) ? 'tests' : /check|lint|type|contrast|selector/i.test(item.id) ? 'checks' : 'builds';
+      const groups = [
+        { id: 'runtime', label: '插件运行', glyph: '▾', items: [
+          { id: 'launch', label: '启动独立 DSH', glyph: '▶', action: 'launch', disabled: !binding || runtimeState === 'running' || runtimeState === 'starting' },
+          { id: 'stop', label: '停止沙箱', glyph: '■', action: 'stop', disabled: runtimeState !== 'running' && snapshot?.command?.state !== 'running' && terminals.length === 0 },
+        ] },
+        ...['builds', 'tests', 'checks'].map(id => ({ id, label: id === 'builds' ? '构建' : id === 'tests' ? '测试' : '检查', glyph: '▾',
+          items: commands.filter(item => groupOf(item) === id).map(item => ({ id: `script:${item.id}`, label: item.id, commandId: item.id, glyph: id === 'tests' ? '✓' : id === 'checks' ? '◇' : '◆', disabled: !binding })) })),
+      ];
+      const run = fields => { void store.action(fields.action || 'run', fields); };
+      const chooseNode = node => {
+        setSelected(node.id);
+        if (node.action) { void store.action(node.action); return; }
+        if (node.commandId) { void store.action('run', { commandId: node.commandId }); }
+      };
+      const createTerminal = () => { void store.action('terminalCreate', { rows: 24, cols: 80 }).then(value => { if (value?.terminals) setActiveTerminal(value.terminals.at(-1)?.id || null); }); };
+      const closeTerminal = id => { void store.action('terminalClose', { terminalId: id }); };
+      const sendTerminal = event => {
+        event.preventDefault();
+        if (!active || active.state !== 'running') return;
+        const data = `${terminalInput}\n`;
+        setTerminalInput('');
+        void store.action('terminalWrite', { terminalId: active.id, data });
+      };
+      const rawOutput = active ? terminalLogs.filter(line => line.source === 'terminal' && line.terminalId === active.id).map(line => line.text).join('') : '';
+      const output = cleanTerminal(rawOutput);
+      const renderRows = (items, depth) => items.map(node => h('button', {
+        key: node.id, type: 'button', className: 'pds-tree-row', style: { '--depth': depth },
+        'aria-selected': selected === node.id, disabled: node.disabled, onClick: () => chooseNode(node),
+      },
+        h('span', { className: 'pds-tree-caret' }, ''),
+        h('span', { className: 'pds-tree-glyph' }, node.glyph || ''),
+        h('span', { className: 'pds-tree-label' }, node.label),
+        node.commandId && snapshot?.command?.id === node.commandId && snapshot.command.state === 'running' ? h('span', { className: 'pds-tree-state' }, '●') : null));
       return h('div', { className: 'pds' },
-        h('header', { className: 'pds-header' },
-          h('span', { className: 'pds-title' }, binding.name),
-          h('span', { className: 'pds-path' }, binding.pluginPath),
-          h('span', { className: 'pds-meta' }, '会话 ', sessionId)),
-        h('div', { className: 'pds-body' }, error,
-          h('div', { role: 'status', className: 'pds-status' },
-            h('span', { className: 'pds-dot', 'data-state': runtime.state }),
-            h('span', null, labels[runtime.state] || runtime.state),
-            runtime.pid ? h('span', { className: 'pds-pid' }, `PID ${runtime.pid}`) : null,
-            runtime.exitCode !== null ? h('span', { className: 'pds-pid' }, `退出码 ${runtime.exitCode}`) : null),
-          runtime.error && h('p', { role: 'alert', className: 'pds-alert' }, runtime.error),
-          h('div', { className: 'pds-actions' },
-            h(Btn, { onClick: action('launch'), disabled: running, primary: !running }, running ? '已启动' : '启动沙箱'),
-            h(Btn, { onClick: action('stop'), disabled: !running && command.state !== 'running' }, '停止进程'),
-            h(Btn, { onClick: () => { void store.refresh(); } }, '刷新'),
-            h(Btn, { onClick: () => tab.actions.openTab('terminal') }, '官方终端')),
-          runtime.url && h('a', { className: 'pds-anchor', href: runtime.url, target: '_blank', rel: 'noopener noreferrer' }, '打开独立 DSH ↗')),
-        h('details', { className: 'pds-details' }, h('summary', null, '隔离目录与边界'),
-          h('code', { className: 'pds-code' }, runtime.dshHome),
-          h('p', { className: 'pds-note' }, '独立 DSH_HOME，不复制主 profile 或凭据。插件代码仍拥有当前用户权限，不是 OS 安全沙箱。官方终端属于当前会话，不会自动注入此 DSH_HOME。')),
-        h('section', { className: 'pds-section', 'aria-label': '调试命令树' },
-          h('h4', null, '调试命令 · package.json scripts'),
-          commands.length
-            ? h('ul', { className: 'pds-list' }, commands.map(item => h('li', { key: item.id, className: 'pds-row' },
-                h('div', { style: { flex: 1, minWidth: 0 } },
-                  h('div', { className: 'pds-row-name' }, item.title),
-                  h('div', { className: 'pds-row-cmd' }, item.command)),
-                h(Btn, { onClick: action('run', { commandId: item.id }), disabled: command.state === 'running' }, '运行'))))
-            : h('p', { className: 'pds-hint' }, '该插件没有 scripts。'),
-          h('p', { role: 'status', className: 'pds-note' },
-            `命令：${labels[command.state] || command.state}${command.id ? ` · ${command.id}` : ''}${command.exitCode !== null ? ` · 退出码 ${command.exitCode}` : ''}`),
-          command.error && h('p', { role: 'alert', className: 'pds-alert' }, command.error)),
-        h('details', { className: 'pds-details', open: true }, h('summary', null, '进程输出（有界缓存）'),
-          h('pre', { tabIndex: 0, 'aria-label': '沙箱与命令输出', className: 'pds-log' },
-            logs.length ? logs.map(line => `[${line.source}/${line.stream}] ${line.text}`).join('') : '尚无输出')),
-        h('footer', { className: 'pds-footer' }, confirmUnbind
-          ? [h('span', { key: 'q', className: 'pds-footer-note' }, '停止所有进程并解除当前会话绑定？'),
-             h(Btn, { key: 'ok', onClick: action('unbind'), primary: true }, '确认解除'),
-             h(Btn, { key: 'no', onClick: () => setConfirmUnbind(false) }, '取消')]
-          : h(Btn, { onClick: () => setConfirmUnbind(true) }, '解除当前会话绑定')));
+        h('header', { className: 'pds-head' },
+          h('span', { className: 'pds-head-title' }, binding?.name || TITLE),
+          h('span', { className: 'pds-head-meta' }, binding?.pluginPath || '未绑定插件'),
+          h('button', { type: 'button', className: 'pds-head-button', title: '刷新状态', onClick: () => { void store.refresh(); } }, '↻')),
+        h('div', { className: 'pds-toolbar' },
+          h('button', { type: 'button', className: 'pds-button primary', disabled: !binding || state.busy || runtimeState === 'running' || runtimeState === 'starting', onClick: () => run({ action: 'launch' }) }, '▶ 启动'),
+          h('button', { type: 'button', className: 'pds-button', disabled: state.busy || (runtimeState !== 'running' && snapshot?.command?.state !== 'running' && terminals.length === 0), onClick: () => run({ action: 'stop' }) }, '■ 停止'),
+          runtime?.pid ? h('span', { className: 'pds-status', 'data-state': runtimeState }, `${runtimeLabel(runtimeState)} · PID ${runtime.pid}`) : h('span', { className: 'pds-status', 'data-state': runtimeState }, runtimeLabel(runtimeState)),
+          runtime?.url ? h('a', { className: 'pds-status', href: runtime.url, target: '_blank', rel: 'noreferrer' }, '打开实例 ↗') : null),
+        !binding ? h('div', { className: 'pds-empty' }, state.loading ? '正在读取绑定…' : '当前会话尚未绑定插件。让 Agent 调用 plugin_dev 的 bind 绑定工作区内的插件目录。') : null,
+        state.error ? h('div', { className: 'pds-alert', role: 'alert' }, state.error) : null,
+        runtime?.error ? h('div', { className: 'pds-alert', role: 'alert' }, runtime.error) : null,
+        h('div', { className: 'pds-main' },
+          h('div', { className: 'pds-side' }, h('div', { className: 'pds-side-scroll' },
+            h(Section, { id: 'debug', title: '调试', count: commands.length || undefined, expanded: expanded.debug !== false, onToggle: () => setExpanded(value => ({ ...value, debug: value.debug === false })) },
+              h('div', { className: 'pds-tree' }, groups.map(group => h('div', { key: group.id },
+                h('button', { type: 'button', className: 'pds-tree-row', style: { '--depth': 0 }, 'aria-expanded': openGroups[group.id] !== false, onClick: () => setOpenGroups(value => ({ ...value, [group.id]: value[group.id] === false })) },
+                  h('span', { className: 'pds-tree-caret' }, openGroups[group.id] === false ? '›' : '⌄'),
+                  h('span', { className: 'pds-tree-glyph' }, group.glyph),
+                  h('span', { className: 'pds-tree-label' }, group.label),
+                  group.id !== 'runtime' && group.items.length ? h('span', { className: 'pds-tree-state' }, group.items.length) : null),
+                openGroups[group.id] === false ? null : renderRows(group.items, 1),
+                group.id !== 'runtime' && openGroups[group.id] !== false && group.items.length === 0 ? h('div', { className: 'pds-model-hint' }, '没有匹配的脚本') : null)))),
+            h(Section, { id: 'models', title: '提供商与模型', count: selectedModels.length || undefined, expanded: expanded.models === true, onToggle: () => setExpanded(value => ({ ...value, models: value.models !== true })) },
+              h(ModelSettings, { store, selected: selectedModels, credentials: snapshot?.credentials || [], disabled: state.busy })))),
+          h('section', { className: 'pds-work', 'aria-label': '终端' },
+            h('div', { className: 'pds-termbar' },
+              terminals.map((terminal, index) => h('div', {
+                key: terminal.id, role: 'tab', tabIndex: 0, className: 'pds-terminal-tab',
+                'aria-selected': (active && active.id === terminal.id) === true,
+                onClick: () => setActiveTerminal(terminal.id),
+                onKeyDown: event => { if (event.key === 'Enter') setActiveTerminal(terminal.id); },
+              },
+                h('span', null, '›_'),
+                h('span', { className: 'pds-terminal-tab-label' }, `终端 ${index + 1}`),
+                h('span', { className: 'pds-term-state' }, terminalLabel(terminal.state)),
+                h('button', { type: 'button', className: 'pds-icon-button', title: '关闭并终止终端', 'aria-label': `关闭终端 ${index + 1}`, onClick: event => { event.stopPropagation(); closeTerminal(terminal.id); } }, '×'))),
+              h('button', { type: 'button', className: 'pds-icon-button pds-term-add', title: '新建终端', 'aria-label': '新建终端', disabled: !binding || state.busy, onClick: createTerminal }, '+')),
+            active ? h('div', { className: 'pds-terminal-content' },
+              h('pre', { className: 'pds-term-output', 'aria-live': 'polite' }, output || (active.state === 'error' ? active.error : '')),
+              h('form', { className: 'pds-term-input', onSubmit: sendTerminal },
+                h('span', { className: 'pds-term-prompt' }, '>'),
+                h('input', { value: terminalInput, onChange: event => setTerminalInput(event.target.value), 'aria-label': '终端输入', placeholder: active.state === 'running' ? '输入命令后回车' : '终端已结束' , disabled: active.state !== 'running' || state.busy })))
+              : h('div', { className: 'pds-term-empty' }, '还没有打开终端。点击 + 在当前插件目录启动一个独立 PTY；关闭标签会终止进程。'))));
     }
 
     async function apply(ctx) {
-      try {
-        // $mount installs a traced Cordis service named `remote.<namespace>`;
-        // it does not hang methods off ctx.remote itself. Register the UI only
-        // once that service is available so every handler closes over it.
-        const unmount = await ctx.remote.$mount(remoteInfo);
-        ctx.effect(() => unmount, 'plugin-sandbox.remote');
-        ctx.inject(['remote.pluginDev'], remoteCtx => {
-          const service = remoteCtx.get('remote.pluginDev');
-          const stores = new Map();
-          const storeFor = sessionId => {
-            if (!stores.has(sessionId)) stores.set(sessionId, createSandboxStore(request => service.execute(request), sessionId));
-            return stores.get(sessionId);
-          };
-          remoteCtx.effect(() => {
-            if (document.getElementById(STYLE_ID)) return () => {};
-            const style = document.createElement('style');
-            style.id = STYLE_ID;
-            style.textContent = CSS;
-            document.head.appendChild(style);
-            return () => { style.remove(); };
-          }, 'plugin-sandbox.style');
-          remoteCtx.effect(() => () => { for (const store of stores.values()) store.dispose(); stores.clear(); }, 'plugin-sandbox.stores');
-          // The guide's entry box is the door into this page, like the terminal's
-          // "new terminal" card: the type itself stays hidden until picked.
-          remoteCtx.effect(() => remoteCtx.sidebarRightTabs.register({
-            id: ID, kind: KIND, priority: 'extension', title: () => TITLE,
-            guide: [{ id: 'open', order: 30, title: () => TITLE, description: () => '启动并调试当前会话绑定的插件' }],
-          }), 'plugin-sandbox.type');
-          remoteCtx.effect(() => remoteCtx.slots.inject('sidebar.right.pane.tab', () => remoteCtx.slots.register({
-            name: 'sidebar.right.pane.tab', key: ID, inject: sessionId => ({ store: storeFor(sessionId) }),
-          }, DebugPanel)), 'plugin-sandbox.body');
-        });
-      } catch (error) {
-        console.error('[sandbox] apply error: ' + ((error && error.stack) || error));
-        throw error;
-      }
+      const unmount = await ctx.remote.$mount(remoteInfo);
+      ctx.effect(() => unmount, 'plugin-sandbox.remote');
+      ctx.inject(['remote.pluginDev'], remoteCtx => {
+        const service = remoteCtx.get('remote.pluginDev');
+        const stores = new Map();
+        const storeFor = sessionId => {
+          if (!stores.has(sessionId)) stores.set(sessionId, createSandboxStore(request => service.execute(request), sessionId));
+          return stores.get(sessionId);
+        };
+        remoteCtx.effect(() => {
+          if (document.getElementById(STYLE_ID)) return () => {};
+          const style = document.createElement('style');
+          style.id = STYLE_ID;
+          style.textContent = CSS;
+          document.head.appendChild(style);
+          return () => style.remove();
+        }, 'plugin-sandbox.style');
+        remoteCtx.effect(() => () => { for (const store of stores.values()) store.dispose(); stores.clear(); }, 'plugin-sandbox.stores');
+        remoteCtx.effect(() => remoteCtx.sidebarRightTabs.register({
+          id: ID, kind: KIND, multiple: false, priority: 'extension', title: () => TITLE,
+          guide: [{ id: 'open', order: 30, title: () => TITLE, description: () => '在独立实例中运行并调试当前会话的插件' }],
+        }), 'plugin-sandbox.type');
+        remoteCtx.effect(() => remoteCtx.slots.inject('sidebar.right.pane.tab', () => remoteCtx.slots.register({
+          name: 'sidebar.right.pane.tab', key: ID, inject: sessionId => ({ store: storeFor(sessionId) }),
+        }, DebugPanel)), 'plugin-sandbox.body');
+      });
     }
     return { name: ID, inject: ['slots', 'remote', 'sidebarRight', 'sidebarRightTabs'], apply };
   },
