@@ -149,6 +149,11 @@ function terminalArguments(shell, platform) {
   return platform === "windows" ? [shell] : [shell, "-i"];
 }
 
+function commandArguments(shell, platform, command) {
+  if (platform === "windows") return [shell, "/d", "/s", "/c", command];
+  return [shell, "-c", command];
+}
+
 function exportedEntry(value) {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(exportedEntry).find(Boolean);
@@ -467,7 +472,9 @@ export function createSandboxManager(options = {}) {
     if (typeof shell !== "string" || !shell || shell.includes("\0")) throw new Error("Invalid terminal default shell");
     const env = terminalOverrides({ ...ctx.env, PWD: ctx.pluginPath });
     if (typeof subprocess.resolveExecutable === "function") shell = await subprocess.resolveExecutable(shell, env);
-    const argv = terminalArguments(shell, platform);
+    const argv = input.commandId === undefined
+      ? terminalArguments(shell, platform)
+      : commandArguments(shell, platform, `pnpm run ${input.commandId}`);
     validateSpec({ command: argv[0], args: argv.slice(1) });
     return { argv, cwd: ctx.pluginPath, env, rows: input.rows, cols: input.cols,
       terminalType: "xterm-256color", graceMs: stopTimeoutMs };
@@ -648,6 +655,10 @@ export function createSandboxManager(options = {}) {
         const cols = terminalDimension(input.cols, 80, "cols");
         const bound = await binding(loc);
         if (!bound) throw new Error("No plugin is bound to this session");
+        if (input.commandId !== undefined
+          && (typeof input.commandId !== "string" || !bound.commands.some(({ id: commandId }) => commandId === input.commandId))) {
+          throw new Error("commandId must be an exact package.json script key");
+        }
         // A manually replaced binding must not preserve terminals from the old
         // package, even if this request creates an unrelated new terminal id.
         await settleCleanup([...item.terminals.values()]
@@ -660,11 +671,11 @@ export function createSandboxManager(options = {}) {
         await terminateTerminal(item, previous);
         const terminal = { pluginPath: bound.binding.pluginPath, handle: null, cleanup: null, stopping: false,
           done: Promise.resolve(), outputDone: Promise.resolve(),
-          state: { id, state: "starting", pid: null, exitCode: null, signal: null, error: null } };
+          state: { id, commandId: input.commandId ?? null, state: "starting", pid: null, exitCode: null, signal: null, error: null } };
         item.terminals.set(id, terminal);
         try {
           const ctx = await context(loc, bound);
-          await startTerminal(item, terminal, await terminalSpec(ctx, { rows, cols }));
+          await startTerminal(item, terminal, await terminalSpec(ctx, { rows, cols, commandId: input.commandId }));
         } catch (error) {
           terminalFailure(item, terminal, error);
           // A provider may have allocated a PTY before stream setup fails. Never
@@ -700,11 +711,13 @@ export function createSandboxManager(options = {}) {
     },
     async terminalClose(input) {
       return serialized(input, async (loc, item) => {
-        const terminal = item.terminals.get(terminalId(input.terminalId));
+        const id = terminalId(input.terminalId);
+        const terminal = item.terminals.get(id);
         if (terminal) {
           // Clean up before reading a possibly deleted or corrupt manifest.
           await terminateTerminal(item, terminal);
           terminal.state.state = "closed";
+          item.terminals.delete(id);
         }
         return snapshot(item, await binding(loc));
       });

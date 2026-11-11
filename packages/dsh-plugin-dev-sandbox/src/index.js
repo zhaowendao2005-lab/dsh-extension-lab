@@ -103,13 +103,18 @@ export class PluginDevService extends Service {
       profile = profile?.[entry.provider] ?? profile;
       const sanitized = safeProfile(profile, models);
       if (!sanitized) continue;
+      // settingsPath already names the provider slot (["providers", provider]), so
+      // appending the provider again would nest it one level too deep and the
+      // sandbox route would come up without models.
+      const segments = [...(entry.settingsPath ?? [])];
+      if (segments.at(-1) !== entry.provider) segments.push(entry.provider);
       const patch = patches.get(entry.settingsNs) ?? { id: entry.settingsNs, config: {} };
       let target = patch.config;
-      for (const segment of entry.settingsPath ?? []) {
+      for (const segment of segments.slice(0, -1)) {
         target[segment] = target[segment] && typeof target[segment] === 'object' ? target[segment] : {};
         target = target[segment];
       }
-      target[entry.provider] = sanitized;
+      target[segments.at(-1)] = sanitized;
       patches.set(entry.settingsNs, patch);
     }
     return [...patches.values()];

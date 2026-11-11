@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
 .pds-tree{padding:2px 0 4px}.pds-tree-row{width:100%;min-height:25px;padding:3px 8px 3px calc(9px + var(--depth,0)*14px);display:flex;align-items:center;gap:6px;text-align:left;border:0;background:transparent;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pds-tree-row:hover:not(:disabled){background:#eee}.pds-tree-row:disabled{opacity:.45;cursor:default}.pds-tree-row[aria-selected=true]{background:#cce8ff;color:#111}.pds-tree-caret{width:10px;color:#777;flex:none}.pds-tree-glyph{width:14px;text-align:center;color:#687782;flex:none}.pds-tree-label{overflow:hidden;text-overflow:ellipsis;flex:1}.pds-tree-state{font:10px var(--mono);color:var(--muted)}
 .pds-models{padding:2px 0 6px}.pds-model-provider{width:100%;min-height:25px;border:0;background:transparent;display:flex;align-items:center;gap:6px;padding:3px 8px;cursor:pointer;text-align:left}.pds-model-provider:hover{background:#eee}.pds-model-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-model-count{font:10px var(--mono);color:var(--muted)}.pds-model-list{padding:1px 0 3px}.pds-model-item{display:flex;align-items:flex-start;gap:6px;padding:3px 8px 3px 26px;cursor:pointer}.pds-model-item:hover{background:#eee}.pds-model-item input{margin:1px 0 0;flex:none;accent-color:var(--blue)}.pds-model-label{display:flex;flex-direction:column;min-width:0}.pds-model-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-model-desc{color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-model-hint{padding:4px 10px 6px;color:var(--muted);font-size:10px;line-height:1.5}.pds-model-error{padding:4px 10px;color:var(--red);font-size:11px}
 .pds-work{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}.pds-status{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pds-status[data-state=running]{color:var(--blue)}.pds-status[data-state=error]{color:var(--red)}.pds-empty{color:#888;font:12px var(--sans);padding:18px}.pds-alert{padding:7px 10px;margin:6px;background:#fff2f2;border:1px solid #edc5c8;color:var(--red)}
-.pds-terminal{flex:1;min-height:0;display:flex;flex-direction:column}.pds-termbar{height:30px;flex:none;background:#f6f6f6;border-bottom:1px solid var(--line);display:flex;align-items:stretch;overflow-x:auto}.pds-terminal-tab{border:0;border-right:1px solid var(--line);background:transparent;min-width:110px;max-width:190px;padding:0 6px 0 9px;display:flex;align-items:center;gap:6px;cursor:pointer}.pds-terminal-tab[aria-selected=true]{background:#fff;border-top:2px solid var(--blue)}.pds-terminal-tab-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}.pds-term-state{font:9px var(--mono);color:var(--muted);flex:none}.pds-icon-button{width:21px;height:21px;border:0;background:transparent;border-radius:2px;cursor:pointer;color:#777;flex:none}.pds-term-add{margin:auto 4px}.pds-terminal-content{flex:1;min-height:0;display:flex;flex-direction:column;background:#fff}.pds-term-output{flex:1;min-height:0;overflow:auto;margin:0;padding:7px 10px;color:#333;font:11px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}.pds-term-input{height:27px;flex:none;display:flex;border-top:1px solid #eee}.pds-term-prompt{padding:5px 8px;color:var(--blue);font:11px var(--mono)}.pds-term-input input{flex:1;min-width:0;border:0;outline:0;background:white;font:11px var(--mono);color:var(--fg)}.pds-term-empty{padding:12px;color:var(--muted);font-size:11px;line-height:1.6}
+.pds-terminal{flex:1;min-height:0;display:flex;flex-direction:column}.pds-termbar{height:30px;flex:none;background:#f6f6f6;border-bottom:1px solid var(--line);display:flex;align-items:stretch;overflow-x:auto}.pds-terminal-tab{border:0;border-right:1px solid var(--line);background:transparent;min-width:110px;max-width:190px;padding:0 6px 0 9px;display:flex;align-items:center;gap:6px;cursor:pointer}.pds-terminal-tab[aria-selected=true]{background:#fff;border-top:2px solid var(--blue)}.pds-terminal-tab-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}.pds-term-state{font:9px var(--mono);color:var(--muted);flex:none}.pds-icon-button{width:21px;height:21px;border:0;background:transparent;border-radius:2px;cursor:pointer;color:#777;flex:none}.pds-term-add{margin:auto 4px}.pds-terminal-content{flex:1;min-height:0;display:flex;flex-direction:column;background:#fff}.pds-term-output{flex:1;min-height:0;overflow:auto;margin:0;padding:7px 10px;color:#333;font:11px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;caret-color:#111}.pds-term-caret{display:inline-block;width:6px;height:12px;background:#333;vertical-align:-1px;animation:pds-blink 1.06s step-end infinite}@keyframes pds-blink{0%,49%{opacity:1}50%,100%{opacity:0}}.pds-term-input{height:27px;flex:none;display:flex;border-top:1px solid #eee}.pds-term-prompt{padding:5px 8px;color:var(--blue);font:11px var(--mono)}.pds-term-input input{flex:1;min-width:0;border:0;outline:0;background:white;font:11px var(--mono);color:var(--fg);caret-color:#111}.pds-term-input input:focus{caret-color:#111}.pds-term-empty{padding:12px;color:var(--muted);font-size:11px;line-height:1.6}
 `;
 
     const useStore = store => React.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
@@ -94,6 +94,7 @@ window.__ModuleLoader__.load({
       const [selected, setSelected] = React.useState(null);
       const [activeTerminal, setActiveTerminal] = React.useState(null);
       const [terminalInput, setTerminalInput] = React.useState('');
+      const inputRef = React.useRef(null);
       const binding = snapshot?.binding;
       const runtime = snapshot?.runtime;
       const runtimeState = runtime?.state || 'stopped';
@@ -115,10 +116,21 @@ window.__ModuleLoader__.load({
       const chooseNode = node => {
         setSelected(node.id);
         if (node.action) { void store.action(node.action); return; }
-        if (node.commandId) { void store.action('run', { commandId: node.commandId }); }
+        if (node.commandId) { createTerminal(node.commandId); }
       };
-      const createTerminal = () => { void store.action('terminalCreate', { rows: 24, cols: 80 }).then(value => { if (value?.terminals) setActiveTerminal(value.terminals.at(-1)?.id || null); }); };
+      const createTerminal = commandId => {
+        const request = { rows: 24, cols: 80, ...(commandId ? { commandId } : {}) };
+        void store.action('terminalCreate', request).then(value => {
+          const list = value?.terminals;
+          if (!Array.isArray(list)) return;
+          const created = commandId ? [...list].reverse().find(item => item.commandId === commandId) : list.at(-1);
+          setActiveTerminal(created?.id || null);
+        });
+      };
       const closeTerminal = id => { void store.action('terminalClose', { terminalId: id }); };
+      React.useEffect(() => {
+        if (active?.state === 'running') inputRef.current?.focus();
+      }, [active?.id, active?.state]);
       const sendTerminal = event => {
         event.preventDefault();
         if (!active || active.state !== 'running') return;
@@ -171,15 +183,15 @@ window.__ModuleLoader__.load({
                 onKeyDown: event => { if (event.key === 'Enter') setActiveTerminal(terminal.id); },
               },
                 h('span', null, '›_'),
-                h('span', { className: 'pds-terminal-tab-label' }, `终端 ${index + 1}`),
+                h('span', { className: 'pds-terminal-tab-label' }, terminal.commandId || `终端 ${index + 1}`),
                 h('span', { className: 'pds-term-state' }, terminalLabel(terminal.state)),
                 h('button', { type: 'button', className: 'pds-icon-button', title: '关闭并终止终端', 'aria-label': `关闭终端 ${index + 1}`, onClick: event => { event.stopPropagation(); closeTerminal(terminal.id); } }, '×'))),
-              h('button', { type: 'button', className: 'pds-icon-button pds-term-add', title: '新建终端', 'aria-label': '新建终端', disabled: !binding || state.busy, onClick: createTerminal }, '+')),
+              h('button', { type: 'button', className: 'pds-icon-button pds-term-add', title: '新建终端', 'aria-label': '新建终端', disabled: !binding || state.busy, onClick: () => createTerminal() }, '+')),
             active ? h('div', { className: 'pds-terminal-content' },
-              h('pre', { className: 'pds-term-output', 'aria-live': 'polite' }, output || (active.state === 'error' ? active.error : '')),
+              h('pre', { className: 'pds-term-output', 'aria-live': 'polite', onClick: () => inputRef.current?.focus() }, output || (active.state === 'error' ? active.error : ''), active.state === 'running' ? h('span', { className: 'pds-term-caret', 'aria-hidden': 'true' }) : null),
               h('form', { className: 'pds-term-input', onSubmit: sendTerminal },
                 h('span', { className: 'pds-term-prompt' }, '>'),
-                h('input', { value: terminalInput, onChange: event => setTerminalInput(event.target.value), 'aria-label': '终端输入', placeholder: active.state === 'running' ? '输入命令后回车' : '终端已结束' , disabled: active.state !== 'running' || state.busy })))
+                h('input', { ref: inputRef, value: terminalInput, onChange: event => setTerminalInput(event.target.value), 'aria-label': '终端输入', placeholder: active.state === 'running' ? '输入命令后回车' : '终端已结束' , disabled: active.state !== 'running' || state.busy })))
               : h('div', { className: 'pds-term-empty' }, '还没有打开终端。点击 + 在当前插件目录启动一个独立 PTY；关闭标签会终止进程。'))));
     }
 
