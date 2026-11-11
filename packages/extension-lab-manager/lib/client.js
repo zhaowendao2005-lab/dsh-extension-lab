@@ -66,9 +66,9 @@ window.__ModuleLoader__.load({
     };
 
     // ---------------------------------------------------------------------------
-    // MarketTab component — receives install + remote from apply()
+    // MarketTab component — receives install + listBundles from apply()
     // ---------------------------------------------------------------------------
-    function MarketTab({ install, remote }) {
+    function MarketTab({ install, listBundles }) {
       const [items, setItems] = React.useState(MARKET.extensions || []);
       const [status, setStatus] = React.useState(
         MARKET.mode === "development" ? "ready" : "loading",
@@ -78,9 +78,8 @@ window.__ModuleLoader__.load({
       const [bundles, setBundles] = React.useState(null);
 
       function refreshBundles() {
-        if (!remote) return;
-        remote.pluginManager
-          .listBundles()
+        if (!listBundles) return;
+        listBundles()
           .then((result) => {
             if (result.ok) setBundles(result.value);
           })
@@ -232,7 +231,11 @@ window.__ModuleLoader__.load({
         return () => tag.remove();
       }, "extension-lab-manager: market stylesheet");
 
-      const remote = ctx.remote;
+      // Provide a stable function that fetches bundle state from within the
+      // correct fiber so that remote.pluginManager is in scope.
+      function listBundles() {
+        return ctx.remote.pluginManager.listBundles();
+      }
 
       // Register tab slot
       ctx.effect(
@@ -240,7 +243,7 @@ window.__ModuleLoader__.load({
           ctx.slots.inject("plugins.tab", () =>
             ctx.slots.register(
               { name: "plugins.tab", id: PLUGIN, label: "专属扩展", order: 40 },
-              (owner) => React.createElement(MarketTab, { ...owner, remote }),
+              (owner) => React.createElement(MarketTab, { ...owner, listBundles }),
             ),
           ),
         "extension-lab-manager: extension market",
@@ -248,7 +251,7 @@ window.__ModuleLoader__.load({
     }
 
     module.exports.name = PLUGIN;
-    module.exports.inject = ["slots", "remote"];
+    module.exports.inject = ["slots", "remote", "remote.pluginManager"];
     module.exports.apply = apply;
     return module.exports;
   },
