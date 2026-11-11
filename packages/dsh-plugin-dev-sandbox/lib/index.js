@@ -28,7 +28,7 @@ export function apply(ctx) {
       action: { type: 'string', enum: ACTIONS, required: true, description: 'status, bind, launch, run, stop, unbind, terminal*, or models.' },
       pluginPath: { type: 'string', description: 'bind only: workspace-relative plugin directory containing package.json.' },
       commandId: { type: 'string', description: 'run only: exact package.json script id returned by status.' },
-      terminalId: { type: 'string', description: 'terminalWrite/terminalClose: id from snapshot.terminals.' },
+      terminalId: { type: 'string', description: 'terminal operations: id from snapshot.terminals.' },
       data: { type: 'string', description: 'terminalWrite: text to send to the PTY.' },
       selectedModels: { type: 'string', description: 'saveModels only: JSON array of {provider, model} to make available in the sandbox.' },
     },

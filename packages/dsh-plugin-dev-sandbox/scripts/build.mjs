@@ -46,6 +46,9 @@ await build({
   format: 'iife',
   target: 'es2022',
   minify: true,
+  // xterm ships its stylesheet next to the JS; the panel injects that text into
+  // its own <style> tag, so the bundle stays a single file.
+  loader: { '.css': 'text' },
 });
 
 // Minified dependency templates can retain EOL spaces; keep generated diffs clean.

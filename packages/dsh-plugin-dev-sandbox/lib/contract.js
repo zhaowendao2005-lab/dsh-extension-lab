@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info';
 
-export const ACTIONS = ['status', 'bind', 'launch', 'run', 'stop', 'unbind', 'terminalCreate', 'terminalWrite', 'terminalClose', 'models', 'saveModels'];
+export const ACTIONS = ['status', 'bind', 'launch', 'run', 'stop', 'unbind', 'terminalCreate', 'terminalWrite', 'terminalClose', 'terminalPoll', 'terminalResize', 'models', 'saveModels'];
 export const requestSchema = z.strictObject({
   sessionId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/),
   action: z.enum(ACTIONS),
@@ -11,6 +11,7 @@ export const requestSchema = z.strictObject({
   data: z.string().max(16_384).optional(),
   rows: z.number().int().min(2).max(300).optional(),
   cols: z.number().int().min(10).max(500).optional(),
+  offset: z.number().int().min(0).optional(),
   selectedModels: z.array(z.object({ provider: z.string().min(1).max(128), model: z.string().min(1).max(256) })).max(500).optional(),
 });
 const input = {

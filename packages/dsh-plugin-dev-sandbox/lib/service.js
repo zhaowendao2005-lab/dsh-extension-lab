@@ -166,7 +166,7 @@ export class PluginDevService extends Service {
     }
     // Manager actions receive only the fields the caller actually supplied.
     const fields = {};
-    for (const key of ['pluginPath', 'commandId', 'terminalId', 'data', 'rows', 'cols']) {
+    for (const key of ['pluginPath', 'commandId', 'terminalId', 'data', 'rows', 'cols', 'offset']) {
       if (parsed[key] !== undefined) fields[key] = parsed[key];
     }
     return this.manager[action]({ ...input, ...fields });

@@ -9,13 +9,30 @@
 - **调试**：插件运行（启动/停止独立 DSH）、构建/测试/检查三组 package script，点击即真实执行并回显有界日志。
 - **提供商与模型**：按 provider → model 展开勾选。选择写入 `.dsh/plugin-dev/<sessionId>/models.json`；启动沙箱时把选中 provider 的 profile（模型与参数）写入 overlay patch，并把对应凭据复制到沙箱 `$DSH_HOME/.credentials.yaml`（权限 0600，停止沙箱即删除）。
 
-右侧是真实 PTY 终端：`+` 在插件目录新建终端，输入直接写入 stdin，`×` 关闭会 `terminate()` 并等待进程组静默。终端输出来自 Host 有界日志（按 `terminalId` 归属），不是前端伪造状态。
+右侧是真实 PTY 终端，由 xterm.js 渲染：`+` 在插件目录新建终端，光标就在终端里，键盘输入直接写入 PTY stdin（不再有底部输入行），`×` 关闭会 `terminate()` 并等待进程组静默。终端字节由 Host 每终端环形缓冲 + 字符游标提供（`terminalPoll` 从客户端自己的 offset 续读，落后过多时返回 `dropped`），窗口尺寸变化通过 `terminalResize` 同步到 PTY。
+
+## 目录结构
+
+```
+backend/     Host 侧：index.js（入口/工具注册）service.js（Remote 与业务规则）
+             manager.js（绑定、实例、PTY、凭据）contract.js（Typert 描述符）preset.js（模式派生）
+frontend/    浏览器侧：index.js（ModuleLoader 入口）runtime.js（React 绑定）styles.js
+             views/（与 DOM 树一一对应的组件）stores/（datasource 唯一数据通道 + 全局 store + mock）
+             service/（纯业务函数与终端通道）
+integration/ 打包契约：cordis.patch.yml（bundle patch）
+```
+
+状态规则：views 不持有本地 state，展开/选中/当前终端等都在全局 store；Host snapshot 是沙箱状态的唯一真相，所有读写都经 `stores/sandbox.datasource.js` 一次 Remote 调用。
+
+## 模式
+
+插件注册一个「插件开发」Agent 预设：运行时从预设注册表读取创造模式（`cordis`）当前的 `config.plugins` 原始行，再以自己的 id 注册同名组合。因此创造模式上游增删工具时，这个模式自动跟随，不需要复制官方 YAML，也不修改创造模式本身。
 
 ## 能力与边界
 
 - Host 从当前会话 `session.header.cwd` 取得工作区路径；绑定目录必须在工作区内，入口必须解析到包内真实文件。
 - 每会话使用独立 `.dsh/plugin-dev/<sessionId>/runtime` 作为 `DSH_HOME`，并隔离 HOME/XDG 目录、清理父进程敏感环境变量。此为 profile/进程隔离，不是 OS 安全沙箱；本地插件仍以当前用户权限运行。
-- Remote 动作：`status` / `bind` / `launch` / `run` / `stop` / `unbind` / `terminalCreate` / `terminalWrite` / `terminalClose` / `models` / `saveModels`；模型工具 `plugin_dev` 与面板走同一 dispatcher。除 `status`、`models` 外的动作都要 danger-full-access 审批。
+- Remote 动作：`status` / `bind` / `launch` / `run` / `stop` / `unbind` / `terminalCreate` / `terminalWrite` / `terminalPoll` / `terminalResize` / `terminalClose` / `models` / `saveModels`；模型工具 `plugin_dev` 与面板走同一 dispatcher。除 `status`、`models` 外的动作都要 danger-full-access 审批。
 - 凭据只写进沙箱自己的 `.credentials.yaml`，值不经过浏览器、不进入 Remote 结果；`headers` 等可能含密钥的字段不复制。
 - 官方终端属于当前会话，不会继承 sandbox `DSH_HOME`，因此沙箱命令请在面板内置终端里执行。
 

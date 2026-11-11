@@ -1,5 +1,5 @@
 import { h } from '../../../runtime.js';
-import { activeTerminalOf, terminalText } from '../../../service/terminal.service.js';
+import { activeTerminalOf } from '../../../service/terminal.service.js';
 import { TerminalTabs } from './terminals/TerminalTabs.js';
 import { TerminalView } from './terminals/TerminalView.js';
 
@@ -18,13 +18,6 @@ export function WorkPane({ store, state }) {
       onAdd: () => { void store.createTerminal(); },
     }),
     active
-      ? h(TerminalView, {
-        terminal: active,
-        output: terminalText(snapshot, active.id),
-        draft: state.ui.draft,
-        disabled: active.state !== 'running' || state.busy,
-        onDraft: (text) => store.setDraft(text),
-        onSubmit: () => { void store.submitDraft(); },
-      })
+      ? h(TerminalView, { terminal: active, store })
       : h('div', { className: 'pds-term-empty' }, '还没有打开终端。点击 + 在当前插件目录启动一个独立 PTY；关闭标签会终止进程。'));
 }

@@ -27,6 +27,38 @@ export function terminalStateGlyph(state) {
   return '';
 }
 
+/**
+ * Read PTY output from a character cursor while a tab is open. The cursor lives
+ * here (business logic), never in a view: sessions poll independently and a slow
+ * round trip cannot reorder bytes.
+ */
+export function createTerminalChannel({ poll, terminalId, onData, interval = 120 }) {
+  let offset = 0;
+  let stopped = false;
+  let busy = false;
+  let timer;
+  const tick = async () => {
+    if (stopped || busy) return;
+    busy = true;
+    try {
+      const chunk = await poll(terminalId, offset);
+      if (stopped || !chunk) return;
+      if (typeof chunk.offset === 'number') offset = chunk.offset;
+      if (chunk.data) onData(chunk.data);
+    } catch {
+      // A missed poll is retried with the same cursor on the next tick.
+    } finally {
+      busy = false;
+    }
+  };
+  timer = setInterval(tick, interval);
+  void tick();
+  return {
+    stop() { stopped = true; clearInterval(timer); },
+    get offset() { return offset; },
+  };
+}
+
 export function activeTerminalOf(terminals, activeId) {
   return terminals.find((terminal) => terminal.id === activeId) || terminals[0];
 }

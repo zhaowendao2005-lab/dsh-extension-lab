@@ -20,6 +20,8 @@ export function createSandboxDatasource({ execute, sessionId }) {
     terminalCreate: (fields = {}) => call('terminalCreate', fields),
     terminalWrite: (terminalId, data) => call('terminalWrite', { terminalId, data }),
     terminalClose: (terminalId) => call('terminalClose', { terminalId }),
+    terminalPoll: (terminalId, offset) => call('terminalPoll', { terminalId, offset }),
+    terminalResize: (terminalId, cols, rows) => call('terminalResize', { terminalId, cols, rows }),
     catalog: () => call('models'),
     saveModels: (selectedModels) => call('saveModels', { selectedModels }),
   };

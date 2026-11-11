@@ -323,6 +323,18 @@ export function createSandboxManager(options = {}) {
     }
   }
 
+  // Keep at most one screenful of scrollback per terminal; clients that fall
+  // behind are told the earliest position they can still read.
+  const maxTerminalChars = 256 * 1024;
+
+  function appendTerminalOutput(terminal, chunk) {
+    const text = String(chunk);
+    if (!text) return;
+    terminal.end += text.length;
+    terminal.buffer += text;
+    if (terminal.buffer.length > maxTerminalChars) terminal.buffer = terminal.buffer.slice(terminal.buffer.length - maxTerminalChars);
+  }
+
   function captureUrl(item, text) {
     item.urlTail = (item.urlTail + text).replace(/\u001b\[[0-9;]*[A-Za-z]/g, "").slice(-8192);
     for (const match of item.urlTail.matchAll(/https?:\/\/[^\s<>"']+/g)) {
@@ -507,7 +519,10 @@ export function createSandboxManager(options = {}) {
       try {
         // The official handle exposes a Node Readable (PassThrough), not events
         // from node-pty itself. Drain continuously; only our bounded log survives.
-        for await (const chunk of handle.output) log(item, "terminal", "stdout", chunk, terminal.state.id);
+        for await (const chunk of handle.output) {
+          appendTerminalOutput(terminal, chunk);
+          log(item, "terminal", "stdout", chunk, terminal.state.id);
+        }
       } catch (error) {
         terminalFailure(item, terminal, error);
         // Do not await here: termination itself waits for this reader to drain.
@@ -671,6 +686,9 @@ export function createSandboxManager(options = {}) {
         await terminateTerminal(item, previous);
         const terminal = { pluginPath: bound.binding.pluginPath, handle: null, cleanup: null, stopping: false,
           done: Promise.resolve(), outputDone: Promise.resolve(),
+          // Raw PTY text for the inline terminal: `end` counts every character
+          // ever emitted, so a client can resume from its own cursor.
+          buffer: "", end: 0,
           state: { id, commandId: input.commandId ?? null, state: "starting", pid: null, exitCode: null, signal: null, error: null } };
         item.terminals.set(id, terminal);
         try {
@@ -707,6 +725,32 @@ export function createSandboxManager(options = {}) {
           await terminateTerminal(item, terminal);
         }
         return snapshot(item, bound);
+      });
+    },
+    // Read PTY output from a character cursor. The UI polls this while a terminal
+    // tab is open; the model tool uses status logs instead.
+    async terminalPoll(input) {
+      const id = terminalId(input.terminalId);
+      const offset = Number.isSafeInteger(input.offset) && input.offset >= 0 ? input.offset : 0;
+      return serialized(input, async (loc) => {
+        const terminal = record(loc).terminals.get(id);
+        if (!terminal) return { terminalId: id, offset, dropped: 0, data: "", state: "closed" };
+        const start = terminal.end - terminal.buffer.length;
+        const from = Math.max(offset, start);
+        return { terminalId: id, offset: terminal.end, dropped: from - offset,
+          data: terminal.buffer.slice(from - start), state: terminal.state.state };
+      });
+    },
+    async terminalResize(input) {
+      return serialized(input, async (loc, item) => {
+        const id = terminalId(input.terminalId);
+        const rows = terminalDimension(input.rows, 24, "rows");
+        const cols = terminalDimension(input.cols, 80, "cols");
+        const terminal = item.terminals.get(id);
+        if (!terminal || !terminal.handle || typeof terminal.handle.resize !== "function") return snapshot(item, await binding(loc));
+        try { await terminal.handle.resize(cols, rows); }
+        catch (error) { terminalFailure(item, terminal, error); }
+        return snapshot(item, await binding(loc));
       });
     },
     async terminalClose(input) {

@@ -4,6 +4,7 @@
  * Layout lives in ./views, view state in ./stores, Host-facing rules in ./service.
  */
 import { setReact } from './runtime.js';
+import xtermCss from '@xterm/xterm/css/xterm.css';
 import { CSS } from './styles.js';
 import { remoteInfo } from '../backend/contract.js';
 import { createSandboxStore } from './stores/sandbox.store.js';
@@ -35,7 +36,7 @@ window.__ModuleLoader__.load({
           if (document.getElementById(STYLE_ID)) return () => {};
           const style = document.createElement('style');
           style.id = STYLE_ID;
-          style.textContent = CSS;
+          style.textContent = `${CSS}${xtermCss}`;
           document.head.appendChild(style);
           return () => style.remove();
         }, 'plugin-sandbox.style');

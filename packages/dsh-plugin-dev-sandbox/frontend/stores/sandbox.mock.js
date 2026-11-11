@@ -39,6 +39,8 @@ export function createSandboxDatasourceMock() {
       snapshot.logs.push({ source: 'terminal', terminalId, stream: 'stdout', text: `$ ${data}mock output\r\n` });
       return answer();
     },
+    terminalPoll: async (_terminalId, offset) => ({ offset, dropped: 0, data: '', state: 'closed' }),
+    terminalResize: async () => ({ terminals: [] }),
     terminalClose: async (terminalId) => {
       snapshot.terminals = snapshot.terminals.filter((item) => item.id !== terminalId);
       return answer();

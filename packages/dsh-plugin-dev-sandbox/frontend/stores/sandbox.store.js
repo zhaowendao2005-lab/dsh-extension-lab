@@ -13,7 +13,6 @@ const initialUi = () => ({
   providers: {},
   selectedNode: null,
   activeTerminal: null,
-  draft: '',
 });
 
 export function createSandboxStore({ execute, sessionId, delay = 2000, datasource } = {}) {
@@ -137,9 +136,6 @@ export function createSandboxStore({ execute, sessionId, delay = 2000, datasourc
     selectTerminal(id) {
       publishUi(() => ({ activeTerminal: id }));
     },
-    setDraft(text) {
-      publishUi(() => ({ draft: text }));
-    },
 
     async createTerminal(commandId) {
       const value = await perform(() => source.terminalCreate({ rows: 24, cols: 80, ...(commandId ? { commandId } : {}) }));
@@ -152,13 +148,11 @@ export function createSandboxStore({ execute, sessionId, delay = 2000, datasourc
     closeTerminal(id) {
       return perform(() => source.terminalClose(id));
     },
-    submitDraft() {
-      const { draft, activeTerminal } = state.ui;
-      const active = (state.snapshot?.terminals ?? []).find((terminal) => terminal.id === activeTerminal);
-      if (!active || active.state !== 'running' || !state.ui.draft) return undefined;
-      publishUi(() => ({ draft: '' }));
-      return perform(() => source.terminalWrite(active.id, `${draft}\n`));
-    },
+    // Terminal I/O bypasses `perform`: keystrokes must not flip the panel into a
+    // busy state or race the polling snapshot. The PTY is the source of truth.
+    writeTerminal: (terminalId, data) => source.terminalWrite(terminalId, data).catch(() => {}),
+    pollTerminal: (terminalId, offset) => source.terminalPoll(terminalId, offset),
+    resizeTerminal: (terminalId, cols, rows) => source.terminalResize(terminalId, cols, rows).catch(() => {}),
     async toggleModel(provider, model, checked) {
       const key = (item) => `${item.provider}\u0000${item.model}`;
       const target = `${provider}\u0000${model}`;
