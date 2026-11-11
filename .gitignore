@@ -25,3 +25,6 @@ build/
 # 开发实例产生的文件
 tmp/
 *.tmp
+
+# 官方 DSH 桌面端 app.asar 的本地解包（仅用于查 API，勿提交）
+extracted_files/
