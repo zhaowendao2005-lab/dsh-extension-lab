@@ -89,7 +89,15 @@ packages/<name>/
 ### 5. 插件结构硬性要求
 
 19. `package.json` 必须包含：`dsh.manifestVersion`、`dsh.bundle.patch`、`dsh.client.inject`、`engines.dsh`、`engines.node`、`exports["."]`、`exports["./client"]`。
-20. `cordis.patch.yml` 只做一件事：`add /bundles/<name>`，其中 `exports` 必须与 `package.json` 一致。
+20. `cordis.patch.yml` 只做一件事：**用 `insert` 行**把本包插进 profile 层栈：
+
+    ```yaml
+    - insert:
+        - id: <package-name>
+          name: <package-name>
+    ```
+
+    不要写 JSON-Patch 的 `op / path / value`。profile 加载器只接受 `insert` 行和带 `id` 的定向 patch，写错会让**整个 bundle 被静默跳过**（启动报 `patch: id is required for non-insert patches`），外部表现就是「装好了但界面里什么都没有」。
 21. 客户端入口必须写成 `window.__ModuleLoader__.load({ id, factory })`，并声明 `module.exports.inject`（用到的宿主服务）；构建脚本会校验 ModuleLoader 形态。
 22. 宿主入口必须是 `export function apply(ctx, config)`；构建脚本会校验该签名。
 23. 客户端代码不要 `import` 宿主包的具体内部路径，宿主能力一律通过 `inject` 到的服务获取（`ctx.slots`、`ctx.sidebarRightTabs`、`ctx.webTerminals` 等）。
@@ -189,3 +197,7 @@ pnpm run release:check
 | `release:prepare` 报 `local main must match origin/main` | 先 push 或 pull 到一致 |
 | 市场页目录为空 / 401 | 生产目录走 `raw.githubusercontent.com`，确认 `main` 上的 `marketplace.json` 可访问；页面 401 是 Web 鉴权，用启动时打印的带 token URL 打开 |
 | 安装成功但界面没变化 | 客户端插件需刷新页面，宿主插件需重启 DSH |
+| 装好了但哪都找不到入口 | 十有八九是 bundle patch 格式错（见规则 20）或宿主入口 import 缺文件（见规则 29）；用 `DSH_HOME=/tmp/x dsh --profile y --dump-config` 能看到合成后的行是否出现 |
+
+29. 宿主侧允许拆成多个文件，但 `scripts/build.mjs` 必须把 `src/*.js` **全部**拷进 `lib/`。只拷 `index.js` 会留下悬空的 `import "./host.js"`，bundle 在启动时以 `ERR_MODULE_NOT_FOUND` 被跳过，和 patch 写错一样表现为「静默不加载」。
+30. 客户端注册要按「一个入口失败不影响其余入口」来写：每个 `ctx.effect` / `ctx.slots.register` 用 `safe()` 包一层并 `console.warn`，这样将来 DSH 改名某个 API 时，损坏的是单个面板而不是整个模块。
