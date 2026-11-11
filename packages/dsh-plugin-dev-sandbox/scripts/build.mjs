@@ -9,7 +9,7 @@
  * because ModuleLoader executes a single file per client module.
  */
 import { build } from 'esbuild';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,6 +27,9 @@ if (!hostEntry.includes('export function apply')) {
   throw new Error('backend/index.js must export apply');
 }
 
+// Start from an empty lib/: a renamed or deleted module must not survive as a
+// stale artifact that the next release would ship unnoticed.
+await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 
 // Host half: one flat lib/ file per backend module.
