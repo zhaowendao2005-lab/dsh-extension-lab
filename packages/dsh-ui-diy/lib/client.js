@@ -125,7 +125,7 @@ window.__ModuleLoader__.load({
     }
 
     module.exports.name = PLUGIN;
-    module.exports.inject = [];
+    module.exports.inject = ["slots"];
     module.exports.apply = apply;
 
     return module.exports;
