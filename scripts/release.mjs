@@ -28,6 +28,7 @@ function allowedPublishChanges() {
   for (const name of packageNames) {
     files.add("packages/" + name + "/package.json");
     files.add("packages/" + name + "/lib/client.js");
+    files.add("packages/" + name + "/lib/index.js");
     files.add("packages/" + name + "/scripts/build.mjs");
     files.add("packages/" + name + "/src/client.template.js");
     files.add("packages/" + name + "/README.md");
@@ -110,6 +111,12 @@ function tagExists(tag) {
   return remote.length > 0;
 }
 
+function specFor(entry, tag) {
+  const match = /^github:([^/#]+\/[^#]+)#([^&]+)&path:\/(.+)$/.exec(entry.spec || "");
+  if (!match) throw new Error(entry.name + ": spec must be a github spec");
+  return "github:" + match[1] + "#" + tag + "&path:/" + match[3];
+}
+
 function verifyRemoteRef(entry) {
   const match = /^github:([^/#]+\/[^#]+)#([^&]+)&path:\/(.+)$/.exec(entry.spec || "");
   if (!match || match[3] !== entry.path) {
@@ -166,7 +173,10 @@ async function prepare(args) {
   if (tagExists(tag)) throw new Error("tag already exists: " + tag);
 
   const { catalog } = await loadRelease();
-  for (const entry of catalog.extensions) entry.ref = tag;
+  for (const entry of catalog.extensions) {
+    entry.ref = tag;
+    entry.spec = specFor(entry, tag);
+  }
   await writeFile(catalogFile, JSON.stringify(catalog, null, 2) + "\n");
 
   buildAndTest();
@@ -182,6 +192,9 @@ async function publish(args) {
   const { packages } = await loadRelease();
   for (const { entry } of packages) {
     if (entry.ref !== tag) throw new Error("catalog ref must equal the requested tag: " + entry.name);
+    if (entry.spec !== specFor(entry, tag)) {
+      throw new Error("catalog spec must be pinned to the requested tag: " + entry.name);
+    }
   }
   if (tagExists(tag)) throw new Error("tag already exists: " + tag);
   const changed = requireOnlyReleaseFiles();

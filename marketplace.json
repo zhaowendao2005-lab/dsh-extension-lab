@@ -5,7 +5,7 @@
       "name": "extension-lab-manager",
       "title": "Extension Lab Manager",
       "description": "私有扩展市场、安装与更新管理器。",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "path": "packages/extension-lab-manager",
       "ref": "version-2.1.1",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-2.1.1&path:/packages/extension-lab-manager"
