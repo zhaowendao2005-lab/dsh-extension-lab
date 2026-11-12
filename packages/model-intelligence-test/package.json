@@ -1,0 +1,56 @@
+{
+  "name": "model-intelligence-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。",
+  "type": "module",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "lib",
+    "integration",
+    "locale",
+    "icon.svg",
+    "README.md",
+    "ARCHITECTURE.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./integration/cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0",
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1",
+    "lmfpd-sdk": "0.2.0",
+    "pinyin-pro": "3.27.0",
+    "zod": "4.4.3",
+    "zustand": "5.0.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "esbuild": "0.25.12",
+    "postcss": "8.5.6",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3"
+  }
+}

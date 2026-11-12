@@ -36,6 +36,15 @@
       "path": "packages/dsh-btw-side",
       "ref": "version-3.3.1",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.3.1&path:/packages/dsh-btw-side"
+    },
+    {
+      "name": "model-intelligence-test",
+      "title": "Model Intelligence Test",
+      "description": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。",
+      "version": "1.0.0",
+      "path": "packages/model-intelligence-test",
+      "ref": "version-3.4.0",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.4.0&path:/packages/model-intelligence-test"
     }
   ]
 }

@@ -10,6 +10,7 @@
 | `packages/dsh-ui-enhancements` | DSH 界面样式增强 |
 | `packages/dsh-plugin-dev-sandbox` | 会话绑定插件的独立 DSH 调试工作区（不是 OS 安全沙箱） |
 | `packages/dsh-btw-side` | 旁路提问（BTW）：基于最新真实请求上下文独立作答，输入框上方常驻栏，不打断主线 |
+| `packages/model-intelligence-test` | 模型智能测试：真实模型指纹（lm-detector 共享参考库）与自定义 Agent 任务评测（模拟） |
 
 ## 开发约定
 
