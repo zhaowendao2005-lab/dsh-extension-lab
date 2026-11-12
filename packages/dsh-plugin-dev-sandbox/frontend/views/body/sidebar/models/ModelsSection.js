@@ -29,6 +29,7 @@ export function ModelsSection({ store, state }) {
         disabled: state.busy,
         onToggle: () => store.toggleProvider(provider.id),
         onToggleModel: (model, checked) => { void store.toggleModel(provider.id, model.id, checked); },
+        onToggleAll: (checked) => { void store.toggleProviderModels(provider.id, checked); },
       })),
       h('div', { className: 'pds-model-hint' },
         '勾选的模型与参数会写入沙箱 profile；启动时把对应凭据复制到沙箱 .credentials.yaml（权限 0600），沙箱停止即删除。',

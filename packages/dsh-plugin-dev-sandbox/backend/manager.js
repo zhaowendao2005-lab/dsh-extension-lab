@@ -166,6 +166,38 @@ function exportedEntry(value) {
   return null;
 }
 
+async function resolvePackageEntry(pluginPath, manifest, exportName, fallback, label) {
+  const exportsMap = manifest.exports && typeof manifest.exports === "object" && !Array.isArray(manifest.exports)
+    ? manifest.exports : null;
+  const rootExport = exportName === "." && (typeof manifest.exports === "string" || Array.isArray(manifest.exports) ||
+    (exportsMap && !Object.keys(exportsMap).some((key) => key.startsWith("."))));
+  const declared = rootExport ? manifest.exports : exportsMap?.[exportName];
+  const entry = exportedEntry(declared) || (declared === undefined ? fallback : null);
+  if (!entry) throw new Error(`${label} is not exported by package.json`);
+  let entryPath;
+  try { entryPath = await realpath(path.resolve(pluginPath, entry)); }
+  catch (error) { throw new Error(`${label} cannot be resolved: ${error.message}`); }
+  if (!inside(pluginPath, entryPath) || !(await lstat(entryPath)).isFile()) {
+    throw new Error(`${label} must resolve to a file inside the plugin package`);
+  }
+  return entryPath;
+}
+
+async function validateClientManifest(pluginPath, manifest) {
+  const client = manifest.dsh?.client;
+  if (client === undefined) return;
+  if (!client || Array.isArray(client) || typeof client !== "object") {
+    throw new Error("Invalid package.json dsh.client declaration");
+  }
+  if (client.platform !== "web") {
+    throw new Error(`Plugin Client platform must be web for the sandbox runtime (received ${String(client.platform)})`);
+  }
+  if (client.inject !== undefined && (!Array.isArray(client.inject) || client.inject.some((name) => typeof name !== "string" || !name))) {
+    throw new Error("Invalid package.json dsh.client.inject: expected an array of package names");
+  }
+  await resolvePackageEntry(pluginPath, manifest, "./client", null, "Plugin Client entry");
+}
+
 function validateSpec(spec) {
   if (!spec || typeof spec.command !== "string" || !spec.command || spec.command.includes("\0") ||
       !Array.isArray(spec.args) || spec.args.some((arg) => typeof arg !== "string" || arg.includes("\0"))) {
@@ -361,13 +393,9 @@ export function createSandboxManager(options = {}) {
 
   async function overlay(loc, bound, modelPatches) {
     const manifest = bound.manifest;
-    const exportsRoot = manifest.exports && typeof manifest.exports === "object" && !Array.isArray(manifest.exports) && Object.hasOwn(manifest.exports, ".")
-      ? manifest.exports["."] : manifest.exports;
-    const entry = exportedEntry(exportsRoot) || (typeof manifest.main === "string" ? manifest.main : "./index.js");
-    const entryPath = await realpath(path.resolve(bound.binding.pluginPath, entry));
-    if (!inside(bound.binding.pluginPath, entryPath) || !inside(loc.workspaceRoot, entryPath) || !(await lstat(entryPath)).isFile()) {
-      throw new Error("Plugin entry must resolve to a file inside its package and workspace");
-    }
+    const entryPath = await resolvePackageEntry(bound.binding.pluginPath, manifest, ".",
+      typeof manifest.main === "string" ? manifest.main : "./index.js", "Plugin Host entry");
+    await validateClientManifest(bound.binding.pluginPath, manifest);
     await checkPaths(loc, true);
     const lines = ["# Temporary plugin-dev overlay; never installed in the parent profile.",
       "- insert:", `    - id: ${JSON.stringify(`plugin-dev-${loc.sessionId}`)}`,

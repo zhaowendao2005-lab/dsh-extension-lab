@@ -193,6 +193,19 @@ export function createSandboxStore({ execute, sessionId, delay = 2000, datasourc
         : selectedModels().filter((item) => key(item) !== target);
       return perform(() => source.saveModels(next));
     },
+    /** Provider checkbox: select or clear every model the catalog lists for one provider. */
+    async toggleProviderModels(providerId, checked) {
+      const models = (state.catalog.providers.find((provider) => provider.id === providerId)?.models ?? [])
+        .map((model) => model.id);
+      if (!models.length) return undefined;
+      const key = (item) => `${item.provider}\u0000${item.model}`;
+      const providerKeys = new Set(models.map((model) => `${providerId}\u0000${model}`));
+      const next = checked
+        ? [...selectedModels().filter((item) => !providerKeys.has(key(item))),
+          ...models.map((model) => ({ provider: providerId, model }))]
+        : selectedModels().filter((item) => !providerKeys.has(key(item)));
+      return perform(() => source.saveModels(next));
+    },
     dispose() {
       disposed = true;
       clearInterval(timer);
