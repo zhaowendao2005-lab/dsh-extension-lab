@@ -1,6 +1,6 @@
 {
   "name": "dsh-btw-side",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "BTW 旁路提问：依据当前会话真实的模型请求上下文独立提问，不干扰主线",
   "type": "module",
