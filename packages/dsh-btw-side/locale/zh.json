@@ -1,0 +1,25 @@
+{
+  "name": "旁路提问",
+  "bar": {
+    "label": "旁路提问",
+    "placeholder": "输入旁路问题，不影响主线…",
+    "send": "旁问",
+    "cancel": "取消",
+    "retry": "重试",
+    "copy": "复制",
+    "close": "关闭",
+    "clear": "清空",
+    "expand": "展开",
+    "collapse": "收起",
+    "empty": "还没有旁问。在当前栏输入问题，或使用命令 /btw <问题>。",
+    "thinking": "正在思考…",
+    "streaming": "正在回答…",
+    "cancelled": "已取消"
+  },
+  "settings": {
+    "nav": "旁路提问",
+    "title": "旁路提问（BTW）",
+    "description": "基于当前最新真实模型请求上下文独立问答，不打断主线。",
+    "readonly": "当前配置为只读（未绑定到本 profile 的 patch）。"
+  }
+}

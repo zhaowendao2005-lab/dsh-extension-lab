@@ -1,0 +1,47 @@
+{
+  "name": "dsh-btw-side",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BTW 旁路提问：依据当前会话真实的模型请求上下文独立提问，不干扰主线",
+  "type": "module",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["lib", "integration", "locale", "README.md"],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": { "patch": "./integration/cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0",
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  }
+}

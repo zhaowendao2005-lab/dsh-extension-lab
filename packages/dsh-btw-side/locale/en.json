@@ -1,0 +1,25 @@
+{
+  "name": "BTW",
+  "bar": {
+    "label": "BTW",
+    "placeholder": "Ask a side question without stopping the main line…",
+    "send": "Ask",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "copy": "Copy",
+    "close": "Close",
+    "clear": "Clear",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "empty": "No side questions yet. Ask here, or use /btw <question>.",
+    "thinking": "Thinking…",
+    "streaming": "Answering…",
+    "cancelled": "Cancelled"
+  },
+  "settings": {
+    "nav": "BTW",
+    "title": "Side questions (BTW)",
+    "description": "Ask questions against the latest real model request without interrupting the main line.",
+    "readonly": "This configuration is read-only (not bound to this profile's patch)."
+  }
+}
