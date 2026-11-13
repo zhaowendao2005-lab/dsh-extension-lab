@@ -1844,3 +1844,205 @@
 
 }
 
+
+/* Feature tabs and hub */
+.mit-workbench .mit-tab-add {
+  flex:0 0 auto;
+  width:38px;
+  align-self:stretch;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-left:auto;
+  border:0;
+  border-left:1px solid var(--mit-border);
+  background:var(--mit-layer);
+  color:var(--mit-muted);
+  cursor:pointer;
+}
+.mit-workbench .mit-tab-add:hover { background:var(--mit-layer-2); color:var(--mit-text); }
+.mit-workbench .mit-feature-hub { padding:28px 32px; overflow:auto; height:100%; }
+.mit-workbench .mit-feature-head h1 { margin:2px 0 6px; font-size:24px; font-weight:650; letter-spacing:-.01em; }
+.mit-workbench .mit-feature-head p { margin:0; max-width:640px; }
+.mit-workbench .mit-feature-grid { display:flex; flex-wrap:wrap; gap:16px; margin-top:26px; }
+.mit-workbench .mit-feature-card {
+  flex:1 1 300px;
+  max-width:520px;
+  min-height:180px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  text-align:left;
+  padding:20px;
+  border:1px solid var(--mit-border);
+  border-radius:2px;
+  background:var(--mit-layer);
+  color:var(--mit-text);
+  cursor:pointer;
+}
+.mit-workbench .mit-feature-card:hover { border-color:var(--mit-brand); background:color-mix(in srgb,var(--mit-brand) 5%,var(--mit-layer)); }
+.mit-workbench .mit-feature-index { font:11px/1 var(--mit-mono,monospace); letter-spacing:.12em; color:var(--mit-brand); }
+.mit-workbench .mit-feature-card strong { font-size:17px; }
+.mit-workbench .mit-feature-action { margin-top:auto; display:inline-flex; align-items:center; gap:4px; color:var(--mit-brand); font-size:13px; }
+
+/* Relay adapter */
+.mit-workbench .mit-relay-page { position:relative; display:flex; min-width:0; height:100%; }
+.mit-workbench .mit-relay-sites {
+  flex:0 0 190px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:18px 14px;
+  border-right:1px solid var(--mit-border);
+  background:var(--mit-layer);
+  min-width:0;
+}
+.mit-workbench .mit-relay-sites>strong { font-size:14px; margin-bottom:4px; }
+.mit-workbench .mit-relay-site {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  padding:9px 10px;
+  border:1px solid transparent;
+  border-left:2px solid transparent;
+  background:transparent;
+  color:var(--mit-text);
+  text-align:left;
+  cursor:pointer;
+}
+.mit-workbench .mit-relay-site small { color:var(--mit-muted); font-size:11px; }
+.mit-workbench .mit-relay-site.is-active { border-color:var(--mit-border); border-left-color:var(--mit-brand); background:var(--mit-bg); }
+.mit-workbench .mit-relay-note { margin:14px 0 0; font-size:11px; line-height:1.5; color:var(--mit-muted); }
+.mit-workbench .mit-relay-docs { margin-top:auto; font-size:12px; color:var(--mit-brand); }
+.mit-workbench .mit-relay-main { display:flex; flex-direction:column; min-width:0; flex:1; padding:18px 20px 10px; gap:12px; }
+.mit-workbench .mit-relay-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.mit-workbench .mit-relay-heading h1 { margin:2px 0 4px; font-size:21px; letter-spacing:-.01em; }
+.mit-workbench .mit-relay-heading p { margin:0; max-width:720px; font-size:12px; }
+.mit-workbench .mit-relay-filters {
+  display:flex;
+  flex-direction:column;
+  border-top:1px solid var(--mit-border-strong);
+}
+.mit-workbench .mit-relay-filter {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-height:38px;
+  border-bottom:1px solid var(--mit-border);
+}
+.mit-workbench .mit-relay-filter>span:first-child { flex:0 0 72px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--mit-muted); }
+.mit-workbench .mit-relay-filter select {
+  flex:1;
+  min-width:0;
+  height:28px;
+  border:0;
+  border-left:1px solid var(--mit-border);
+  padding:0 8px;
+  background:transparent;
+  color:var(--mit-text);
+  font-size:12px;
+}
+.mit-workbench .mit-relay-columns { position:relative; margin-left:auto; }
+.mit-workbench .mit-relay-column-menu {
+  position:absolute;
+  right:0;
+  top:30px;
+  z-index:20;
+  width:220px;
+  padding:8px;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  border:1px solid var(--mit-border-strong);
+  border-radius:2px;
+  background:var(--mit-overlay);
+}
+.mit-workbench .mit-relay-column-menu label { display:flex; align-items:center; gap:8px; padding:5px 6px; font-size:12px; cursor:pointer; }
+.mit-workbench .mit-relay-column-menu label:hover { background:var(--mit-layer-2); }
+.mit-workbench .mit-relay-count { padding:0 2px 8px; font-size:11px; color:var(--mit-muted); border-bottom:1px solid var(--mit-border); }
+.mit-workbench .mit-relay-progress { position:relative; height:22px; border:1px solid var(--mit-border); overflow:hidden; background:var(--mit-layer); }
+.mit-workbench .mit-relay-progress>span { position:absolute; inset:0 auto 0 0; background:color-mix(in srgb,var(--mit-brand) 22%,transparent); transition:width .3s; }
+.mit-workbench .mit-relay-progress>em { position:relative; display:block; padding:3px 8px; font-size:11px; font-style:normal; color:var(--mit-muted); }
+.mit-workbench .mit-relay-error { display:flex; gap:10px; align-items:center; margin:0; padding:8px 10px; border-left:2px solid var(--mit-error); background:color-mix(in srgb,var(--mit-error) 8%,transparent); font-size:12px; }
+.mit-workbench .mit-relay-table-scroll { flex:1; min-height:220px; overflow:auto; border:1px solid var(--mit-border); background:var(--mit-bg); }
+.mit-workbench .mit-relay-table { min-width:100%; }
+.mit-workbench .mit-relay-head {
+  position:sticky;
+  top:0;
+  z-index:3;
+  display:grid;
+  min-width:100%;
+  background:var(--mit-layer);
+  border-bottom:1px solid var(--mit-border-strong);
+}
+.mit-workbench .mit-relay-cell {
+  position:relative;
+  display:flex;
+  align-items:center;
+  min-width:0;
+  padding:0 10px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:12px;
+}
+.mit-workbench .mit-relay-head .mit-relay-cell { height:34px; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--mit-muted); }
+.mit-workbench .mit-relay-resize { position:absolute; right:0; top:4px; bottom:4px; width:5px; cursor:col-resize; border-right:1px solid var(--mit-border); }
+.mit-workbench .mit-relay-resize:hover { border-right-color:var(--mit-brand); }
+.mit-workbench .mit-relay-body { position:relative; }
+.mit-workbench .mit-relay-row {
+  position:absolute;
+  left:0;
+  right:0;
+  height:44px;
+  display:grid;
+  align-items:stretch;
+  border:0;
+  border-bottom:1px solid var(--mit-border);
+  background:transparent;
+  color:var(--mit-text);
+  text-align:left;
+  cursor:pointer;
+  font:inherit;
+}
+.mit-workbench .mit-relay-row:hover { background:var(--mit-layer); }
+.mit-workbench .mit-relay-row:focus-visible { outline:2px solid var(--mit-brand); outline-offset:-2px; }
+.mit-workbench .mit-relay-brand { font-weight:550; }
+.mit-workbench .mit-relay-model { display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+.mit-workbench .mit-relay-model small { color:var(--mit-muted); font-size:10px; }
+.mit-workbench .mit-relay-rate { display:flex; flex-direction:column; font-variant-numeric:tabular-nums; }
+.mit-workbench .mit-relay-rate small { color:var(--mit-muted); font-size:10px; }
+.mit-workbench .mit-relay-rate.is-good { color:var(--mit-success); }
+.mit-workbench .mit-relay-rate.is-bad { color:var(--mit-error); }
+.mit-workbench .mit-relay-price { display:flex; gap:8px; font-variant-numeric:tabular-nums; }
+.mit-workbench .mit-relay-price small { color:var(--mit-success); font-size:10px; }
+.mit-workbench .mit-relay-num { font-variant-numeric:tabular-nums; color:var(--mit-muted); }
+.mit-workbench .mit-relay-labels { display:flex; gap:4px; overflow:hidden; }
+.mit-workbench .mit-relay-labels em { font-style:normal; font-size:10px; padding:1px 5px; border:1px solid var(--mit-border); color:var(--mit-muted); }
+.mit-workbench .mit-relay-foot { margin:0; font-size:10px; line-height:1.5; color:var(--mit-muted); }
+.mit-workbench .mit-relay-empty { margin:24px; font-size:12px; color:var(--mit-muted); }
+.mit-workbench .mit-relay-detail {
+  position:absolute;
+  top:0;
+  right:0;
+  bottom:0;
+  z-index:15;
+  width:360px;
+  max-width:92%;
+  overflow:auto;
+  padding:16px;
+  border-left:1px solid var(--mit-border-strong);
+  background:var(--mit-overlay);
+}
+.mit-workbench .mit-relay-detail header { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding-bottom:10px; border-bottom:2px solid var(--mit-border-strong); }
+.mit-workbench .mit-relay-detail header strong { display:block; margin-top:2px; font-size:14px; }
+.mit-workbench .mit-relay-detail dl { display:flex; flex-direction:column; margin:12px 0; }
+.mit-workbench .mit-relay-detail dl>div { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--mit-border); font-size:12px; }
+.mit-workbench .mit-relay-detail dt { color:var(--mit-muted); }
+.mit-workbench .mit-relay-detail dd { margin:0; text-align:right; font-variant-numeric:tabular-nums; }
+@media (max-width:760px) {
+  .mit-workbench .mit-relay-sites { flex-basis:120px; padding:12px 8px; }
+  .mit-workbench .mit-relay-main { padding:12px 10px 8px; }
+  .mit-workbench .mit-relay-heading { flex-direction:column; }
+  .mit-workbench .mit-relay-detail { width:100%; max-width:100%; }
+}

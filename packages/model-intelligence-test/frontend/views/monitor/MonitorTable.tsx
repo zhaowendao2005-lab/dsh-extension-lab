@@ -4,6 +4,8 @@ import { COLUMN_LABELS } from '../../types';
 import { Empty,formatMetric,Icon,StageBadge } from '../../components/common';
 import { endedRunIds,isEndedStage } from '../results/runOrder';
 import { useDismissablePopover } from '../../components/useDismissablePopover';
+import { formatPrice } from '../../components/price';
+import { modelLabel,providerLabel } from '../results/modelLabel';
 import { FINGERPRINT_DECISIONS,formatRankingScore,hasCalibratedProbability,isSampleEnded } from '../results/fingerprintPresentation';
 
 // Keep in sync with `.mit-table .mit-sticky-match { right: ... }` in styles.css.
@@ -60,6 +62,10 @@ function RunRow({ store,record,id,columns,custom }: {
   custom: boolean;
 }) {
   const run=useStore(store.evaluations,state => state.runs[id]);
+  const relayRef=run?.model.relay;
+  const resolved=useStore(store.relay,state => relayRef? state.resolved[`${relayRef.channelId}|${relayRef.model}`]:undefined);
+  const currency=useStore(store.relay,state => state.currency);
+  const rate=useStore(store.relay,state => state.status.exchangeRate);
   const selected=useStore(store.workbench,state => state.navigation[state.activeTab]?.runId===id);
   if(!run)
     return null;
@@ -72,11 +78,19 @@ function RunRow({ store,record,id,columns,custom }: {
     <th scope="row">
       <button type="button" className="mit-run-link" onClick={() => store.actions.navigate({ runId: id,artifact: false })}>
         <strong>
-          {run.model.name}
+          {modelLabel(run.model)}
         </strong>
         <span className="mit-muted">
-          {run.model.providerName}
+          {providerLabel(run.model)}
+          {run.model.relay&&<span className="mit-relay-chip">中转</span>}
         </span>
+        {run.model.relay&&<span className="mit-relay-priceline">
+          {resolved?.found===false? <em className="mit-expired">已过期</em>
+            :resolved?.found? (resolved.inputPrice===null&&resolved.outputPrice===null&&resolved.perRequestPrice!==null
+              ? `${formatPrice(resolved.perRequestPrice,currency,rate)} / 次`
+              : `${formatPrice(resolved.inputPrice,currency,rate)} · ${formatPrice(resolved.outputPrice,currency,rate)} / 1M`)
+              :<span className="mit-muted">价格查询中…</span>}
+        </span>}
       </button>
     </th>
     {columns.map(column => <td key={column} className={column==='match'? 'mit-sticky-match':''}>
@@ -118,7 +132,7 @@ export function MonitorTable({ store,record,results=false }: {
   const rowIds=useStore(store.evaluations,state => {
     const filtered=record.runIds.filter(id => {
       const run=state.runs[id];
-      return run&&(!presentation.filter||`${run.model.name} ${run.model.providerName} ${run.model.search}`.toLowerCase().includes(presentation.filter.toLowerCase()));
+      return run&&(!presentation.filter||`${run.model.name} ${providerLabel(run.model)} ${run.model.search}`.toLowerCase().includes(presentation.filter.toLowerCase()));
     });
     return (results? endedRunIds(filtered,state.runs):filtered).join('\n');
   });

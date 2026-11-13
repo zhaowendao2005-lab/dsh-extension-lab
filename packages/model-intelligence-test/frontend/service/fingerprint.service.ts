@@ -1,4 +1,4 @@
-import type { Candidate, FingerprintJobView, FingerprintOptions, FingerprintRunView, FingerprintSample, FingerprintStatusView, Metrics, Model, ModelIntelligenceTransport, Round, Run, Stage } from '../types';
+import type { AttemptViewResult, Candidate, FingerprintOptions, FingerprintRunView, FingerprintSample, Metrics, Model, ModelIntelligenceTransport, RecordModelRef, RecordsListView, Round, Run, Stage, StoredRecord } from '../types';
 
 /** Real Host jobs only: transport plus projection, with no invented results or timing. */
 const SAMPLE_STAGE: Record<FingerprintSample['state'], Stage> = {
@@ -17,22 +17,44 @@ function optionsOf(options: FingerprintOptions | undefined): FingerprintOptions 
   };
 }
 
-// The domain captures the returned job ID before validating the snapshot, so even an invalid
-// snapshot cannot hide a known job from cancel/delete/dispose cleanup. Async also catches sync IO throws.
-export async function startFingerprint(transport: ModelIntelligenceTransport, models: Model[], options?: FingerprintOptions): Promise<FingerprintJobView> {
-  return transport.fingerprintStart({ models: models.map(model => ({ provider: model.provider, id: model.id })), ...optionsOf(options) });
+/** Host records/attempts transport. Every call is async so synchronous transport throws become rejections. */
+export async function listRecords(transport: ModelIntelligenceTransport, revision: number): Promise<RecordsListView> {
+  return transport.recordsList(revision >= 0 ? { revision } : {});
 }
-export async function configureFingerprint(transport: ModelIntelligenceTransport, jobId: string, options: FingerprintOptions): Promise<FingerprintJobView> {
-  return transport.fingerprintConfigure({ jobId, ...optionsOf(options) });
+export async function createRecord(transport: ModelIntelligenceTransport, request: Parameters<ModelIntelligenceTransport['recordCreate']>[0]): Promise<{record: StoredRecord; attemptId: string | null}> {
+  return transport.recordCreate(request);
 }
-export async function retryFingerprint(transport: ModelIntelligenceTransport, jobId: string, model: {provider: string; id: string}): Promise<FingerprintJobView> {
-  return transport.fingerprintRetry({ jobId, model: { provider: model.provider, id: model.id } });
+export async function rerunRecord(transport: ModelIntelligenceTransport, recordId: string): Promise<{attemptId: string}> {
+  return transport.recordRerun({ recordId });
 }
-export async function pollFingerprint(transport: ModelIntelligenceTransport, jobId: string, revision: number): Promise<FingerprintStatusView> {
-  return transport.fingerprintStatus({ jobId, ...(revision >= 0 ? { revision } : {}) });
+export async function deleteRecord(transport: ModelIntelligenceTransport, recordId: string): Promise<void> {
+  await transport.recordDelete({ recordId });
 }
-export async function cancelFingerprint(transport: ModelIntelligenceTransport, jobId: string): Promise<FingerprintJobView> {
-  return transport.fingerprintCancel({ jobId });
+export async function clearRecords(transport: ModelIntelligenceTransport): Promise<void> {
+  await transport.recordsClear();
+}
+export async function readAttempt(transport: ModelIntelligenceTransport, attemptId: string, revision: number): Promise<AttemptViewResult> {
+  return transport.attemptView({ attemptId, ...(revision >= 0 ? { revision } : {}) });
+}
+export async function cancelAttempt(transport: ModelIntelligenceTransport, attemptId: string): Promise<AttemptViewResult> {
+  return transport.attemptCancel({ attemptId });
+}
+export async function configureAttempt(transport: ModelIntelligenceTransport, attemptId: string, options: FingerprintOptions): Promise<AttemptViewResult> {
+  return transport.attemptConfigure({ attemptId, ...optionsOf(options) });
+}
+export async function retryAttempt(transport: ModelIntelligenceTransport, attemptId: string, model: {provider: string; id: string}): Promise<AttemptViewResult> {
+  return transport.attemptRetry({ attemptId, model: { provider: model.provider, id: model.id } });
+}
+export async function saveCustomAttempt(transport: ModelIntelligenceTransport, recordId: string, ended: boolean, runs: Run[]): Promise<{attemptId: string}> {
+  return transport.customSave({ recordId, snapshot: { ended, runs: JSON.parse(JSON.stringify(runs)) as unknown[] } });
+}
+
+/** Display model of a persisted record entry; relay channels are labelled by site and channel id. */
+export function modelOfRef(ref: RecordModelRef): Model {
+  const name = ref.name || ref.id;
+  const providerName = ref.relay ? `${ref.relay.siteId} #${ref.relay.channelId}` : ref.provider;
+  return { key: JSON.stringify([ref.provider, ref.id]), provider: ref.provider, providerName, id: ref.id, name,
+    search: `${providerName} ${ref.provider} ${name} ${ref.id}`.toLowerCase(), ...(ref.relay ? { relay: { ...ref.relay } } : {}) };
 }
 
 const observed = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;

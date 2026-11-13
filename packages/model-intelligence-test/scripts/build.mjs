@@ -43,7 +43,14 @@ await architecture();
 const compiler = spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--project', path.join(root,'tsconfig.json')], {stdio: 'inherit'});
 if (compiler.status !== 0) process.exit(compiler.status ?? 1);
 await mkdir(path.join(root, 'lib'), {recursive: true});
-const css = await postcss([tailwindcss(tailwindConfig)]).process('@tailwind utilities;\n' + await readFile(path.join(root, 'frontend/styles.css'), 'utf8'), {from: path.join(root,'frontend/styles.css')});
+// styles.css first, then every feature stylesheet in frontend/styles/ (sorted) so features own disjoint files.
+const featureCss = [];
+try {
+  for (const name of (await readdir(path.join(root, 'frontend/styles'))).filter(name => name.endsWith('.css')).sort()) {
+    featureCss.push(`/* ${name} */\n` + await readFile(path.join(root, 'frontend/styles', name), 'utf8'));
+  }
+} catch (error) { if (error?.code !== 'ENOENT') throw error; }
+const css = await postcss([tailwindcss(tailwindConfig)]).process('@tailwind utilities;\n' + await readFile(path.join(root, 'frontend/styles.css'), 'utf8') + '\n' + featureCss.join('\n'), {from: path.join(root,'frontend/styles.css')});
 await writeFile(path.join(root,'lib/styles.css'), css.css);
 const cssPlugin = {name:'scoped-tailwind-text', setup(build) { build.onLoad({filter:/styles\.css$/}, () => ({contents:css.css, loader:'text'})); }};
 const common = {bundle:true, target:'es2022', sourcemap:true, logLevel:'info'};

@@ -72,7 +72,8 @@ export function DraftView({ store }: {
   store: Workbench;
 }) {
   const draft=useStore(store.draft,value => value);
-  const canSubmit=draft.selected.length>0&&(draft.kind==='fingerprint'||Boolean(draft.body.trim()));
+  const selectedCount=draft.selected.length+Object.keys(draft.relaySelected??{}).length;
+  const canSubmit=selectedCount>0&&(draft.kind==='fingerprint'||Boolean(draft.body.trim()));
   return <div className="mit-draft">
     <div className="mit-draft-fields">
       <div className="mit-title-row">
@@ -115,7 +116,7 @@ export function DraftView({ store }: {
         </div>
       </fieldset>
       <ModelPicker store={store} />
-      {draft.kind==='fingerprint'&&<div className="mit-info"><strong>真实调用授权提示：</strong>开始后将向每个所选模型发送 3 次真实付费请求，共 {draft.selected.length*3} 次计划请求，按供应商计费；取消前已发出的请求仍可能产生费用。使用官方 lmfpd-sdk 生成共享挑战并分析。校准概率只在参考库内有效，不包含库外模型；无校准时只显示 RAW 分数，不代表身份鉴定或质量排名。实际费用暂不可用。
+      {draft.kind==='fingerprint'&&<div className="mit-info"><strong>真实调用授权提示：</strong>开始后将向每个所选模型发送 3 次真实付费请求，共 {selectedCount*3} 次计划请求，按供应商计费；取消前已发出的请求仍可能产生费用。使用官方 lmfpd-sdk 生成共享挑战并分析。校准概率只在参考库内有效，不包含库外模型；无校准时只显示 RAW 分数，不代表身份鉴定或质量排名。实际费用暂不可用。
       </div>}
     </div>
     {draft.kind==='custom'&&<PromptEditor store={store} />}
@@ -123,7 +124,7 @@ export function DraftView({ store }: {
       {draft.error? <p role="alert" className="mit-error">
         {draft.error}
       </p>:<span className="mit-muted">
-        {draft.selected.length? `已选 ${draft.selected.length} 个模型 · 每个模型独立运行`:'先选择参测模型'}
+        {selectedCount? `已选 ${selectedCount} 个模型 · 每个模型独立运行`:'先选择参测模型'}
         {draft.kind==='custom'&&!draft.body.trim()? ' · 请填写任务提示词':''}
       </span>}
       <button type="button" className="mit-button mit-primary" disabled={!canSubmit} onClick={store.actions.submit}>

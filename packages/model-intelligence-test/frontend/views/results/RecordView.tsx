@@ -6,6 +6,7 @@ import type { MenuOption } from '../../components/MenuSelect';
 import { FingerprintConfigPanel } from './FingerprintConfigPanel';
 import { MonitorTable } from '../monitor/MonitorTable';
 import { endedRunIds,isEndedStage } from './runOrder';
+import { ATTEMPT_STATUS_LABELS,currentAttempt,modelLabel,providerLabel } from './modelLabel';
 
 const VIEW_OPTIONS: MenuOption<'progress'|'results'>[] = [
   { value: 'progress',label: '实时进度' },
@@ -26,12 +27,12 @@ function ResultCard({ store,id }: {
   return <article className="mit-result-card">
     <div className="mit-label-row">
       <strong>
-        {run.model.name}
+        {modelLabel(run.model)}
       </strong>
       <StageBadge stage={run.stage} />
     </div>
     <p className="mit-muted">
-      {run.model.providerName}
+      {providerLabel(run.model)}
     </p>
     <MetricGrid metrics={run.metrics} />
     {best&&<div className="mit-result-match">
@@ -56,14 +57,49 @@ function ResultCard({ store,id }: {
 function Breadcrumb({ record }: {
   record: Evaluation;
 }) {
+  const attempt=currentAttempt(record.attempts??[],record.attemptId);
   return <nav className="mit-breadcrumb" aria-label="测试详情路径">
     <span>测试记录
     </span>
     <Icon name="chevron" size={12} />
-    <span aria-current="page">
+    <span aria-current={attempt? undefined:'page'}>
       {record.name}
     </span>
+    {attempt&&<>
+      <Icon name="chevron" size={12} />
+      <span aria-current="page" className="mit-tabular">请求 #{attempt.number}</span>
+    </>}
   </nav>;
+}
+function AttemptBar({ store,record }: {
+  store: Workbench;
+  record: Evaluation;
+}) {
+  const attempts=record.attempts??[];
+  const selected=currentAttempt(attempts,record.attemptId);
+  const busy=attempts.some(attempt => attempt.status==='running'||attempt.status==='queued');
+  const custom=record.kind==='custom';
+  return <div className="mit-attempt-bar">
+    <span className="mit-attempt-label">请求</span>
+    <div className="mit-attempt-chips" role="tablist" aria-label="请求记录">
+      {attempts.map(attempt => {
+        const active=attempt.id===selected?.id;
+        const summary=attempt.summary;
+        return <button key={attempt.id} type="button" role="tab" aria-selected={active} className={`mit-attempt-chip is-${attempt.status}${active? ' is-active':''}`} title={attempt.error??`请求 #${attempt.number} · ${ATTEMPT_STATUS_LABELS[attempt.status]}`} onClick={() => store.actions.selectAttempt(record.id,attempt.id)}>
+          <strong className="mit-tabular">#{attempt.number}</strong>
+          <span className="mit-attempt-status">{ATTEMPT_STATUS_LABELS[attempt.status]}</span>
+          {summary&&<small className="mit-tabular">{summary.ended}/{summary.total}{summary.failed? ` · ${summary.failed} 失败`:''}</small>}
+        </button>;
+      })}
+      {!attempts.length&&<span className="mit-muted">暂无请求</span>}
+    </div>
+    <div className="mit-attempt-actions">
+      {busy&&!custom&&<span className="mit-muted">将排队，在当前请求结束后开始</span>}
+      <button type="button" className="mit-button" disabled={custom} title={custom? '自定义 Mock 测试不支持再次请求':'使用相同模型集合再次请求'} onClick={() => store.actions.rerunRecord(record.id)}>
+        <Icon name="refresh" size={14} />再次请求
+      </button>
+    </div>
+  </div>;
 }
 function RecordSummary({ store,record }: {
   store: Workbench;
@@ -147,6 +183,8 @@ export function RecordView({ store,id }: {
         <span className="mit-badge">{record.kind==='fingerprint'? '真实指纹':'MOCK'}</span>
       </div>
       <Breadcrumb record={record} />
+      <AttemptBar store={store} record={record} />
+      {currentAttempt(record.attempts??[],record.attemptId)?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，请求已中断。</p>}
       <RecordSummary store={store} record={record} />
       {record.kind==='fingerprint'&&<div className="mit-reference-meta">
         <dl>

@@ -3,10 +3,10 @@ import type { ReactNode } from 'react';
 import type { Metrics,Stage } from '../types';
 import { STAGE_LABELS } from '../types';
 export function Icon({ name,size=16 }: {
-  name: 'plus'|'close'|'chevron'|'sidebar'|'search'|'settings'|'play'|'stop'|'trash'|'refresh'|'check';
+  name: 'plus'|'close'|'chevron'|'sidebar'|'search'|'settings'|'play'|'stop'|'trash'|'refresh'|'check'|'copy';
   size?: number;
 }) {
-  const paths={ plus: 'M12 5v14M5 12h14',close: 'm6 6 12 12M6 18 18 6',chevron: 'm9 5 7 7-7 7',sidebar: 'M4 4h16v16H4zM9 4v16',search: 'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',settings: 'M4 7h16M4 17h16M8 4v6M16 14v6',check: 'M20 6 9 17l-5-5',play: 'm8 5 11 7-11 7z',stop: 'M6 6h12v12H6z',trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',refresh: 'M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-4l2 3M4 17l2 3a8 8 0 0 0 13-4' };
+  const paths={ plus: 'M12 5v14M5 12h14',close: 'm6 6 12 12M6 18 18 6',chevron: 'm9 5 7 7-7 7',sidebar: 'M4 4h16v16H4zM9 4v16',search: 'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',settings: 'M4 7h16M4 17h16M8 4v6M16 14v6',check: 'M20 6 9 17l-5-5',play: 'm8 5 11 7-11 7z',stop: 'M6 6h12v12H6z',trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',refresh: 'M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-4l2 3M4 17l2 3a8 8 0 0 0 13-4',copy: 'M9 9h10v12H9zM5 15V3h10' };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d={paths[name]} />
   </svg>;

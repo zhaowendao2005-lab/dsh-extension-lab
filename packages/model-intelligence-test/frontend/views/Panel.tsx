@@ -5,6 +5,8 @@ import { NoticeModal } from './workbench/NoticeModal';
 import { DraftView } from './creation/DraftView';
 import { RecordView } from './results/RecordView';
 import { RunDetailPage } from './results/RunDetailPage';
+import { FeatureHub } from './features/FeatureHub';
+import { RelayPage } from './relay/RelayPage';
 function TabBar({ store }: {
   store: Workbench;
 }) {
@@ -31,6 +33,9 @@ function TabBar({ store }: {
         </button>
       </div>)}
     </div>
+    <button type="button" className="mit-tab-add" aria-label="打开功能中心" title="功能中心" onClick={() => store.actions.openFeature('hub')}>
+      <Icon name="plus" size={14} />
+    </button>
   </header>;
 }
 function RecordsSidebar({ store }: {
@@ -68,7 +73,8 @@ function RecordsSidebar({ store }: {
             </strong>
             <span>
               {record.kind==='fingerprint'? '指纹测试':'自定义 Agent'} ·
-              {record.runIds.length} 模型
+              {(record.models?.length||record.runIds.length)} 模型
+              {(record.attempts?.length??0)>1? ` · ${record.attempts.length} 次请求`:''}
             </span>
             <small>
               {new Date(record.createdAt).toLocaleString('zh-CN',{ month: '2-digit',day: '2-digit',hour: '2-digit',minute: '2-digit' })}
@@ -97,10 +103,12 @@ export function Panel({ store }: {
   let content=<DraftView store={store} />;
   if(active?.type==='record'&&active.recordId)
     content=navigation?.runId? <RunDetailPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:<RecordView key={active.recordId} store={store} id={active.recordId} />;
+  else if(active?.type==='feature')
+    content=active.feature==='relay'? <RelayPage store={store} />:<FeatureHub store={store} />;
   return <div className="mit-workbench flex min-w-0 flex-col">
     <TabBar store={store} />
     <div className="mit-workbench-body flex min-w-0">
-      <RecordsSidebar store={store} />
+      {active?.type!=='feature'&&<RecordsSidebar store={store} />}
       <main id={`${store.sessionId}-mit-active-panel`} className="mit-main min-w-0 flex-1" role="tabpanel" aria-labelledby={active? `${store.sessionId}-mit-tab-${active.id}`:undefined}>
         {content}
       </main>
