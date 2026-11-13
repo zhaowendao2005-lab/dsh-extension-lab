@@ -7,7 +7,6 @@
       "description": "私有扩展市场、安装与更新管理器。",
       "version": "1.0.3",
       "path": "packages/extension-lab-manager",
-      "ref": "version-3.4.2",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/extension-lab-manager"
     },
     {
@@ -16,7 +15,6 @@
       "description": "Swiss-modernist dialog and interface enhancements for DSH.",
       "version": "1.0.0",
       "path": "packages/dsh-ui-enhancements",
-      "ref": "version-3.4.2",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-ui-enhancements"
     },
     {
@@ -25,7 +23,6 @@
       "description": "DSH 插件开发沙箱与调试面板",
       "version": "1.4.3",
       "path": "packages/dsh-plugin-dev-sandbox",
-      "ref": "version-3.4.2",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-plugin-dev-sandbox"
     },
     {
@@ -34,7 +31,6 @@
       "description": "旁路提问（BTW）：基于最新真实模型请求上下文独立作答，不打断主线。",
       "version": "1.0.2",
       "path": "packages/dsh-btw-side",
-      "ref": "version-3.4.2",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-btw-side"
     },
     {
@@ -43,7 +39,6 @@
       "description": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。",
       "version": "1.0.0",
       "path": "packages/model-intelligence-test",
-      "ref": "version-3.4.2",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/model-intelligence-test"
     },
     {
@@ -52,7 +47,6 @@
       "description": "Google Antigravity (Cloud Code v1internal) 直连 Provider 插件：支持多账号 OAuth 轮换与 Sticky 会话、Gemini 模型动态发现、disjoint Token/Cache 统计、thoughtSignature 对齐回放、配额 Telemetry 与 slash 命令。",
       "version": "1.0.0",
       "path": "packages/dsh-antigravity",
-      "ref": "version-3.5.0",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-antigravity"
     }
   ]
