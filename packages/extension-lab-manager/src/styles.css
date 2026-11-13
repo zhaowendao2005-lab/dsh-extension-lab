@@ -139,3 +139,23 @@
   line-height: 20px;
   flex: none;
 }
+
+/*
+ * The plugins page can place tab content inside a multi-column track (some host
+ * builds render settings sections as a 2-up grid). Keep the catalog a single
+ * full-width column so cards never share a row and copy never clips mid-word.
+ */
+.dsh-market,
+.dsh-market-list {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  column-count: 1 !important;
+  width: 100%;
+}
+
+.dsh-market-item {
+  width: 100%;
+  grid-column: 1 / -1;
+}

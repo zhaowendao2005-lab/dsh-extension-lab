@@ -74,8 +74,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
   color: var(--dsw-alias-label-primary, inherit);
 }
 
+/* Keep the collapsed strip centered on the composer card: dropping the auto
+   margins here shifted it left of the input. */
 .btw-side-bar[data-expanded='false'] {
-  margin: 4px 0;
+  margin: 4px auto 2px;
 }
 
 .btw-side-strip {
