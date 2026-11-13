@@ -10,15 +10,50 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const module = { exports: {} };
     const React = require("react");
-    const MARKET = {"mode":"production","catalogUrl":"https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/marketplace.json"};
+    const MARKET = {"mode":"production","catalogUrl":"https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/index.json"};
     const CSS = "/* extension-lab-manager custom tab styling */\n.dsh-market {\n  display: flex;\n  flex-direction: column;\n  gap: 24px;\n}\n\n.dsh-market-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: flex-start;\n  gap: 16px;\n  flex-wrap: wrap;\n}\n\n.dsh-market-header > div {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n}\n\n.dsh-market-header h2 {\n  margin: 0;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 22px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-market-header p {\n  margin: 0;\n  font-size: 13px;\n  line-height: 20px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-market-header input[type=\"search\"] {\n  border: 0.5px solid var(--dsw-alias-border-l4);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-layer-3);\n  height: 32px;\n  font: inherit;\n  color: var(--dsw-alias-label-primary);\n  outline: none;\n  padding: 0 12px;\n  font-size: 13px;\n  width: 240px;\n}\n\n.dsh-market-header input[type=\"search\"]:focus {\n  border-color: var(--dsw-alias-state-business-primary);\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-state-business-primary);\n}\n\n.dsh-market-message {\n  color: var(--dsw-alias-label-tertiary);\n  margin: 0;\n  font-size: 13px;\n  line-height: 20px;\n}\n\n.dsh-market-message[role=\"alert\"] {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-market-list {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  margin: 0;\n  padding: 0;\n  list-style: none;\n}\n\n.dsh-market-item {\n  border-radius: var(--dsw-radius-xl);\n  margin: 0 -8px;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  gap: 14px;\n  padding: 8px;\n}\n\n.dsh-market-copy {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  gap: 4px;\n  min-width: 0;\n}\n\n.dsh-market-copy h3 {\n  margin: 0;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 20px;\n  color: var(--dsw-alias-label-primary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  overflow: hidden;\n}\n\n.dsh-market-copy p {\n  margin: 0;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  display: -webkit-box;\n  -webkit-line-clamp: 1;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dsh-market-copy code {\n  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n  line-height: 18px;\n  overflow-wrap: anywhere;\n}\n\n.dsh-market-state {\n  color: var(--dsw-alias-label-secondary);\n  flex: none;\n  white-space: nowrap;\n  font-size: 12.5px;\n  line-height: 18px;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.dsh-market-install {\n  border-radius: var(--dsw-radius-md);\n  height: 32px;\n  padding: 0 12px;\n  font-size: 13px;\n  line-height: 20px;\n  flex: none;\n}\n\n/*\n * The plugins page can place tab content inside a multi-column track (some host\n * builds render settings sections as a 2-up grid). Keep the catalog a single\n * full-width column so cards never share a row and copy never clips mid-word.\n */\n.dsh-market,\n.dsh-market-list {\n  display: flex !important;\n  flex-direction: column !important;\n  flex-wrap: nowrap !important;\n  grid-template-columns: minmax(0, 1fr) !important;\n  column-count: 1 !important;\n  width: 100%;\n}\n\n.dsh-market-item {\n  width: 100%;\n  grid-column: 1 / -1;\n}\n";
     const STYLE_ID = "extension-lab-manager/market.css";
     const PLUGIN = "extension-lab-manager";
 
     // ---------------------------------------------------------------------------
-    // Spec generation — always use the github: shorthand so the host can match
-    // the spec against the profile's recorded "github:..." dependency.
+    // Format 1 index.json normalization + pinned commit spec generation.
     // ---------------------------------------------------------------------------
+    function pickLocalized(value, fallback) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (value && typeof value === "object") {
+        return value.zh || value.en || fallback || "";
+      }
+      return fallback || "";
+    }
+
+    function normalizeIndexCatalog(catalog) {
+      if (catalog && catalog.format === 1 && Array.isArray(catalog.plugins)) {
+        return catalog.plugins
+          .map((plugin) => {
+            const versions = Array.isArray(plugin.versions) ? plugin.versions : [];
+            const latest = versions[0];
+            if (!plugin.name || !latest || !latest.version || !latest.source) return null;
+            const repoUrl = String(latest.source.url || plugin.repository?.url || "").replace(/\.git$/, "");
+            const ghMatch = /^https:\/\/github\.com\/([^/]+\/[^/]+)$/i.exec(repoUrl);
+            const repoSlug = ghMatch ? ghMatch[1] : "zhaowendao2005-lab/dsh-extension-lab";
+            return {
+              name: plugin.name,
+              title: pickLocalized(plugin.title, plugin.name),
+              description: pickLocalized(plugin.description, ""),
+              version: latest.version,
+              path: latest.source.path || plugin.repository?.directory || "packages/" + plugin.name,
+              commit: latest.source.commit,
+              repoSlug,
+            };
+          })
+          .filter(Boolean);
+      }
+      if (catalog && catalog.schemaVersion === 1 && Array.isArray(catalog.extensions)) {
+        return catalog.extensions;
+      }
+      return null;
+    }
+
     function toSpec(item) {
       if (
         !item ||
@@ -30,19 +65,19 @@ window.__ModuleLoader__.load({
       ) {
         throw new Error("扩展清单包含无效条目");
       }
-      // Explicit specs are authoritative. The catalog is fetched remotely, so reject
-      // empty or whitespace-containing values before passing them to the Host.
+      // Explicit specs (e.g. development link:) are authoritative.
       if (item.spec) {
         if (typeof item.spec !== "string" || !item.spec.trim() || /\s/.test(item.spec)) {
           throw new Error("扩展清单包含无效安装地址");
         }
         return item.spec;
       }
-      const ref = item.ref || "main";
+      const ref = item.commit || item.ref || "main";
       if (typeof ref !== "string" || !/^[A-Za-z0-9._/-]+$/.test(ref) || ref.includes("..")) {
         throw new Error("扩展清单包含无效版本引用");
       }
-      return "github:zhaowendao2005-lab/dsh-extension-lab#" + ref + "&path:/" + item.path;
+      const repoSlug = item.repoSlug || "zhaowendao2005-lab/dsh-extension-lab";
+      return "github:" + repoSlug + "#" + ref + "&path:/" + item.path;
     }
 
     // ---------------------------------------------------------------------------
@@ -100,10 +135,10 @@ window.__ModuleLoader__.load({
             return r.json();
           })
           .then((catalog) => {
-            if (!catalog || catalog.schemaVersion !== 1 || !Array.isArray(catalog.extensions))
-              throw new Error("扩展清单格式无效");
+            const normalized = normalizeIndexCatalog(catalog);
+            if (!normalized) throw new Error("扩展清单格式无效");
             if (active) {
-              setItems(catalog.extensions);
+              setItems(normalized);
               setStatus("ready");
             }
           })

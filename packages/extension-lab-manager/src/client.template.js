@@ -16,9 +16,44 @@ window.__ModuleLoader__.load({
     const PLUGIN = "extension-lab-manager";
 
     // ---------------------------------------------------------------------------
-    // Spec generation — always use the github: shorthand so the host can match
-    // the spec against the profile's recorded "github:..." dependency.
+    // Format 1 index.json normalization + pinned commit spec generation.
     // ---------------------------------------------------------------------------
+    function pickLocalized(value, fallback) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (value && typeof value === "object") {
+        return value.zh || value.en || fallback || "";
+      }
+      return fallback || "";
+    }
+
+    function normalizeIndexCatalog(catalog) {
+      if (catalog && catalog.format === 1 && Array.isArray(catalog.plugins)) {
+        return catalog.plugins
+          .map((plugin) => {
+            const versions = Array.isArray(plugin.versions) ? plugin.versions : [];
+            const latest = versions[0];
+            if (!plugin.name || !latest || !latest.version || !latest.source) return null;
+            const repoUrl = String(latest.source.url || plugin.repository?.url || "").replace(/\.git$/, "");
+            const ghMatch = /^https:\/\/github\.com\/([^/]+\/[^/]+)$/i.exec(repoUrl);
+            const repoSlug = ghMatch ? ghMatch[1] : "zhaowendao2005-lab/dsh-extension-lab";
+            return {
+              name: plugin.name,
+              title: pickLocalized(plugin.title, plugin.name),
+              description: pickLocalized(plugin.description, ""),
+              version: latest.version,
+              path: latest.source.path || plugin.repository?.directory || "packages/" + plugin.name,
+              commit: latest.source.commit,
+              repoSlug,
+            };
+          })
+          .filter(Boolean);
+      }
+      if (catalog && catalog.schemaVersion === 1 && Array.isArray(catalog.extensions)) {
+        return catalog.extensions;
+      }
+      return null;
+    }
+
     function toSpec(item) {
       if (
         !item ||
@@ -30,19 +65,19 @@ window.__ModuleLoader__.load({
       ) {
         throw new Error("扩展清单包含无效条目");
       }
-      // Explicit specs are authoritative. The catalog is fetched remotely, so reject
-      // empty or whitespace-containing values before passing them to the Host.
+      // Explicit specs (e.g. development link:) are authoritative.
       if (item.spec) {
         if (typeof item.spec !== "string" || !item.spec.trim() || /\s/.test(item.spec)) {
           throw new Error("扩展清单包含无效安装地址");
         }
         return item.spec;
       }
-      const ref = item.ref || "main";
+      const ref = item.commit || item.ref || "main";
       if (typeof ref !== "string" || !/^[A-Za-z0-9._/-]+$/.test(ref) || ref.includes("..")) {
         throw new Error("扩展清单包含无效版本引用");
       }
-      return "github:zhaowendao2005-lab/dsh-extension-lab#" + ref + "&path:/" + item.path;
+      const repoSlug = item.repoSlug || "zhaowendao2005-lab/dsh-extension-lab";
+      return "github:" + repoSlug + "#" + ref + "&path:/" + item.path;
     }
 
     // ---------------------------------------------------------------------------
@@ -100,10 +135,10 @@ window.__ModuleLoader__.load({
             return r.json();
           })
           .then((catalog) => {
-            if (!catalog || catalog.schemaVersion !== 1 || !Array.isArray(catalog.extensions))
-              throw new Error("扩展清单格式无效");
+            const normalized = normalizeIndexCatalog(catalog);
+            if (!normalized) throw new Error("扩展清单格式无效");
             if (active) {
-              setItems(catalog.extensions);
+              setItems(normalized);
               setStatus("ready");
             }
           })
