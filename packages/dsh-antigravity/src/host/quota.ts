@@ -144,6 +144,10 @@ function poolDisplayLabel(pool: QuotaGroupSummary['pool']): string {
   }
 }
 
+function isPlaceholderModelId(value: string): boolean {
+  return /^MODEL_PLACEHOLDER_/i.test(value.trim());
+}
+
 function normalizeUpstreamModelId(rawId: string): string {
   const trimmed = rawId.trim();
   const enumMap: Record<string, string> = {
@@ -179,10 +183,14 @@ export function parseAvailableModelsResponse(
     const obj = asRecord(val);
     if (!obj) return;
     const modelOrAlias = asRecord(obj.modelOrAlias ?? obj.model_or_alias);
-    const rawId =
-      readString(obj, 'model', 'modelId', 'model_id', 'id', 'name') ??
-      readString(modelOrAlias, 'model', 'alias') ??
-      (key.trim() || undefined);
+    const candidates = [
+      readString(obj, 'id', 'alias'),
+      key.trim() || undefined,
+      readString(modelOrAlias, 'alias'),
+      readString(obj, 'model', 'modelId', 'model_id', 'name'),
+      readString(modelOrAlias, 'model'),
+    ].filter((c): c is string => typeof c === 'string' && c.trim() !== '');
+    const rawId = candidates.find((c) => !isPlaceholderModelId(c)) ?? candidates[0];
     if (!rawId) return;
     const id = normalizeUpstreamModelId(rawId);
     if (!id || seen.has(id)) return;

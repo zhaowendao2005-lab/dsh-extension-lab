@@ -31,18 +31,18 @@ export interface AntigravityPluginConfig {
   quotaExhaustedThreshold: number;
   failureSwitchThreshold: number;
   includeNonGeminiModels: boolean;
-  defaultThinkingEffort: 'auto' | ReasoningEffortValue;
+  defaultThinkingEffort: ReasoningEffortValue;
   storageDir?: string;
   requestImagePixelBudget: number;
   requestImageMaxBytes: number;
 }
 
 const effortEnum = (Schema.union as (values: string[]) => any)([
-  'auto',
   'low',
   'medium',
   'high',
-]).default('auto');
+  'xhigh',
+]).default('high');
 
 export const Config = Schema.object({
   userAgent: Schema.string()
@@ -143,10 +143,10 @@ export function normalizeConfig(raw: unknown): AntigravityPluginConfig {
       ? input.oauthClientSecret.trim()
       : undefined;
   const effort = input.defaultThinkingEffort;
-  const defaultThinkingEffort =
-    effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'auto'
+  const defaultThinkingEffort: ReasoningEffortValue =
+    effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh'
       ? effort
-      : 'auto';
+      : 'high';
 
   const quotaExhaustedThreshold = clampNumber(
     input.quotaExhaustedThreshold,

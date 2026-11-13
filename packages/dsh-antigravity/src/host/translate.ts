@@ -10,7 +10,15 @@ import {
   type StreamChunk,
   type ToolSchema,
 } from '@deepseek-ai/dsh-llm';
-import { isGemini3SeriesModel, normalizeModelId } from './catalog.ts';
+import {
+  STATIC_GEMINI_MODELS,
+  clampEffortToSupported,
+  extractEffortSuffix,
+  isGemini3SeriesModel,
+  isGeminiModelId,
+  isReasoningEffortValue,
+  normalizeModelId,
+} from './catalog.ts';
 import {
   buildOfficialRequestId,
   deriveUpstreamSessionId,
@@ -46,7 +54,9 @@ export interface BuildRequestInput {
   accountEmail?: string;
   projectId: string;
   sessionGeneration?: number;
-  defaultThinkingEffort?: 'auto' | ReasoningEffortValue;
+  defaultThinkingEffort?: ReasoningEffortValue;
+  upstreamModel?: string;
+  effectiveEffort?: ReasoningEffortValue;
   images?: ReadonlyMap<string, ResolvedImageData>;
   nowMs?: number;
   trajectoryId?: string;
@@ -276,31 +286,57 @@ function normalizeTools(tools: readonly ToolSchema[] | undefined): unknown[] | u
   return [{ functionDeclarations: declarations }];
 }
 
-function buildThinkingConfig(params: {
+function resolveEffectiveEffort(params: {
   model: string;
+  rawModel?: string;
   effort?: string;
-  defaultEffort?: 'auto' | ReasoningEffortValue;
-}): Record<string, unknown> | undefined {
+  defaultEffort?: ReasoningEffortValue;
+}): ReasoningEffortValue | undefined {
   const model = params.model.toLowerCase();
   if (model.includes('lite')) return undefined;
 
+  const staticEntry = STATIC_GEMINI_MODELS.find((m) => m.id === model);
+  if (staticEntry && !staticEntry.supportsReasoning) return undefined;
+
   let chosen: ReasoningEffortValue | undefined;
-  if (params.effort === 'low' || params.effort === 'medium' || params.effort === 'high') {
+  if (isReasoningEffortValue(params.effort)) {
     chosen = params.effort;
-  } else if (
-    params.defaultEffort === 'low' ||
-    params.defaultEffort === 'medium' ||
-    params.defaultEffort === 'high'
-  ) {
+  } else if (params.rawModel && extractEffortSuffix(params.rawModel).effort) {
+    chosen = extractEffortSuffix(params.rawModel).effort;
+  } else if (isReasoningEffortValue(params.defaultEffort)) {
     chosen = params.defaultEffort;
+  } else if (staticEntry?.defaultEffort) {
+    chosen = staticEntry.defaultEffort;
+  } else if (model.endsWith('-xhigh')) {
+    chosen = 'xhigh';
   } else if (model.endsWith('-high')) {
     chosen = 'high';
   } else if (model.endsWith('-low')) {
     chosen = 'low';
-  } else if (model.includes('pro') || model.includes('gemini-3') || model.includes('gemini-2.5')) {
+  } else if (
+    model.includes('pro') ||
+    model.includes('gemini-3') ||
+    model.includes('gemini-4') ||
+    model.includes('gemini-2.5') ||
+    model.includes('claude-')
+  ) {
     chosen = 'medium';
   }
 
+  if (!chosen) return undefined;
+  return staticEntry?.supportedEfforts
+    ? clampEffortToSupported(chosen, staticEntry.supportedEfforts)
+    : chosen;
+}
+
+function buildThinkingConfig(params: {
+  model: string;
+  chosen?: ReasoningEffortValue;
+}): Record<string, unknown> | undefined {
+  const model = params.model.toLowerCase();
+  if (model.includes('lite')) return undefined;
+
+  const chosen = params.chosen;
   if (!chosen) return undefined;
 
   if (isGemini3SeriesModel(model)) {
@@ -314,6 +350,7 @@ function buildThinkingConfig(params: {
     low: 1024,
     medium: 8192,
     high: 24576,
+    xhigh: 32768,
   };
   return {
     includeThoughts: true,
@@ -370,10 +407,24 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
   envelope: Record<string, unknown>;
   requestId: string;
   canonicalModel: string;
+  upstreamModel: string;
   hasToolActivity: boolean;
 } {
   const { options } = input;
   const canonicalModel = normalizeModelId(options.model);
+  const chosenEffort =
+    input.effectiveEffort ??
+    resolveEffectiveEffort({
+      model: canonicalModel,
+      rawModel: options.model,
+      effort: options.reasoningEffort,
+      defaultEffort: input.defaultThinkingEffort,
+    });
+  const staticEntry = STATIC_GEMINI_MODELS.find((m) => m.id === canonicalModel);
+  const upstreamModel =
+    input.upstreamModel ??
+    (chosenEffort && staticEntry?.variantIds?.[chosenEffort]) ??
+    (options.model.trim() || canonicalModel);
   const { envelopeUserAgent } = resolveOfficialFingerprint(input.accountEmail);
 
   // 1. Freeze leading system messages + options.system into top-level systemInstruction.
@@ -523,14 +574,16 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
     input.nowMs,
   );
   const trajId = extractTrajectoryId(requestId);
+  const isClaudeModel = upstreamModel.toLowerCase().includes('claude');
+  const isNonGemini = !isGeminiModelId(upstreamModel);
   const labels = {
     last_step_index: String(modelTurns),
-    model_enum: canonicalModel,
+    model_enum: upstreamModel,
     request_id: `${trajId}-${modelTurns}`,
     trajectory_id: trajId,
-    used_claude: 'false',
+    used_claude: String(isClaudeModel),
     used_claude_conservative: 'false',
-    used_non_gemini_model: 'false',
+    used_non_gemini_model: String(isNonGemini),
   };
 
   // Ordered generationConfig: maxOutputTokens -> thinkingConfig -> temperature -> stopSequences
@@ -540,8 +593,7 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
   }
   const thinkingConfig = buildThinkingConfig({
     model: canonicalModel,
-    effort: options.reasoningEffort,
-    defaultEffort: input.defaultThinkingEffort,
+    chosen: chosenEffort,
   });
   if (thinkingConfig) {
     generationConfig.thinkingConfig = thinkingConfig;
@@ -585,14 +637,14 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
     project: input.projectId || 'aicode-consumers',
     requestId,
     request: innerRequest,
-    model: canonicalModel,
+    model: upstreamModel,
     userAgent: envelopeUserAgent,
   };
   if (hasToolActivity) {
     envelope.requestType = 'agent';
   }
 
-  return { envelope, requestId, canonicalModel, hasToolActivity };
+  return { envelope, requestId, canonicalModel, upstreamModel, hasToolActivity };
 }
 
 export function buildCountTokensEnvelope(innerRequest: Record<string, unknown>): {

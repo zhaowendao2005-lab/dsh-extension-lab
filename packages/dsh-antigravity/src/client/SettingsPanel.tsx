@@ -664,6 +664,13 @@ export function AntigravitySettingsPanel({ ctx }: { ctx: any }) {
                     <div className="dsha-row-title">
                       <span>{opt.name}</span>
                       <span className="dsha-badge">{opt.id}</span>
+                      {opt.supportsReasoning &&
+                        opt.supportedEfforts &&
+                        opt.supportedEfforts.length > 0 && (
+                          <span className="dsha-badge">
+                            {opt.supportedEfforts.join(' / ')}
+                          </span>
+                        )}
                       {opt.tierAccess === 'ultra' ? (
                         <span className="dsha-badge dsha-badge-ultra">Ultra</span>
                       ) : opt.tierAccess === 'pro' ? (

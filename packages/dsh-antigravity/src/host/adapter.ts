@@ -11,7 +11,7 @@ import {
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm';
 import { AntigravityAccountManager, type AccountRecord } from './accounts.ts';
-import { AntigravityCatalog, normalizeModelId } from './catalog.ts';
+import { AntigravityCatalog } from './catalog.ts';
 import { AntigravityHttpClient, AntigravityUpstreamError } from './client.ts';
 import {
   PROVIDER_DISPLAY_NAME,
@@ -595,13 +595,19 @@ export class AntigravityAdapter extends LlmAdapter {
     await this.service.accounts.ensureLoaded();
     await this.service.catalog.ensureLoaded();
 
-    const canonicalModel = normalizeModelId(options.model);
+    const dispatch = this.service.catalog.resolveUpstreamDispatch(
+      options.model,
+      options.reasoningEffort,
+    );
+    const canonicalModel = dispatch.canonicalModel;
     const pool = classifyPool(canonicalModel);
     const sessionKey = options.sessionId?.trim() || 'default';
     const images = await this.service.resolveImages(options, options.signal);
 
     let failoverAttemptsRemaining = 1;
     let bumped1M = false;
+    let activeUpstreamModel = dispatch.upstreamModel;
+    let fallbackVariantIdx = 0;
 
     for (;;) {
       let selected: AccountRecord;
@@ -662,6 +668,8 @@ export class AntigravityAdapter extends LlmAdapter {
         sessionGeneration,
         trajectoryId,
         defaultThinkingEffort: this.service.config.defaultThinkingEffort,
+        upstreamModel: activeUpstreamModel,
+        effectiveEffort: dispatch.effectiveEffort,
         images,
       });
 
@@ -695,6 +703,15 @@ export class AntigravityAdapter extends LlmAdapter {
               freshAccount.id,
               sessionKey,
             );
+            continue;
+          }
+
+          if (
+            (error.classified.isModelNotFound || error.classified.status === 404) &&
+            fallbackVariantIdx < dispatch.fallbackUpstreamModels.length
+          ) {
+            activeUpstreamModel = dispatch.fallbackUpstreamModels[fallbackVariantIdx]!;
+            fallbackVariantIdx += 1;
             continue;
           }
 

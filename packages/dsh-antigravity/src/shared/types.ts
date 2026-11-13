@@ -3,7 +3,7 @@
  * Must stay dependency-free so both host ESM and browser client bundles share it.
  */
 
-export type ReasoningEffortValue = 'low' | 'medium' | 'high';
+export type ReasoningEffortValue = 'low' | 'medium' | 'high' | 'xhigh';
 
 export type SwitchReason = 'manual' | 'quota' | 'streak' | 'unavailable';
 
@@ -97,6 +97,9 @@ export interface CatalogModelOption {
   contextWindow: number;
   defaultMaxTokens: number;
   supportsReasoning: boolean;
+  supportedEfforts?: ReasoningEffortValue[];
+  defaultEffort?: ReasoningEffortValue;
+  variantIds?: Partial<Record<ReasoningEffortValue, string>>;
   supportsImages: boolean;
   pool: QuotaGroupSummary['pool'];
   tierAccess?: ModelTierAccess;

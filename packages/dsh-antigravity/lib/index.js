@@ -942,11 +942,11 @@ var DEFAULT_OAUTH_PORT = 51121;
 var DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 4194304;
 var DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1048576;
 var effortEnum = Schema.union([
-  "auto",
   "low",
   "medium",
-  "high"
-]).default("auto");
+  "high",
+  "xhigh"
+]).default("high");
 var Config = Schema.object({
   userAgent: Schema.string().description("Optional Hub User-Agent override (sanitized against Antigravity Hub version floor)").volatile(),
   endpoints: Schema.array(Schema.string()).default([...DEFAULT_ENDPOINTS]).description("Ordered Cloud Code internal endpoints (Daily -> Sandbox -> Prod)").volatile(),
@@ -982,7 +982,7 @@ function normalizeConfig(raw) {
   const oauthClientId = typeof input.oauthClientId === "string" && input.oauthClientId.trim() !== "" ? input.oauthClientId.trim() : void 0;
   const oauthClientSecret = typeof input.oauthClientSecret === "string" && input.oauthClientSecret.trim() !== "" ? input.oauthClientSecret.trim() : void 0;
   const effort = input.defaultThinkingEffort;
-  const defaultThinkingEffort = effort === "low" || effort === "medium" || effort === "high" || effort === "auto" ? effort : "auto";
+  const defaultThinkingEffort = effort === "low" || effort === "medium" || effort === "high" || effort === "xhigh" ? effort : "high";
   const quotaExhaustedThreshold = clampNumber(
     input.quotaExhaustedThreshold,
     DEFAULT_QUOTA_EXHAUSTED_THRESHOLD,
@@ -1259,6 +1259,9 @@ function poolDisplayLabel(pool) {
       return "Other Models";
   }
 }
+function isPlaceholderModelId(value) {
+  return /^MODEL_PLACEHOLDER_/i.test(value.trim());
+}
 function normalizeUpstreamModelId(rawId) {
   const trimmed = rawId.trim();
   const enumMap = {
@@ -1281,7 +1284,14 @@ function parseAvailableModelsResponse(raw) {
     const obj = asRecord(val);
     if (!obj) return;
     const modelOrAlias = asRecord(obj.modelOrAlias ?? obj.model_or_alias);
-    const rawId = readString(obj, "model", "modelId", "model_id", "id", "name") ?? readString(modelOrAlias, "model", "alias") ?? (key.trim() || void 0);
+    const candidates = [
+      readString(obj, "id", "alias"),
+      key.trim() || void 0,
+      readString(modelOrAlias, "alias"),
+      readString(obj, "model", "modelId", "model_id", "name"),
+      readString(modelOrAlias, "model")
+    ].filter((c) => typeof c === "string" && c.trim() !== "");
+    const rawId = candidates.find((c) => !isPlaceholderModelId(c)) ?? candidates[0];
     if (!rawId) return;
     const id = normalizeUpstreamModelId(rawId);
     if (!id || seen.has(id)) return;
@@ -1532,100 +1542,100 @@ async function fetchAccountQuotaAndModels(params) {
 }
 
 // packages/dsh-antigravity/src/host/catalog.ts
+var EFFORT_ORDER = [
+  "low",
+  "medium",
+  "high",
+  "xhigh"
+];
+function isReasoningEffortValue(value) {
+  return value === "low" || value === "medium" || value === "high" || value === "xhigh";
+}
+function clampEffortToSupported(effort, supported) {
+  if (!supported || supported.length === 0) return effort;
+  if (supported.includes(effort)) return effort;
+  const targetIdx = EFFORT_ORDER.indexOf(effort);
+  for (let i = targetIdx - 1; i >= 0; i -= 1) {
+    if (supported.includes(EFFORT_ORDER[i])) {
+      return EFFORT_ORDER[i];
+    }
+  }
+  for (let i = targetIdx + 1; i < EFFORT_ORDER.length; i += 1) {
+    if (supported.includes(EFFORT_ORDER[i])) {
+      return EFFORT_ORDER[i];
+    }
+  }
+  return supported[0];
+}
+function extractEffortSuffix(modelId) {
+  const trimmed = modelId.trim();
+  const match = /^(.+)-(low|medium|high|xhigh)$/i.exec(trimmed);
+  if (!match) return { baseId: trimmed };
+  const effort = match[2].toLowerCase();
+  return {
+    baseId: match[1],
+    effort: isReasoningEffortValue(effort) ? effort : void 0
+  };
+}
+function stripEffortDisplaySuffix(displayName) {
+  return displayName.trim().replace(/\s*\((?:Low|Medium|High|XHigh|Minimal)\)\s*$/i, "").replace(/\s+(?:Low|Medium|High|XHigh|Minimal)\s*$/i, "").trim();
+}
+function isPlaceholderModelId2(value) {
+  return /^MODEL_PLACEHOLDER_/i.test(value.trim());
+}
+function displayNameToSlug(displayName) {
+  return stripEffortDisplaySuffix(displayName).toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^-+|-+$/g, "");
+}
+var KNOWN_VARIANT_FAMILIES = /* @__PURE__ */ new Set([
+  "gemini-4-hydrogen",
+  "gemini-4-argon",
+  "gemini-4-carbon",
+  "gemini-3.8-flash",
+  "gemini-3.1-pro",
+  "claude-opus-5-5",
+  "claude-sonnet-5-5"
+]);
+function isKnownVariantFamily(baseId) {
+  const lower = baseId.toLowerCase();
+  return KNOWN_VARIANT_FAMILIES.has(lower) || /^(?:gemini-4-|gemini-3\.\d+-|claude-(?:opus|sonnet)-)/.test(lower);
+}
 var STATIC_GEMINI_MODELS = [
   {
-    id: "gemini-4-hydrogen-xhigh",
-    name: "Gemini 4 Hydrogen (XHigh)",
-    description: "Antigravity Gemini 4 Hydrogen with maximum XHigh reasoning",
+    id: "gemini-4-hydrogen",
+    name: "Gemini 4 Hydrogen",
+    description: "Antigravity Gemini 4 Hydrogen flagship model",
     defaultEnabled: true,
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high", "xhigh"],
     defaultEffort: "high",
+    variantIds: {
+      low: "gemini-4-hydrogen-low",
+      medium: "gemini-4-hydrogen-medium",
+      high: "gemini-4-hydrogen-high",
+      xhigh: "gemini-4-hydrogen-xhigh"
+    },
     supportsImages: true,
     pool: "gemini-pro",
     tierAccess: "pro",
     isGemini3Series: true
   },
   {
-    id: "gemini-4-hydrogen-high",
-    name: "Gemini 4 Hydrogen (High)",
-    description: "Antigravity Gemini 4 Hydrogen flagship with high reasoning",
+    id: "gemini-4-argon",
+    name: "Gemini 4 Argon",
+    description: "Antigravity Gemini 4 Argon model for Pro & Ultra plans",
     defaultEnabled: true,
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high"],
     defaultEffort: "high",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "pro",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-4-hydrogen-medium",
-    name: "Gemini 4 Hydrogen (Medium)",
-    description: "Balanced Gemini 4 Hydrogen tier for everyday coding",
-    defaultEnabled: false,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "medium",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "pro",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-4-hydrogen-low",
-    name: "Gemini 4 Hydrogen (Low)",
-    description: "Fast Gemini 4 Hydrogen tier with light thinking overhead",
-    defaultEnabled: false,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "low",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "pro",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-4-argon-high",
-    name: "Gemini 4 Argon (High)",
-    description: "Gemini 4 Argon high-reasoning model for Pro & Ultra plans",
-    defaultEnabled: true,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "high",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "pro",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-4-argon-medium",
-    name: "Gemini 4 Argon (Medium)",
-    description: "Gemini 4 Argon balanced tier for Pro & Ultra plans",
-    defaultEnabled: true,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "medium",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "pro",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-4-argon-low",
-    name: "Gemini 4 Argon (Low)",
-    description: "Fast Gemini 4 Argon tier for Pro & Ultra plans",
-    defaultEnabled: false,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "low",
+    variantIds: {
+      low: "gemini-4-argon-low",
+      medium: "gemini-4-argon-medium",
+      high: "gemini-4-argon-high"
+    },
     supportsImages: true,
     pool: "gemini-pro",
     tierAccess: "pro",
@@ -1639,6 +1649,7 @@ var STATIC_GEMINI_MODELS = [
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high"],
     defaultEffort: "medium",
     supportsImages: true,
     pool: "gemini-pro",
@@ -1646,112 +1657,59 @@ var STATIC_GEMINI_MODELS = [
     isGemini3Series: true
   },
   {
-    id: "gemini-4-carbon-high",
-    name: "Gemini 4 Carbon (High)",
-    description: "Gemini 4 Carbon deep reasoning tier (Ultra / entitled accounts)",
+    id: "gemini-4-carbon",
+    name: "Gemini 4 Carbon",
+    description: "Gemini 4 Carbon deep reasoning model (Ultra / entitled accounts)",
     defaultEnabled: false,
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high"],
     defaultEffort: "high",
+    variantIds: {
+      low: "gemini-4-carbon-low",
+      medium: "gemini-4-carbon-medium",
+      high: "gemini-4-carbon-high"
+    },
     supportsImages: true,
     pool: "gemini-pro",
     tierAccess: "ultra",
     isGemini3Series: true
   },
   {
-    id: "gemini-4-carbon-medium",
-    name: "Gemini 4 Carbon (Medium)",
-    description: "Gemini 4 Carbon balanced tier (Ultra / entitled accounts)",
-    defaultEnabled: false,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "medium",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "ultra",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-4-carbon-low",
-    name: "Gemini 4 Carbon (Low)",
-    description: "Gemini 4 Carbon fast tier (Ultra / entitled accounts)",
-    defaultEnabled: false,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "low",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "ultra",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-3.8-flash-high",
-    name: "Gemini 3.8 Flash (High)",
-    description: "Gemini 3.8 Flash with deep thinking for fast agent loops",
+    id: "gemini-3.8-flash",
+    name: "Gemini 3.8 Flash",
+    description: "Gemini 3.8 Flash for fast agent loops",
     defaultEnabled: true,
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
-    defaultEffort: "high",
-    supportsImages: true,
-    pool: "gemini-flash",
-    tierAccess: "all",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-3.8-flash-medium",
-    name: "Gemini 3.8 Flash (Medium)",
-    description: "Gemini 3.8 Flash balanced speed & reasoning tier",
-    defaultEnabled: false,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high"],
     defaultEffort: "medium",
+    variantIds: {
+      low: "gemini-3.8-flash-low",
+      medium: "gemini-3.8-flash-medium",
+      high: "gemini-3.8-flash-high"
+    },
     supportsImages: true,
     pool: "gemini-flash",
     tierAccess: "all",
     isGemini3Series: true
   },
   {
-    id: "gemini-3.8-flash-low",
-    name: "Gemini 3.8 Flash (Low)",
-    description: "Ultra-low-latency Gemini 3.8 Flash tier",
+    id: "gemini-3.1-pro",
+    name: "Gemini 3.1 Pro",
+    description: "Legacy Gemini 3.1 Pro model",
     defaultEnabled: false,
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
-    defaultEffort: "low",
-    supportsImages: true,
-    pool: "gemini-flash",
-    tierAccess: "all",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-3.1-pro-high",
-    name: "Gemini 3.1 Pro (High)",
-    description: "Legacy Gemini 3.1 Pro with deep thinking",
-    defaultEnabled: true,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
+    supportedEfforts: ["low", "high"],
     defaultEffort: "high",
-    supportsImages: true,
-    pool: "gemini-pro",
-    tierAccess: "pro",
-    isGemini3Series: true
-  },
-  {
-    id: "gemini-3.1-pro-low",
-    name: "Gemini 3.1 Pro (Low)",
-    description: "Fast Gemini 3.1 Pro tier with light thinking overhead",
-    defaultEnabled: false,
-    contextWindow: 1048576,
-    defaultMaxTokens: 65536,
-    supportsReasoning: true,
-    defaultEffort: "low",
+    variantIds: {
+      low: "gemini-3.1-pro-low",
+      high: "gemini-3.1-pro-high"
+    },
     supportsImages: true,
     pool: "gemini-pro",
     tierAccess: "pro",
@@ -1765,6 +1723,7 @@ var STATIC_GEMINI_MODELS = [
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high"],
     defaultEffort: "medium",
     supportsImages: true,
     pool: "gemini-flash",
@@ -1779,6 +1738,7 @@ var STATIC_GEMINI_MODELS = [
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high"],
     defaultEffort: "medium",
     supportsImages: true,
     pool: "gemini-pro",
@@ -1792,6 +1752,7 @@ var STATIC_GEMINI_MODELS = [
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
     supportsReasoning: true,
+    supportedEfforts: ["low", "medium", "high"],
     defaultEffort: "low",
     supportsImages: true,
     pool: "gemini-flash",
@@ -1811,24 +1772,30 @@ var STATIC_GEMINI_MODELS = [
   }
 ];
 var MODEL_ALIASES = {
-  "gemini-3-pro-high": "gemini-3.1-pro-high",
-  "gemini-3-pro-low": "gemini-3.1-pro-low",
-  "gemini-3.0-pro": "gemini-3.1-pro-high",
+  "gemini-3-pro-high": "gemini-3.1-pro",
+  "gemini-3-pro-low": "gemini-3.1-pro",
+  "gemini-3.0-pro": "gemini-3.1-pro",
   "gemini-3.0-flash": "gemini-3-flash",
   "gemini-3-flash-preview": "gemini-3-flash",
-  "gemini-3.1-pro-preview": "gemini-3.1-pro-high"
+  "gemini-3.1-pro-preview": "gemini-3.1-pro"
 };
 var REASONING_EFFORTS = [
   { id: ReasoningEffortId("low"), name: "Low", description: "Minimal thinking overhead" },
   { id: ReasoningEffortId("medium"), name: "Medium", description: "Balanced reasoning depth" },
-  { id: ReasoningEffortId("high"), name: "High", description: "Maximum reasoning depth" }
+  { id: ReasoningEffortId("high"), name: "High", description: "Maximum reasoning depth" },
+  { id: ReasoningEffortId("xhigh"), name: "XHigh", description: "Maximum extended reasoning depth" }
 ];
 function isGeminiModelId(modelId) {
   return modelId.toLowerCase().includes("gemini");
 }
 function normalizeModelId(modelId) {
   const trimmed = modelId.trim();
-  return MODEL_ALIASES[trimmed] ?? trimmed;
+  const aliased = MODEL_ALIASES[trimmed] ?? trimmed;
+  const { baseId, effort } = extractEffortSuffix(aliased);
+  if (effort && isKnownVariantFamily(baseId)) {
+    return baseId;
+  }
+  return aliased;
 }
 function isGemini3SeriesModel(modelId) {
   const lower = modelId.toLowerCase();
@@ -1870,6 +1837,13 @@ var AntigravityCatalog = class {
   loaded = false;
   dynamicModels = [];
   catalogSource = "static";
+  upstreamFallbackIds = /* @__PURE__ */ new Map();
+  migrateEnabledIds(rawIds) {
+    const cleaned = rawIds.filter((s) => typeof s === "string" && s.trim() !== "").map((s) => s.trim());
+    const migrated = [...new Set(cleaned.map((s) => normalizeModelId(s)))];
+    const changed = migrated.length !== cleaned.length || migrated.some((id, idx) => id !== cleaned[idx]);
+    return { ids: migrated, changed };
+  }
   async ensureLoaded() {
     if (this.loaded) return;
     this.loaded = true;
@@ -1877,7 +1851,14 @@ var AntigravityCatalog = class {
       () => void 0
     );
     if (saved && Array.isArray(saved.enabledModelIds)) {
-      this.enabledModelIds = [...new Set(saved.enabledModelIds.filter((s) => typeof s === "string" && s.trim() !== ""))];
+      const { ids, changed } = this.migrateEnabledIds(saved.enabledModelIds);
+      this.enabledModelIds = ids;
+      if (changed) {
+        await writePrivateJsonFile(this.settingsPath, {
+          version: 1,
+          enabledModelIds: this.enabledModelIds
+        }).catch(() => void 0);
+      }
     }
     if (this.dynamicModels.length === 0) {
       const cached = await readJsonFile(this.cachePath).catch(
@@ -1907,9 +1888,8 @@ var AntigravityCatalog = class {
   }
   async setEnabledModelIds(ids) {
     await this.ensureLoaded();
-    this.enabledModelIds = [
-      ...new Set(ids.filter((id) => typeof id === "string" && id.trim() !== "").map((id) => id.trim()))
-    ];
+    const { ids: normalized } = this.migrateEnabledIds(ids);
+    this.enabledModelIds = normalized;
     await writePrivateJsonFile(this.settingsPath, {
       version: 1,
       enabledModelIds: this.enabledModelIds
@@ -1938,9 +1918,60 @@ var AntigravityCatalog = class {
         });
       }
     }
+    const staticById = new Map(STATIC_GEMINI_MODELS.map((m) => [m.id, m]));
+    const visibleDynamic = this.dynamicModels.filter((dyn) => {
+      if (dyn.isInternal) return false;
+      const effectiveText = `${dyn.id} ${dyn.displayName ?? ""}`;
+      if (!this.config.includeNonGeminiModels && !isGeminiModelId(effectiveText)) {
+        return false;
+      }
+      return true;
+    });
+    const dynamicEffortCount = /* @__PURE__ */ new Map();
+    for (const dyn of visibleDynamic) {
+      const { baseId, effort } = extractEffortSuffix(dyn.id);
+      if (effort) {
+        dynamicEffortCount.set(baseId, (dynamicEffortCount.get(baseId) ?? 0) + 1);
+      }
+    }
+    const dynamicFamilies = /* @__PURE__ */ new Map();
+    for (const dyn of visibleDynamic) {
+      let familyId = dyn.id;
+      let effort;
+      let unsuffixedUpstreamId;
+      if (isPlaceholderModelId2(dyn.id) && dyn.displayName) {
+        const slug = displayNameToSlug(dyn.displayName);
+        if (staticById.has(slug)) {
+          familyId = slug;
+          unsuffixedUpstreamId = dyn.id;
+        }
+      } else {
+        const extracted = extractEffortSuffix(dyn.id);
+        const shouldMerge = extracted.effort !== void 0 && (isKnownVariantFamily(extracted.baseId) || staticById.has(extracted.baseId) || (dynamicEffortCount.get(extracted.baseId) ?? 0) >= 2);
+        if (shouldMerge) {
+          familyId = extracted.baseId;
+          effort = extracted.effort;
+        }
+      }
+      let bucket = dynamicFamilies.get(familyId);
+      if (!bucket) {
+        bucket = {
+          familyId,
+          primary: dyn,
+          variants: {},
+          ...unsuffixedUpstreamId ? { unsuffixedUpstreamId } : {}
+        };
+        dynamicFamilies.set(familyId, bucket);
+      } else if (unsuffixedUpstreamId && !bucket.unsuffixedUpstreamId) {
+        bucket.unsuffixedUpstreamId = unsuffixedUpstreamId;
+      }
+      if (effort) {
+        bucket.variants[effort] = dyn;
+      }
+    }
     const hasDynamic = this.dynamicModels.length > 0;
-    const dynamicIds = new Set(this.dynamicModels.map((m) => m.id));
     const byId = /* @__PURE__ */ new Map();
+    this.upstreamFallbackIds.clear();
     for (const entry of STATIC_GEMINI_MODELS) {
       const q = quotaByModel.get(entry.id) ?? poolFallbackQuota.get(entry.pool);
       byId.set(entry.id, {
@@ -1952,39 +1983,68 @@ var AntigravityCatalog = class {
         contextWindow: entry.contextWindow,
         defaultMaxTokens: entry.defaultMaxTokens,
         supportsReasoning: entry.supportsReasoning,
+        ...entry.supportedEfforts ? { supportedEfforts: [...entry.supportedEfforts] } : {},
+        ...entry.defaultEffort ? { defaultEffort: entry.defaultEffort } : {},
+        ...entry.variantIds ? { variantIds: { ...entry.variantIds } } : {},
         supportsImages: entry.supportsImages,
         pool: entry.pool,
         tierAccess: entry.tierAccess,
-        ...hasDynamic ? { isUpstreamAvailable: dynamicIds.has(entry.id) } : {},
+        ...hasDynamic ? { isUpstreamAvailable: dynamicFamilies.has(entry.id) } : {},
         ...q?.remainingFraction !== void 0 ? { remainingFraction: q.remainingFraction } : {},
         ...q?.resetTime ? { resetTime: q.resetTime } : {},
         isDynamic: false
       });
     }
-    for (const dyn of this.dynamicModels) {
-      if (dyn.isInternal) continue;
-      if (!this.config.includeNonGeminiModels && !isGeminiModelId(dyn.id)) {
-        continue;
+    for (const [familyId, bucket] of dynamicFamilies) {
+      const existing = byId.get(familyId);
+      const dyn = bucket.primary;
+      const variantEntries = EFFORT_ORDER.filter((eff) => bucket.variants[eff] !== void 0);
+      const hasVariants = variantEntries.length > 0;
+      const variantIds = hasVariants ? Object.fromEntries(
+        variantEntries.map((eff) => [eff, bucket.variants[eff].id])
+      ) : bucket.unsuffixedUpstreamId ? void 0 : existing?.variantIds;
+      if (bucket.unsuffixedUpstreamId && !hasVariants) {
+        this.upstreamFallbackIds.set(familyId, bucket.unsuffixedUpstreamId);
       }
-      const existing = byId.get(dyn.id);
-      const pool = existing?.pool ?? classifyPool(dyn.id, `${dyn.displayName ?? ""} ${dyn.modelProvider ?? ""}`);
-      const tierAccess = existing?.tierAccess ?? inferModelTierAccess(dyn.id, dyn.displayName);
-      const q = dyn.remainingFraction !== void 0 ? { remainingFraction: dyn.remainingFraction, resetTime: dyn.resetTime } : quotaByModel.get(dyn.id) ?? poolFallbackQuota.get(pool);
-      byId.set(dyn.id, {
-        id: dyn.id,
-        name: existing?.name ?? dyn.displayName ?? dyn.id,
+      const supportedEfforts = hasVariants ? [...variantEntries] : existing?.supportedEfforts ? [...existing.supportedEfforts] : dyn.supportsThinking ?? isGeminiModelId(familyId) ? ["low", "medium", "high"] : void 0;
+      const supportsReasoning = hasVariants || (dyn.supportsThinking ?? existing?.supportsReasoning ?? isGeminiModelId(familyId));
+      const defaultEffort = supportsReasoning && supportedEfforts && supportedEfforts.length > 0 ? clampEffortToSupported(
+        existing?.defaultEffort ?? this.config.defaultThinkingEffort,
+        supportedEfforts
+      ) : void 0;
+      const pool = existing?.pool ?? classifyPool(familyId, `${dyn.displayName ?? ""} ${dyn.modelProvider ?? ""}`);
+      const tierAccess = existing?.tierAccess ?? inferModelTierAccess(familyId, dyn.displayName);
+      const variantFractions = [
+        dyn.remainingFraction,
+        ...Object.values(bucket.variants).map((v) => v?.remainingFraction),
+        quotaByModel.get(familyId)?.remainingFraction,
+        ...Object.values(bucket.variants).map(
+          (v) => v ? quotaByModel.get(v.id)?.remainingFraction : void 0
+        )
+      ].filter((f) => typeof f === "number");
+      const minFraction = variantFractions.length > 0 ? Math.min(...variantFractions) : void 0;
+      const fallbackQ = poolFallbackQuota.get(pool);
+      const remainingFraction = minFraction ?? fallbackQ?.remainingFraction;
+      const resetTime = dyn.resetTime ?? Object.values(bucket.variants).find((v) => v?.resetTime)?.resetTime ?? quotaByModel.get(familyId)?.resetTime ?? fallbackQ?.resetTime;
+      const cleanDisplayName = dyn.displayName ? stripEffortDisplaySuffix(dyn.displayName) : familyId;
+      byId.set(familyId, {
+        id: familyId,
+        name: existing?.name ?? cleanDisplayName,
         description: existing?.description ?? `Antigravity upstream model (${dyn.modelProvider ?? "Google"})`,
-        enabled: enabledSet.has(dyn.id),
+        enabled: enabledSet.has(familyId),
         defaultEnabled: existing?.defaultEnabled ?? false,
         contextWindow: dyn.maxTokens ?? existing?.contextWindow ?? 1048576,
         defaultMaxTokens: dyn.maxOutputTokens ?? existing?.defaultMaxTokens ?? 65536,
-        supportsReasoning: dyn.supportsThinking ?? existing?.supportsReasoning ?? isGeminiModelId(dyn.id),
+        supportsReasoning,
+        ...supportedEfforts ? { supportedEfforts } : {},
+        ...defaultEffort ? { defaultEffort } : {},
+        ...variantIds ? { variantIds } : {},
         supportsImages: dyn.supportsImages ?? existing?.supportsImages ?? true,
         pool,
         tierAccess,
         isUpstreamAvailable: true,
-        ...q?.remainingFraction !== void 0 ? { remainingFraction: q.remainingFraction } : {},
-        ...q?.resetTime ? { resetTime: q.resetTime } : {},
+        ...remainingFraction !== void 0 ? { remainingFraction } : {},
+        ...resetTime ? { resetTime } : {},
         isDynamic: !existing
       });
     }
@@ -2022,9 +2082,16 @@ var AntigravityCatalog = class {
   }
   resolveModel(modelId) {
     const canonical = normalizeModelId(modelId);
-    const option = this.mergedCatalog().find((m) => m.id === canonical || m.id === modelId) ?? STATIC_GEMINI_MODELS[0];
-    const resolvedId = canonical || option.id;
-    const defaultEffortId = this.config.defaultThinkingEffort !== "auto" ? ReasoningEffortId(this.config.defaultThinkingEffort) : option.id.endsWith("-high") || option.id.endsWith("-xhigh") || option.id.endsWith("-max") ? ReasoningEffortId("high") : option.id.endsWith("-low") ? ReasoningEffortId("low") : ReasoningEffortId("medium");
+    const catalog = this.mergedCatalog();
+    const option = catalog.find((m) => m.id === canonical || m.id === modelId) ?? catalog[0] ?? STATIC_GEMINI_MODELS[0];
+    const resolvedId = option.id;
+    const supported = option.supportedEfforts && option.supportedEfforts.length > 0 ? option.supportedEfforts : ["low", "medium", "high"];
+    const legacySuffixEffort = extractEffortSuffix(modelId).effort;
+    const desiredDefault = legacySuffixEffort ?? option.defaultEffort ?? this.config.defaultThinkingEffort;
+    const clampedDefault = clampEffortToSupported(desiredDefault, supported);
+    const efforts = REASONING_EFFORTS.filter(
+      (e) => supported.includes(e.id)
+    );
     return {
       provider: PROVIDER_ID,
       id: resolvedId,
@@ -2035,13 +2102,64 @@ var AntigravityCatalog = class {
       defaultMaxTokens: option.defaultMaxTokens,
       ...option.supportsReasoning ? {
         reasoning: {
-          efforts: [...REASONING_EFFORTS],
-          defaultEffort: defaultEffortId
+          efforts: [...efforts],
+          defaultEffort: ReasoningEffortId(clampedDefault)
         }
       } : {},
       // Freeze top-level systemInstruction and place mid-conversation updates in history.
       systemPromptUpdate: "in-history"
       // Omit toolUpdate so DSH resolves deferLoading tools cleanly on turn 0, keeping tools prefix constant.
+    };
+  }
+  resolveUpstreamDispatch(modelId, requestedEffort) {
+    const canonical = normalizeModelId(modelId);
+    const catalog = this.mergedCatalog();
+    const option = catalog.find((m) => m.id === canonical || m.id === modelId);
+    if (!option) {
+      const legacy = extractEffortSuffix(modelId).effort;
+      const effectiveEffort2 = isReasoningEffortValue(requestedEffort) ? requestedEffort : legacy;
+      return {
+        canonicalModel: canonical,
+        upstreamModel: modelId.trim() || canonical,
+        ...effectiveEffort2 ? { effectiveEffort: effectiveEffort2 } : {},
+        fallbackUpstreamModels: []
+      };
+    }
+    if (!option.supportsReasoning) {
+      const upstreamModel2 = this.upstreamFallbackIds.get(option.id) ?? option.id;
+      return {
+        canonicalModel: option.id,
+        upstreamModel: upstreamModel2,
+        fallbackUpstreamModels: []
+      };
+    }
+    const supported = option.supportedEfforts && option.supportedEfforts.length > 0 ? option.supportedEfforts : ["low", "medium", "high"];
+    const legacySuffixEffort = extractEffortSuffix(modelId).effort;
+    const rawDesired = isReasoningEffortValue(requestedEffort) ? requestedEffort : legacySuffixEffort ?? option.defaultEffort ?? this.config.defaultThinkingEffort;
+    const effectiveEffort = clampEffortToSupported(rawDesired, supported);
+    const variantMap = option.variantIds;
+    const upstreamModel = variantMap?.[effectiveEffort] ?? this.upstreamFallbackIds.get(option.id) ?? option.id;
+    const fallbackUpstreamModels = [];
+    if (variantMap) {
+      const idx = EFFORT_ORDER.indexOf(effectiveEffort);
+      for (let i = idx - 1; i >= 0; i -= 1) {
+        const candidate = variantMap[EFFORT_ORDER[i]];
+        if (candidate && candidate !== upstreamModel) {
+          fallbackUpstreamModels.push(candidate);
+        }
+      }
+      for (let i = idx + 1; i < EFFORT_ORDER.length; i += 1) {
+        const candidate = variantMap[EFFORT_ORDER[i]];
+        if (candidate && candidate !== upstreamModel) {
+          fallbackUpstreamModels.push(candidate);
+        }
+      }
+    }
+    return {
+      canonicalModel: option.id,
+      upstreamModel,
+      effectiveEffort,
+      fallbackUpstreamModels
     };
   }
 };
@@ -2782,21 +2900,36 @@ function normalizeTools(tools) {
   }));
   return [{ functionDeclarations: declarations }];
 }
-function buildThinkingConfig(params) {
+function resolveEffectiveEffort(params) {
   const model = params.model.toLowerCase();
   if (model.includes("lite")) return void 0;
+  const staticEntry = STATIC_GEMINI_MODELS.find((m) => m.id === model);
+  if (staticEntry && !staticEntry.supportsReasoning) return void 0;
   let chosen;
-  if (params.effort === "low" || params.effort === "medium" || params.effort === "high") {
+  if (isReasoningEffortValue(params.effort)) {
     chosen = params.effort;
-  } else if (params.defaultEffort === "low" || params.defaultEffort === "medium" || params.defaultEffort === "high") {
+  } else if (params.rawModel && extractEffortSuffix(params.rawModel).effort) {
+    chosen = extractEffortSuffix(params.rawModel).effort;
+  } else if (isReasoningEffortValue(params.defaultEffort)) {
     chosen = params.defaultEffort;
+  } else if (staticEntry?.defaultEffort) {
+    chosen = staticEntry.defaultEffort;
+  } else if (model.endsWith("-xhigh")) {
+    chosen = "xhigh";
   } else if (model.endsWith("-high")) {
     chosen = "high";
   } else if (model.endsWith("-low")) {
     chosen = "low";
-  } else if (model.includes("pro") || model.includes("gemini-3") || model.includes("gemini-2.5")) {
+  } else if (model.includes("pro") || model.includes("gemini-3") || model.includes("gemini-4") || model.includes("gemini-2.5") || model.includes("claude-")) {
     chosen = "medium";
   }
+  if (!chosen) return void 0;
+  return staticEntry?.supportedEfforts ? clampEffortToSupported(chosen, staticEntry.supportedEfforts) : chosen;
+}
+function buildThinkingConfig(params) {
+  const model = params.model.toLowerCase();
+  if (model.includes("lite")) return void 0;
+  const chosen = params.chosen;
   if (!chosen) return void 0;
   if (isGemini3SeriesModel(model)) {
     return {
@@ -2807,7 +2940,8 @@ function buildThinkingConfig(params) {
   const budgetMap = {
     low: 1024,
     medium: 8192,
-    high: 24576
+    high: 24576,
+    xhigh: 32768
   };
   return {
     includeThoughts: true,
@@ -2852,6 +2986,14 @@ function imageBlockToParts(block, images) {
 function buildAntigravityRequest(input) {
   const { options } = input;
   const canonicalModel = normalizeModelId(options.model);
+  const chosenEffort = input.effectiveEffort ?? resolveEffectiveEffort({
+    model: canonicalModel,
+    rawModel: options.model,
+    effort: options.reasoningEffort,
+    defaultEffort: input.defaultThinkingEffort
+  });
+  const staticEntry = STATIC_GEMINI_MODELS.find((m) => m.id === canonicalModel);
+  const upstreamModel = input.upstreamModel ?? (chosenEffort && staticEntry?.variantIds?.[chosenEffort]) ?? (options.model.trim() || canonicalModel);
   const { envelopeUserAgent } = resolveOfficialFingerprint(input.accountEmail);
   const leadingSystemChunks = [];
   if (options.system && options.system.trim() !== "") {
@@ -2978,14 +3120,16 @@ function buildAntigravityRequest(input) {
     input.nowMs
   );
   const trajId = extractTrajectoryId(requestId);
+  const isClaudeModel = upstreamModel.toLowerCase().includes("claude");
+  const isNonGemini = !isGeminiModelId(upstreamModel);
   const labels = {
     last_step_index: String(modelTurns),
-    model_enum: canonicalModel,
+    model_enum: upstreamModel,
     request_id: `${trajId}-${modelTurns}`,
     trajectory_id: trajId,
-    used_claude: "false",
+    used_claude: String(isClaudeModel),
     used_claude_conservative: "false",
-    used_non_gemini_model: "false"
+    used_non_gemini_model: String(isNonGemini)
   };
   const generationConfig = {};
   if (typeof options.maxTokens === "number" && Number.isFinite(options.maxTokens) && options.maxTokens > 0) {
@@ -2993,8 +3137,7 @@ function buildAntigravityRequest(input) {
   }
   const thinkingConfig = buildThinkingConfig({
     model: canonicalModel,
-    effort: options.reasoningEffort,
-    defaultEffort: input.defaultThinkingEffort
+    chosen: chosenEffort
   });
   if (thinkingConfig) {
     generationConfig.thinkingConfig = thinkingConfig;
@@ -3031,13 +3174,13 @@ function buildAntigravityRequest(input) {
     project: input.projectId || "aicode-consumers",
     requestId,
     request: innerRequest,
-    model: canonicalModel,
+    model: upstreamModel,
     userAgent: envelopeUserAgent
   };
   if (hasToolActivity) {
     envelope.requestType = "agent";
   }
-  return { envelope, requestId, canonicalModel, hasToolActivity };
+  return { envelope, requestId, canonicalModel, upstreamModel, hasToolActivity };
 }
 function buildCountTokensEnvelope(innerRequest) {
   const { safetySettings: _omit, ...rest } = innerRequest;
@@ -3667,12 +3810,18 @@ var AntigravityAdapter = class extends LlmAdapter {
   async *stream(options) {
     await this.service.accounts.ensureLoaded();
     await this.service.catalog.ensureLoaded();
-    const canonicalModel = normalizeModelId(options.model);
+    const dispatch = this.service.catalog.resolveUpstreamDispatch(
+      options.model,
+      options.reasoningEffort
+    );
+    const canonicalModel = dispatch.canonicalModel;
     const pool = classifyPool(canonicalModel);
     const sessionKey = options.sessionId?.trim() || "default";
     const images = await this.service.resolveImages(options, options.signal);
     let failoverAttemptsRemaining = 1;
     let bumped1M = false;
+    let activeUpstreamModel = dispatch.upstreamModel;
+    let fallbackVariantIdx = 0;
     for (; ; ) {
       let selected;
       try {
@@ -3729,6 +3878,8 @@ var AntigravityAdapter = class extends LlmAdapter {
         sessionGeneration,
         trajectoryId,
         defaultThinkingEffort: this.service.config.defaultThinkingEffort,
+        upstreamModel: activeUpstreamModel,
+        effectiveEffort: dispatch.effectiveEffort,
         images
       });
       await this.ensureTrajectoryAclRegistered({
@@ -3760,6 +3911,11 @@ var AntigravityAdapter = class extends LlmAdapter {
               freshAccount.id,
               sessionKey
             );
+            continue;
+          }
+          if ((error.classified.isModelNotFound || error.classified.status === 404) && fallbackVariantIdx < dispatch.fallbackUpstreamModels.length) {
+            activeUpstreamModel = dispatch.fallbackUpstreamModels[fallbackVariantIdx];
+            fallbackVariantIdx += 1;
             continue;
           }
           const switched = this.service.accounts.recordFailure({

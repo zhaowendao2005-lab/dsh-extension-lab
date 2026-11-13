@@ -291,11 +291,11 @@ test('catalog & quota: Gemini 4 series included with Pro/Ultra tier tags and nes
   const configMod = await importHostModule('src/host/config.ts');
 
   const ids = catalogMod.STATIC_GEMINI_MODELS.map((m) => m.id);
-  assert.ok(ids.includes('gemini-4-hydrogen-xhigh'));
-  assert.ok(ids.includes('gemini-4-hydrogen-high'));
-  assert.ok(ids.includes('gemini-4-argon-high'));
-  assert.ok(ids.includes('gemini-4-carbon-high'));
-  assert.ok(ids.includes('gemini-3.8-flash-high'));
+  assert.ok(ids.includes('gemini-4-hydrogen'));
+  assert.ok(ids.includes('gemini-4-argon'));
+  assert.ok(ids.includes('gemini-4-carbon'));
+  assert.ok(ids.includes('gemini-3.8-flash'));
+  assert.ok(!ids.includes('gemini-4-hydrogen-xhigh'));
 
   const cfg = configMod.normalizeConfig({});
   const catalog = new catalogMod.AntigravityCatalog(cfg);
@@ -304,15 +304,16 @@ test('catalog & quota: Gemini 4 series included with Pro/Ultra tier tags and nes
     { id: 'gemini-4-hydrogen-xhigh', displayName: 'Gemini 4 Hydrogen (XHigh)' },
   ]);
   const merged = catalog.mergedCatalog();
-  const xhigh = merged.find((m) => m.id === 'gemini-4-hydrogen-xhigh');
-  const carbonHigh = merged.find((m) => m.id === 'gemini-4-carbon-high');
-  const argonHigh = merged.find((m) => m.id === 'gemini-4-argon-high');
-  const flash = merged.find((m) => m.id === 'gemini-3.8-flash-high');
-  assert.equal(xhigh?.tierAccess, 'pro');
-  assert.equal(xhigh?.isUpstreamAvailable, true);
-  assert.equal(carbonHigh?.tierAccess, 'ultra');
-  assert.equal(argonHigh?.tierAccess, 'pro');
-  assert.equal(argonHigh?.isUpstreamAvailable, true);
+  const hydrogen = merged.find((m) => m.id === 'gemini-4-hydrogen');
+  const carbon = merged.find((m) => m.id === 'gemini-4-carbon');
+  const argon = merged.find((m) => m.id === 'gemini-4-argon');
+  const flash = merged.find((m) => m.id === 'gemini-3.8-flash');
+  assert.equal(hydrogen?.tierAccess, 'pro');
+  assert.equal(hydrogen?.isUpstreamAvailable, true);
+  assert.deepEqual(hydrogen?.supportedEfforts, ['xhigh']);
+  assert.equal(carbon?.tierAccess, 'ultra');
+  assert.equal(argon?.tierAccess, 'pro');
+  assert.equal(argon?.isUpstreamAvailable, true);
   assert.equal(flash?.tierAccess, 'all');
   assert.equal(flash?.isUpstreamAvailable, false);
 
@@ -383,4 +384,225 @@ test('catalog & quota: Gemini 4 series included with Pro/Ultra tier tags and nes
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('quota: parseAvailableModelsResponse prefers readable map keys over MODEL_PLACEHOLDER_*', async () => {
+  const quotaMod = await importHostModule('src/host/quota.ts');
+  const parsed = quotaMod.parseAvailableModelsResponse({
+    models: {
+      'gemini-4-hydrogen-high': {
+        model: 'MODEL_PLACEHOLDER_M525',
+        displayName: 'Gemini 4 Hydrogen (High)',
+        supportsThinking: true,
+      },
+      'gemini-4-hydrogen-xhigh': {
+        model: 'MODEL_PLACEHOLDER_M528',
+        displayName: 'Gemini 4 Hydrogen (XHigh)',
+        supportsThinking: true,
+      },
+      MODEL_PLACEHOLDER_M670: {
+        model: 'MODEL_PLACEHOLDER_M670',
+        displayName: 'Gemini 4 Carbon',
+        supportsThinking: true,
+      },
+    },
+  });
+
+  assert.deepEqual(
+    parsed.map((m) => m.id),
+    ['gemini-4-hydrogen-high', 'gemini-4-hydrogen-xhigh', 'MODEL_PLACEHOLDER_M670'],
+  );
+  assert.equal(parsed[0].model, 'MODEL_PLACEHOLDER_M525');
+  assert.equal(parsed[2].displayName, 'Gemini 4 Carbon');
+});
+
+test('catalog: merges Gemini 4 & Claude 5.5 variants, keeps isolated gpt-oss-120b-medium, clamps efforts & migrates models.json', async () => {
+  const catalogMod = await importHostModule('src/host/catalog.ts');
+  const configMod = await importHostModule('src/host/config.ts');
+  const os = await import('node:os');
+  const fs = await import('node:fs');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-antigravity-merge-'));
+
+  try {
+    fs.writeFileSync(
+      path.join(tmpDir, 'models.json'),
+      JSON.stringify({
+        version: 1,
+        enabledModelIds: [
+          'gemini-4-hydrogen-xhigh',
+          'gemini-4-hydrogen-high',
+          'gemini-4-argon-medium',
+          'claude-opus-5-5-high',
+        ],
+      }),
+    );
+
+    const cfg = configMod.normalizeConfig({
+      storageDir: tmpDir,
+      includeNonGeminiModels: true,
+      defaultThinkingEffort: 'auto',
+    });
+    // Legacy 'auto' migrates cleanly to standard 'high'
+    assert.equal(cfg.defaultThinkingEffort, 'high');
+
+    const catalog = new catalogMod.AntigravityCatalog(cfg);
+    await catalog.ensureLoaded();
+
+    // Verify models.json was auto-migrated and deduplicated
+    assert.deepEqual(catalog.getEnabledModelIds(), [
+      'gemini-4-hydrogen',
+      'gemini-4-argon',
+      'claude-opus-5-5',
+    ]);
+    const persisted = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, 'models.json'), 'utf8'),
+    );
+    assert.deepEqual(persisted.enabledModelIds, [
+      'gemini-4-hydrogen',
+      'gemini-4-argon',
+      'claude-opus-5-5',
+    ]);
+
+    await catalog.saveDynamicModels([
+      { id: 'gemini-4-hydrogen-low', displayName: 'Gemini 4 Hydrogen (Low)', supportsThinking: true },
+      { id: 'gemini-4-hydrogen-medium', displayName: 'Gemini 4 Hydrogen (Medium)', supportsThinking: true },
+      { id: 'gemini-4-hydrogen-high', displayName: 'Gemini 4 Hydrogen (High)', supportsThinking: true },
+      { id: 'gemini-4-hydrogen-xhigh', displayName: 'Gemini 4 Hydrogen (XHigh)', supportsThinking: true },
+      { id: 'claude-opus-5-5-low', displayName: 'Claude Opus 5.5 (Low)', modelProvider: 'Anthropic', supportsThinking: true },
+      { id: 'claude-opus-5-5-medium', displayName: 'Claude Opus 5.5 (Medium)', modelProvider: 'Anthropic', supportsThinking: true },
+      { id: 'claude-opus-5-5-high', displayName: 'Claude Opus 5.5 (High)', modelProvider: 'Anthropic', supportsThinking: true },
+      { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', modelProvider: 'OpenAI', supportsThinking: true },
+      { id: 'MODEL_PLACEHOLDER_M670', displayName: 'Gemini 4 Carbon', supportsThinking: true },
+    ]);
+
+    const merged = catalog.mergedCatalog();
+    const hydrogen = merged.find((m) => m.id === 'gemini-4-hydrogen');
+    const claudeOpus = merged.find((m) => m.id === 'claude-opus-5-5');
+    const gptOss = merged.find((m) => m.id === 'gpt-oss-120b-medium');
+    const carbon = merged.find((m) => m.id === 'gemini-4-carbon');
+
+    assert.ok(hydrogen);
+    assert.deepEqual(hydrogen.supportedEfforts, ['low', 'medium', 'high', 'xhigh']);
+    assert.equal(hydrogen.variantIds?.xhigh, 'gemini-4-hydrogen-xhigh');
+
+    assert.ok(claudeOpus);
+    assert.equal(claudeOpus.name, 'Claude Opus 5.5');
+    assert.deepEqual(claudeOpus.supportedEfforts, ['low', 'medium', 'high']);
+    assert.equal(claudeOpus.variantIds?.high, 'claude-opus-5-5-high');
+
+    // Isolated suffixed model is NOT stripped
+    assert.ok(gptOss);
+    assert.equal(gptOss.id, 'gpt-oss-120b-medium');
+
+    // Placeholder matched to Gemini 4 Carbon routes to MODEL_PLACEHOLDER_M670
+    assert.ok(carbon);
+    assert.equal(carbon.isUpstreamAvailable, true);
+    const carbonDispatch = catalog.resolveUpstreamDispatch('gemini-4-carbon', 'high');
+    assert.equal(carbonDispatch.upstreamModel, 'MODEL_PLACEHOLDER_M670');
+
+    // Standard DSH resolveModel contract (no 'auto', exact efforts[], clamped defaultEffort)
+    const resolvedHydrogen = catalog.resolveModel('gemini-4-hydrogen');
+    assert.deepEqual(
+      resolvedHydrogen.reasoning?.efforts.map((e) => e.id),
+      ['low', 'medium', 'high', 'xhigh'],
+    );
+    assert.equal(resolvedHydrogen.reasoning?.defaultEffort, 'high');
+
+    const resolvedClaude = catalog.resolveModel('claude-opus-5-5');
+    assert.deepEqual(
+      resolvedClaude.reasoning?.efforts.map((e) => e.id),
+      ['low', 'medium', 'high'],
+    );
+    assert.equal(resolvedClaude.reasoning?.defaultEffort, 'high');
+
+    // Legacy variant ID resolves cleanly and keeps legacy effort as default
+    const resolvedLegacy = catalog.resolveModel('gemini-4-hydrogen-xhigh');
+    assert.equal(resolvedLegacy.id, 'gemini-4-hydrogen');
+    assert.equal(resolvedLegacy.reasoning?.defaultEffort, 'xhigh');
+
+    // Dispatch resolution & fallback order
+    const dispatchXhigh = catalog.resolveUpstreamDispatch('gemini-4-hydrogen', 'xhigh');
+    assert.equal(dispatchXhigh.upstreamModel, 'gemini-4-hydrogen-xhigh');
+    assert.equal(dispatchXhigh.effectiveEffort, 'xhigh');
+    assert.deepEqual(dispatchXhigh.fallbackUpstreamModels, [
+      'gemini-4-hydrogen-high',
+      'gemini-4-hydrogen-medium',
+      'gemini-4-hydrogen-low',
+    ]);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('translate: routes (familyModel, reasoningEffort) to exact upstream variant ID & thinkingConfig including xhigh and legacy sessions', async () => {
+  const translateMod = await importHostModule('src/host/translate.ts');
+
+  const baseInput = {
+    accountId: 'acc-1',
+    accountEmail: 'user@example.com',
+    projectId: 'proj-1',
+    nowMs: 1_700_000_000_000,
+    trajectoryId: '11111111-1111-4111-8111-111111111111',
+  };
+
+  // 1. Merged family + xhigh
+  const resXhigh = translateMod.buildAntigravityRequest({
+    ...baseInput,
+    options: {
+      model: 'gemini-4-hydrogen',
+      reasoningEffort: 'xhigh',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    },
+  });
+  assert.equal(resXhigh.canonicalModel, 'gemini-4-hydrogen');
+  assert.equal(resXhigh.upstreamModel, 'gemini-4-hydrogen-xhigh');
+  assert.equal(resXhigh.envelope.model, 'gemini-4-hydrogen-xhigh');
+  assert.deepEqual(resXhigh.envelope.request.generationConfig.thinkingConfig, {
+    includeThoughts: true,
+    thinkingLevel: 'XHIGH',
+  });
+
+  // 2. Legacy suffixed session without explicit reasoningEffort preserves xhigh
+  const resLegacy = translateMod.buildAntigravityRequest({
+    ...baseInput,
+    options: {
+      model: 'gemini-4-hydrogen-xhigh',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    },
+  });
+  assert.equal(resLegacy.envelope.model, 'gemini-4-hydrogen-xhigh');
+  assert.deepEqual(resLegacy.envelope.request.generationConfig.thinkingConfig, {
+    includeThoughts: true,
+    thinkingLevel: 'XHIGH',
+  });
+
+  // 3. Explicit reasoningEffort overrides legacy suffix
+  const resLegacyOverride = translateMod.buildAntigravityRequest({
+    ...baseInput,
+    options: {
+      model: 'gemini-4-hydrogen-xhigh',
+      reasoningEffort: 'low',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    },
+  });
+  assert.equal(resLegacyOverride.envelope.model, 'gemini-4-hydrogen-low');
+  assert.deepEqual(resLegacyOverride.envelope.request.generationConfig.thinkingConfig, {
+    includeThoughts: true,
+    thinkingLevel: 'LOW',
+  });
+
+  // 4. Claude family dispatched via upstreamModel sets claude labels properly
+  const resClaude = translateMod.buildAntigravityRequest({
+    ...baseInput,
+    upstreamModel: 'claude-opus-5-5-high',
+    effectiveEffort: 'high',
+    options: {
+      model: 'claude-opus-5-5',
+      reasoningEffort: 'high',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    },
+  });
+  assert.equal(resClaude.envelope.model, 'claude-opus-5-5-high');
+  assert.equal(resClaude.envelope.request.labels.used_claude, 'true');
+  assert.equal(resClaude.envelope.request.labels.used_non_gemini_model, 'true');
 });
