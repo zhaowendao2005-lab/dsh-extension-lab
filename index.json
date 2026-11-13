@@ -75,6 +75,19 @@
       },
       "versions": [
         {
+          "version": "1.1.1",
+          "publishTimestamp": 1794591743,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "dad255479af4f369e5058441906ce43ad1495377",
+            "path": "packages/dsh-antigravity"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+          }
+        },
+        {
           "version": "1.1.0",
           "publishTimestamp": 1794579229,
           "source": {
