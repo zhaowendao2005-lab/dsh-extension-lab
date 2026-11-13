@@ -612,6 +612,11 @@ export class AntigravityAdapter extends LlmAdapter {
     const images = await this.service.resolveImages(options, options.signal);
 
     let failoverAttemptsRemaining = 1;
+    let streamRetryAttemptsRemaining = Math.max(
+      2,
+      this.service.config.endpoints.length,
+    );
+    let sameEndpointStreamRetried = false;
     let bumped1M = false;
     let activeUpstreamModel = dispatch.upstreamModel;
     let fallbackVariantIdx = 0;
@@ -689,6 +694,7 @@ export class AntigravityAdapter extends LlmAdapter {
       });
 
       let response: Response;
+      let usedEndpoint = '';
       try {
         const res = await this.service.client.post({
           method: 'streamGenerateContent',
@@ -702,6 +708,7 @@ export class AntigravityAdapter extends LlmAdapter {
           allowSameAccount429Retry: true,
         });
         response = res.response;
+        usedEndpoint = res.endpoint;
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
           if (error.classified.isOneMillionContextError && !bumped1M) {
@@ -819,7 +826,30 @@ export class AntigravityAdapter extends LlmAdapter {
           });
         }
         if (error instanceof AntigravityUpstreamError) {
-          this.service.accounts.recordFailure({
+          const isRetriableStreamStatus =
+            (error.classified.status !== undefined &&
+              (error.classified.status >= 500 || error.classified.status === 408)) ||
+            error.classified.category === 'SERVER' ||
+            error.classified.category === 'TRANSPORT';
+
+          if (isRetriableStreamStatus && usedEndpoint) {
+            // Retry once on the same endpoint before cooling it down so Daily-only models
+            // (e.g. gemini-4-*) do not prematurely fall back to Prod where they 429.
+            if (!emittedAnyChunk && !sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
+              sameEndpointStreamRetried = true;
+              streamRetryAttemptsRemaining -= 1;
+              await new Promise((resolve) => setTimeout(resolve, 350));
+              continue;
+            }
+            this.service.client.endpointHealth.markFailure(usedEndpoint);
+          }
+
+          if (!emittedAnyChunk && isRetriableStreamStatus && streamRetryAttemptsRemaining > 0) {
+            streamRetryAttemptsRemaining -= 1;
+            continue;
+          }
+
+          const switched = this.service.accounts.recordFailure({
             accountId: freshAccount.id,
             sessionKey,
             category: error.classified.category,
@@ -827,8 +857,19 @@ export class AntigravityAdapter extends LlmAdapter {
             retryAfterMs: error.classified.retryAfterMs,
             pool,
           });
+          if (!emittedAnyChunk && switched && failoverAttemptsRemaining > 0) {
+            failoverAttemptsRemaining -= 1;
+            continue;
+          }
         }
         if (error instanceof LlmError) throw error;
+        if (usedEndpoint) {
+          this.service.client.endpointHealth.markFailure(usedEndpoint);
+        }
+        if (!emittedAnyChunk && streamRetryAttemptsRemaining > 0) {
+          streamRetryAttemptsRemaining -= 1;
+          continue;
+        }
         throw new LlmError(
           `Antigravity stream failed: ${error instanceof Error ? error.message : String(error)}`,
           'TRANSPORT',

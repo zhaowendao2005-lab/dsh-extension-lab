@@ -2168,7 +2168,7 @@ var AntigravityCatalog = class {
 import { LlmError, ProviderRequestId } from "@deepseek-ai/dsh-llm";
 var DEFAULT_ENDPOINT_COOLDOWN_MS = 3e4;
 var SANDBOX_ENDPOINT_COOLDOWN_MS = 6e4;
-var SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES = 2;
+var SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES = 1;
 var SAME_ACCOUNT_MAX_WAIT_MS = 8e3;
 function isSandboxEndpoint(urlOrHost) {
   return urlOrHost.toLowerCase().includes("sandbox.googleapis.com");
@@ -2482,7 +2482,8 @@ var AntigravityHttpClient = class {
         return await this.postAcrossEndpoints(options);
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
-          const isTransient429 = error.classified.status === 429 && error.classified.category === "RATE_LIMIT" && transientAttempts < transient429Limit;
+          const isExplicitShortBackoff = error.classified.retryAfterMs !== void 0 && error.classified.retryAfterMs <= SAME_ACCOUNT_MAX_WAIT_MS;
+          const isTransient429 = error.classified.status === 429 && error.classified.category === "RATE_LIMIT" && isExplicitShortBackoff && transientAttempts < transient429Limit;
           if (isTransient429) {
             const waitMs = Math.min(
               SAME_ACCOUNT_MAX_WAIT_MS,
@@ -3825,6 +3826,11 @@ var AntigravityAdapter = class extends LlmAdapter {
     const sessionKey = options.sessionId?.trim() || "default";
     const images = await this.service.resolveImages(options, options.signal);
     let failoverAttemptsRemaining = 1;
+    let streamRetryAttemptsRemaining = Math.max(
+      2,
+      this.service.config.endpoints.length
+    );
+    let sameEndpointStreamRetried = false;
     let bumped1M = false;
     let activeUpstreamModel = dispatch.upstreamModel;
     let fallbackVariantIdx = 0;
@@ -3896,6 +3902,7 @@ var AntigravityAdapter = class extends LlmAdapter {
         signal: options.signal
       });
       let response;
+      let usedEndpoint = "";
       try {
         const res = await this.service.client.post({
           method: "streamGenerateContent",
@@ -3909,6 +3916,7 @@ var AntigravityAdapter = class extends LlmAdapter {
           allowSameAccount429Retry: true
         });
         response = res.response;
+        usedEndpoint = res.endpoint;
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
           if (error.classified.isOneMillionContextError && !bumped1M) {
@@ -4010,7 +4018,21 @@ var AntigravityAdapter = class extends LlmAdapter {
           });
         }
         if (error instanceof AntigravityUpstreamError) {
-          this.service.accounts.recordFailure({
+          const isRetriableStreamStatus = error.classified.status !== void 0 && (error.classified.status >= 500 || error.classified.status === 408) || error.classified.category === "SERVER" || error.classified.category === "TRANSPORT";
+          if (isRetriableStreamStatus && usedEndpoint) {
+            if (!emittedAnyChunk && !sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
+              sameEndpointStreamRetried = true;
+              streamRetryAttemptsRemaining -= 1;
+              await new Promise((resolve) => setTimeout(resolve, 350));
+              continue;
+            }
+            this.service.client.endpointHealth.markFailure(usedEndpoint);
+          }
+          if (!emittedAnyChunk && isRetriableStreamStatus && streamRetryAttemptsRemaining > 0) {
+            streamRetryAttemptsRemaining -= 1;
+            continue;
+          }
+          const switched = this.service.accounts.recordFailure({
             accountId: freshAccount.id,
             sessionKey,
             category: error.classified.category,
@@ -4018,8 +4040,19 @@ var AntigravityAdapter = class extends LlmAdapter {
             retryAfterMs: error.classified.retryAfterMs,
             pool
           });
+          if (!emittedAnyChunk && switched && failoverAttemptsRemaining > 0) {
+            failoverAttemptsRemaining -= 1;
+            continue;
+          }
         }
         if (error instanceof LlmError2) throw error;
+        if (usedEndpoint) {
+          this.service.client.endpointHealth.markFailure(usedEndpoint);
+        }
+        if (!emittedAnyChunk && streamRetryAttemptsRemaining > 0) {
+          streamRetryAttemptsRemaining -= 1;
+          continue;
+        }
         throw new LlmError2(
           `Antigravity stream failed: ${error instanceof Error ? error.message : String(error)}`,
           "TRANSPORT",

@@ -699,3 +699,102 @@ test('adapter: resolveImages passes positive integer width/height/maxBytes to re
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('adapter: cools down endpoint and retries next endpoint on in-band SSE 503 before output', async () => {
+  const adapterMod = await importHostModule('src/host/adapter.ts');
+  const configMod = await importHostModule('src/host/config.ts');
+  const os = await import('node:os');
+  const fs = await import('node:fs');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-antigravity-sse503-'));
+
+  const originalFetch = globalThis.fetch;
+  try {
+    const cfg = configMod.normalizeConfig({
+      storageDir: tmpDir,
+      endpoints: [
+        'https://daily-cloudcode-pa.googleapis.com',
+        'https://cloudcode-pa.googleapis.com',
+      ],
+    });
+    const service = new adapterMod.AntigravityService(cfg);
+    await service.accounts.upsertAccountFromOAuth({
+      email: 'test@example.com',
+      accessToken: 'tok-valid',
+      refreshToken: 'ref-valid',
+      expiresAt: Date.now() + 3_600_000,
+      projectId: 'proj-1',
+    });
+
+    const calledUrls = [];
+    const sseEncode = (obj) =>
+      new TextEncoder().encode(`data: ${JSON.stringify(obj)}\n\n`);
+
+    globalThis.fetch = async (url) => {
+      const urlStr = String(url);
+      calledUrls.push(urlStr);
+      if (urlStr.includes('writeTrajectoryAcls')) {
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      if (urlStr.startsWith('https://daily-cloudcode-pa.googleapis.com')) {
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              sseEncode({
+                error: {
+                  code: 503,
+                  message:
+                    'upstream stream ended before a completion event; this turn may be incomplete',
+                },
+              }),
+            );
+            controller.close();
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }
+      const okBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            sseEncode({
+              response: {
+                candidates: [
+                  {
+                    content: { parts: [{ text: 'recovered on prod' }] },
+                    finishReason: 'STOP',
+                  },
+                ],
+              },
+            }),
+          );
+          controller.close();
+        },
+      });
+      return new Response(okBody, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    };
+
+    const chunks = [];
+    for await (const ch of service.adapter.stream({
+      model: 'gemini-4-hydrogen',
+      reasoningEffort: 'high',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+    })) {
+      chunks.push(ch);
+    }
+
+    const streamCalls = calledUrls.filter((u) => u.includes('streamGenerateContent'));
+    assert.equal(streamCalls.length, 3);
+    assert.ok(streamCalls[0].startsWith('https://daily-cloudcode-pa.googleapis.com'));
+    assert.ok(streamCalls[1].startsWith('https://daily-cloudcode-pa.googleapis.com'));
+    assert.ok(streamCalls[2].startsWith('https://cloudcode-pa.googleapis.com'));
+    assert.ok(chunks.some((c) => c.type === 'text-delta' && c.text === 'recovered on prod'));
+  } finally {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

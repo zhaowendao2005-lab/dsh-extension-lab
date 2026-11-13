@@ -37,7 +37,7 @@ export interface ClassifiedUpstreamError {
 
 const DEFAULT_ENDPOINT_COOLDOWN_MS = 30_000;
 const SANDBOX_ENDPOINT_COOLDOWN_MS = 60_000;
-const SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES = 2;
+const SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES = 1;
 const SAME_ACCOUNT_MAX_WAIT_MS = 8_000;
 
 export function isSandboxEndpoint(urlOrHost: string): boolean {
@@ -469,9 +469,13 @@ export class AntigravityHttpClient {
         return await this.postAcrossEndpoints(options);
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
+          const isExplicitShortBackoff =
+            error.classified.retryAfterMs !== undefined &&
+            error.classified.retryAfterMs <= SAME_ACCOUNT_MAX_WAIT_MS;
           const isTransient429 =
             error.classified.status === 429 &&
             error.classified.category === 'RATE_LIMIT' &&
+            isExplicitShortBackoff &&
             transientAttempts < transient429Limit;
           if (isTransient429) {
             const waitMs = Math.min(
