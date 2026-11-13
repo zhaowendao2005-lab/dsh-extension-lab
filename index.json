@@ -325,6 +325,19 @@
       },
       "versions": [
         {
+          "version": "1.1.0",
+          "publishTimestamp": 1794597023,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "584218d1b553b19b26500d252e6f1a0f9c6f8085",
+            "path": "packages/extension-lab-manager"
+          },
+          "engines": {
+            "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+          }
+        },
+        {
           "version": "1.0.3",
           "publishTimestamp": 1794560841,
           "source": {

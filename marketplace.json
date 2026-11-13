@@ -5,7 +5,7 @@
       "name": "extension-lab-manager",
       "title": "Extension Lab Manager",
       "description": "私有扩展市场、安装与更新管理器。",
-      "version": "1.0.3",
+      "version": "1.1.0",
       "path": "packages/extension-lab-manager",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/extension-lab-manager"
     },
@@ -45,7 +45,7 @@
       "name": "dsh-antigravity",
       "title": "Antigravity Direct",
       "description": "Google Antigravity (Cloud Code v1internal) 直连 Provider 插件：支持多账号 OAuth 轮换与 Sticky 会话、Gemini 模型动态发现、disjoint Token/Cache 统计、thoughtSignature 对齐回放、配额 Telemetry 与 slash 命令。",
-      "version": "1.0.0",
+      "version": "1.1.2",
       "path": "packages/dsh-antigravity",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-antigravity"
     }
