@@ -606,3 +606,96 @@ test('translate: routes (familyModel, reasoningEffort) to exact upstream variant
   assert.equal(resClaude.envelope.request.labels.used_claude, 'true');
   assert.equal(resClaude.envelope.request.labels.used_non_gemini_model, 'true');
 });
+
+test('adapter: resolveImages passes positive integer width/height/maxBytes to readImageRequest and translates inlineData', async () => {
+  const adapterMod = await importHostModule('src/host/adapter.ts');
+  const configMod = await importHostModule('src/host/config.ts');
+  const translateMod = await importHostModule('src/host/translate.ts');
+  const os = await import('node:os');
+  const fs = await import('node:fs');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-antigravity-img-'));
+
+  try {
+    const capturedTargets = [];
+    const cfg = configMod.normalizeConfig({
+      storageDir: tmpDir,
+      requestImagePixelBudget: 1_000_000,
+      requestImageMaxBytes: 2_000_000,
+    });
+    const service = new adapterMod.AntigravityService(cfg, {
+      resolveAttachments: () => ({
+        readImageRequest: async (ref, target) => {
+          capturedTargets.push({ ref, target });
+          return {
+            data: new Uint8Array([137, 80, 78, 71]),
+            mediaType: 'image/png',
+            width: target.width,
+            height: target.height,
+          };
+        },
+      }),
+    });
+
+    const options = {
+      model: 'gemini-4-hydrogen',
+      reasoningEffort: 'high',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'describe' },
+            {
+              type: 'image',
+              attachment: {
+                attachmentId: 'att-large',
+                mediaType: 'image/png',
+                width: 4000,
+                height: 2000,
+                size: 1000,
+              },
+            },
+            {
+              type: 'image',
+              attachment: {
+                attachmentId: 'att-zero',
+                mediaType: 'image/jpeg',
+                width: 0,
+                height: 120.7,
+                size: 500,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const images = await service.resolveImages(options);
+    assert.equal(capturedTargets.length, 2);
+
+    // Oversized image scaled down to positive integer dimensions within pixel budget
+    const largeTarget = capturedTargets[0].target;
+    assert.equal(Number.isSafeInteger(largeTarget.width) && largeTarget.width > 0, true);
+    assert.equal(Number.isSafeInteger(largeTarget.height) && largeTarget.height > 0, true);
+    assert.equal(Number.isSafeInteger(largeTarget.maxBytes) && largeTarget.maxBytes === 2_000_000, true);
+    assert.equal(largeTarget.maxWidth, undefined);
+    assert.equal(largeTarget.maxHeight, undefined);
+    assert.ok(largeTarget.width * largeTarget.height <= 1_000_000);
+
+    // Zero / float dimensions safely coerced to positive integers
+    const zeroTarget = capturedTargets[1].target;
+    assert.deepEqual(zeroTarget, { width: 1, height: 120, maxBytes: 2_000_000 });
+
+    const built = translateMod.buildAntigravityRequest({
+      options,
+      images,
+      accountId: 'acc-1',
+      projectId: 'proj-1',
+      nowMs: 1_700_000_000_000,
+      trajectoryId: '11111111-1111-4111-8111-111111111111',
+    });
+    const parts = built.envelope.request.contents[0].parts;
+    assert.ok(parts.some((p) => p.inlineData?.mimeType === 'image/png' && p.inlineData?.data === 'iVBORw=='));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

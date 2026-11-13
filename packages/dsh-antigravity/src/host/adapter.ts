@@ -55,26 +55,33 @@ interface AttachmentImageVersionLike {
 interface AttachmentStoreLike {
   readImageRequest?: (
     ref: unknown,
-    target: { maxWidth?: number; maxHeight?: number; maxBytes?: number },
+    target: { width: number; height: number; maxBytes: number },
     signal?: AbortSignal,
   ) => Promise<AttachmentImageVersionLike>;
+}
+
+function toPositiveSafeInt(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  const truncated = Math.trunc(value);
+  return truncated > 0 ? truncated : fallback;
 }
 
 function computeTargetDimensions(
   width: number,
   height: number,
   maxPixels: number,
-): { maxWidth: number; maxHeight: number } {
-  const safeW = Math.max(1, width);
-  const safeH = Math.max(1, height);
+): { width: number; height: number } {
+  const safeW = toPositiveSafeInt(width, 1);
+  const safeH = toPositiveSafeInt(height, 1);
+  const safePixels = toPositiveSafeInt(maxPixels, 1_048_576);
   const pixels = safeW * safeH;
-  if (pixels <= maxPixels) {
-    return { maxWidth: safeW, maxHeight: safeH };
+  if (pixels <= safePixels) {
+    return { width: safeW, height: safeH };
   }
-  const scale = Math.sqrt(maxPixels / pixels);
+  const scale = Math.sqrt(safePixels / pixels);
   return {
-    maxWidth: Math.max(1, Math.floor(safeW * scale)),
-    maxHeight: Math.max(1, Math.floor(safeH * scale)),
+    width: Math.max(1, Math.floor(safeW * scale)),
+    height: Math.max(1, Math.floor(safeH * scale)),
   };
 }
 
@@ -433,7 +440,7 @@ export class AntigravityService {
           ref.height,
           this.config.requestImagePixelBudget,
         ),
-        maxBytes: this.config.requestImageMaxBytes,
+        maxBytes: toPositiveSafeInt(this.config.requestImageMaxBytes, 5_242_880),
       };
       const version = await attachments.readImageRequest(ref, target, signal);
       let access: ReturnType<typeof resolveImageAttachmentAccess>;
