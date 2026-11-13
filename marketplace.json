@@ -8,7 +8,7 @@
       "version": "1.0.2",
       "path": "packages/extension-lab-manager",
       "ref": "version-3.3.0",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.3.0&path:/packages/extension-lab-manager"
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/extension-lab-manager"
     },
     {
       "name": "dsh-ui-enhancements",
@@ -17,7 +17,7 @@
       "version": "1.0.0",
       "path": "packages/dsh-ui-enhancements",
       "ref": "version-3.3.0",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.3.0&path:/packages/dsh-ui-enhancements"
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-ui-enhancements"
     },
     {
       "name": "dsh-plugin-dev-sandbox",
@@ -26,7 +26,7 @@
       "version": "1.4.3",
       "path": "packages/dsh-plugin-dev-sandbox",
       "ref": "version-3.4.1",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.4.1&path:/packages/dsh-plugin-dev-sandbox"
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-plugin-dev-sandbox"
     },
     {
       "name": "dsh-btw-side",
@@ -35,7 +35,7 @@
       "version": "1.0.1",
       "path": "packages/dsh-btw-side",
       "ref": "version-3.4.1",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.4.1&path:/packages/dsh-btw-side"
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-btw-side"
     },
     {
       "name": "model-intelligence-test",
@@ -44,7 +44,7 @@
       "version": "1.0.0",
       "path": "packages/model-intelligence-test",
       "ref": "version-3.4.0",
-      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#version-3.4.0&path:/packages/model-intelligence-test"
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/model-intelligence-test"
     }
   ]
 }

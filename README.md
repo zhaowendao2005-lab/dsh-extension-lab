@@ -17,7 +17,7 @@
 - 环境：Node.js `>=22.19.0`，pnpm `12.15.0`。
 - 代码修改后运行 `pnpm build` 确认编译；不默认运行测试。
 - `lib/` 是构建产物，必须提交，禁止手改。
-- `marketplace.json` 的包名、目录、版本和 tag spec 必须匹配；生产 spec 不得包含本机路径或 `link:`。
+- `marketplace.json` 的包名、目录、版本和 `spec` 必须匹配。`spec` 一律用浮动的 monorepo 形式 `github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/<目录名>`，不要在 spec 里写 `#<tag>&path:`：市场插件按 repo 记录 lockfile 提交，带 ref 的 spec 会被误判为有新版本，且其更新命令不接受 `&`；`ref` 字段只作版本记录。生产 spec 不得包含本机路径或 `link:`。
 - Host 入口使用 `export function apply(ctx, config)`；Client 入口使用 DSH ModuleLoader。新增 Host 源文件时，build 必须一并复制到 `lib/`。
 - 接入宿主 API 前先确认签名；资源注册使用生命周期清理，错误不得静默吞掉。
 
@@ -31,6 +31,6 @@
 
 ## 发布（只打标签并推送）
 
-1. 按需更新包版本及 `marketplace.json` 的版本、tag `ref` 和 `spec`。
+1. 按需更新包版本及 `marketplace.json` 的版本和 `ref`（`spec` 保持不变）。
 2. 提交变更并创建 `version-<数字...>` tag。
 3. 推送 `main` 和 tag；不执行额外测试/校验，不创建 GitHub Release。
