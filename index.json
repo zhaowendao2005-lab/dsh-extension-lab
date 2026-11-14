@@ -1,382 +1,119 @@
 {
   "format": 1,
-  "title": {
-    "en": "DSH Extension Lab",
-    "zh": "DSH 私人扩展市场"
-  },
-  "description": {
-    "en": "Independent DeepSeek Harness (dsh) plugins maintained in dsh-extension-lab. Each plugin carries its own version history pinned to its release commit.",
-    "zh": "dsh-extension-lab 独立维护的私人 DeepSeek Harness（dsh）插件源：每个插件各自独立发版，按发布 commit 精确安装。"
-  },
-  "metadata": {
-    "categories": {
-      "model": {
-        "title": {
-          "en": "Models & Providers",
-          "zh": "模型与账号接入"
-        }
-      },
-      "tools": {
-        "title": {
-          "en": "Tools & Capabilities",
-          "zh": "工具与能力"
-        }
-      },
-      "ui": {
-        "title": {
-          "en": "UI Enhancements",
-          "zh": "UI 增强"
-        }
-      },
-      "dev": {
-        "title": {
-          "en": "Development & Runtime",
-          "zh": "开发与运行时"
-        }
-      },
-      "market": {
-        "title": {
-          "en": "Plugin Markets & Managers",
-          "zh": "插件市场与管理"
-        }
-      }
-    },
-    "labels": {},
-    "sortKeys": {}
-  },
   "plugins": [
     {
-      "name": "dsh-antigravity",
-      "title": {
-        "en": "Antigravity Direct",
-        "zh": "Antigravity 直连"
-      },
-      "description": {
-        "en": "Direct Google Antigravity (Cloud Code v1internal) provider plugin for DeepSeek Harness with sticky multi-account OAuth rotation, Gemini model discovery, disjoint cache/token accounting, thoughtSignature replay, and live quota telemetry.",
-        "zh": "Google Antigravity (Cloud Code v1internal) 直连 Provider 插件：支持多账号 OAuth 轮换与 Sticky 会话、Gemini 模型动态发现、disjoint Token/Cache 统计、thoughtSignature 对齐回放、配额 Telemetry 与 slash 命令。"
-      },
-      "author": "zhaowendao2005",
-      "homepage": "https://github.com/zhaowendao2005-lab/dsh-extension-lab/tree/main/packages/dsh-antigravity",
-      "repository": {
-        "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-        "directory": "packages/dsh-antigravity"
-      },
-      "metadata": {
-        "category": "model",
-        "keywords": [
-          "antigravity",
-          "gemini",
-          "cloud-code",
-          "oauth",
-          "provider"
-        ],
-        "labels": [],
-        "sortKeys": {}
-      },
-      "versions": [
-        {
-          "version": "1.1.3",
-          "publishTimestamp": 1794662144,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "77b5228639e27c40a191b580c91a57ce3b126b82",
-            "path": "packages/dsh-antigravity"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        },
-        {
-          "version": "1.1.2",
-          "publishTimestamp": 1794596437,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "e66b36aa085269b0809b9850321da39f04800fcb",
-            "path": "packages/dsh-antigravity"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        },
-        {
-          "version": "1.1.1",
-          "publishTimestamp": 1794591743,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "dad255479af4f369e5058441906ce43ad1495377",
-            "path": "packages/dsh-antigravity"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        },
-        {
-          "version": "1.1.0",
-          "publishTimestamp": 1794579229,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "5b66af1f0cb18c016ade2d0d8d539053b64510e2",
-            "path": "packages/dsh-antigravity"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        },
-        {
-          "version": "1.0.0",
-          "publishTimestamp": 1794576105,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "f1d26dfee82d8798efba441fd2fdf7ecbf940ee4",
-            "path": "packages/dsh-antigravity"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        }
-      ]
-    },
-    {
-      "name": "dsh-btw-side",
-      "title": {
-        "en": "DSH BTW Side Ask",
-        "zh": "旁路提问（BTW）"
-      },
-      "description": {
-        "en": "Ask independent side questions grounded in the latest real model request context without interrupting your main conversation thread.",
-        "zh": "旁路提问（BTW）：基于最新真实模型请求上下文独立作答，不打断主线。"
-      },
-      "author": "zhaowendao2005",
-      "homepage": "https://github.com/zhaowendao2005-lab/dsh-extension-lab/tree/main/packages/dsh-btw-side",
-      "repository": {
-        "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-        "directory": "packages/dsh-btw-side"
-      },
-      "metadata": {
-        "category": "tools",
-        "keywords": [
-          "btw",
-          "side-ask",
-          "context"
-        ],
-        "labels": [],
-        "sortKeys": {}
-      },
-      "versions": [
-        {
-          "version": "1.0.2",
-          "publishTimestamp": 1794560841,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "ff5623d1af55d9896c4b44f35dbd434c40495d33",
-            "path": "packages/dsh-btw-side"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        }
-      ]
-    },
-    {
-      "name": "model-intelligence-test",
-      "title": {
-        "en": "Model Intelligence Test",
-        "zh": "模型智能测试"
-      },
-      "description": {
-        "en": "Real model fingerprint testing (lm-detector) and customizable agent task evaluation workbench.",
-        "zh": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。"
-      },
-      "author": "zhaowendao2005",
-      "homepage": "https://github.com/zhaowendao2005-lab/dsh-extension-lab/tree/main/packages/model-intelligence-test",
-      "repository": {
-        "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-        "directory": "packages/model-intelligence-test"
-      },
-      "metadata": {
-        "category": "tools",
-        "keywords": [
-          "benchmark",
-          "fingerprint",
-          "evaluation",
-          "lm-detector"
-        ],
-        "labels": [],
-        "sortKeys": {}
-      },
-      "versions": [
-        {
-          "version": "1.1.0",
-          "publishTimestamp": 1794597100,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "aa53c1b37eb089cb25c7a908510e4b48e0bbda02",
-            "path": "packages/model-intelligence-test"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        },
-        {
-          "version": "1.0.0",
-          "publishTimestamp": 1794472680,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "392f07be8dc2d7ba464c180d8fe68b6c417542b0",
-            "path": "packages/model-intelligence-test"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        }
-      ]
+      "name": "extension-lab-manager",
+      "title": "Extension Lab Manager",
+      "description": "私有扩展市场、安装与更新管理器。",
+      "version": "1.1.0",
+      "path": "packages/extension-lab-manager",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/extension-lab-manager"
     },
     {
       "name": "dsh-ui-enhancements",
-      "title": {
-        "en": "DSH UI Enhancements",
-        "zh": "DSH 界面样式增强"
-      },
-      "description": {
-        "en": "Standalone Swiss-modernist dialog and interface styling enhancements for DeepSeek Harness.",
-        "zh": "为 DSH 提供瑞士现代主义风格对话框与界面样式增强。"
-      },
-      "author": "zhaowendao2005",
-      "homepage": "https://github.com/zhaowendao2005-lab/dsh-extension-lab/tree/main/packages/dsh-ui-enhancements",
-      "repository": {
-        "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-        "directory": "packages/dsh-ui-enhancements"
-      },
-      "metadata": {
-        "category": "ui",
-        "keywords": [
-          "ui",
-          "theme",
-          "styling"
-        ],
-        "labels": [],
-        "sortKeys": {}
-      },
-      "versions": [
-        {
-          "version": "1.0.0",
-          "publishTimestamp": 1794405936,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "7a17b8693dd7c9f2704a220b364e66fc9f72b6c6",
-            "path": "packages/dsh-ui-enhancements"
-          },
-          "engines": {
-            "dsh": ">=0.2.0-rc.1 <0.3.0-0"
-          }
-        }
-      ]
+      "title": "DSH UI Enhancements",
+      "description": "Swiss-modernist dialog and interface enhancements for DSH.",
+      "version": "1.0.0",
+      "path": "packages/dsh-ui-enhancements",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-ui-enhancements"
     },
     {
       "name": "dsh-plugin-dev-sandbox",
-      "title": {
-        "en": "DSH Plugin Dev Sandbox",
-        "zh": "DSH 插件开发沙箱"
-      },
-      "description": {
-        "en": "Session-bound isolated DSH plugin development sandbox workspace and live debug panel.",
-        "zh": "DSH 插件开发沙箱与调试面板：会话绑定独立调试工作区。"
-      },
-      "author": "zhaowendao2005",
-      "homepage": "https://github.com/zhaowendao2005-lab/dsh-extension-lab/tree/main/packages/dsh-plugin-dev-sandbox",
-      "repository": {
-        "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-        "directory": "packages/dsh-plugin-dev-sandbox"
-      },
-      "metadata": {
-        "category": "dev",
-        "keywords": [
-          "sandbox",
-          "dev",
-          "debug"
-        ],
-        "labels": [],
-        "sortKeys": {}
-      },
-      "versions": [
-        {
-          "version": "1.4.3",
-          "publishTimestamp": 1794556428,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "66ba55c8e044da478b4eed7df01f2c06f3df44e1",
-            "path": "packages/dsh-plugin-dev-sandbox"
-          },
-          "engines": {
-            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
-          }
-        }
-      ]
+      "title": "DSH Plugin Dev Sandbox",
+      "description": "DSH 插件开发沙箱与调试面板",
+      "version": "1.4.3",
+      "path": "packages/dsh-plugin-dev-sandbox",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-plugin-dev-sandbox"
     },
     {
+      "name": "dsh-btw-side",
+      "title": "DSH BTW Side Ask",
+      "description": "旁路提问（BTW）：基于最新真实模型请求上下文独立作答，不打断主线。",
+      "version": "1.0.2",
+      "path": "packages/dsh-btw-side",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-btw-side"
+    },
+    {
+      "name": "model-intelligence-test",
+      "title": "Model Intelligence Test",
+      "description": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。",
+      "version": "1.1.0",
+      "path": "packages/model-intelligence-test",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/model-intelligence-test"
+    },
+    {
+      "name": "dsh-antigravity",
+      "title": "Antigravity Direct",
+      "description": "Google Antigravity (Cloud Code v1internal) 直连 Provider 插件：支持多账号 OAuth 轮换与 Sticky 会话、Gemini 模型动态发现、disjoint Token/Cache 统计、thoughtSignature 对齐回放、配额 Telemetry 与 slash 命令。",
+      "version": "1.1.3",
+      "path": "packages/dsh-antigravity",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-antigravity"
+    },
+    {
+      "name": "dsh-workspace-ide",
+      "title": "DSH Workspace IDE",
+      "description": "DSH 全局工作区面板：文件树与快速打开 / 源代码管理与三方冲突视图 / 提交图谱 / CodeMirror 6 编辑器与差异视图 / 真 PTY 终端。",
+      "version": "1.0.0",
+      "path": "packages/dsh-workspace-ide",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-workspace-ide"
+    }
+  ],
+  "extensions": [
+    {
       "name": "extension-lab-manager",
-      "title": {
-        "en": "Extension Lab Manager",
-        "zh": "扩展实验市场管理器"
-      },
-      "description": {
-        "en": "Private DSH extension catalog manager with one-click install and update actions.",
-        "zh": "私有扩展市场、安装与更新管理器。"
-      },
-      "author": "zhaowendao2005",
-      "homepage": "https://github.com/zhaowendao2005-lab/dsh-extension-lab/tree/main/packages/extension-lab-manager",
-      "repository": {
-        "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-        "directory": "packages/extension-lab-manager"
-      },
-      "metadata": {
-        "category": "market",
-        "keywords": [
-          "market",
-          "installer",
-          "catalog"
-        ],
-        "labels": [],
-        "sortKeys": {}
-      },
-      "versions": [
-        {
-          "version": "1.1.0",
-          "publishTimestamp": 1794597023,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "584218d1b553b19b26500d252e6f1a0f9c6f8085",
-            "path": "packages/extension-lab-manager"
-          },
-          "engines": {
-            "dsh": ">=0.2.0-rc.1 <0.3.0-0"
-          }
-        },
-        {
-          "version": "1.0.3",
-          "publishTimestamp": 1794560841,
-          "source": {
-            "type": "git",
-            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "ff5623d1af55d9896c4b44f35dbd434c40495d33",
-            "path": "packages/extension-lab-manager"
-          },
-          "engines": {
-            "dsh": ">=0.2.0-rc.1 <0.3.0-0"
-          }
-        }
-      ]
+      "title": "Extension Lab Manager",
+      "description": "私有扩展市场、安装与更新管理器。",
+      "version": "1.1.0",
+      "path": "packages/extension-lab-manager",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/extension-lab-manager"
+    },
+    {
+      "name": "dsh-ui-enhancements",
+      "title": "DSH UI Enhancements",
+      "description": "Swiss-modernist dialog and interface enhancements for DSH.",
+      "version": "1.0.0",
+      "path": "packages/dsh-ui-enhancements",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-ui-enhancements"
+    },
+    {
+      "name": "dsh-plugin-dev-sandbox",
+      "title": "DSH Plugin Dev Sandbox",
+      "description": "DSH 插件开发沙箱与调试面板",
+      "version": "1.4.3",
+      "path": "packages/dsh-plugin-dev-sandbox",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-plugin-dev-sandbox"
+    },
+    {
+      "name": "dsh-btw-side",
+      "title": "DSH BTW Side Ask",
+      "description": "旁路提问（BTW）：基于最新真实模型请求上下文独立作答，不打断主线。",
+      "version": "1.0.2",
+      "path": "packages/dsh-btw-side",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-btw-side"
+    },
+    {
+      "name": "model-intelligence-test",
+      "title": "Model Intelligence Test",
+      "description": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。",
+      "version": "1.1.0",
+      "path": "packages/model-intelligence-test",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/model-intelligence-test"
+    },
+    {
+      "name": "dsh-antigravity",
+      "title": "Antigravity Direct",
+      "description": "Google Antigravity (Cloud Code v1internal) 直连 Provider 插件：支持多账号 OAuth 轮换与 Sticky 会话、Gemini 模型动态发现、disjoint Token/Cache 统计、thoughtSignature 对齐回放、配额 Telemetry 与 slash 命令。",
+      "version": "1.1.3",
+      "path": "packages/dsh-antigravity",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-antigravity"
+    },
+    {
+      "name": "dsh-workspace-ide",
+      "title": "DSH Workspace IDE",
+      "description": "DSH 全局工作区面板：文件树与快速打开 / 源代码管理与三方冲突视图 / 提交图谱 / CodeMirror 6 编辑器与差异视图 / 真 PTY 终端。",
+      "version": "1.0.0",
+      "path": "packages/dsh-workspace-ide",
+      "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-workspace-ide"
     }
   ]
 }
