@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "extensions": [
+  "plugins": [
     {
       "name": "extension-lab-manager",
       "title": "Extension Lab Manager",
