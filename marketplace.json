@@ -45,7 +45,7 @@
       "name": "dsh-antigravity",
       "title": "Antigravity Direct",
       "description": "Google Antigravity (Cloud Code v1internal) 直连 Provider 插件：支持多账号 OAuth 轮换与 Sticky 会话、Gemini 模型动态发现、disjoint Token/Cache 统计、thoughtSignature 对齐回放、配额 Telemetry 与 slash 命令。",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "path": "packages/dsh-antigravity",
       "spec": "github:zhaowendao2005-lab/dsh-extension-lab#path:/packages/dsh-antigravity"
     }
