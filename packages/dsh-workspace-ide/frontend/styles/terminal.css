@@ -1,0 +1,149 @@
+/* Bottom panel: tab strip + one xterm per tab (docs/ui-spec.md §9).
+   Colours come only from --dsw-alias-*; sizes are this package's own --wid-*. */
+
+.wid-panel {
+  grid-area: panel;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base);
+}
+
+.wid-panel[hidden] {
+  display: none;
+}
+
+.wid-term {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wid-term__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: var(--wid-tabbar-h);
+  padding: 0 6px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  scrollbar-width: none;
+}
+
+.wid-term__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.wid-term__tab {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  max-width: 180px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wid-term__tab:hover {
+  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.wid-term__tab[data-active="true"] {
+  background: var(--dsw-alias-bg-l1);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: inset 0 -1px 0 var(--dsw-alias-brand-primary);
+}
+
+.wid-term__tab-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wid-term__close {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--dsw-radius-xs);
+  opacity: 0;
+}
+
+.wid-term__tab:hover .wid-term__close,
+.wid-term__tab[data-active="true"] .wid-term__close {
+  opacity: 1;
+}
+
+.wid-term__close:hover {
+  background: var(--dsw-alias-bg-l3);
+}
+
+.wid-term__spacer {
+  flex: 1 1 auto;
+}
+
+.wid-term__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Each tab keeps its own host; only the active one is laid out, so the hidden
+   ones never fight the active terminal for the panel's box. */
+.wid-term__host {
+  position: absolute;
+  inset: 0;
+  padding: 4px 0 0 8px;
+  overflow: hidden;
+}
+
+.wid-term__host[data-visible="false"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.wid-term__host .xterm {
+  height: 100%;
+}
+
+.wid-term__host .xterm-viewport {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.wid-term__host .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.wid-term__host .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-border-l2);
+  border-radius: 5px;
+}
+
+.wid-term__host .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wid-panel .wid-empty {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+}

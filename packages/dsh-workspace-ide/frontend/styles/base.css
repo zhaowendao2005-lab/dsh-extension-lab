@@ -1,0 +1,677 @@
+/* Shell: root grid, activity bar, sidebar, editor area, panel, status bar.
+   Colours come only from --dsw-alias-*; sizes are this package's own --wid-*. */
+
+@property --wid-sidebar-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 260px;
+}
+
+@property --wid-panel-h {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 220px;
+}
+
+.wid-root {
+  --wid-activity-w: 48px;
+  --wid-titlebar-h: 30px;
+  --wid-statusbar-h: 22px;
+  --wid-tabbar-h: 26px;
+  --wid-split-h: 4px;
+  --wid-row-h: 22px;
+  --wid-graph-row-h: 28px;
+  box-sizing: border-box;
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  grid-template-columns: var(--wid-activity-w) var(--wid-sidebar-w) minmax(0, 1fr);
+  grid-template-rows: var(--wid-titlebar-h) minmax(0, 1fr) var(--wid-split-h) var(--wid-panel-h) var(--wid-statusbar-h);
+  grid-template-areas:
+    "titlebar titlebar titlebar"
+    "activity sidebar  editor"
+    "activity sidebar  split"
+    "activity sidebar  panel"
+    "status   status   status";
+  padding-top: var(--dsh-frame-top-clearance, 0px);
+  padding-inline-start: var(--dsh-frame-leading-clearance, 0px);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+  font-size: var(--dsh-content-font-size, 14px);
+  transition: --wid-sidebar-w 0.16s var(--ds-ease-in-out), --wid-panel-h 0.16s var(--ds-ease-in-out);
+}
+
+.wid-root[data-sidebar="collapsed"] {
+  --wid-sidebar-w: 0px;
+}
+
+.wid-root[data-panel="collapsed"] {
+  --wid-panel-h: 0px;
+  --wid-split-h: 0px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wid-root {
+    transition: none;
+  }
+}
+
+.wid-root *,
+.wid-root *::before,
+.wid-root *::after {
+  box-sizing: border-box;
+}
+
+.wid-root button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.wid-root button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wid-root :focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+/* ---------- title bar ---------- */
+.wid-titlebar {
+  grid-area: titlebar;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  min-width: 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-titlebar__root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.wid-titlebar__root span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wid-titlebar__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.wid-titlebar__spacer {
+  flex: 1;
+}
+
+/* ---------- activity bar ---------- */
+.wid-activity {
+  grid-area: activity;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 4px;
+  background: var(--dsw-alias-bg-base);
+  border-inline-end: 1px solid var(--dsw-alias-border-l1);
+}
+
+.wid-activity__button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-activity__button:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.wid-activity__button[aria-pressed="true"] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.wid-activity__button[aria-pressed="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 12px;
+  width: 2px;
+  height: 24px;
+  border-start-end-radius: 2px;
+  border-end-end-radius: 2px;
+  background: var(--dsw-alias-brand-primary);
+}
+
+.wid-activity__badge {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.wid-activity__footer {
+  margin-top: auto;
+  padding-bottom: 6px;
+}
+
+/* ---------- sidebar ---------- */
+.wid-sidebar {
+  grid-area: sidebar;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+  border-inline-end: 1px solid var(--dsw-alias-border-l1);
+}
+
+.wid-sidebar__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-sidebar__head-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wid-icon-button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-icon-button:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.wid-sidebar__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+/* ---------- editor area ---------- */
+.wid-editor {
+  grid-area: editor;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+
+.wid-editor__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.wid-editor__placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  gap: 6px;
+  text-align: center;
+}
+
+/* ---------- splitter + panel ---------- */
+.wid-split {
+  grid-area: split;
+  position: relative;
+  background: transparent;
+  cursor: row-resize;
+}
+
+.wid-split::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: var(--dsw-alias-border-l1);
+}
+
+.wid-split:hover::before,
+.wid-split[data-dragging="true"]::before {
+  background: var(--dsw-alias-brand-primary);
+}
+
+.wid-panel {
+  grid-area: panel;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+
+/* ---------- status bar ---------- */
+.wid-statusbar {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--wid-statusbar-h);
+  padding: 0 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wid-statusbar__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--dsw-radius-xs);
+  white-space: nowrap;
+}
+
+.wid-statusbar__item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.wid-statusbar__item:disabled:hover {
+  background: none;
+}
+
+.wid-statusbar__spacer {
+  flex: 1;
+}
+
+/* ---------- notices (error bar) ---------- */
+.wid-notices {
+  position: absolute;
+  inset-inline: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.wid-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-sm);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+.wid-notice[data-level="error"] {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.wid-notice[data-level="warn"] {
+  border-color: var(--dsw-alias-state-warn-primary);
+}
+
+.wid-notice__text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- empty state ---------- */
+.wid-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.wid-empty__title {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wid-empty__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.wid-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--dsw-radius-sm);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.wid-button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.wid-button[data-variant="primary"] {
+  border-color: transparent;
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.wid-hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.wid-mono {
+  font-family: var(--ds-font-family-code);
+}
+
+.wid-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Syntax tokens: CodeMirror needs concrete colours, and every one is derived from the
+   host palette with color-mix so light/dark both stay legible (docs/ui-spec.md §3). */
+.wid-root {
+  --wid-syn-keyword: color-mix(in oklab, var(--dsw-alias-state-business-primary) 78%, var(--dsw-alias-label-primary));
+  --wid-syn-string: color-mix(in oklab, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary));
+  --wid-syn-number: color-mix(in oklab, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-label-primary));
+  --wid-syn-comment: var(--dsw-alias-label-tertiary);
+  --wid-syn-function: color-mix(in oklab, var(--dsw-alias-state-business-primary) 60%, var(--dsw-alias-label-primary));
+  --wid-syn-type: color-mix(in oklab, var(--dsw-alias-state-done-primary) 60%, var(--dsw-alias-label-primary));
+  --wid-syn-property: var(--dsw-alias-label-secondary);
+  --wid-syn-tag: color-mix(in oklab, var(--dsw-alias-state-error-primary) 58%, var(--dsw-alias-label-primary));
+  --wid-syn-variable: var(--dsw-alias-label-primary);
+  --wid-syn-link: var(--dsw-alias-brand-primary);
+}
+
+/* Panel-internal modal (docs/ui-spec.md §5). */
+.wid-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: var(--dsw-alias-bg-mask-1);
+}
+
+.wid-modal {
+  width: min(420px, calc(100% - 32px));
+  padding: 16px 18px;
+  border-radius: var(--dsw-radius-md);
+  box-shadow: var(--dsw-shadow-lv3);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+
+.wid-modal__title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.wid-modal__body {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-modal__detail {
+  margin-top: 8px;
+  max-height: 88px;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-all;
+}
+
+.wid-modal__warning {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.wid-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.wid-button--danger {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  border-color: transparent;
+}
+
+.wid-button--primary {
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  border-color: transparent;
+}
+
+/* Semantic tones: status letters need a hue that survives both themes, and the raw
+   state-* colours are too light for text on a base background (contrast < 3:1), so they
+   are mixed toward the label colour (docs/ui-spec.md §11). */
+.wid-root {
+  --wid-tone-warn: color-mix(in oklab, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-label-primary));
+  --wid-tone-success: color-mix(in oklab, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary));
+  --wid-tone-error: color-mix(in oklab, var(--dsw-alias-state-error-primary) 60%, var(--dsw-alias-label-primary));
+  --wid-tone-business: color-mix(in oklab, var(--dsw-alias-state-business-primary) 60%, var(--dsw-alias-label-primary));
+  --wid-tone-done: color-mix(in oklab, var(--dsw-alias-state-done-primary) 60%, var(--dsw-alias-label-primary));
+  --wid-tone-neutral: color-mix(in oklab, var(--dsw-alias-label-tertiary) 70%, var(--dsw-alias-label-primary));
+}
+
+/* Eight lane hues for the commit graph. Mixed toward the label colour so thin strokes
+   stay visible on both themes without leaving the token system (docs/ui-spec.md §11). */
+.wid-root {
+  --wid-lane-0: var(--dsw-alias-brand-primary);
+  --wid-lane-1: color-mix(in oklab, var(--dsw-alias-state-success-primary) 62%, var(--dsw-alias-label-primary));
+  --wid-lane-2: color-mix(in oklab, var(--dsw-alias-state-warn-primary) 58%, var(--dsw-alias-label-primary));
+  --wid-lane-3: color-mix(in oklab, var(--dsw-alias-state-business-primary) 62%, var(--dsw-alias-label-primary));
+  --wid-lane-4: color-mix(in oklab, var(--dsw-alias-state-done-primary) 62%, var(--dsw-alias-label-primary));
+  --wid-lane-5: color-mix(in oklab, var(--dsw-alias-state-error-primary) 58%, var(--dsw-alias-label-primary));
+  --wid-lane-6: color-mix(in oklab, var(--wid-lane-0) 55%, var(--wid-lane-1));
+  --wid-lane-7: color-mix(in oklab, var(--dsw-alias-label-secondary) 80%, var(--dsw-alias-label-primary));
+}
+
+/* Settings: four short rows plus a numeric field; no nested cards. */
+.wid-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.wid-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.wid-settings__section:last-child { border-bottom: 0; }
+
+.wid-settings__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.wid-settings__label { flex: 0 0 auto; }
+
+.wid-settings__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.wid-settings__input {
+  width: 64px;
+  height: 22px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
+}
+
+.wid-settings__input:focus {
+  outline: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent);
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.wid-settings__actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.wid-settings__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wid-settings__link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-primary);
+  font: inherit;
+  font-size: 11px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.wid-settings__limits {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.wid-settings__limits dt { color: var(--dsw-alias-label-secondary); }
+.wid-settings__limits dd { margin: 0; color: var(--dsw-alias-label-primary); }
+
+/* Title-bar quick open: the palette is otherwise only reachable by its key binding. */
+.wid-titlebar__quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm, 4px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.wid-titlebar__quick:hover {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.wid-titlebar__quick svg { width: 12px; height: 12px; }

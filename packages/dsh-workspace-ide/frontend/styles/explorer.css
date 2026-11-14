@@ -1,0 +1,106 @@
+/* Explorer tree: 22px rows, indentation guides, kind dots (docs/ui-spec.md §4). */
+.wid-tree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 4px 0 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.wid-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--wid-row-h);
+  padding-inline-end: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wid-tree__row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+/* node_modules and friends are listed but de-emphasised (docs/files.md §11). */
+.wid-tree__row[data-ignored="true"] .wid-tree__name { color: var(--dsw-alias-label-tertiary); }
+
+.wid-tree__row[aria-selected="true"] {
+  background: var(--dsw-alias-bg-multi-select);
+}
+
+.wid-tree__row:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);
+  outline: none;
+}
+
+.wid-tree__chevron {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  display: grid;
+  place-items: center;
+}
+
+.wid-tree__icon {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-tree__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.wid-tree__dot[data-kind="code"] { background: var(--dsw-alias-state-business-primary); }
+.wid-tree__dot[data-kind="style"] { background: var(--dsw-alias-state-done-primary); }
+.wid-tree__dot[data-kind="config"] { background: var(--dsw-alias-state-warn-primary); }
+.wid-tree__dot[data-kind="doc"] { background: var(--dsw-alias-label-secondary); }
+.wid-tree__dot[data-kind="image"] { background: var(--dsw-alias-state-success-primary); }
+.wid-tree__dot[data-kind="other"] { background: var(--dsw-alias-label-tertiary); }
+
+.wid-tree__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wid-tree__truncated {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.wid-tree__actions {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.wid-tree__row:hover .wid-tree__actions,
+.wid-tree__row:focus-within .wid-tree__actions {
+  display: flex;
+}
+
+.wid-tree__more {
+  display: block;
+  width: 100%;
+  height: var(--wid-row-h);
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-primary);
+  font: inherit;
+  font-size: 11px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.wid-tree__more:hover { background: var(--dsw-alias-interactive-bg-hover); }

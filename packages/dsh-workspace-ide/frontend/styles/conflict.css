@@ -1,0 +1,91 @@
+/* Three-way conflict resolution (M4-2): one column per index stage. */
+.wid-conflict {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.wid-conflict__bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.wid-conflict__path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.wid-conflict__spacer { flex: 1 1 auto; }
+
+.wid-conflict__note {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: color-mix(in oklab, var(--dsw-alias-state-warn-primary) 12%, transparent);
+}
+
+.wid-conflict__panes {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  min-height: 0;
+  background: var(--dsw-alias-border-l1);
+}
+
+.wid-conflict__pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.wid-conflict__pane-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.wid-conflict__pane-meta {
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.wid-conflict__text {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  scrollbar-width: thin;
+  tab-size: 2;
+  white-space: pre;
+}
+
+/* Three columns do not fit a narrow editor area: stack them instead of shrinking to nothing. */
+@container (max-width: 720px) {
+  .wid-conflict__panes { grid-template-columns: minmax(0, 1fr); }
+}

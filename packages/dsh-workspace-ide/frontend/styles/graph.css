@@ -1,0 +1,154 @@
+/* Commit graph: one 28px row per commit, lane SVG + refs + subject + author + date. */
+.wid-graph {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.wid-graph__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.wid-graph__refs,
+.wid-graph__search {
+  height: 22px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
+}
+
+.wid-graph__search { flex: 1 1 auto; min-width: 0; }
+
+.wid-graph__error {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in oklab, var(--dsw-alias-state-error-primary) 18%, transparent);
+}
+
+.wid-graph__scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  contain: strict;
+}
+
+.wid-graph__canvas { position: relative; width: 100%; }
+
+.wid-graph__row {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-inline-end: 8px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.wid-graph__row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.wid-graph__row[data-selected="true"] { background: var(--dsw-alias-bg-multi-select); }
+
+.wid-graph__cell { flex: 0 0 auto; }
+
+.wid-graph__badges {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 3px;
+  min-width: 0;
+  /* Never let a commit that carries many refs eat the row: the subject keeps priority. */
+  max-width: 40%;
+  overflow: hidden;
+}
+
+.wid-graph__badge {
+  flex: 0 0 auto;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 15px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-graph__badge[data-head="true"] {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.wid-graph__badge[data-kind="tag"] { border-style: dashed; }
+
+.wid-graph__subject {
+  flex: 1 1 auto;
+  min-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wid-graph__meta {
+  flex: 0 1 auto;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.wid-graph__date {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wid-graph__more {
+  display: block;
+  width: 100%;
+  height: 26px;
+  border: 0;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.wid-graph__more:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.wid-graph__footer {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  font-size: 11px;
+}
+
+/* A narrow sidebar cannot show graph + refs + subject + author + date at once; the author
+   is the first casualty, then the date column narrows to its relative form. */
+@container (max-width: 340px) {
+  .wid-graph__meta { display: none; }
+}
+
+@container (max-width: 260px) {
+  .wid-graph__date { display: none; }
+  .wid-graph__badges { max-width: 30%; }
+}

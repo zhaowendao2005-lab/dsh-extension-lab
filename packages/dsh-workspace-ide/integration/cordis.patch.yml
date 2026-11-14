@@ -1,0 +1,7 @@
+# dsh bundle patch: inserts this plugin into a profile's layer stack.
+# The row loads the package's main entry as the host half (a plain Cordis
+# plugin); the `dsh.client` declaration in package.json makes the web app load
+# ./client as the browser half.
+- insert:
+    - id: dsh-workspace-ide
+      name: dsh-workspace-ide

@@ -1,0 +1,108 @@
+/* Side-by-side diff surface (docs/ui-spec.md §9). */
+.wid-diff {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--dsw-alias-bg-base);
+}
+
+.wid-diff--empty { align-items: center; justify-content: center; }
+
+.wid-diff__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  flex: 0 0 30px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 12px;
+}
+
+.wid-diff__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.wid-diff__stats { display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+.wid-diff__stats [data-kind="add"] { color: var(--wid-tone-success); }
+.wid-diff__stats [data-kind="del"] { color: var(--wid-tone-error); }
+
+.wid-diff__files {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  scrollbar-width: thin;
+}
+
+.wid-diff__file {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wid-diff__file:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.wid-diff__file[data-active="true"] {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.wid-diff__panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.wid-diff__panes .cm-mergeView { height: 100%; }
+.wid-diff__panes .cm-mergeViewEditors { height: 100%; }
+.wid-diff__panes .cm-mergeViewEditor { height: 100%; }
+.wid-diff__panes .cm-editor { height: 100%; }
+.wid-diff__panes .cm-scroller { overflow: auto; }
+
+.wid-diff__hunks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 0 0 auto;
+  max-height: 64px;
+  overflow-y: auto;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  scrollbar-width: thin;
+}
+
+.wid-diff__hunk {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.wid-diff__modes {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.wid-diff__modes .wid-button[aria-pressed='true'] {
+  border-color: var(--dsw-alias-border-strong);
+  background: var(--dsw-alias-interactive-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* unifiedMergeView draws its gutter marks with theme tokens; keep them readable on the panel */
+.wid-diff .cm-merge-revert {
+  display: none;
+}
