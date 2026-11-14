@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Update a single plugin entry in index.json (Format 1) and marketplace.json
+ * Update a single plugin entry in marketplace.json (Format 1)
  * without bumping global repo tags or touching sibling plugins.
  *
  * Usage:
@@ -14,27 +14,26 @@ import { pathToFileURL } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const REPO_URL = 'https://github.com/zhaowendao2005-lab/dsh-extension-lab';
-const INDEX_URL = 'https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/index.json';
-const INDEX_FILE = path.join(REPO_ROOT, 'index.json');
+const MARKET_URL = 'https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/marketplace.json';
 const MARKET_FILE = path.join(REPO_ROOT, 'marketplace.json');
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'));
 }
 
-async function validateIndex(doc) {
+async function validateMarket(doc) {
   const validatorPath = path.join(
     REPO_ROOT,
     'extracted_files/dsh/node_modules/@deepseek-ai/dsh-plugin-market-index/lib/index.js',
   );
   if (existsSync(validatorPath)) {
     const mod = await import(pathToFileURL(validatorPath).href);
-    const parsed = mod.parseMarketIndex(doc, INDEX_URL);
+    const parsed = mod.parseMarketIndex(doc, MARKET_URL);
     return { validator: '@deepseek-ai/dsh-plugin-market-index', count: parsed.plugins.length };
   }
 
   if (doc.format !== 1 || !Array.isArray(doc.plugins)) {
-    throw new Error('index.json must use format: 1 and include plugins[]');
+    throw new Error('marketplace.json must use format: 1 and include plugins[]');
   }
   for (const plugin of doc.plugins) {
     if (!plugin.name || !Array.isArray(plugin.versions) || plugin.versions.length === 0) {
@@ -76,10 +75,10 @@ async function main() {
     process.exit(1);
   }
 
-  const indexDoc = readJson(INDEX_FILE);
+  const marketDoc = readJson(MARKET_FILE);
   if (arg === '--validate') {
-    const res = await validateIndex(indexDoc);
-    console.log(`index.json valid (${res.validator}, ${res.count} plugins)`);
+    const res = await validateMarket(marketDoc);
+    console.log(`marketplace.json valid (${res.validator}, ${res.count} plugins)`);
     return;
   }
 
@@ -96,7 +95,7 @@ async function main() {
   const dshEngine = pkg.engines?.dsh;
   const { commit, publishTimestamp } = getLatestPackageCommit(pkgRelDir);
 
-  let pluginEntry = indexDoc.plugins.find((p) => p.name === name);
+  let pluginEntry = marketDoc.plugins.find((p) => p.name === name);
   if (!pluginEntry) {
     pluginEntry = {
       name,
@@ -108,7 +107,7 @@ async function main() {
       metadata: { category: 'tools', keywords: [], labels: [], sortKeys: {} },
       versions: [],
     };
-    indexDoc.plugins.push(pluginEntry);
+    marketDoc.plugins.push(pluginEntry);
   }
 
   const versionRecord = {
@@ -130,20 +129,8 @@ async function main() {
     pluginEntry.versions.unshift(versionRecord);
   }
 
-  const res = await validateIndex(indexDoc);
-  writeFileSync(INDEX_FILE, `${JSON.stringify(indexDoc, null, 2)}\n`);
-
-  if (existsSync(MARKET_FILE)) {
-    const market = readJson(MARKET_FILE);
-    if (Array.isArray(market.extensions)) {
-      const mEntry = market.extensions.find((e) => e.name === name);
-      if (mEntry) {
-        mEntry.version = version;
-        delete mEntry.ref;
-        writeFileSync(MARKET_FILE, `${JSON.stringify(market, null, 2)}\n`);
-      }
-    }
-  }
+  const res = await validateMarket(marketDoc);
+  writeFileSync(MARKET_FILE, `${JSON.stringify(marketDoc, null, 2)}\n`);
 
   console.log(
     `Updated ${name}@${version} -> ${commit.slice(0, 7)} (validated via ${res.validator})`,

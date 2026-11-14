@@ -6,7 +6,6 @@
 
 | 包 | 作用 |
 | --- | --- |
-| `packages/extension-lab-manager` | 扩展市场管理器 |
 | `packages/dsh-ui-enhancements` | DSH 界面样式增强 |
 | `packages/dsh-plugin-dev-sandbox` | 会话绑定插件的独立 DSH 调试工作区（不是 OS 安全沙箱） |
 | `packages/dsh-btw-side` | 旁路提问（BTW）：基于最新真实请求上下文独立作答，输入框上方常驻栏，不打断主线 |
