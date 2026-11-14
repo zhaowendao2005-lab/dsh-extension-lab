@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "title": {"en": "Test Market"},
+  "title": { "en": "Extension Lab Market" },
   "metadata": {
     "categories": {},
     "labels": {},
@@ -9,22 +9,20 @@
   "plugins": [
     {
       "name": "dsh-workspace-ide",
-      "metadata": {
-        "keywords": [],
-        "labels": [],
-        "sortKeys": {}
-      },
+      "title": { "en": "DSH Workspace IDE" },
+      "description": { "en": "DSH 全局工作区面板。" },
+      "metadata": { "keywords": ["ide", "workspace"], "labels": [], "sortKeys": {} },
       "versions": [
         {
           "version": "1.0.0",
-          "publishTimestamp": 1794579420,
+          "publishTimestamp": 1794669000,
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/dsh-workspace-ide"
           },
-          "engines": {}
+          "engines": { "dsh": ">=0.2.0" }
         }
       ]
     }
