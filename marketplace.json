@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "title": {"en": "Test Market"},
+  "title": {"en": "Extension Lab Market"},
   "metadata": {
     "categories": {},
     "labels": {},
@@ -10,7 +10,7 @@
     {
       "name": "dsh-workspace-ide",
       "metadata": {
-        "keywords": [],
+        "keywords": ["ide", "workspace"],
         "labels": [],
         "sortKeys": {}
       },
