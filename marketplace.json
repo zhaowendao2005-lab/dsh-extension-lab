@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "format": 1,
   "extensions": [
     {
       "name": "extension-lab-manager",
