@@ -24,7 +24,9 @@
             "commit": "0000000000000000000000000000000000000000",
             "path": "packages/dsh-workspace-ide"
           },
-          "engines": {}
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
         }
       ]
     }
