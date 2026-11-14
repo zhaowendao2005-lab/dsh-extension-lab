@@ -832,10 +832,10 @@ export class AntigravityAdapter extends LlmAdapter {
             error.classified.category === 'SERVER' ||
             error.classified.category === 'TRANSPORT';
 
-          if (isRetriableStreamStatus && usedEndpoint) {
+          if (!emittedAnyChunk && isRetriableStreamStatus && usedEndpoint) {
             // Retry once on the same endpoint before cooling it down so Daily-only models
             // (e.g. gemini-4-*) do not prematurely fall back to Prod where they 429.
-            if (!emittedAnyChunk && !sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
+            if (!sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
               sameEndpointStreamRetried = true;
               streamRetryAttemptsRemaining -= 1;
               await new Promise((resolve) => setTimeout(resolve, 350));
@@ -863,7 +863,7 @@ export class AntigravityAdapter extends LlmAdapter {
           }
         }
         if (error instanceof LlmError) throw error;
-        if (usedEndpoint) {
+        if (!emittedAnyChunk && usedEndpoint) {
           this.service.client.endpointHealth.markFailure(usedEndpoint);
         }
         if (!emittedAnyChunk && streamRetryAttemptsRemaining > 0) {

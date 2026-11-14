@@ -794,6 +794,14 @@ export class GeminiSseStreamDecoder {
     }
 
     if (parsed.error) {
+      const errMsg =
+        typeof parsed.error.message === 'string' ? parsed.error.message : dataPayload;
+      if (
+        this.rawFinishReason !== undefined &&
+        errMsg.includes('upstream stream ended before a completion event')
+      ) {
+        return [];
+      }
       const code =
         typeof parsed.error.code === 'number' ? parsed.error.code : 502;
       throw new AntigravityUpstreamError(

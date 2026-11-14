@@ -798,3 +798,216 @@ test('adapter: cools down endpoint and retries next endpoint on in-band SSE 503 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('adapter: ignores trailing synthetic 503 truncation error after finishReason was already received', async () => {
+  const adapterMod = await importHostModule('src/host/adapter.ts');
+  const configMod = await importHostModule('src/host/config.ts');
+  const os = await import('node:os');
+  const fs = await import('node:fs');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-antigravity-postfinish503-'));
+
+  const originalFetch = globalThis.fetch;
+  try {
+    const cfg = configMod.normalizeConfig({
+      storageDir: tmpDir,
+      endpoints: [
+        'https://daily-cloudcode-pa.googleapis.com',
+        'https://cloudcode-pa.googleapis.com',
+      ],
+    });
+    const service = new adapterMod.AntigravityService(cfg);
+    await service.accounts.upsertAccountFromOAuth({
+      email: 'test@example.com',
+      accessToken: 'tok-valid',
+      refreshToken: 'ref-valid',
+      expiresAt: Date.now() + 3_600_000,
+      projectId: 'proj-1',
+    });
+
+    const calledUrls = [];
+    const sseEncode = (obj) =>
+      new TextEncoder().encode(`data: ${JSON.stringify(obj)}\n\n`);
+
+    globalThis.fetch = async (url) => {
+      const urlStr = String(url);
+      calledUrls.push(urlStr);
+      if (urlStr.includes('writeTrajectoryAcls')) {
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            sseEncode({
+              response: {
+                candidates: [
+                  {
+                    content: { role: 'model', parts: [{ text: 'hello complete' }] },
+                    finishReason: 'STOP',
+                  },
+                ],
+              },
+            }),
+          );
+          controller.enqueue(
+            sseEncode({
+              error: {
+                code: 503,
+                message:
+                  'upstream stream ended before a completion event; this turn may be incomplete',
+                status: 'UNAVAILABLE',
+              },
+            }),
+          );
+          controller.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    };
+
+    const chunks = [];
+    for await (const ch of service.adapter.stream({
+      model: 'gemini-4-hydrogen',
+      reasoningEffort: 'high',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+    })) {
+      chunks.push(ch);
+    }
+
+    const streamCalls = calledUrls.filter((u) => u.includes('streamGenerateContent'));
+    assert.equal(streamCalls.length, 1);
+    assert.ok(streamCalls[0].startsWith('https://daily-cloudcode-pa.googleapis.com'));
+    assert.ok(chunks.some((c) => c.type === 'text-delta' && c.text === 'hello complete'));
+    const finishChunk = chunks.find((c) => c.type === 'finish');
+    assert.ok(finishChunk);
+    assert.deepEqual(finishChunk.reason, { kind: 'stop' });
+  } finally {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('adapter: does not cool down endpoint when SSE 503 occurs mid-stream after emitting chunks', async () => {
+  const adapterMod = await importHostModule('src/host/adapter.ts');
+  const configMod = await importHostModule('src/host/config.ts');
+  const os = await import('node:os');
+  const fs = await import('node:fs');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-antigravity-midstream503-'));
+
+  const originalFetch = globalThis.fetch;
+  try {
+    const cfg = configMod.normalizeConfig({
+      storageDir: tmpDir,
+      endpoints: [
+        'https://daily-cloudcode-pa.googleapis.com',
+        'https://cloudcode-pa.googleapis.com',
+      ],
+    });
+    const service = new adapterMod.AntigravityService(cfg);
+    await service.accounts.upsertAccountFromOAuth({
+      email: 'test@example.com',
+      accessToken: 'tok-valid',
+      refreshToken: 'ref-valid',
+      expiresAt: Date.now() + 3_600_000,
+      projectId: 'proj-1',
+    });
+
+    const calledUrls = [];
+    const sseEncode = (obj) =>
+      new TextEncoder().encode(`data: ${JSON.stringify(obj)}\n\n`);
+    let attempt = 0;
+
+    globalThis.fetch = async (url) => {
+      const urlStr = String(url);
+      calledUrls.push(urlStr);
+      if (!urlStr.includes('streamGenerateContent')) {
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      attempt += 1;
+      if (attempt === 1) {
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              sseEncode({
+                response: {
+                  candidates: [{ content: { role: 'model', parts: [{ text: 'partial text' }] } }],
+                },
+              }),
+            );
+            // Send the 503 in a later read() turn so partial text is already yielded (emittedAnyChunk = true).
+            setTimeout(() => {
+              controller.enqueue(
+                sseEncode({
+                  error: {
+                    code: 503,
+                    message:
+                      'upstream stream ended before a completion event; this turn may be incomplete',
+                  },
+                }),
+              );
+              controller.close();
+            }, 20);
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }
+      const okBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            sseEncode({
+              response: {
+                candidates: [
+                  {
+                    content: { role: 'model', parts: [{ text: 'second call ok' }] },
+                    finishReason: 'STOP',
+                  },
+                ],
+              },
+            }),
+          );
+          controller.close();
+        },
+      });
+      return new Response(okBody, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    };
+
+    await assert.rejects(async () => {
+      for await (const _chunk of service.adapter.stream({
+        model: 'gemini-4-hydrogen',
+        reasoningEffort: 'high',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      })) {
+        // consume stream
+      }
+    }, /503/);
+
+    const ordered = service.client.endpointHealth.orderedEndpoints(cfg.endpoints);
+    assert.equal(ordered[0], 'https://daily-cloudcode-pa.googleapis.com');
+
+    const retryChunks = [];
+    for await (const ch of service.adapter.stream({
+      model: 'gemini-4-hydrogen',
+      reasoningEffort: 'high',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+    })) {
+      retryChunks.push(ch);
+    }
+
+    const streamCalls = calledUrls.filter((u) => u.includes('streamGenerateContent'));
+    assert.equal(streamCalls.length, 2);
+    assert.ok(streamCalls[0].startsWith('https://daily-cloudcode-pa.googleapis.com'));
+    assert.ok(streamCalls[1].startsWith('https://daily-cloudcode-pa.googleapis.com'));
+    assert.ok(retryChunks.some((c) => c.type === 'text-delta' && c.text === 'second call ok'));
+  } finally {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

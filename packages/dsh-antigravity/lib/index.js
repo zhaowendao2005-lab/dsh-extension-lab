@@ -1,4 +1,4 @@
-// packages/dsh-antigravity/src/host/adapter.ts
+// src/host/adapter.ts
 import {
   LlmAdapter,
   LlmError as LlmError2,
@@ -6,11 +6,11 @@ import {
   resolveRetryPolicy
 } from "@deepseek-ai/dsh-llm";
 
-// packages/dsh-antigravity/src/host/accounts.ts
+// src/host/accounts.ts
 import { randomUUID } from "node:crypto";
 import path2 from "node:path";
 
-// packages/dsh-antigravity/src/host/oauth.ts
+// src/host/oauth.ts
 import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
 var DEFAULT_OAUTH_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
@@ -356,7 +356,7 @@ async function listenLoopback(server, preferredPort) {
   }
 }
 
-// packages/dsh-antigravity/src/host/storage.ts
+// src/host/storage.ts
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -418,7 +418,7 @@ async function readJsonFile(filePath) {
   }
 }
 
-// packages/dsh-antigravity/src/host/accounts.ts
+// src/host/accounts.ts
 var TOKEN_REFRESH_SKEW_MS = 12e4;
 var MAX_SWITCH_HISTORY = 25;
 function lowestFractionOf(quota, preferredPool) {
@@ -918,13 +918,13 @@ var AntigravityAccountManager = class {
   }
 };
 
-// packages/dsh-antigravity/src/host/catalog.ts
+// src/host/catalog.ts
 import {
   ReasoningEffortId
 } from "@deepseek-ai/dsh-llm";
 import path3 from "node:path";
 
-// packages/dsh-antigravity/src/host/config.ts
+// src/host/config.ts
 import Schema from "@deepseek-ai/schemastery";
 var PROVIDER_ID = "antigravity";
 var PROVIDER_DISPLAY_NAME = "Antigravity (Cloud Code \xB7 Unofficial)";
@@ -1042,7 +1042,7 @@ function normalizeConfig(raw) {
   };
 }
 
-// packages/dsh-antigravity/src/host/identity.ts
+// src/host/identity.ts
 import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 import { attributionHeaders } from "@deepseek-ai/dsh-llm";
 var OFFICIAL_HUB_VERSION = "2.28.0";
@@ -1171,7 +1171,7 @@ function deriveUpstreamSessionId(accountId, sessionId, generation = 0) {
   return BigInt.asIntN(64, hash).toString();
 }
 
-// packages/dsh-antigravity/src/host/quota.ts
+// src/host/quota.ts
 function asRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
@@ -1541,7 +1541,7 @@ async function fetchAccountQuotaAndModels(params) {
   };
 }
 
-// packages/dsh-antigravity/src/host/catalog.ts
+// src/host/catalog.ts
 var EFFORT_ORDER = [
   "low",
   "medium",
@@ -2164,7 +2164,7 @@ var AntigravityCatalog = class {
   }
 };
 
-// packages/dsh-antigravity/src/host/client.ts
+// src/host/client.ts
 import { LlmError, ProviderRequestId } from "@deepseek-ai/dsh-llm";
 var DEFAULT_ENDPOINT_COOLDOWN_MS = 3e4;
 var SANDBOX_ENDPOINT_COOLDOWN_MS = 6e4;
@@ -2584,14 +2584,14 @@ var AntigravityHttpClient = class {
   }
 };
 
-// packages/dsh-antigravity/src/host/translate.ts
+// src/host/translate.ts
 import {
   ToolCallId,
   offloadedImageText,
   requestImageHandleText
 } from "@deepseek-ai/dsh-llm";
 
-// packages/dsh-antigravity/src/host/replay.ts
+// src/host/replay.ts
 var GEMINI_SENTINEL_THOUGHT_SIGNATURE = "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I=";
 var ANTIGRAVITY_REPLAY_FORMAT = "antigravity-gemini-v1";
 function isUsableSignature(sig) {
@@ -2643,7 +2643,7 @@ function extractAlignedReplayBlocks(content, replayState) {
   return envelope.blocks.map(parseReplayBlockState);
 }
 
-// packages/dsh-antigravity/src/host/usage.ts
+// src/host/usage.ts
 function nonNegInt(value) {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return 0;
@@ -2728,7 +2728,7 @@ var CacheTelemetryTracker = class {
   }
 };
 
-// packages/dsh-antigravity/src/host/translate.ts
+// src/host/translate.ts
 function flattenTextBlocks(blocks) {
   const parts = [];
   for (const block of blocks) {
@@ -3265,6 +3265,10 @@ var GeminiSseStreamDecoder = class {
       return [];
     }
     if (parsed.error) {
+      const errMsg = typeof parsed.error.message === "string" ? parsed.error.message : dataPayload;
+      if (this.rawFinishReason !== void 0 && errMsg.includes("upstream stream ended before a completion event")) {
+        return [];
+      }
       const code = typeof parsed.error.code === "number" ? parsed.error.code : 502;
       throw new AntigravityUpstreamError(
         classifyUpstreamHttpError(code, dataPayload),
@@ -3376,7 +3380,7 @@ var GeminiSseStreamDecoder = class {
   }
 };
 
-// packages/dsh-antigravity/src/host/adapter.ts
+// src/host/adapter.ts
 function toPositiveSafeInt(value, fallback) {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   const truncated = Math.trunc(value);
@@ -4019,8 +4023,8 @@ var AntigravityAdapter = class extends LlmAdapter {
         }
         if (error instanceof AntigravityUpstreamError) {
           const isRetriableStreamStatus = error.classified.status !== void 0 && (error.classified.status >= 500 || error.classified.status === 408) || error.classified.category === "SERVER" || error.classified.category === "TRANSPORT";
-          if (isRetriableStreamStatus && usedEndpoint) {
-            if (!emittedAnyChunk && !sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
+          if (!emittedAnyChunk && isRetriableStreamStatus && usedEndpoint) {
+            if (!sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
               sameEndpointStreamRetried = true;
               streamRetryAttemptsRemaining -= 1;
               await new Promise((resolve) => setTimeout(resolve, 350));
@@ -4046,7 +4050,7 @@ var AntigravityAdapter = class extends LlmAdapter {
           }
         }
         if (error instanceof LlmError2) throw error;
-        if (usedEndpoint) {
+        if (!emittedAnyChunk && usedEndpoint) {
           this.service.client.endpointHealth.markFailure(usedEndpoint);
         }
         if (!emittedAnyChunk && streamRetryAttemptsRemaining > 0) {
@@ -4065,7 +4069,7 @@ var AntigravityAdapter = class extends LlmAdapter {
   }
 };
 
-// packages/dsh-antigravity/src/host/commands.ts
+// src/host/commands.ts
 function tryRegisterCommand(cmdService, def) {
   try {
     return cmdService.register({
@@ -4222,7 +4226,7 @@ function registerAntigravityCommands(ctx, service) {
   });
 }
 
-// packages/dsh-antigravity/src/host/server.ts
+// src/host/server.ts
 var API_PREFIX = "/antigravity/api";
 var MAX_BODY_BYTES = 256 * 1024;
 function sendJson(res, status, payload) {
@@ -4405,7 +4409,7 @@ function registerAntigravityWebApi(ctx, service) {
   });
 }
 
-// packages/dsh-antigravity/src/host/index.ts
+// src/host/index.ts
 var name = "dsh-antigravity";
 var inject = ["llm"];
 function apply(ctx, rawConfig) {
