@@ -19,7 +19,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/extension-lab-manager"
           },
           "engines": { "dsh": ">=0.2.0" }
@@ -38,7 +38,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/dsh-ui-enhancements"
           },
           "engines": { "dsh": ">=0.2.0" }
@@ -57,7 +57,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/dsh-plugin-dev-sandbox"
           },
           "engines": { "dsh": ">=0.2.0" }
@@ -76,7 +76,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/dsh-btw-side"
           },
           "engines": { "dsh": ">=0.2.0" }
@@ -95,7 +95,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/model-intelligence-test"
           },
           "engines": { "dsh": ">=0.2.0" }
@@ -114,7 +114,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/dsh-antigravity"
           },
           "engines": { "dsh": ">=0.2.0" }
@@ -133,7 +133,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
-            "commit": "0000000000000000000000000000000000000000",
+            "commit": "b02d671000000000000000000000000000000000",
             "path": "packages/dsh-workspace-ide"
           },
           "engines": { "dsh": ">=0.2.0" }
