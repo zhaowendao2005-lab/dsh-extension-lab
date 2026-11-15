@@ -73,10 +73,25 @@ function readProjectedModelKey(sessions: any, sessionId: string): string | undef
   return undefined
 }
 
-function trySwitchHostModel(sessions: any, option: ModelOption, trackedSessionId: string): void {
+function trySwitchHostModel(
+  sessions: any,
+  option: ModelOption,
+  trackedSessionId: string,
+  rootCtx?: any,
+): void {
   if (sessions) {
     try {
       const sessionId = resolveActiveSessionId(sessions, trackedSessionId)
+      const directories = rootCtx?.get?.('modelDirectories') ?? rootCtx?.modelDirectories
+      if (directories && sessionId) {
+        void Promise.resolve(
+          directories.directoryFor(sessionId).select({
+            provider: option.providerId,
+            model: option.modelId,
+          }),
+        ).catch((error: unknown) => console.error('[ui-enhancements] model switch failed', error))
+        return
+      }
       if (typeof sessions.selectModel === 'function' && sessionId) {
         void sessions.selectModel({
           sessionId,
@@ -124,6 +139,11 @@ class PickerController {
   private remote: any = null
   private activeSessionId = ''
   private sessions: any = null
+  private rootCtx: any = null
+
+  attachRootCtx(ctx: any): void {
+    this.rootCtx = ctx
+  }
 
   getSnapshot = (): PickerState => this.state
 
@@ -171,7 +191,7 @@ class PickerController {
 
   select(_ctx: any, option: ModelOption): void {
     this.patch({ selectedKey: option.value, open: false })
-    trySwitchHostModel(this.sessions, option, this.activeSessionId)
+    trySwitchHostModel(this.sessions, option, this.activeSessionId, this.rootCtx)
   }
 
   async refresh(): Promise<void> {
@@ -255,6 +275,7 @@ window.__ModuleLoader__?.load({
         ctx.inject(['sessions'], (sessionCtx: any) => {
           const sessions = sessionCtx.get?.('sessions')
           if (sessions) picker.attachSessions(sessions)
+          picker.attachRootCtx(sessionCtx)
         })
 
         const SessionTracker = ({ sessionId }: { sessionId: string }): null => {
