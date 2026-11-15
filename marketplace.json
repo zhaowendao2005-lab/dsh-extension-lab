@@ -26,6 +26,19 @@
       },
       "versions": [
         {
+          "version": "1.1.8",
+          "publishTimestamp": 1794726185,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "961ac2e48b3d5f6486547c652faf6f66ec0d904b",
+            "path": "packages/dsh-ui-enhancements"
+          },
+          "engines": {
+            "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+          }
+        },
+        {
           "version": "1.1.7",
           "publishTimestamp": 1794725278,
           "source": {
