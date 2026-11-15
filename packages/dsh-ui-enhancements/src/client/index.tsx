@@ -13,6 +13,7 @@ import { SettingsIcon, SettingsPage } from './Settings'
 import { ModelPickerPanel, type ModelOption } from './ModelPickerPanel'
 import { restoreComposerFocus } from './composerFocus'
 import { matchesShortcut, toDshBinding } from './shortcuts'
+import { loadModelUsage, recordModelUsage, type ModelUsageHistory } from './modelUsage'
 
 const ENTRY_ID = 'ui-enhancements'
 
@@ -144,6 +145,8 @@ interface PickerState {
   loading: boolean
   error?: string
   selectedKey?: string
+  /** Shared across conversations and restored from local storage. */
+  usageHistory: ModelUsageHistory
   /** Last thinking level chosen per `provider:model`. */
   effortByModel: Record<string, string>
   /** Lazily resolved thinking levels per `provider:model`. */
@@ -155,6 +158,7 @@ class PickerController {
     open: false,
     providers: [],
     loading: false,
+    usageHistory: loadModelUsage(),
     effortByModel: {},
     reasoningByModel: {},
   }
@@ -203,6 +207,7 @@ class PickerController {
     const projected = readProjectedSelection(this.sessions, sessionId)
     this.patch({
       open: true,
+      usageHistory: loadModelUsage(this.state.usageHistory),
       ...(projected?.key ? { selectedKey: projected.key } : {}),
       ...(projected?.key && projected.effort
         ? { effortByModel: { ...this.state.effortByModel, [projected.key]: projected.effort } }
@@ -227,6 +232,7 @@ class PickerController {
   select(_ctx: any, option: ModelOption, effortId?: string): void {
     this.patch({
       selectedKey: option.value,
+      usageHistory: recordModelUsage(this.state.usageHistory, option),
       open: false,
       ...(effortId
         ? { effortByModel: { ...this.state.effortByModel, [option.value]: effortId } }
@@ -342,6 +348,7 @@ function ModelPickerRoot({
       loading={pickerSnap.loading}
       error={pickerSnap.error}
       selectedKey={pickerSnap.selectedKey}
+      usageHistory={pickerSnap.usageHistory}
       effortByModel={pickerSnap.effortByModel}
       reasoningByModel={pickerSnap.reasoningByModel}
       onClose={(reason) => picker.close(reason === 'escape')}

@@ -1,5 +1,6 @@
 import React from './runtime'
 import { fuzzyRank } from './fuzzy'
+import { sortProvidersByUsage, type ModelUsageHistory } from './modelUsage'
 import { useDismissablePopover, type DismissReason } from './useDismissablePopover'
 import { EffortPicker } from './EffortPicker'
 import type {
@@ -24,6 +25,7 @@ export interface ModelPickerPanelProps {
   loading: boolean
   error?: string
   selectedKey?: string
+  usageHistory: ModelUsageHistory
   /** Last level chosen per `provider:model`, persisted across openings. */
   effortByModel: Record<string, string>
   /** Thinking levels resolved lazily per `provider:model`. */
@@ -156,6 +158,7 @@ export function ModelPickerPanel({
   loading,
   error,
   selectedKey,
+  usageHistory,
   effortByModel,
   reasoningByModel,
   onClose,
@@ -215,9 +218,14 @@ export function ModelPickerPanel({
     }
   }, [open])
 
+  const orderedProviders = React.useMemo(
+    () => sortProvidersByUsage(providers, usageHistory),
+    [providers, usageHistory],
+  )
+
   const allOptions = React.useMemo<ModelOption[]>(() => {
     const list: ModelOption[] = []
-    for (const provider of providers) {
+    for (const provider of orderedProviders) {
       for (const model of provider.models) {
         const value = `${provider.id}:${model.id}`
         list.push({
@@ -232,7 +240,7 @@ export function ModelPickerPanel({
       }
     }
     return list
-  }, [providers])
+  }, [orderedProviders])
 
   const scoped = React.useMemo(
     () =>
@@ -250,8 +258,8 @@ export function ModelPickerPanel({
   const visible = React.useMemo(() => ranked.slice(0, LIST_LIMIT), [ranked])
 
   const categories = React.useMemo(
-    () => ['all', ...providers.map((provider) => provider.id)],
-    [providers],
+    () => ['all', ...orderedProviders.map((provider) => provider.id)],
+    [orderedProviders],
   )
 
   const reasoningEntry = (option: ModelOption): CatalogReasoningResult | 'loading' | undefined =>
@@ -527,7 +535,7 @@ export function ModelPickerPanel({
             <span className="dsh-enh-mp-sidebar-label">全部</span>
             <span className="dsh-enh-mp-sidebar-count">{allOptions.length}</span>
           </button>
-          {providers.map((provider) => (
+          {orderedProviders.map((provider) => (
             <button
               type="button"
               key={provider.id}
