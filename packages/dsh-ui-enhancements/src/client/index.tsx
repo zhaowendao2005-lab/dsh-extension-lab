@@ -73,8 +73,7 @@ function readProjectedModelKey(sessions: any, sessionId: string): string | undef
   return undefined
 }
 
-function trySwitchHostModel(ctx: any, option: ModelOption, trackedSessionId: string): void {
-  const sessions = ctx.get?.('sessions') ?? ctx.sessions
+function trySwitchHostModel(sessions: any, option: ModelOption, trackedSessionId: string): void {
   if (sessions) {
     try {
       const sessionId = resolveActiveSessionId(sessions, trackedSessionId)
@@ -91,23 +90,7 @@ function trySwitchHostModel(ctx: any, option: ModelOption, trackedSessionId: str
         return
       }
     } catch {
-      /* fall through to alternative hooks */
-    }
-  }
-
-  const models = ctx.get?.('models') ?? ctx.models
-  if (models) {
-    try {
-      if (typeof models.select === 'function') {
-        void models.select(option.providerId, option.modelId)
-        return
-      }
-      if (typeof models.setCurrent === 'function') {
-        void models.setCurrent({ providerId: option.providerId, modelId: option.modelId })
-        return
-      }
-    } catch {
-      /* ignore */
+      /* fall through to custom event */
     }
   }
 
@@ -140,7 +123,7 @@ class PickerController {
   private readonly listeners = new Set<() => void>()
   private remote: any = null
   private activeSessionId = ''
-  private hostCtx: any = null
+  private sessions: any = null
 
   getSnapshot = (): PickerState => this.state
 
@@ -149,8 +132,8 @@ class PickerController {
     return () => this.listeners.delete(listener)
   }
 
-  attachContext(ctx: any): void {
-    this.hostCtx = ctx
+  attachSessions(sessions: any): void {
+    this.sessions = sessions
   }
 
   setActiveSessionId(sessionId: string): void {
@@ -170,9 +153,8 @@ class PickerController {
   }
 
   open(): void {
-    const sessions = this.hostCtx?.get?.('sessions') ?? this.hostCtx?.sessions
-    const sessionId = resolveActiveSessionId(sessions, this.activeSessionId)
-    const projectedKey = readProjectedModelKey(sessions, sessionId)
+    const sessionId = resolveActiveSessionId(this.sessions, this.activeSessionId)
+    const projectedKey = readProjectedModelKey(this.sessions, sessionId)
     this.patch({
       open: true,
       ...(projectedKey ? { selectedKey: projectedKey } : {}),
@@ -187,9 +169,9 @@ class PickerController {
     this.patch({ open: false })
   }
 
-  select(ctx: any, option: ModelOption): void {
+  select(_ctx: any, option: ModelOption): void {
     this.patch({ selectedKey: option.value, open: false })
-    trySwitchHostModel(ctx, option, this.activeSessionId)
+    trySwitchHostModel(this.sessions, option, this.activeSessionId)
   }
 
   async refresh(): Promise<void> {
@@ -269,7 +251,11 @@ window.__ModuleLoader__?.load({
         const configStore = new ConfigStore()
         const styleManager = new FeatureStyleManager()
         const picker = new PickerController()
-        picker.attachContext(ctx)
+
+        ctx.inject(['sessions'], (sessionCtx: any) => {
+          const sessions = sessionCtx.get?.('sessions')
+          if (sessions) picker.attachSessions(sessions)
+        })
 
         const SessionTracker = ({ sessionId }: { sessionId: string }): null => {
           React.useEffect(() => {
