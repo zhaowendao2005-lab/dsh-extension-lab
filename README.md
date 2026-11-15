@@ -29,8 +29,25 @@
 4. 默认交付为代码实现符合需求且构建成功。不得为汇报长时间调查或搭测试脚手架。
 5. 获批测试只汇报结论与关键错误。
 
-## 发布（只打标签并推送）
+## 发布（按包）
 
-1. 按需更新包版本及 `marketplace.json` 条目（`spec` 保持不变）。
-2. 提交变更并创建 `version-<数字...>` tag。
-3. 推送 `main` 和 tag；不执行额外测试/校验，不创建 GitHub Release。
+```bash
+pnpm release --package dsh-ui-enhancements --dry-run
+pnpm release --package dsh-ui-enhancements
+pnpm release --package dsh-ui-enhancements --version 2.0.0
+```
+
+预检只读；正式命令只构建目标包，默认递增补丁版本。第一提交仅包含 `packages/<包>/`，第二提交仅包含 `marketplace.json`；随后创建 `<包名>-v<版本>` 包级 Tag，并推送 `main` 与 Tag。其他目录的未提交内容保留。正式发布前须确认目标包内所有改动都属于本次发布。
+
+提交信息默认交互询问（需要真实 TTY）。管道、CI 或代理环境改用显式参数，避免拿到 EOF 后才发现：
+
+```bash
+pnpm release --package <包> --message "feat(<包>): ..." --market-message "chore(marketplace): publish <包>@<版本>"
+pnpm release --package <包> --yes   # 使用默认信息
+```
+
+`--message` 与 `--market-message` 必须成对给出；两者都缺、又没有 `--yes` 和 TTY 时，CLI 在构建之前就报错并列出这些选项。
+
+失败处理：包提交之前失败会自动还原 `packages/<包>/package.json`（以及已改写的 `marketplace.json`）并取消暂存，不留下任何提交、Tag 或推送；包提交之后失败不复位该提交，只还原未提交的 `marketplace.json` 并说明需要人工补完的步骤。
+
+CLI 不执行测试；遵循仓库测试纪律，测试须先经用户批准。

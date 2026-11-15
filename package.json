@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "pnpm --dir packages/dsh-ui-enhancements run build:dev && pnpm --dir packages/dsh-plugin-dev-sandbox run build && pnpm --dir packages/dsh-btw-side run build && pnpm --dir packages/model-intelligence-test run build && pnpm --dir packages/dsh-antigravity run build:dev && pnpm --dir packages/dsh-workspace-ide run build:dev",
     "build": "pnpm --dir packages/dsh-ui-enhancements run build && pnpm --dir packages/dsh-plugin-dev-sandbox run build && pnpm --dir packages/dsh-btw-side run build && pnpm --dir packages/model-intelligence-test run build && pnpm --dir packages/dsh-antigravity run build && pnpm --dir packages/dsh-workspace-ide run build",
-    "test": "pnpm --dir packages/dsh-ui-enhancements test && pnpm --dir packages/dsh-plugin-dev-sandbox test && pnpm --dir packages/dsh-antigravity run build:check"
+    "test": "pnpm --dir packages/dsh-ui-enhancements test && pnpm --dir packages/dsh-plugin-dev-sandbox test && pnpm --dir packages/dsh-antigravity run build:check",
+    "release": "node scripts/release.mjs"
   }
 }
