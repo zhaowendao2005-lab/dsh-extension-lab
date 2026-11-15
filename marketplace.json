@@ -26,6 +26,19 @@
       },
       "versions": [
         {
+          "version": "1.1.0",
+          "publishTimestamp": 1794717417,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "f56c2765a87e1772293aaae12e19f0e909a54d73",
+            "path": "packages/dsh-ui-enhancements"
+          },
+          "engines": {
+            "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+          }
+        },
+        {
           "version": "1.0.0",
           "publishTimestamp": 1794405936,
           "source": {
@@ -57,6 +70,19 @@
         "sortKeys": {}
       },
       "versions": [
+        {
+          "version": "1.4.4",
+          "publishTimestamp": 1794717417,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "f56c2765a87e1772293aaae12e19f0e909a54d73",
+            "path": "packages/dsh-plugin-dev-sandbox"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+          }
+        },
         {
           "version": "1.4.3",
           "publishTimestamp": 1794556428,
