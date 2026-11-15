@@ -31,12 +31,14 @@ export function FingerprintConfigPanel({ store,record }: {
   const root=useDismissablePopover(open,store.actions.toggleConfig);
   const concurrencyInput=useRef<HTMLInputElement>(null);
   const fingerprint=record.fingerprint;
+  const a6=Boolean(record.a6api);
   const limits=fingerprint?.limits;
   const busy=Boolean(fingerprint?.busy);
   const ready=Boolean(fingerprint?.jobId);
   const cancelled=fingerprint?.status==='cancelled';
   const maxConcurrency=Math.max(1,limits?.maxConcurrency??FALLBACK_MAX_CONCURRENCY);
   const concurrency=clamp(fingerprint?.concurrency??limits?.defaultConcurrency??FALLBACK_MAX_CONCURRENCY,1,maxConcurrency);
+  const slots=a6? fingerprint?.slots??record.a6api?.slots.length??0:concurrency;
   const requestsPerModel=Math.max(1,limits?.requestsPerModel??FALLBACK_REQUESTS_PER_MODEL);
   const minTimeoutS=Math.max(0.001,(limits?.minTimeoutMs??FALLBACK_MIN_TIMEOUT_MS)/1000);
   const maxTimeoutS=Math.max(minTimeoutS,(limits?.maxTimeoutMs??FALLBACK_MAX_TIMEOUT_MS)/1000);
@@ -76,7 +78,7 @@ export function FingerprintConfigPanel({ store,record }: {
     store.actions.setFingerprintConfig(record.id,{ timeoutMs: value });
   }
   return <div className="mit-config" ref={root}>
-    <button type="button" className="mit-button mit-config-trigger" aria-haspopup="dialog" aria-expanded={expanded} aria-controls={base} disabled={!ready} title={ready? '调整模型并发槽位与单请求时长（Host 实时生效）':'指纹任务尚未就绪，配置暂不可用'} onClick={store.actions.toggleConfig}>
+    <button type="button" className="mit-button mit-config-trigger" aria-haspopup="dialog" aria-expanded={expanded} aria-controls={base} disabled={!ready} title={ready? a6? '调整单请求时长；专项槽位由 token 映射固定':'调整模型并发槽位与单请求时长（Host 实时生效）':'指纹任务尚未就绪，配置暂不可用'} onClick={store.actions.toggleConfig}>
       <Icon name="settings" size={14} />配置
     </button>
     {expanded&&<div className="mit-config-popover mit-frosted" id={base} role="dialog" aria-label="指纹采样配置" aria-describedby={`${base}-help`}>
@@ -85,7 +87,7 @@ export function FingerprintConfigPanel({ store,record }: {
         <span className="mit-muted">Host 实时生效</span>
       </div>
       {fingerprint?.error&&<p className="mit-config-error" role="alert">{fingerprint.error}</p>}
-      <div className="mit-config-field">
+      {!a6&&<div className="mit-config-field">
         <label htmlFor={`${base}-concurrency`}>模型并发槽位</label>
         <div className="mit-stepper">
           <button type="button" className="mit-icon-button" aria-label="减少一个模型并发槽位" disabled={locked||concurrency<=1} onClick={() => stepConcurrency(-1)}>
@@ -101,7 +103,7 @@ export function FingerprintConfigPanel({ store,record }: {
             <span aria-hidden="true">+</span>
           </button>
         </div>
-      </div>
+      </div>}
       <div className="mit-config-field">
         <label htmlFor={`${base}-timeout`}>单请求最大时长（秒）</label>
         <input id={`${base}-timeout`} key={`timeout:${timeoutMs}`} className="mit-config-number" type="number" inputMode="numeric" min={minTimeoutS} max={maxTimeoutS} step={30} defaultValue={Number(timeoutS.toFixed(3))} disabled={locked} onBlur={event => commitTimeout(event.currentTarget)} onKeyDown={event => {
@@ -112,11 +114,11 @@ export function FingerprintConfigPanel({ store,record }: {
         }} />
       </div>
       <p className="mit-config-derived">
-        <strong className="mit-tabular">{concurrency} 槽 · {concurrency*requestsPerModel} 路并发</strong>
-        {models>0&&models<concurrency&&<span className="mit-muted">本记录 {models} 个模型 · 实际最多 {models*requestsPerModel} 路并发</span>}
-        {limits&&<span className="mit-muted">Host 上限 {limits.maxConcurrency} 槽 / {limits.maxConcurrentRequests} 路请求</span>}
+        <strong className="mit-tabular">{slots} 槽 · {slots*requestsPerModel} 路并发</strong>
+        {models>0&&models<slots&&<span className="mit-muted">本记录 {models} 个模型 · 实际最多 {models*requestsPerModel} 路并发</span>}
+        {limits&&!a6&&<span className="mit-muted">Host 上限 {limits.maxConcurrency} 槽 / {limits.maxConcurrentRequests} 路请求</span>}
       </p>
-      <p className="mit-config-help mit-muted" id={`${base}-help`}>每模型 {requestsPerModel} 条挑战同时发出；降低并发或时长不会打断已开始的请求，提高时长会延长进行中的请求。</p>
+      <p className="mit-config-help mit-muted" id={`${base}-help`}>每模型 {requestsPerModel} 条挑战同时发出。{a6? '专项并发由当前记录的 token 槽位固定，只可调整单请求时长。':'模型槽位限制同时采样的模型数。'}降低时长不会打断已开始的请求，提高时长会延长进行中的请求。</p>
       {busy&&<p className="mit-config-busy" role="status">正在应用…</p>}
       {!busy&&cancelled&&<p className="mit-config-note" role="status">任务已取消，配置不可修改。</p>}
     </div>}

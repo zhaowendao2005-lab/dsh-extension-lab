@@ -1,64 +1,77 @@
-# 插件内架构
+# 插件架构
 
-## 依赖方向
+## 边界与调用链
 
 ```text
-DSH ModuleLoader / plugin apply
-  ├─ Host backend/service/catalog.js → llm.listProviders/listModels
-  │                                   ├─ backend/fingerprint/engine.js → DSH prepareCall/stream + 官方组装器 + lmfpd-sdk
-  │                                   └─ backend/relay/snapshot.js → 中转站匿名公开接口
-  └─ Client composition root
-       views → stores/*.stores.ts → *.datasource.ts
-                   │                  ├─ *.mock.ts
-                   │                  └─ frontend/service → Remote / browser storage
-                   └─ shared frontend/types.ts
-Host 与 Client 仅共享 shared/contract.js 的 wire schema。
+a6api 页面 / Tampermonkey
+ ├─ 独立表格列、跨分页渠道选择 Map
+ ├─ 测试令牌 {id,name} → localStorage(origin + accountId)
+ ├─ GM 连接配置 → 配对本机 bridge
+ └─ 同源站点 pin / restore / subscriptions（登录态不离开页面）
+          ↕ 仅 selection / poll / ack
+Host webServer /mit-a6/bridge/*
+ ├─ backend/a6/bridge.js → 随机 capability + 页面/账号绑定 session
+ ├─ backend/a6/service.js → 用户手动映射、专项记录创建、快捷操作
+ ├─ backend/a6/slots.js → 跨任务测试令牌身份锁
+ └─ backend/fingerprint/engine.js
+       → pin 确认 → DSH prepareCall/stream × 3 → restore → 下个待测项
+       → 官方 BlockAssembler / AssistantStreamAccumulator → lmfpd-sdk
+
+Client apply 生命周期
+ └─ a6api service → datasource → store（selection 常驻轮询）
+       → sidebarRight.openTab → 专项创建页
+       → evaluations 接收已持久化记录 → 共用指纹结果/诊断页
 ```
+
+普通指纹不经过站点桥，仍使用 DSH 真实模型目录。自定义任务仍由明确标注的 Mock 域运行。Host/Client 只共享无环境依赖的 `shared/contract.js`，没有浏览器导入 backend。
+
+## 深链接的真实能力
+
+当前 Electron 对 `dsh://open` / `dsh://open/` 做精确匹配，只聚焦安装版窗口，没有通用插件 URL 分发。选择数据先由 GM 请求送进 Host，原生唤起后 Client 从同一 Host feed 获取，官方 `sidebarRight.openTab(kind,{params})` 负责面板导航。Client 启动即创建全局 workbench，不等 Panel 挂载；侧栏没有会话 surface 时保存待激活 ID，下次轮询继续尝试。已消费选择 ID 只记在 Client sessionStorage，避免重复抢焦点。
+
+独立开发 Host 与安装版 Host 不一定相同；Web 备用 URL 指向实际配对 origin。原生协议不是切换 profile/Host 的通道。
 
 ## 状态所有权
 
-| 域 | 唯一持有内容 |
+| 所有者 | 数据 |
 | --- | --- |
-| workbench | 页签身份、活动页签、侧栏、每页签导航 |
-| draft | 创建名称、类型、选择模型、正文、搜索/选择器状态 |
-| models | 真实目录及加载/错误投影 |
-| presets | 浏览器预设、持久化错误、编辑器侧栏状态 |
-| evaluations | Host 记录/请求列表镜像、每记录选中的请求、按 `attemptId:index` 索引的运行投影 |
-| presentation | 列显示/宽度、展开覆盖、跟随、筛选 |
-| relay | 站点目录、快照状态、多选筛选/保真/排序、列显示/宽度、渠道详情与按需明细、分区镜像 |
-| settings | 中转站凭据状态（不含值）、输入草稿、插件管理的提供商 |
-| notice | 受控确认框及输入 |
+| 油猴内存 | 渠道选择、受限字段响应缓存、连接 session、命令去重与执行状态 |
+| 站点 localStorage | 按账号隔离的测试令牌 ID/name、固定补偿 lease；卡片布局按站点保存 |
+| GM 存储 | 本机 bridge 配对配置，不存测试 API key |
+| Host A6Bridge | 页面连接、selection feed、待 ACK 操作、重启恢复租约 |
+| Host A6Service | 用户映射偏好、明确的单目标手动操作 |
+| Host FingerprintEngine | 挑战、队列、槽位、真实采样/指标/分析与 revision |
+| Host RecordsService | records、attempts、固定目标快照及请求持久化 |
+| Client a6api 域 | selection 镜像、专项草稿、映射和操作反馈 |
+| Client evaluations 域 | 记录/请求镜像与稳定 run 投影 |
+| 其余 Client 域 | 普通草稿、目录、预设、页签、纯展示状态、确认框 |
 
-记录与请求的事实只在 Host `RecordsService` 中，客户端镜像 revision 化列表并只加载打开页签所选的请求；runId = `attemptId:index`。页签与侧栏只引用记录，不维护记录副本。运行快照包含最终 prompt、footerVersion、所用预设；页签关闭与任务生命周期分离。Mock 引擎按批次更新发生变化的行，对未改变 run 保持引用稳定。列表用行级 selector，不订阅整个运行字典。
+## 身份与用户选择
 
-`runtime.ts` 提供宿主 React 桥和 useSyncExternalStore 选择器。React 不作为运行依赖打包。选择器缓存同一状态快照的值；组件局部不持有业务状态，DOM ref 仅用于焦点或指针捕获。
+待测项用模型、listing/channel/supplier 复合身份；记录和 run 的稳定 provider 是 `a6api:<channelId>:<supplierId>`，不是动态领取该项的 worker。实际推理提供商单独记为 `callProvider`，令牌记为 `slotTokenId`，路由阶段记为 `routing`。同模型不同渠道不能合并。
 
-## IO 与真实/模拟分流
+槽位使用 `{tokenId,provider}`，用户手动选择为准，不读取 key、不自动比较 credential、不改提供商。只检查必要结构、令牌在用户已选择列表中、provider 仍已注册；模型目录对专项是展示信息，不额外要求所有提供商广告每个待测模型。
 
-模型目录的 datasource 只路由到 catalog transport。Host 读取已注册 adapter 广告的模型列表，不调用模型、不使用 endpoint discovery。逐供应商错误返回固定安全提示，避免透传含凭据的 adapter 异常。未注册 llm 时返回明确错误，目录永不回退到模拟数据。
+## 动态槽位与原子性
 
-`relay.stores.ts` 只持有中转站页面的 UI 状态与快照投影；匹配的 datasource 只调用 Host `relay*` transport，不直连第三方站点，也不保存第三方密钥。功能页签使用 `type:'feature'`，与测试记录身份分离。快照行以 `listing_id + channel_id + supplier_id` 为稳定复合键；分页并发期间上游可能重复返回同一 listing 或复用 listing_id，Host 加载时按复合键去重，React 行 key 与详情查询都使用该键，不能退回裸 listing_id。
+每个测试令牌一个 worker，跨任务锁键为站点/账号/tokenId。worker 领取一项后：等待原账号网页在线 → pin 并读回 → 原子预留三条全局请求容量 → 三条请求同时发送 → `Promise.allSettled` 等待所有流和迭代器清理 → 释放请求容量 → 恢复原固定 → 下一个目标。
 
-`workbench.stores.ts` 是跨域用例编排器，连接草稿、预设和页签，但不直接导入 datasource。models/presets/evaluations 各域 controller 独占同名 datasource 和 IO 生命周期；presentation 等纯展示域不创建空 datasource。Mock 内部时钟与展示指标分离；TTFT = 首 Token − 请求开始，端到端速率 = 输出 Token / 请求耗时，生成速率 = 输出 Token / 首 Token 到生成结束耗时。多轮以各轮分母累加，排除排队和分析，缺失指标显示 `—`。
+三题不拆批；取消、单题失败、超时不能使令牌在其他兄弟请求结束前切换渠道。普通任务与专项共用 18 路全局在途请求池。页面离线等待不启动 sample 计时器；每个 sample 的超时从真正请求准备开始，降低限时不抢占，提高限时才延长在途请求。
 
-预设 service 是浏览器 storage 边界，进行版本/结构验证并暴露失败。评测 datasource 按类型分流：指纹走真实 Host transport + 前端投影，只有自定义任务走 Mock 引擎。业务不混入 view，后端不直接导入浏览器。
+## 桥接与恢复
 
-指纹运行事实只归 Host `FingerprintEngine` 持有：共享三题、按 provider/model 唯一身份采样、模型槽位调度、全局请求池、模型级分析和 revision 快照。调度单位是模型：同一模型的三条挑战始终并发，插件内最多 6 个模型槽位（默认 6）与 18 个同时在途请求（6×3），跨作业共享请求池，超出即排队。槽位并发与单请求时长（30–1800 秒）属于运行参数，可经 `attemptConfigure` 实时调整且**非抢占**：降低并发或时长不打断已开始的请求，只有提高时长会延长进行中的请求。引擎由 `RecordsService` 驱动（`attemptView/Configure/Retry/Cancel` 均为 owner-only Remote）；重试 只重发某个模型的失败样本，保留其已完成样本并重新分析，可从 `done` 重新打开为 `running`。真实调用经官方 `createUserMessage` → Host `llm.prepareCall` → `prepared.stream`，使用准备后的完整配置与同一取消信号；`AssistantStreamAccumulator` 记录带时序事件，`BlockAssembler` 是唯一响应组装器，正文、usage、finish 都从其投影，兼容 delta-only 与 block-end-only。流自然结束但无 finish 时遵循 DSH 的默认 stop；不自研缺结束标记错误、参数回退或自动重试，不引入 Agent 历史/工具。缺少 prepareCall 明确报运行时不兼容。SDK 只调用 `generateChallenges`、`loadDetector`、`analyze`，不使用需要 API key 的 `detect`。全局请求池按模型原子预留待发样本容量，三题不拆批，排队不启动请求计时；整批结束后释放，取消会移除排队预留。供应商错误正文先经 Host 脱敏（`sk-*`、`Bearer`、`api_key`/`authorization`/`token` 键值）再随采样下发 `errorDetail`（`source`/`code`/`status`/`text`/`stack`），供 UI 在「采样信息」里展示堆栈以便定位认证、限流或适配器异常；未脱敏原文永远不出 Host。每任务固定一个检测器与参考版本；参考库 TTL/缓存由 SDK 管理，格式不兼容需升级 SDK，无缓存失败绝不回退模拟。
+所有网页调用需 capability 配对或页面 session 凭据；session 绑定站点/account/page。桥只监听现有 webServer 的 loopback origin，校验 Host 和 Origin，JSON 请求限长，不向浏览器开放任意 Remote/模型调用或 credentials。
 
-指纹采样分别保存题目、原始回答、解析数量、状态、finish、usage 和时序；仅官方组装结果的 text 块进入数字分析，reasoning/工具块不参与。首 Token 与可见正文使用 DSH 官方判定，TTFT 由 `assistantStreamFirstTokenTime` 计算（文本/推理非空 delta 或工具调用 delta），首至末符合判定的 delta 用于生成耗时；没有 delta 的完整块响应仍保留回答，但 TTFT/生成耗时留空。跨样本速率仅使用同时存在 token 与时间的同一批样本，缺失为 `—`，指纹不生成模拟费用。SDK 的原始排序分数可为负；只有库内已校准概率才转成百分比。`completed` 表示检测流程结束，不保证 `scored`：UI 必须另呈现 partial/unscorable/not_model。
+pin 命令发送前 Host 持久化恢复意图，油猴发写请求前保存 previous/target lease，并关闭 fallback。成功 pin 必须 ACK verified。纯前置失败通过 notApplied 证明无写入；不明结果不能伪装未写入。
 
-Mock 是确定性场景演示：可观察排队、首 Token 等待、生成、收尾、分析、成功/失败/超时/取消。费用明确模拟，匹配分数不标为概率。成果类型由 Mock Agent 样例决定，没有用户成果类型选择器；HTML/SVG 预览隔离，服务托管延期。当前仅允许内置 Mock 成果在 `sandbox="allow-scripts"` 的不透明来源 iframe 内执行绘图脚本；不授予 same-origin、表单、弹窗或顶层导航，CSP 禁止网络和嵌套 frame。此策略不授权以后直接预览任意 Agent 生成的 HTML；接入真实成果前须重新审查安全边界。
+restore 比对当前固定与 lease.target/previous：已经恢复则可幂等确认；外部改动不覆盖；失败保留补偿数据。恢复租约重启后只向同站点同账号页面补发，恢复未完成前不分配新的固定任务。恢复操作允许测试令牌已取消勾选，其他写操作仍只能针对已选测试令牌。
 
-## 持久化与凭据
+## 持久化与生命周期
 
-Host 用 `storageDomain` 打开 `model_intelligence_test`（records、attempts、partitions、partition_items）和 `model_intelligence_relay`（snapshots）。引擎 onTouch 节流落盘、onSettled 落盘并启动排队请求；启动时把残留 queued/running 标为 interrupted。中转凭据只经 `credentials` 服务（`MIT_A6API_API_KEY|ACCESS_TOKEN|USER_ID`）读写，Remote 只返回 configured/source。插件管理的提供商有两条并行通道：`settings.mutate('llm-pi-ai')` 的固定 route（`apiKeyEnv` 指向同一凭据；配置只读时降级为可复制片段），以及**插件自带的 `RelayAdapter`**（`backend/relay/adapter.js`）——后者是实际生效路径：注册表变化 → `providers.adapterRoutes()`（只含注册表行，绝不认领 pi-ai 的配置行）→ `ctx.llm.registerAdapter` / `handle.replace`，按 `chat` / `responses` / `messages` 三种协议映射请求与流式 chunk，复用 `stream.js` 的 SSE 解析与 `traits.js` 的模型名推断（图片能力、思考等级）。适配器必须 duck-type 运行时契约（`providerInfo` 的 `name` 非空、`resolveModel` 返回合法 `ModelInfo`、`stream` 用 `block-start/delta/block-end/usage/finish` 且错误走带内 `finish`），因此不 import `LlmAdapter` 类，也永不抛到流中途。中转渠道采样仍由 `backend/relay/stream.js` 直连中转站，不经 DSH llm；两条路径共用同一套凭据与渠道号拼接规则（`sk-KEY-<channel_id>`）。
+`model_intelligence_test` 保留 records/attempts，版本不改以保留历史；`model_intelligence_settings` 的 auth 表保存按 profile/账号隔离的槽位偏好以及恢复 lease，不再保存 API key。运行时启动把旧 queued/running attempt 标为 interrupted，不自动重发推理。
 
-## 生命周期
+Cordis effect 管理 web 路由、UI 注册、样式与 store。Client dispose 停止所有轮询和监听；油猴 pagehide 撤销 hooks/observer/列与计时器，BFCache pageshow 重建。Host dispose 中止采样，未完成恢复由持久化 lease 接续。关闭内部页签不取消任务；显式取消/删除/清空才中止。
 
-入口懒创建唯一全局 Workbench，所有会话共享。关闭内部 tab 不销毁 store；显式删除/取消/清空及插件 dispose 请求中止 Host 作业。真实请求和轮询由独立生命周期标记保护，晚到响应不得复活记录。未拿到 jobId 时请求取消的意图保留到启动响应返回；断连只反映为连接错误，不伪造 Host 失败或取消。浏览器强制退出或永久断网不能保证取消命令送达，因此 Host 另有每请求超时及全局并发/记录上限。插件 dispose 停止 Mock 定时器与轮询并清空会话映射；Host dispose abort 所有作业。样式与右栏注册由 Cordis effect 返回 disposer。持久预设与清空记录分离。
+## 构建约束
 
-## 静态约束与扩展
-
-构建脚本通过 TypeScript AST 检查 view/components 不导入 service/datasource/mock、不出现组件业务状态或直接 IO；store 不越过 datasource；任何前端不导入 backend 或运行态 React。该规则是编译依赖防线，不代替人工审查或经过授权的行为测试。将来增加域时使用 `<domain>.stores.ts`，实际 IO 存在时再增加 datasource，无 IO 的 UI 域不创建空 mock。
-
-规则限定在此包。根仓库构建脚本、插件市场、Extension Lab 全局规范均不修改。
+视图订阅 store 并调用 action，不做 IO、无 useState/useReducer；store 只经同名 datasource，实际 IO 在 service/Host transport。React 仅来自 DSH ModuleLoader。新 CSS 限定 `.mit-workbench`，feature styles 由构建统一拼接注入，不能依赖额外未加载的 CSS 文件。`lib/` 由 `pnpm build` 生成，不手改。

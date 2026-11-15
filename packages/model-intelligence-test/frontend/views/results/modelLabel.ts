@@ -1,13 +1,13 @@
 import type { AttemptStatus,AttemptSummary,Model } from '../../types';
 
 /** Provider label for a run model; relay channels read `a6api #<channelId>`. */
-export function providerLabel(model: Pick<Model,'providerName'|'relay'>): string {
-  return model.relay? `${model.relay.siteId||'a6api'} #${model.relay.channelId}`:model.providerName;
+export function providerLabel(model: Pick<Model,'providerName'|'relay'|'a6api'>): string {
+  return model.a6api? `a6api #${model.a6api.channelId}`:model.relay? `${model.relay.siteId||'a6api'} #${model.relay.channelId}`:model.providerName;
 }
 
 /** Model label for a run model; relay channels show the upstream model name. */
-export function modelLabel(model: Pick<Model,'name'|'id'|'relay'>): string {
-  return model.relay? model.relay.model||model.name||model.id:model.name||model.id;
+export function modelLabel(model: Pick<Model,'name'|'id'|'relay'|'a6api'>): string {
+  return model.a6api? model.a6api.model:model.relay? model.relay.model||model.name||model.id:model.name||model.id;
 }
 
 export const ATTEMPT_STATUS_LABELS: Record<AttemptStatus,string> = {

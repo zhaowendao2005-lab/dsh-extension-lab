@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { FingerprintError } from '../fingerprint/engine.js';
 
 /**
@@ -146,12 +146,14 @@ export class RecordsService {
     const models = Array.isArray(input?.models) ? input.models.map(model => ({
       provider: short(model.provider, 128), id: short(model.id, 256), name: short(model.name || model.id, 256),
       ...(model.relay ? { relay: clean(model.relay) } : {}),
+      ...(model.a6api ? { a6api: clean(model.a6api) } : {}),
     })) : [];
     if (!models.length || models.length > 64) throw new FingerprintError('invalid-models', '请选择 1–64 个有效模型');
     const record = {
       id: `rec-${randomUUID()}`, name: short(input.name, 120) || '未命名测试', kind, createdAt: Date.now(), models,
       options: clean(input.options ?? {}), prompt: kind === 'custom' ? String(input.prompt ?? '').slice(0, 200_000) : '',
       footerVersion: short(input.footerVersion, 40), preset: input.preset ? clean(input.preset) : null,
+      ...(input.a6api ? { a6api: clean(input.a6api) } : {}),
     };
     await records.put(record.id, record);
     this.bump();
@@ -189,7 +191,7 @@ export class RecordsService {
     const record = attempt && domain.table('records').get(attempt.recordId);
     if (!attempt || !record || attempt.status !== 'queued') return;
     try {
-      const view = await this.engine.start(record.models.map(model => ({ provider: model.provider, id: model.id, ...(model.relay ? { relay: model.relay } : {}) })), record.options);
+      const view = await this.engine.start(record.models.map(model => ({ provider: model.provider, id: model.id, ...(model.relay ? { relay: model.relay } : {}), ...(model.a6api ? { a6api: model.a6api } : {}) })), record.options, record.a6api ?? null);
       this.byJob.set(view.id, attemptId);
       await attempts.put(attemptId, { ...attempts.get(attemptId), status: 'running', jobId: view.id, startedAt: Date.now(), view });
     } catch (error) {
@@ -275,96 +277,6 @@ export class RecordsService {
     await attempts.put(attempt.id, { ...attempt, status: snapshot?.ended ? 'done' : 'running', finishedAt: snapshot?.ended ? Date.now() : null, custom: { runs } });
     this.bump();
     return { attemptId: attempt.id };
-  }
-
-  // ---- partitions (favorites = default partition) -------------------------------------------
-  static DEFAULT_PARTITION = 'favorites';
-  itemKeyOf(partitionId, key) { return `${partitionId}-${createHash('sha1').update(key).digest('hex').slice(0, 20)}`; }
-
-  async partitions() {
-    const domain = await this.domain();
-    const table = domain.table('partitions');
-    if (!table.get(RecordsService.DEFAULT_PARTITION)) {
-      await table.put(RecordsService.DEFAULT_PARTITION, { id: RecordsService.DEFAULT_PARTITION, name: '收藏', createdAt: 0, builtin: true });
-    }
-    const items = [...domain.table('partition_items').entries()].map(([, item]) => item);
-    return {
-      revision: this.revision,
-      partitions: [...table.entries()].map(([, item]) => item).sort((a, b) => a.createdAt - b.createdAt)
-        .map(partition => ({ ...partition, items: items.filter(item => item.partitionId === partition.id).sort((a, b) => a.addedAt - b.addedAt) })),
-    };
-  }
-  async partitionSave(input) {
-    const domain = await this.domain();
-    const table = domain.table('partitions');
-    const name = short(input?.name, 40);
-    if (!name) throw new FingerprintError('invalid-partition', '分区名称不能为空');
-    if (input?.id) {
-      const current = table.get(input.id);
-      if (!current) throw new FingerprintError('not-found', '分区不存在');
-      await table.put(current.id, { ...current, name });
-    } else {
-      const id = `p-${randomUUID().slice(0, 12)}`;
-      await table.put(id, { id, name, createdAt: Date.now(), builtin: false });
-    }
-    this.bump();
-    return this.partitions();
-  }
-  async partitionDelete(partitionId) {
-    if (partitionId === RecordsService.DEFAULT_PARTITION) throw new FingerprintError('builtin-partition', '收藏分区不能删除');
-    const domain = await this.domain();
-    const items = [...domain.table('partition_items').entries()].filter(([, item]) => item.partitionId === partitionId).map(([key]) => key);
-    await domain.table('partition_items').deleteMany(items);
-    await domain.table('partitions').delete(partitionId);
-    this.bump();
-    return this.partitions();
-  }
-  /** Add/remove/tag one relay channel in a partition. `item.key` is the relay row key. */
-  async partitionItem(input) {
-    const domain = await this.domain();
-    const partitionId = short(input?.partitionId, 64) || RecordsService.DEFAULT_PARTITION;
-    if (partitionId === RecordsService.DEFAULT_PARTITION) await this.partitions();
-    if (!domain.table('partitions').get(partitionId)) throw new FingerprintError('not-found', '分区不存在');
-    const item = input?.item;
-    if (!item || typeof item.key !== 'string' || !item.key) throw new FingerprintError('invalid-item', '渠道参数无效');
-    const table = domain.table('partition_items');
-    const key = this.itemKeyOf(partitionId, item.key);
-    if (input.remove) await table.delete(key);
-    else {
-      const current = table.get(key);
-      const tags = Array.isArray(input.tags) ? [...new Set(input.tags.map(tag => short(tag, 24)).filter(Boolean))].slice(0, 12) : current?.tags ?? [];
-      await table.put(key, {
-        ...(current ?? { addedAt: Date.now() }), key: item.key, partitionId, tags,
-        siteId: short(item.siteId, 32), channelId: Number(item.channelId) || 0, model: short(item.model, 256), brand: short(item.brand, 64),
-        supplier: short(item.supplier, 128), channelName: short(item.channelName, 128), testEndpoint: short(item.testEndpoint, 16),
-        api: ['chat', 'responses', 'messages'].includes(input.api) ? input.api : current?.api ?? null,
-      });
-    }
-    this.bump();
-    return this.partitions();
-  }
-
-  // ---- tags ----------------------------------------------------------------------------------
-  // One map for every taggable thing (relay channel+model or DSH model): target → tag strings. Tags are
-  // plain strings with a category prefix (`close:<model>`, `quality:intact|degraded`, `tested`) so any
-  // component can filter on them. Stored in the records domain's global document (additive, no version bump).
-  async tags() {
-    const domain = await this.domain();
-    const document = domain.global.get() ?? {};
-    return { revision: this.revision, tags: document.tags && typeof document.tags === 'object' ? document.tags : {} };
-  }
-  async tagsSet(input) {
-    const domain = await this.domain();
-    const document = { ...(domain.global.get() ?? {}) };
-    const tags = { ...(document.tags ?? {}) };
-    const target = short(input?.target, 200);
-    if (!target) return this.tags();
-    const list = [...new Set((Array.isArray(input.tags) ? input.tags : []).map(tag => short(tag, 80)).filter(Boolean))].slice(0, 24);
-    if (list.length) tags[target] = list; else delete tags[target];
-    document.tags = tags;
-    await domain.global.set(document);
-    this.bump();
-    return this.tags();
   }
 
   dispose() {

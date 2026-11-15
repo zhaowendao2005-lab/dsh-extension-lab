@@ -1,0 +1,24 @@
+.mit-workbench .mit-a6-section { display:grid; gap:12px; border:1px solid var(--mit-border); border-radius:6px; padding:14px; background:var(--mit-layer); min-width:0 }
+.mit-workbench .mit-a6-channel-list { display:grid; gap:6px; max-height:340px; overflow:auto; scrollbar-width:thin }
+.mit-workbench .mit-a6-channel-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; background:var(--mit-bg); border:1px solid var(--mit-border); border-radius:4px }
+.mit-workbench .mit-a6-channel-row>div { display:grid; min-width:0; overflow-wrap:anywhere }
+.mit-workbench .mit-a6-channel-row .mit-icon-button { flex-shrink:0 }
+.mit-workbench .mit-a6-slots { display:grid; gap:8px }
+.mit-workbench .mit-a6-slot { display:grid; grid-template-columns:minmax(120px,1fr) minmax(180px,2fr); gap:14px; align-items:start; border:1px solid var(--mit-border); border-radius:4px; padding:12px; background:var(--mit-bg) }
+.mit-workbench .mit-a6-token { display:flex; gap:8px; align-items:center; padding-top:8px; min-width:0; overflow-wrap:anywhere }
+.mit-workbench .mit-a6-token>span,.mit-workbench .mit-a6-provider { display:grid; gap:4px; min-width:0 }
+.mit-workbench .mit-a6-provider select { width:100% }
+.mit-workbench .mit-a6-timeout { max-width:280px }
+.mit-workbench .mit-a6-targets { display:grid; grid-template-columns:1fr 1fr; gap:12px; min-width:0 }
+.mit-workbench .mit-a6-targets select { width:100% }
+.mit-workbench .mit-a6-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+.mit-workbench .mit-a6-operation-result { margin:0; padding:10px 12px; max-height:220px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:var(--mit-bg); border:1px solid var(--mit-border); border-radius:4px; font:inherit }
+.mit-workbench .mit-a6-pairing { cursor:default; align-items:stretch }
+.mit-workbench .mit-a6-pairing .mit-button { align-self:flex-start }
+.mit-workbench .mit-a6-configuration { width:100%; resize:vertical; font-family:monospace; font-size:11px; white-space:pre; overflow:auto }
+.mit-workbench .mit-a6-connections { display:grid; gap:6px; margin:0; padding:0; list-style:none }
+.mit-workbench .mit-a6-connections li { display:flex; flex-wrap:wrap; gap:8px; overflow-wrap:anywhere }
+@container mit-panel (max-width:620px) {
+  .mit-workbench .mit-a6-slot,.mit-workbench .mit-a6-targets { grid-template-columns:minmax(0,1fr) }
+  .mit-workbench .mit-a6-selection .mit-draft-footer { align-items:stretch; flex-direction:column }
+}

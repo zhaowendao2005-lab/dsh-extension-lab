@@ -1,11 +1,7 @@
 import { Service } from '@deepseek-ai/cordis';
 import { bindTypertRemote, Remote, RemoteError, principalOf } from '@deepseek-ai/dsh-typert-protocol';
 import { FingerprintError } from '../fingerprint/engine.js';
-import { RelayError } from '../relay/client.js';
-import { SITES, SORTS, siteOf } from '../relay/site.js';
-import { snapshotOf } from '../relay/snapshot.js';
-import { RELAY_APIS } from '../relay/stream.js';
-import { allManagedRouteIds } from '../relay/providers.js';
+import { A6Error } from '../a6/bridge.js';
 
 function assertOwner(invocation) {
   if (!invocation || invocation.peer?.principal?.kind !== 'owner' || principalOf(invocation)) {
@@ -13,25 +9,24 @@ function assertOwner(invocation) {
   }
 }
 function remoteFailure(error) {
-  if (error instanceof FingerprintError || error instanceof RelayError) {
+  if (error instanceof FingerprintError || error instanceof A6Error) {
     return new RemoteError(`model-intelligence/${error.code}`, error.message, {});
   }
   if (error instanceof RemoteError) return error;
   return new RemoteError('model-intelligence/internal', '服务执行失败，请稍后重试。', {});
 }
-const siteView = site => ({ id: site.id, name: site.name, label: site.label, webUrl: site.webUrl, docsUrl: site.docsUrl, anonymous: site.anonymous, note: site.note });
 
 /**
- * Remote surface of the plugin. Records/attempts, partitions and relay credentials are Host state;
- * credentials never cross the wire (only their configured/verified status does).
+ * Remote surface of the plugin. Records/attempts and the test keys are Host state; key plaintext
+ * never crosses the wire (only a mask and the slot count do).
  */
 export class ModelIntelligenceService extends Service {
   constructor(ctx, deps) {
     super(ctx, 'modelIntelligence');
     this.engine = deps.engine;
     this.records = deps.records;
-    this.auth = deps.auth;
-    this.providers = deps.providers;
+    this.a6 = deps.a6;
+    this.bridge = deps.bridge;
     this.typertRemote = bindTypertRemote(this, 'modelIntelligence');
     for (const initialize of remoteInitializers) initialize.call(this);
   }
@@ -52,82 +47,13 @@ export class ModelIntelligenceService extends Service {
   attemptRetry(request) { return this.guard(() => this.records.retry(request.attemptId, request.model)); }
   customSave(request) { return this.guard(() => this.records.saveCustom(request.recordId, request.snapshot)); }
 
-  // ---- partitions ----------------------------------------------------------------------------
-  partitionsList() { return this.guard(() => this.records.partitions()); }
-  partitionSave(request) { return this.guard(() => this.records.partitionSave(request)); }
-  partitionDelete(request) { return this.guard(() => this.records.partitionDelete(request.partitionId)); }
-  partitionItem(request) { return this.guard(() => this.records.partitionItem(request)); }
-
-  // ---- relay site auth & managed providers ---------------------------------------------------
-  relayAuthStatus(request) { return this.guard(async () => ({ ...(await this.auth.status(request.siteId)), providers: await this.providers.currentWithRegistry(request.siteId), apis: RELAY_APIS })); }
-  relayAuthSet(request) { return this.guard(async () => ({ ...(await this.auth.set(request.siteId, request)), providers: await this.providers.currentWithRegistry(request.siteId), apis: RELAY_APIS })); }
-  relayAuthVerify(request) { return this.guard(async () => ({ ...(await this.auth.verify(request.siteId)), providers: await this.providers.currentWithRegistry(request.siteId), apis: RELAY_APIS })); }
-  relayProviderModel(request) {
-    return this.guard(async () => {
-      if (!request.remove && !(await this.auth.resolve(request.siteId, 'apiKey'))) throw new RelayError('relay-key-missing', '请先填写 API Key，再把模型加入提供商');
-      return this.providers.setModel(request.siteId, request);
-    });
-  }
-  relayProvidersClear(request) { return this.guard(async () => this.providers.clear(request.siteId)); }
-  relayManagedRoutes() { return this.guard(async () => ({ routes: allManagedRouteIds(SITES.map(site => site.id)) })); }
-
-  // ---- relay directory -----------------------------------------------------------------------
-  async relaySites() {
-    assertOwner(this.ctx.invocation);
-    return { sites: SITES.map(siteView), sorts: SORTS };
-  }
-  relaySnapshot(request) {
-    return this.guard(async () => {
-      const site = siteOf(request?.siteId);
-      if (!site) throw new RelayError('relay-unknown-site', '没有找到该中转站站点。');
-      const snapshot = snapshotOf(site.id);
-      // First read starts the fetch but does not block the UI for 28 pages.
-      void snapshot.ensure(Boolean(request?.force));
-      return { site: siteView(site), status: snapshot.status(), ...snapshot.facets(), sorts: SORTS };
-    });
-  }
-  relayRows(request) {
-    return this.guard(async () => {
-      const snapshot = snapshotOf(request.siteId);
-      // A rebuild keeps serving the previous snapshot until the new one lands; only a
-      // first-ever load has nothing to answer with.
-      if (snapshot.state !== 'ready' && !snapshot.rows.length) {
-        void snapshot.ensure(false);
-        return { status: snapshot.status(), rows: [], total: 0, offset: 0 };
-      }
-      if (snapshot.stale()) void snapshot.ensure(false);
-      const page = snapshot.query({ brands: request.brands, models: request.models, fidelity: request.fidelity, sort: request.sort, offset: request.offset, limit: request.limit });
-      return { status: snapshot.status(), ...page };
-    });
-  }
-  relayRow(request) {
-    return this.guard(async () => {
-      const snapshot = snapshotOf(request.siteId);
-      const row = snapshot.detail(request.rowKey);
-      if (!row) throw new RelayError('relay-row-not-found', '没有找到这条渠道记录。');
-      return { row, status: snapshot.status() };
-    });
-  }
-  tagsList() { return this.guard(() => this.records.tags()); }
-  tagsSet(request) { return this.guard(() => this.records.tagsSet(request)); }
-  relayResolve(request) {
-    return this.guard(async () => {
-      const snapshot = snapshotOf(request.siteId);
-      // Make sure a snapshot exists (or is being built) so a lookup never stays unanswerable forever.
-      void snapshot.ensure(false);
-      return { status: snapshot.status(), items: snapshot.resolve(request.refs) };
-    });
-  }
-  relayRetryMissing(request) {
-    return this.guard(async () => {
-      const snapshot = snapshotOf(request.siteId);
-      void snapshot.retryMissing();
-      return { status: snapshot.status() };
-    });
-  }
-  relayHistory(request) { return this.guard(() => snapshotOf(request.siteId).history(request.rowKey)); }
-  relayConcurrency(request) { return this.guard(() => snapshotOf(request.siteId).concurrency(request.rowKey)); }
-  relaySvg(request) { return this.guard(async () => snapshotOf(request.siteId).svg(request.rowKey, await this.auth.dashboardHeaders(request.siteId))); }
+  // Owner-only control plane; browser pages use the paired, narrowly scoped bridge instead.
+  a6BridgeInfo() { return this.guard(() => this.bridge.info()); }
+  a6Selections(request) { return this.guard(() => this.bridge.list(request?.revision)); }
+  a6Preferences(request) { return this.guard(() => this.a6.preferences(request)); }
+  a6PreferencesSave(request) { return this.guard(() => this.a6.savePreferences(request)); }
+  a6Create(request) { return this.guard(() => this.a6.create(request)); }
+  a6Action(request) { return this.guard(() => this.a6.action(request)); }
 
   // ---- DSH model catalog ---------------------------------------------------------------------
   async catalog() {
@@ -167,9 +93,7 @@ export const REMOTE_METHODS = [
   'catalog',
   'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear',
   'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
-  'partitionsList', 'partitionSave', 'partitionDelete', 'partitionItem',
-  'relayAuthStatus', 'relayAuthSet', 'relayAuthVerify', 'relayProviderModel', 'relayProvidersClear', 'relayManagedRoutes',
-  'relaySites', 'relaySnapshot', 'relayRows', 'relayRow', 'relayHistory', 'relayConcurrency', 'relaySvg', 'relayResolve', 'relayRetryMissing', 'tagsList', 'tagsSet',
+  'a6BridgeInfo', 'a6Selections', 'a6Preferences', 'a6PreferencesSave', 'a6Create', 'a6Action',
 ];
 const remoteInitializers = [];
 for (const name of REMOTE_METHODS) {

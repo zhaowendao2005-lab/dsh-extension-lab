@@ -1,8 +1,8 @@
 {
   "name": "model-intelligence-test",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。",
+  "description": "a6api 专项指纹测试：油猴选渠道与测试令牌，按令牌槽位固定渠道后用 DSH 提供商采样。",
   "type": "module",
   "exports": {
     ".": "./lib/index.js",
@@ -29,10 +29,10 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-sidebar-right",
-        "@deepseek-ai/dsh-client-ui-settings"
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
-      "platform": "web"
+      "platform": "web",
+      "immediately": true
     }
   },
   "engines": {

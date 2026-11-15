@@ -72,7 +72,7 @@ export function DraftView({ store }: {
   store: Workbench;
 }) {
   const draft=useStore(store.draft,value => value);
-  const selectedCount=draft.selected.length+Object.keys(draft.relaySelected??{}).length;
+  const selectedCount=draft.selected.length;
   const canSubmit=selectedCount>0&&(draft.kind==='fingerprint'||Boolean(draft.body.trim()));
   return <div className="mit-draft">
     <div className="mit-draft-fields">

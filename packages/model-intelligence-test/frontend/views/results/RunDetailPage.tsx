@@ -2,8 +2,6 @@ import React,{ useStore } from '../../runtime';
 import type { Workbench } from '../../types';
 import { Empty,Icon } from '../../components/common';
 import { RunDetail } from './RunDetail';
-import { TagEditor } from '../tags/TagEditor';
-import { modelTarget,relayTarget } from '../../components/tags';
 import { currentAttempt,modelLabel,providerLabel } from './modelLabel';
 
 export function RunDetailPage({ store,recordId,runId }: {
@@ -23,8 +21,6 @@ export function RunDetailPage({ store,recordId,runId }: {
   const attempt=currentAttempt(record.attempts??[],record.attemptId);
   const provider=providerLabel(run.model);
   const relay=run.model.relay;
-  const tagTarget=relay? relayTarget(relay.siteId,relay.channelId,relay.model):modelTarget(run.model.provider,run.model.id);
-  const closeModels=(run.fingerprint?.analysis?.candidates??[]).slice(0,10).map(candidate => candidate.displayName||candidate.model);
   const model=modelLabel(run.model);
   return <div className="mit-detail-page">
     <nav className="mit-breadcrumb mit-detail-breadcrumb" aria-label="测试详情路径">
@@ -50,15 +46,19 @@ export function RunDetailPage({ store,recordId,runId }: {
           {model}
         </h2>
         <p className="mit-muted">
-          {provider} · {run.model.relay? `${run.model.relay.api} 接口 · 中转渠道`:run.model.id}
+          {provider} · {record.a6api? 'a6api 专项 · DSH 提供商调用':run.model.relay? `${run.model.relay.api} 接口 · 历史渠道记录`:run.model.id}
           {attempt? ` · 请求 #${attempt.number}`:''}
         </p>
-        <TagEditor store={store} target={tagTarget} closeModels={closeModels} />
       </div>
       <button type="button" className="mit-text-button" onClick={back}>返回模型列表
       </button>
     </header>
     {attempt?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，请求已中断。</p>}
+    {record.a6api&&<p className="mit-attempt-note" role="status">
+      {run.slotTokenId? `测试令牌 #${run.slotTokenId}`:'等待槽位分配'}
+      {run.callProvider? ` · DSH 提供商 ${run.callProvider}`:''}
+      {run.routing? ` · ${{'waiting-page':'等待原账号网页连接','pinning':'固定渠道并确认','sampling':'三条挑战采样中','restoring':'恢复原固定关系','restored':'固定关系已恢复','restore-failed':'恢复失败，本次测试已停止'}[run.routing]}`:''}
+    </p>}
     <RunDetail store={store} id={runId} custom={record.kind==='custom'} />
   </div>;
 }

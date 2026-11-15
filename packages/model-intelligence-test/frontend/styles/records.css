@@ -310,3 +310,18 @@
   }
   .mit-workbench .mit-relay-option-tags { display:none }
 }
+
+/* a6api 渠道选择 + 测试密钥槽位（官方口径：每个密钥是一个并发槽） */
+.mit-channel-group .mit-channel-search{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px}
+.mit-channel-search-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.mit-channel-search-field input{width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--mit-border,currentColor);background:transparent;color:inherit;font:inherit}
+.mit-channel-summary{font-size:12px;margin-bottom:6px}
+.mit-channel-hint{font-size:12px}
+.mit-relay-option-meta{display:flex;flex-direction:column;gap:2px;font-size:11px;opacity:.75;min-width:96px}
+.mit-key-slots{display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;border:1px dashed var(--mit-border,currentColor)}
+.mit-key-hint{font-size:12px;margin:0}
+.mit-key-masks{display:flex;flex-wrap:wrap;gap:6px;font-size:12px}
+.mit-key-mask{padding:2px 6px;border-radius:6px;background:var(--mit-surface,rgba(127,127,127,.12))}
+.mit-key-input{width:100%;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px;border-radius:8px;border:1px solid var(--mit-border,currentColor);background:transparent;color:inherit;resize:vertical}
+.mit-key-actions{display:flex;gap:8px;align-items:center}
+.mit-channel-import{display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;border:1px dashed var(--mit-border,currentColor)}

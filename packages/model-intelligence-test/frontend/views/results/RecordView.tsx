@@ -175,12 +175,12 @@ export function RecordView({ store,id }: {
             {record.name}
           </h2>
           <p className="mit-muted">
-            {record.kind==='fingerprint'? '指纹测试':'自定义 Agent 测试'} ·
+            {record.a6api? 'a6api 专项指纹测试':record.kind==='fingerprint'? '指纹测试':'自定义 Agent 测试'} ·
             {new Date(record.createdAt).toLocaleString('zh-CN')} ·
             {record.runIds.length} 个模型
           </p>
         </div>
-        <span className="mit-badge">{record.kind==='fingerprint'? '真实指纹':'MOCK'}</span>
+        <span className="mit-badge">{record.a6api? 'a6api 专项':record.kind==='fingerprint'? '真实指纹':'MOCK'}</span>
       </div>
       <Breadcrumb record={record} />
       <AttemptBar store={store} record={record} />

@@ -41,6 +41,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
   let stored: StoredRecord[] = [];
   let listRevision = -1;
   let listBusy = false;
+  let acceptedVersion = 0;
   let failures = 0;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   let simTimer: ReturnType<typeof setInterval> | undefined;
@@ -70,7 +71,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     const errors = [attempt?.status === 'interrupted' ? '运行时重启，请求已中断' : null, attempt?.error ?? null, entry?.error ?? null].filter(Boolean);
     return {
       status, challenges: view?.challenges ?? [],
-      ...(view ? { jobId: view.id, reference: { builtAt: view.reference.builtAt, sdk: view.reference.sdk }, concurrency: view.concurrency, timeoutMs: view.timeoutMs, limits: { ...view.limits } }
+      ...(view ? { jobId: view.id, reference: { builtAt: view.reference.builtAt, sdk: view.reference.sdk }, concurrency: view.concurrency, timeoutMs: view.timeoutMs, slots: view.slots, limits: { ...view.limits } }
         : { concurrency: record.options?.concurrency, timeoutMs: record.options?.timeoutMs }),
       ...(entry?.busy ? { busy: entry.busy } : {}),
       ...(errors.length ? { error: errors.join('\n') } : {}),
@@ -97,7 +98,8 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     record.models.forEach((ref, index) => {
       const id = ids[index];
       let run = previous[id] ?? createFingerprintRun(id, record.id, SESSION, modelOfRef(ref));
-      const runView = view?.runs.find(item => item.provider === ref.provider && item.model === ref.id);
+      const runView = view?.runs.find(item => item.provider === ref.provider && item.model === ref.id
+        && (!ref.relay || !item.relay || (item.relay.channelId === ref.relay.channelId && item.relay.supplierId === ref.relay.supplierId)));
       if (runView) run = applyFingerprintRun(run, runView);
       else if (attempt && (attempt.status === 'failed' || attempt.status === 'interrupted' || attempt.status === 'cancelled') && !terminal(run.stage)) {
         run = failFingerprintRun(run, attempt.error ?? (attempt.status === 'cancelled' ? '请求已取消' : '运行时重启，请求已中断'));
@@ -117,7 +119,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
       const value: Evaluation = {
         id: record.id, name: record.name, kind: record.kind, createdAt: record.createdAt, prompt: record.prompt, footerVersion: record.footerVersion,
         ...(record.preset ? { preset: record.preset } : {}), runIds: runIdsOf(record, attempt), attempts: record.attempts, models: record.models,
-        options: record.options ?? {}, ...(attempt ? { attemptId: attempt.id } : {}),
+        options: record.options ?? {}, ...(attempt ? { attemptId: attempt.id } : {}), ...(record.a6api ? { a6api: record.a6api } : {}),
         ...(record.kind === 'fingerprint' ? { fingerprint: fingerprintOf(record, attempt, entry) } : {}),
       };
       return old && JSON.stringify(old) === JSON.stringify(value) ? old : value;
@@ -161,9 +163,10 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     if (disposed || listBusy) return;
     listBusy = true;
     try {
+      const version = acceptedVersion;
       const list = await listRecords(transport, listRevision);
       if (disposed) return;
-      if (!('unchanged' in list)) {
+      if (!('unchanged' in list) && version === acceptedVersion) {
         if (!Array.isArray(list.records)) throw new Error('测试记录响应格式无效');
         stored = list.records;
         listRevision = list.revision;
@@ -259,6 +262,16 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
       if (next.size === watched.size && [...next].every(id => watched.has(id))) return;
       watched.clear();
       for (const id of next) watched.add(id);
+      refreshSoon();
+    },
+    /** a6Create already persisted the record; never route it through ordinary recordCreate. */
+    acceptCreated(record: StoredRecord, attemptId: string): void {
+      if (disposed) return;
+      acceptedVersion++;
+      selected.set(record.id, attemptId);
+      watched.add(record.id);
+      stored = [record, ...stored.filter(item => item.id !== record.id)];
+      rebuild();
       refreshSoon();
     },
     async create(input: CreateRecordInput): Promise<string> {

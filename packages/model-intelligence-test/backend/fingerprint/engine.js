@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { generateChallenges, loadDetector, parseNumbers } from 'lmfpd-sdk';
-import { relayStream } from '../relay/stream.js';
+import { TokenSlots, tokenIdentity } from '../a6/slots.js';
 import { AssistantStreamAccumulator, BlockAssembler, createUserMessage, isTokenDelta, isVisibleChunk, chunkHasVisibleText, assistantStreamFirstTokenTime } from '@deepseek-ai/dsh-llm';
 
 // The SDK owns challenges/scoring; DSH owns request preparation, transport and stream assembly.
@@ -47,6 +47,9 @@ const clampInt = (value, min, max) => Math.min(max, Math.max(min, Math.round(val
 // the diagnostic detail below is redacted before it leaves the Host.
 function requestFailure(failure) {
   const status = failure?.status;
+  // The channel lane reports *why* it was refused; a platform-side self-test quota never reached the
+  // merchant and cost nothing, so it must not read like a provider failure.
+  if (failure?.kind === 'platform-quota') return 'a6api 广场自助测试配额已满（每账号 5 次/分钟、每渠道 20 次/分钟）· 本次未发往商家、未扣费';
   if (status === 401 || status === 403) return '供应商认证或权限失败，请检查当前运行时的模型配置';
   if (status === 429) return '供应商限流或配额不足，请稍后重试';
   if (status === 404) return '供应商未找到所选模型';
@@ -107,8 +110,7 @@ export class FingerprintEngine {
   /**
    * @param hooks.onTouch(job)   every revision bump (callers throttle persistence themselves)
    * @param hooks.onSettled(job) the job left `running` (done / cancelled / failed)
-   * @param hooks.relayKey(siteId) resolves the relay API key on the Host, or null
-   * @param hooks.relayApiUrl(siteId) relay API base URL
+   * @param hooks.bridge paired a6api site-command bridge (no API keys)
    */
   constructor(ctx, hooks = {}) {
     this.ctx = ctx;
@@ -120,6 +122,8 @@ export class FingerprintEngine {
     this.starting = 0;
     this.activeSamples = 0;
     this.waiters = [];
+    // Slots are account-wide, not job-wide: two concurrent tests must not both claim every key.
+    this.tokenSlots = new TokenSlots();
   }
 
   async detector() {
@@ -139,7 +143,7 @@ export class FingerprintEngine {
     }
   }
 
-  async start(models, options) {
+  async start(models, options, a6api = null) {
     if (this.disposed) throw new FingerprintError('disposed', '插件正在卸载');
     if (!Array.isArray(models) || models.length < 1 || models.length > 64 || models.some(m => !m || typeof m.provider !== 'string' || typeof m.id !== 'string')) {
       throw new FingerprintError('invalid-models', '请选择 1–64 个有效模型');
@@ -153,25 +157,18 @@ export class FingerprintEngine {
     }
     const limits = optionsOf(options);
     const dshModels = models.filter(m => !m.relay);
-    const relayModels = models.filter(m => m.relay);
+    if (!a6api && models.some(m => m.relay)) throw new FingerprintError('a6-entry-required', '渠道测试请从 a6api 油猴打开专项创建页');
     const llm = this.ctx.get('llm');
-    if (dshModels.length) {
+    if (dshModels.length || a6api) {
       if (!llm) throw new FingerprintError('unavailable', '当前运行时没有可用的 LLM 服务');
       if (typeof llm.prepareCall !== 'function') throw new FingerprintError('incompatible-runtime', '当前 DSH 不支持官方 LLM 请求准备接口，请升级运行时');
     }
     this.starting += 1;
     try {
-      const relayAuth = new Map();
-      for (const model of relayModels) {
-        const r = model.relay;
-        if (!r || typeof r.siteId !== 'string' || !Number.isSafeInteger(r.channelId) || r.channelId <= 0 || typeof r.model !== 'string' || !r.model || !['chat', 'responses', 'messages'].includes(r.api)) {
-          throw new FingerprintError('invalid-models', '中转站渠道参数无效');
-        }
-        if (!relayAuth.has(r.siteId)) {
-          const key = await this.hooks.relayKey?.(r.siteId);
-          if (!key) throw new FingerprintError('relay-key-missing', '未配置中转站 API Key，请先在设置「API 适配站点」中填写');
-          relayAuth.set(r.siteId, { key, apiUrl: this.hooks.relayApiUrl?.(r.siteId) });
-        }
+      if (a6api) {
+        this.hooks.bridge.assertReady(a6api, a6api.slots);
+        const availableProviders = new Set(llm.listProviders().map(provider => provider.id));
+        if (a6api.slots.some(slot => !availableProviders.has(slot.provider))) throw new FingerprintError('unknown-model', '所选 DSH 提供商已不可用，请重新选择');
       }
       const providers = dshModels.length ? new Set(llm.listProviders().map(provider => provider.id)) : new Set();
       for (const provider of new Set(dshModels.map(m => m.provider))) {
@@ -188,7 +185,8 @@ export class FingerprintEngine {
       }));
       const runs = models.map(model => ({
         provider: model.provider, model: model.id, stage: 'queued', analysis: null, error: null,
-        relay: model.relay ? { ...model.relay, ...relayAuth.get(model.relay.siteId) } : null,
+        a6api: model.a6api ?? null, callProvider: null, slotTokenId: null, routing: null,
+        relay: model.relay ? { siteId: model.relay.siteId, channelId: model.relay.channelId, model: model.relay.model, api: model.relay.api, listingId: model.relay.listingId ?? 0, supplierId: model.relay.supplierId ?? 0 } : null,
         samples: challenges.map((challenge, index) => ({
           index, state: 'queued', expectedCount: challenge.expectedCount, text: '', count: 0,
           firstByteMs: null, firstTextMs: null, generationMs: null, durationMs: null,
@@ -200,7 +198,7 @@ export class FingerprintEngine {
         id: `fp-${randomUUID()}`, revision: 1, status: 'running', createdAt: Date.now(), finishedAt: null,
         controller: new AbortController(), detector: reference.detector,
         reference: { builtAt: reference.builtAt, source: 'lmfpd-sdk', sdk: 'lmfpd-sdk@0.2.0' }, challenges,
-        concurrency: limits.concurrency, timeoutMs: limits.timeoutMs,
+        concurrency: a6api ? a6api.slots.length : limits.concurrency, timeoutMs: limits.timeoutMs, a6api,
         runs, pending: [...runs], active: new Map(), settled: 0, wake: undefined, loop: null,
       };
       this.jobs.set(job.id, job);
@@ -221,7 +219,7 @@ export class FingerprintEngine {
     const job = this.jobs.get(jobId);
     if (!job) throw new FingerprintError('not-found', '指纹任务不存在或已过期');
     let changed = false;
-    if (Number.isFinite(options?.concurrency) && options.concurrency !== job.concurrency) {
+    if (!job.a6api && Number.isFinite(options?.concurrency) && options.concurrency !== job.concurrency) {
       job.concurrency = clampInt(options.concurrency, 1, MAX_CONCURRENCY);
       changed = true;
     }
@@ -295,20 +293,22 @@ export class FingerprintEngine {
       job.pending = []; job.active.clear();
       job.status = 'cancelled'; job.finishedAt = Date.now(); this.touch(job);
       this.wakeJob(job);
-      this.settle(job);
+      // A6 cleanup must finish before a queued attempt may claim any token.
+      if (!job.a6api) this.settle(job);
     }
     return this.view(job);
   }
 
   dispose() {
     this.disposed = true;
-    this.hooks = {};
+    // Keep only the bridge for in-flight finally cleanup; record hooks must not schedule IO after disposal.
+    this.hooks = { bridge: this.hooks.bridge };
     for (const job of this.jobs.values()) this.cancel(job.id);
     this.jobs.clear(); this.loaded = undefined;
   }
 
   prune() {
-    const finished = [...this.jobs.values()].filter(job => job.finishedAt).sort((a, b) => a.finishedAt - b.finishedAt);
+    const finished = [...this.jobs.values()].filter(job => job.finishedAt && !job.loop).sort((a, b) => a.finishedAt - b.finishedAt);
     for (const job of finished) {
       if (Date.now() - job.finishedAt > FINISHED_JOB_TTL_MS || this.jobs.size >= MAX_RETAINED_JOBS) this.jobs.delete(job.id);
     }
@@ -361,7 +361,7 @@ export class FingerprintEngine {
   schedule(job) {
     if (job.loop) { this.wakeJob(job); return; }
     job.loop = (async () => {
-      try { await this.drain(job); } catch (error) { this.failJob(job, error); }
+      try { if (job.a6api) await this.drainA6(job); else await this.drain(job); } catch (error) { this.failJob(job, error); }
       finally {
         job.loop = null;
         // A retry may have queued a model while the loop was already returning; restart it so the
@@ -410,13 +410,85 @@ export class FingerprintEngine {
     if (!queued.length || !await this.acquire(job.controller.signal, queued.length)) return;
     try {
       if (job.controller.signal.aborted || this.disposed) return;
-      // Keep reservations until every sibling settles, even if one unexpectedly rejects.
       const settled = await Promise.allSettled(queued.map(sample => this.sample(job, llm, run, sample)));
-      const rejected = settled.find(result => result.status === 'rejected');
+      const rejected = settled.find(item => item.status === 'rejected');
       if (rejected) throw rejected.reason;
     } finally { this.release(queued.length); }
-    if (job.controller.signal.aborted) return;
-    this.maybeAnalyze(job, run);
+    if (!job.controller.signal.aborted) this.maybeAnalyze(job, run);
+  }
+
+  /** One worker per user-selected test token. A worker pins exactly one channel, waits for all
+   * three calls and their iterator cleanup, restores the pin, then takes the next item immediately. */
+  async drainA6(job) {
+    const { signal } = job.controller;
+    const llm = this.ctx.get('llm');
+    const workers = job.a6api.slots.map(async slot => {
+      const identity = tokenIdentity(job.a6api, slot.tokenId);
+      if (!await this.tokenSlots.acquire(identity, signal)) return;
+      try {
+        while (job.pending.length && !signal.aborted) {
+          const run = job.pending.shift();
+          run.callProvider = slot.provider; run.slotTokenId = slot.tokenId;
+          const queued = run.samples.filter(sample => sample.state === 'queued');
+          if (!queued.length) continue;
+          const leaseId = randomUUID();
+          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId, leaseId };
+          let attemptedPin = false;
+          try {
+            run.routing = 'waiting-page'; this.touch(job);
+            if (this.hooks.bridge.waitReady) await this.hooks.bridge.waitReady(job.a6api, [slot], signal);
+            else this.hooks.bridge.assertReady(job.a6api, [slot]);
+            run.routing = 'pinning'; this.touch(job);
+            if (signal.aborted) break;
+            attemptedPin = true;
+            const ack = await this.hooks.bridge.execute(job.a6api, { ...target, operation: 'pin' });
+            if (!ack.verified) throw new FingerprintError('pin-unverified', '固定渠道未确认，未发送采样请求');
+            if (signal.aborted) break;
+            run.routing = 'sampling'; this.touch(job);
+            // allSettled is intentional: a sibling error must never make this token move early.
+            if (!await this.acquire(signal, queued.length)) break;
+            try {
+              const settled = await Promise.allSettled(queued.map(sample => this.sample(job, llm, run, sample)));
+              const rejected = settled.find(item => item.status === 'rejected');
+              if (rejected) throw rejected.reason;
+            } finally { this.release(queued.length); }
+          } catch (error) {
+            if (!signal.aborted) this.failRun(job, run, error, 'pin');
+          } finally {
+            if (attemptedPin) {
+              run.routing = 'restoring'; this.touch(job);
+              try {
+                const restored = await this.hooks.bridge.execute(job.a6api, { ...target, operation: 'restore' });
+                if (restored.conflict || !restored.restored && !restored.skipped) throw new FingerprintError('restore-unverified', '固定关系未恢复，请检查 a6api 页面');
+                run.routing = 'restored';
+              } catch (error) {
+                run.routing = 'restore-failed';
+                run.error = { stage: 'finalizing', message: '固定关系恢复失败，请检查 a6api 页面后重新连接；本次测试已停止领取任务', detail: failureDetail(error, 'restore') };
+                this.touch(job);
+                // Do not reuse a token whose pin/restore command may still be in flight.
+                this.failJob(job, error);
+              }
+            }
+            this.touch(job);
+          }
+          if (!signal.aborted) this.maybeAnalyze(job, run);
+        }
+      } finally { this.tokenSlots.release(identity); }
+    });
+    await Promise.allSettled(workers);
+    if (job.controller.signal.aborted) {
+      if (job.status === 'running') job.status = 'cancelled';
+    } else job.status = 'done';
+    job.finishedAt = Date.now(); this.touch(job); this.settle(job);
+  }
+  failRun(job, run, error, source) {
+    for (const sample of run.samples) if (!END_STATES.has(sample.state)) {
+      sample.state = 'failed'; sample.error = error?.message ?? 'a6api 站点操作失败';
+      sample.errorDetail = failureDetail(error, source);
+    }
+    run.stage = 'failed'; run.analysis = null;
+    run.error = { stage: 'finalizing', message: error?.message ?? 'a6api 站点操作失败', detail: failureDetail(error, source) };
+    this.touch(job);
   }
 
   failJob(job, failure) {
@@ -438,7 +510,7 @@ export class FingerprintEngine {
     job.pending = []; job.active.clear();
     job.status = 'done'; job.finishedAt = Date.now(); this.touch(job);
     this.wakeJob(job);
-    this.settle(job);
+    if (!job.a6api) this.settle(job);
   }
 
   finishTiming(sample) {
@@ -463,7 +535,7 @@ export class FingerprintEngine {
     sample.outputTokens = tokens(assembler.usage?.outputTokens);
   }
 
-  async sample(job, llm, run, sample) {
+  async sample(job, llm, run, sample, key) {
     // runModel has already reserved this model's entire batch. Queue time is not request time.
     if (sample.state !== 'queued' || job.controller.signal.aborted) return;
     const timeoutController = new AbortController();
@@ -477,11 +549,8 @@ export class FingerprintEngine {
     this.armTimeout(sample);
     this.refreshStage(run); this.touch(job);
     let truncated = false, failure = null, rawFailure = null, failureSource = 'prepare';
-    if (run.relay) {
-      try { ({ truncated, failure, rawFailure, failureSource } = await this.relaySample(job, run, sample, signal, textLimitController)); }
-      finally { clearTimeout(sample.timer); sample.timer = undefined; sample.timeout = undefined; }
-    } else try {
-      const prepared = await llm.prepareCall({ provider: run.provider, model: run.model }, signal);
+    try {
+      const prepared = await llm.prepareCall({ provider: run.callProvider ?? run.provider, model: run.model }, signal);
       signal.throwIfAborted();
       const message = createUserMessage({
         source: { kind: 'user' },
@@ -530,10 +599,8 @@ export class FingerprintEngine {
     } finally { clearTimeout(sample.timer); sample.timer = undefined; sample.timeout = undefined; }
     // cancel() already published the terminal snapshot; late chunks cannot resurrect it.
     if (job.controller.signal.aborted) return;
-    if (!run.relay) {
-      const firstTokenAt = assistantStreamFirstTokenTime(events.snapshot());
-      sample.firstByteMs = firstTokenAt === undefined ? null : firstTokenAt - sample.startedAt;
-    }
+    const firstTokenAt = assistantStreamFirstTokenTime(events.snapshot());
+    sample.firstByteMs = firstTokenAt === undefined ? null : firstTokenAt - sample.startedAt;
     if (textLimitController.signal.aborted) sample.finish = 'text-limit';
     this.finishTiming(sample);
     if (timeoutController.signal.aborted) {
@@ -545,50 +612,6 @@ export class FingerprintEngine {
       sample.errorDetail = { ...failureDetail(rawFailure, failureSource), message: failure };
     } else { sample.state = truncated ? 'truncated' : 'complete'; sample.errorDetail = null; }
     this.refreshStage(run); this.touch(job);
-  }
-
-  /** Relay channel sample: same timing/truncation semantics as the DSH path, own wire protocol. */
-  async relaySample(job, run, sample, signal, textLimitController) {
-    const r = run.relay;
-    let truncated = false, failure = null, rawFailure = null, failureSource = 'stream';
-    let text = '';
-    try {
-      for await (const event of relayStream({ apiUrl: r.apiUrl, apiKey: r.key, channelId: r.channelId, model: r.model, api: r.api, prompt: job.challenges[sample.index].prompt, signal })) {
-        if (signal.aborted) break;
-        const now = Date.now();
-        if (event.type === 'text' || event.type === 'reasoning') {
-          if (!event.text) continue;
-          if (!sample.firstAt) { sample.firstAt = now; sample.firstByteMs = now - sample.startedAt; }
-          sample.lastAt = now;
-          sample.generationMs = now > sample.firstAt ? now - sample.firstAt : null;
-          if (event.type === 'text') {
-            if (sample.firstTextMs === null) sample.firstTextMs = now - sample.startedAt;
-            text += event.text;
-            sample.text = text.slice(0, MAX_TEXT);
-            sample.count = parseNumbers(sample.text).length;
-          }
-          sample.state = 'streaming';
-          this.refreshStage(run); this.touch(job);
-          if (text.length >= MAX_TEXT) {
-            truncated = true;
-            clearTimeout(sample.timer); sample.timer = undefined; sample.timeout = undefined;
-            textLimitController.abort();
-            break;
-          }
-        } else if (event.type === 'finish') {
-          sample.inputTokens = tokens(event.usage?.inputTokens);
-          sample.outputTokens = tokens(event.usage?.outputTokens);
-          sample.finish = event.kind;
-          if (event.kind === 'max-tokens') truncated = true;
-          else if (event.kind === 'error') { rawFailure = event.failure; failure = requestFailure(event.failure); }
-          else if (event.kind === 'tool-calls') failure = '模型尝试调用工具，回答无效';
-        }
-      }
-    } catch (error) {
-      if (!textLimitController.signal.aborted && !signal.aborted) { rawFailure = error?.failure ?? error; failure = requestFailure(rawFailure); }
-    }
-    if (truncated && textLimitController.signal.aborted) sample.finish = 'text-limit';
-    return { truncated, failure, rawFailure, failureSource };
   }
 
   maybeAnalyze(job, run) {
@@ -629,11 +652,11 @@ export class FingerprintEngine {
   view(job) {
     return {
       id: job.id, revision: job.revision, status: job.status, createdAt: job.createdAt, finishedAt: job.finishedAt,
-      concurrency: job.concurrency, timeoutMs: job.timeoutMs, limits: { ...LIMITS },
+      concurrency: job.concurrency, timeoutMs: job.timeoutMs, limits: { ...LIMITS, ...(job.a6api ? { maxConcurrency: job.a6api.slots.length, maxConcurrentRequests: job.a6api.slots.length * REQUESTS_PER_MODEL } : {}) }, slots: job.a6api?.slots.length ?? 0,
       reference: { ...job.reference }, challenges: job.challenges.map(challenge => ({ ...challenge })),
       runs: job.runs.map(run => ({
-        provider: run.provider, model: run.model, stage: run.stage, error: run.error, analysis: run.analysis,
-        ...(run.relay ? { relay: { siteId: run.relay.siteId, channelId: run.relay.channelId, model: run.relay.model, api: run.relay.api } } : {}),
+        provider: run.provider, model: run.model, stage: run.stage, error: run.error, analysis: run.analysis, callProvider: run.callProvider, slotTokenId: run.slotTokenId, routing: run.routing,
+        ...(run.relay ? { relay: { siteId: run.relay.siteId, channelId: run.relay.channelId, model: run.relay.model, api: run.relay.api, listingId: run.relay.listingId, supplierId: run.relay.supplierId } } : {}),
         samples: run.samples.map(sample => ({
           index: sample.index, state: sample.state, expectedCount: sample.expectedCount, count: sample.count, text: sample.text,
           firstByteMs: sample.firstByteMs, firstTextMs: sample.firstTextMs, generationMs: sample.generationMs,

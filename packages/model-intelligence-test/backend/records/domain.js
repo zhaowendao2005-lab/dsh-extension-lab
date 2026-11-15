@@ -16,39 +16,21 @@ export const recordsDomain = defineDomain({
   tables: {
     records: domainTable(identified),
     attempts: domainTable(z.object({ id: z.string().min(1), recordId: z.string().min(1) }).passthrough()),
-    partitions: domainTable(identified),
-    partition_items: domainTable(z.object({ key: z.string().min(1), partitionId: z.string().min(1) }).passthrough()),
   },
 });
 
 /**
- * Relay models the user asked to publish as DSH providers. A separate domain on purpose: the
- * registry is user data, so it must never share a version bump with the records domain (bumping
- * that domain discards every stored record).
+ * Host-side settings that must survive a restart but are not test records: today the a6api test
+ * token/provider mappings and pin-recovery leases (no API keys). A separate domain on purpose — bumping the records domain discards every stored record, and
+ * these two lifetimes must not be coupled.
  */
-export const managedDomain = defineDomain({
-  name: 'model_intelligence_managed',
+export const settingsDomain = defineDomain({
+  name: 'model_intelligence_settings',
   version: 1,
   layout: 'per-record',
   tables: {
-    routes: domainTable(z.object({ id: z.string().min(1) }).passthrough()),
-    // Relay credentials (API key, 系统访问令牌, 用户 ID) per site. The Host credential store is
-    // regenerated from the launcher overlay on restart, so plugin-written refs would vanish; the
-    // registry keeps them and mirrors them into the credential service for provider `apiKeyEnv` use.
+    // Account-scoped preferences and lease records; no test API key is stored by this flow.
     auth: domainTable(z.object({ siteId: z.string().min(1) }).passthrough()),
-  },
-});
-
-export const relayDomain = defineDomain({
-  name: 'model_intelligence_relay',
-  // v2: rows carry the 24h / 7d success series and the cache-hit rate, which the old
-  // 500-row pages dropped. Bumping the version discards the stale cache instead of
-  // rendering a table full of dashes until the TTL expires.
-  version: 2,
-  layout: 'per-record',
-  invalidRecords: 'backup-and-skip',
-  tables: {
-    snapshots: domainTable(z.object({ siteId: z.string().min(1), fetchedAt: z.number(), rows: z.array(z.unknown()) }).passthrough()),
   },
 });
 
@@ -58,23 +40,19 @@ export class PluginStorage {
     this.ctx = ctx;
     this.ready = (async () => {
       const records = await ctx.storageDomain.open(recordsDomain);
-      let relay = null;
-      try { relay = await ctx.storageDomain.open(relayDomain); }
-      catch (error) { ctx.logger?.('model-intelligence')?.warn?.('relay cache unavailable', error); }
       let managed = null;
-      try { managed = await ctx.storageDomain.open(managedDomain); }
-      catch (error) { ctx.logger?.('model-intelligence')?.warn?.('managed provider registry unavailable', error); }
-      return { records, relay, managed };
+      try { managed = await ctx.storageDomain.open(settingsDomain); }
+      catch (error) { ctx.logger?.('model-intelligence')?.warn?.('settings domain unavailable', error); }
+      return { records, managed };
     })();
     this.ready.catch(() => {});
   }
   async records() { return (await this.ready).records; }
-  async relay() { return (await this.ready).relay; }
   async managed() { return (await this.ready).managed; }
   async close() {
     try {
-      const { records, relay, managed } = await this.ready;
-      await Promise.allSettled([records.close(), relay?.close(), managed?.close()]);
+      const { records, managed } = await this.ready;
+      await Promise.allSettled([records.close(), managed?.close()]);
     } catch { /* open failed: nothing to close */ }
   }
 }

@@ -52,9 +52,9 @@ export async function saveCustomAttempt(transport: ModelIntelligenceTransport, r
 /** Display model of a persisted record entry; relay channels are labelled by site and channel id. */
 export function modelOfRef(ref: RecordModelRef): Model {
   const name = ref.name || ref.id;
-  const providerName = ref.relay ? `${ref.relay.siteId} #${ref.relay.channelId}` : ref.provider;
+  const providerName = ref.a6api ? `a6api #${ref.a6api.channelId}` : ref.relay ? `${ref.relay.siteId} #${ref.relay.channelId}` : ref.provider;
   return { key: JSON.stringify([ref.provider, ref.id]), provider: ref.provider, providerName, id: ref.id, name,
-    search: `${providerName} ${ref.provider} ${name} ${ref.id}`.toLowerCase(), ...(ref.relay ? { relay: { ...ref.relay } } : {}) };
+    search: `${providerName} ${ref.provider} ${name} ${ref.id}`.toLowerCase(), ...(ref.relay ? { relay: { ...ref.relay } } : {}), ...(ref.a6api ? { a6api: { ...ref.a6api } } : {}) };
 }
 
 const observed = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -135,13 +135,14 @@ export function fingerprintValuesEqual(left: unknown, right: unknown): boolean {
 export function applyFingerprintRun(run: Run, view: FingerprintRunView): Run {
   if (run.model.provider !== view.provider || run.model.id !== view.model) return run;
   if (run.fingerprint && run.stage === view.stage
+    && run.routing === view.routing && run.callProvider === view.callProvider && run.slotTokenId === view.slotTokenId
     && fingerprintValuesEqual(run.error ?? null, view.error)
     && fingerprintValuesEqual(run.fingerprint.samples, view.samples)
     && fingerprintValuesEqual(run.fingerprint.analysis, view.analysis)) return run;
   const samples = view.samples;
   const active = samples.findIndex(sample => !['complete', 'truncated', 'failed', 'cancelled'].includes(sample.state));
   const output = samples.map(sample => `# 样本 ${sample.index + 1}\n${sample.text}`).join('\n\n');
-  return { ...run, stage: view.stage, output, metrics: metricsOf(samples), rounds: roundsOf(run.id, samples),
+  return { ...run, stage: view.stage, routing: view.routing, callProvider: view.callProvider, slotTokenId: view.slotTokenId, output, metrics: metricsOf(samples), rounds: roundsOf(run.id, samples),
     currentRound: active === -1 ? samples.length : active + 1, candidates: candidatesOf(view),
     fingerprint: { samples, analysis: view.analysis }, error: view.error ?? undefined };
 }

@@ -10,9 +10,11 @@ const siteId = id(64);
 const concurrency = z.number().int().min(1).max(6);
 const timeoutMs = z.number().int().min(30_000).max(1_800_000);
 const relayApi = z.enum(['chat', 'responses', 'messages']);
-const relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), model: id(256), api: relayApi });
+const relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), model: id(256), api: relayApi, listingId: z.number().int().min(0).optional(), supplierId: z.number().int().min(0).optional() });
 const modelRef = z.strictObject({ provider: id(128), id: id(256) });
 const recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional() });
+const a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional() });
+const a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive(), provider: id(128) })).min(1).max(8);
 const options = z.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
 
 const schemas = {
@@ -30,42 +32,11 @@ const schemas = {
   attemptConfigure: z.strictObject({ attemptId: id(), concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() }),
   attemptRetry: z.strictObject({ attemptId: id(), model: modelRef }),
   customSave: z.strictObject({ recordId: id(), snapshot: z.strictObject({ ended: z.boolean(), runs: z.array(z.json()).max(64) }) }),
-  partitionSave: z.strictObject({ id: id(64).optional(), name: z.string().min(1).max(40) }),
-  partitionDelete: z.strictObject({ partitionId: id(64) }),
-  partitionItem: z.strictObject({
-    partitionId: id(64).optional(), remove: z.boolean().optional(), tags: z.array(z.string().max(24)).max(12).optional(), api: relayApi.optional(),
-    item: z.strictObject({
-      key: id(128), siteId, channelId: z.number().int().min(0), model: z.string().max(256), brand: z.string().max(64),
-      supplier: z.string().max(128), channelName: z.string().max(128), testEndpoint: z.string().max(16),
-    }),
-  }),
-  relayAuthStatus: z.strictObject({ siteId }),
-  relayAuthSet: z.strictObject({
-    siteId, apiKey: z.string().max(512).nullable().optional(), accessToken: z.string().max(512).nullable().optional(), userId: z.string().max(12).nullable().optional(),
-  }),
-  relayAuthVerify: z.strictObject({ siteId }),
-  relayProviderModel: z.strictObject({
-    siteId, format: relayApi, model: id(256), name: z.string().max(120).optional(), remove: z.boolean().optional(),
-    channelId: z.number().int().nonnegative().optional(), image: z.boolean().optional(), reasoning: z.boolean().optional(), contextWindow: z.number().int().positive().optional(),
-  }),
-  relayProvidersClear: z.strictObject({ siteId }),
-  relaySnapshot: z.strictObject({ siteId, force: z.boolean().optional() }),
-  relayRows: z.strictObject({
-    siteId,
-    brands: z.array(z.string().max(128)).max(64).optional(),
-    models: z.array(z.string().max(256)).max(256).optional(),
-    fidelity: z.enum(['all', 'guaranteed', 'direct']).optional(),
-    sort: z.enum(['comprehensive', 'price_asc', 'price_desc', 'success_desc', 'p50_asc']).optional(),
-    offset: z.number().int().min(0),
-    limit: z.number().int().min(1).max(20000),
-  }),
-  relayRow: z.strictObject({ siteId, rowKey: id() }),
-  relayHistory: z.strictObject({ siteId, rowKey: id() }),
-  relayConcurrency: z.strictObject({ siteId, rowKey: id() }),
-  relaySvg: z.strictObject({ siteId, rowKey: id() }),
-  relayResolve: z.strictObject({ siteId, refs: z.array(z.strictObject({ channelId: z.number().int().min(0), model: z.string().max(256) })).max(512) }),
-  relayRetryMissing: z.strictObject({ siteId }),
-  tagsSet: z.strictObject({ target: z.string().min(1).max(200), tags: z.array(z.string().min(1).max(80)).max(24) }),
+  a6Selections: z.strictObject({ revision: z.number().int().nonnegative().optional() }),
+  a6Preferences: z.strictObject({ selectionId: id() }),
+  a6PreferencesSave: z.strictObject({ selectionId: id(), slots: a6Slots, timeoutMs: timeoutMs.optional() }),
+  a6Create: z.strictObject({ selectionId: id(), name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
+  a6Action: z.strictObject({ selectionId: id(), tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive(), operation: z.enum(['pin', 'route', 'restore']) }),
 };
 
 const DESCRIPTIONS = {
@@ -77,30 +48,15 @@ const DESCRIPTIONS = {
   recordsClear: 'Delete every record and attempt.',
   attemptView: 'Read one attempt: live engine view or persisted snapshot.',
   attemptCancel: 'Cancel a queued or running attempt.',
-  attemptConfigure: 'Change concurrency / request deadline of an attempt (live, non-preemptive) and the record defaults.',
-  attemptRetry: 'Re-run failed samples of one model inside an attempt.',
-  customSave: 'Persist the snapshot of a simulated custom attempt.',
-  partitionsList: 'List channel partitions (favorites is the default partition).',
-  partitionSave: 'Create or rename a partition.',
-  partitionDelete: 'Delete a partition and its items.',
-  partitionItem: 'Add, tag or remove one relay channel in a partition.',
-  relayAuthStatus: 'Relay credential status (configured / verified), never the values.',
-  relayAuthSet: 'Store or clear relay credentials in the Host credential store.',
-  relayAuthVerify: 'Verify the relay system access token against the site.',
-  relayProviderModel: 'Add or remove a relay model on a plugin-managed pi-ai provider route.',
-  relayProvidersClear: 'Remove every plugin-managed pi-ai provider route of a site.',
-  relayManagedRoutes: 'List provider route ids this plugin may manage (for read-only display).',
-  relaySites: 'List adapted relay sites and their anonymous capabilities.',
-  relaySnapshot: 'Read the status and facets of a relay channel snapshot, starting a background full fetch when needed.',
-  relayRows: 'Read one filtered, sorted window of relay channel listings from the Host snapshot.',
-  relayRow: 'Read one relay channel listing detail.',
-  relayHistory: 'Fetch the 24h / 7d success series of one channel on demand.',
-  relayConcurrency: 'Fetch the live concurrency sample of one channel (anonymous).',
-  relaySvg: 'Fetch the latest SVG self-test of one channel (needs the relay access token).',
-  relayResolve: 'Look up channel/model pairs in the relay snapshot: price and whether the channel still exists.',
-  relayRetryMissing: 'Re-fetch only the snapshot pages that failed last time.',
-  tagsList: 'Read the global tag map (target → tags) used by favorites, results and filters.',
-  tagsSet: 'Replace the tags of one target (channel+model or DSH model); an empty list removes the entry.',
+  attemptConfigure: 'Change concurrency / request deadline / channel lane of an attempt (live, non-preemptive) and the record defaults.',
+  attemptRetry: 'Re-run the failed samples of one model; completed samples are kept.',
+  customSave: 'Persist a simulated custom-task snapshot; no inference is performed.',
+  a6BridgeInfo: 'Read the owner-only loopback pairing configuration and account-bound page connection status.',
+  a6Selections: 'Read selections sent by the paired a6api userscript. Does not start inference.',
+  a6Preferences: 'Read account-scoped test-token to DSH-provider mappings chosen by the user.',
+  a6PreferencesSave: 'Save the user-selected token/provider mappings for this account and runtime profile.',
+  a6Create: 'Create an a6api-specific fingerprint attempt using user-selected test token/provider slots (real inference).',
+  a6Action: 'Execute one explicit pin, route-add or restore action for a selected test token through the paired page.',
 };
 
 const json = (symbol) => ({ mode: 'strict', typeSymbol: `model-intelligence-test#${symbol}`, create: () => z.json() });

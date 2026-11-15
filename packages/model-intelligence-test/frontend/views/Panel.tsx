@@ -6,7 +6,7 @@ import { DraftView } from './creation/DraftView';
 import { RecordView } from './results/RecordView';
 import { RunDetailPage } from './results/RunDetailPage';
 import { FeatureHub } from './features/FeatureHub';
-import { RelayPage } from './relay/RelayPage';
+import { A6SelectionView } from './creation/A6SelectionView';
 function TabBar({ store }: {
   store: Workbench;
 }) {
@@ -72,7 +72,7 @@ function RecordsSidebar({ store }: {
               {record.name}
             </strong>
             <span>
-              {record.kind==='fingerprint'? '指纹测试':'自定义 Agent'} ·
+              {record.a6api? 'a6api 专项':record.kind==='fingerprint'? '指纹测试':'自定义 Agent'} ·
               {(record.models?.length||record.runIds.length)} 模型
               {(record.attempts?.length??0)>1? ` · ${record.attempts.length} 次请求`:''}
             </span>
@@ -104,7 +104,9 @@ export function Panel({ store }: {
   if(active?.type==='record'&&active.recordId)
     content=navigation?.runId? <RunDetailPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:<RecordView key={active.recordId} store={store} id={active.recordId} />;
   else if(active?.type==='feature')
-    content=active.feature==='relay'? <RelayPage store={store} />:<FeatureHub store={store} />;
+    content=<FeatureHub store={store} />;
+  else if(active?.type==='a6'&&active.selectionId)
+    content=<A6SelectionView key={active.selectionId} store={store} selectionId={active.selectionId} />;
   return <div className="mit-workbench flex min-w-0 flex-col">
     <TabBar store={store} />
     <div className="mit-workbench-body flex min-w-0">
