@@ -52,29 +52,33 @@ export function apply(ctx: any, rawConfig: unknown): void {
   }, 'dsh-antigravity: adapter');
 
   let disposed = false;
+  const disposalAbort = new AbortController();
 
   // Preload accounts & model visibility asynchronously without blocking plugin mount.
   void service.accounts
     .ensureLoaded()
     .then(async () => {
-      if (disposed) return;
+      if (disposed || disposalAbort.signal.aborted) return;
       await service.catalog.ensureLoaded();
-      if (disposed) return;
+      if (disposed || disposalAbort.signal.aborted) return;
       const active = service.accounts.getActiveAccount();
       if (active && !active.needsReauth) {
-        await service.refreshQuotaAndModelsForAccount(active.id).catch(() => undefined);
+        await service
+          .refreshQuotaAndModelsForAccount(active.id, disposalAbort.signal)
+          .catch(() => undefined);
       }
-      if (!disposed) {
+      if (!disposed && !disposalAbort.signal.aborted) {
         service.notifyAdaptersUpdated();
       }
     })
     .catch(() => undefined);
 
-  // Clean up any open OAuth loopback socket on plugin disposal.
+  // Clean up any open OAuth loopback socket & diagnostic trace sink on plugin disposal.
   ctx.effect(
     () => () => {
       disposed = true;
-      service.oauth.cancelLogin();
+      disposalAbort.abort();
+      return service.dispose().catch(() => undefined);
     },
     'dsh-antigravity: cleanup',
   );

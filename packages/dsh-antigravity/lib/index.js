@@ -1,7 +1,8 @@
 // src/host/adapter.ts
+import path5 from "node:path";
 import {
   LlmAdapter,
-  LlmError as LlmError2,
+  LlmError as LlmError4,
   resolveImageAttachmentAccess,
   resolveRetryPolicy
 } from "@deepseek-ai/dsh-llm";
@@ -451,6 +452,8 @@ var AntigravityAccountManager = class {
   upstreamSessionGeneration = /* @__PURE__ */ new Map();
   recentSwitches = [];
   coldNotice;
+  disposed = false;
+  persistQueue = Promise.resolve();
   async ensureLoaded() {
     if (this.loaded) return;
     if (!this.loadPromise) {
@@ -492,18 +495,32 @@ var AntigravityAccountManager = class {
       }
     }
   }
+  markDisposed() {
+    this.disposed = true;
+  }
+  async flushAndDispose() {
+    this.disposed = true;
+    await this.persistQueue.catch(() => void 0);
+  }
   async persist() {
+    if (this.disposed) return;
     const payload = {
       version: 1,
       ...this.activeAccountId ? { activeAccountId: this.activeAccountId } : {},
-      accounts: this.accounts
+      accounts: structuredClone(this.accounts)
     };
-    await writePrivateJsonFile(this.accountsPath, payload);
+    const next = this.persistQueue.then(async () => {
+      if (this.disposed) return;
+      await writePrivateJsonFile(this.accountsPath, payload);
+    });
+    this.persistQueue = next.catch(() => void 0);
+    await next;
   }
   listAccounts() {
     return this.accounts.map((acc) => {
       const q = this.quotaCache.get(acc.id);
       const lowest = lowestFractionOf(q);
+      const trusted = this.resolveTrustedEntitlement(acc.id);
       return {
         id: acc.id,
         email: acc.email,
@@ -511,6 +528,9 @@ var AntigravityAccountManager = class {
         ...acc.projectId ? { projectId: acc.projectId } : {},
         ...acc.tierLabel ? { tierLabel: acc.tierLabel } : {},
         ...acc.tierId ? { tierId: acc.tierId } : {},
+        ...acc.entitlement ? { availableCreditsState: acc.entitlement.availableCreditsState } : {},
+        ...trusted?.enabledCreditTypes ? { enabledCreditTypes: trusted.enabledCreditTypes } : {},
+        ...trusted ? { entitlementGeneration: trusted.accountGeneration } : {},
         isActive: acc.id === this.activeAccountId,
         needsReauth: acc.needsReauth,
         ...acc.lastError ? { lastError: acc.lastError } : {},
@@ -575,6 +595,8 @@ var AntigravityAccountManager = class {
       existing.needsReauth = false;
       existing.lastError = void 0;
       existing.cooldownUntil = void 0;
+      existing.accountGeneration = (existing.accountGeneration ?? 1) + 1;
+      existing.entitlement = void 0;
       this.activeAccountId = existing.id;
       await this.persist();
       return existing;
@@ -586,6 +608,7 @@ var AntigravityAccountManager = class {
       accessToken: creds.accessToken,
       refreshToken: creds.refreshToken,
       expiresAt: creds.expiresAt,
+      accountGeneration: 1,
       needsReauth: false,
       addedAt: Date.now()
     };
@@ -626,6 +649,8 @@ var AntigravityAccountManager = class {
     let changed = false;
     if (patch.projectId && acc.projectId !== patch.projectId) {
       acc.projectId = patch.projectId;
+      acc.accountGeneration = (acc.accountGeneration ?? 1) + 1;
+      acc.entitlement = void 0;
       changed = true;
     }
     if (patch.tierLabel && acc.tierLabel !== patch.tierLabel) {
@@ -637,6 +662,43 @@ var AntigravityAccountManager = class {
       changed = true;
     }
     if (changed) await this.persist();
+  }
+  async updateAccountEntitlement(accountId, tierInfo, source = "loadCodeAssist") {
+    const acc = this.getAccountById(accountId);
+    if (!acc) return void 0;
+    const currentGen = acc.accountGeneration ?? 1;
+    acc.accountGeneration = currentGen;
+    if (tierInfo.projectId) acc.projectId = tierInfo.projectId;
+    if (tierInfo.tierId) acc.tierId = tierInfo.tierId;
+    if (tierInfo.tierLabel) acc.tierLabel = tierInfo.tierLabel;
+    const entitlement = {
+      ...tierInfo.projectId ? { projectId: tierInfo.projectId } : {},
+      ...tierInfo.tierId ? { tierId: tierInfo.tierId } : {},
+      ...tierInfo.tierLabel ? { tierLabel: tierInfo.tierLabel } : {},
+      availableCreditsState: tierInfo.availableCreditsState,
+      ...tierInfo.enabledCreditTypes ? { enabledCreditTypes: [...tierInfo.enabledCreditTypes] } : {},
+      source,
+      fetchedAt: Date.now(),
+      accountGeneration: currentGen
+    };
+    acc.entitlement = entitlement;
+    await this.persist();
+    return entitlement;
+  }
+  async invalidateAccountEntitlement(accountId) {
+    const acc = this.getAccountById(accountId);
+    if (!acc) return;
+    acc.accountGeneration = (acc.accountGeneration ?? 1) + 1;
+    acc.entitlement = void 0;
+    await this.persist();
+  }
+  resolveTrustedEntitlement(accountId) {
+    const acc = this.getAccountById(accountId);
+    if (!acc || acc.needsReauth || !acc.entitlement) return void 0;
+    const expectedGen = acc.accountGeneration ?? 1;
+    if (acc.entitlement.source !== "loadCodeAssist") return void 0;
+    if (acc.entitlement.accountGeneration !== expectedGen) return void 0;
+    return acc.entitlement;
   }
   /**
    * Ensure valid accessToken with concurrent refresh dedup lock per account.
@@ -674,6 +736,8 @@ var AntigravityAccountManager = class {
         const msg = error instanceof Error ? error.message : String(error);
         if (/invalid_grant|unauthorized_client|revoked/i.test(msg)) {
           current.needsReauth = true;
+          current.accountGeneration = (current.accountGeneration ?? 1) + 1;
+          current.entitlement = void 0;
         }
         current.lastError = msg;
         await this.persist();
@@ -854,6 +918,9 @@ var AntigravityAccountManager = class {
     }
     binding.failureStreak += 1;
     binding.lastFailureCategory = params.category;
+    if (params.allowFailover === false) {
+      return void 0;
+    }
     const shouldSwitchNow = params.category === "QUOTA" || binding.failureStreak >= this.config.failureSwitchThreshold;
     if (!shouldSwitchNow) {
       return void 0;
@@ -920,6 +987,7 @@ var AntigravityAccountManager = class {
 
 // src/host/catalog.ts
 import {
+  LlmError,
   ReasoningEffortId
 } from "@deepseek-ai/dsh-llm";
 import path3 from "node:path";
@@ -941,48 +1009,100 @@ var DEFAULT_STREAM_IDLE_TIMEOUT_MS = 6e4;
 var DEFAULT_OAUTH_PORT = 51121;
 var DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 4194304;
 var DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1048576;
+var DEFAULT_DIAGNOSTIC_RETAIN_DAYS = 7;
 var effortEnum = Schema.union([
   "low",
   "medium",
   "high",
   "xhigh"
 ]).default("high");
+var diagnosticModeEnum = Schema.union([
+  "off",
+  "metadata"
+]).default("off");
 var Config = Schema.object({
-  userAgent: Schema.string().description("Optional Hub User-Agent override (sanitized against Antigravity Hub version floor)").volatile(),
-  endpoints: Schema.array(Schema.string()).default([...DEFAULT_ENDPOINTS]).description("Ordered Cloud Code internal endpoints (Daily -> Sandbox -> Prod)").volatile(),
-  oauthPort: Schema.number().min(1024).max(65535).default(DEFAULT_OAUTH_PORT).description("Preferred localhost port for OAuth PKCE callback listener").volatile(),
-  requestTimeoutMs: Schema.number().min(5e3).max(6e5).default(DEFAULT_REQUEST_TIMEOUT_MS).description("HTTP request / header connect timeout in milliseconds").volatile(),
-  streamIdleTimeoutMs: Schema.number().min(5e3).max(6e5).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS).description("Streaming idle watchdog timeout between SSE chunks in milliseconds").volatile(),
-  quotaWarnThreshold: Schema.number().min(0.01).max(0.9).default(DEFAULT_QUOTA_WARN_THRESHOLD).description("Remaining quota fraction below which UI warns user").volatile(),
-  quotaExhaustedThreshold: Schema.number().min(0).max(0.5).default(DEFAULT_QUOTA_EXHAUSTED_THRESHOLD).description("Remaining quota fraction at or below which sticky session switches account").volatile(),
-  failureSwitchThreshold: Schema.number().min(1).max(10).default(DEFAULT_FAILURE_SWITCH_THRESHOLD).description("Consecutive AUTH/QUOTA/RATE_LIMIT failures on same account before switching").volatile(),
-  includeNonGeminiModels: Schema.boolean().default(false).description("Expose non-Gemini models returned by fetchAvailableModels (experimental)").volatile(),
-  defaultThinkingEffort: effortEnum.description("Default reasoning effort when caller omits reasoningEffort").volatile(),
-  storageDir: Schema.string().description("Optional override directory for Antigravity credentials and settings").volatile()
+  userAgent: Schema.string().description(
+    "Optional Hub User-Agent override (sanitized against Antigravity Hub version floor)"
+  ),
+  endpoints: Schema.array(Schema.string()).default([...DEFAULT_ENDPOINTS]).description("Ordered Cloud Code internal endpoints (Daily -> Sandbox -> Prod)"),
+  oauthPort: Schema.number().min(1024).max(65535).default(DEFAULT_OAUTH_PORT).description("Preferred localhost port for OAuth PKCE callback listener"),
+  requestTimeoutMs: Schema.number().min(5e3).max(6e5).default(DEFAULT_REQUEST_TIMEOUT_MS).description("HTTP request / header connect timeout in milliseconds"),
+  streamIdleTimeoutMs: Schema.number().min(5e3).max(6e5).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS).description("Streaming idle watchdog timeout between SSE chunks in milliseconds"),
+  quotaWarnThreshold: Schema.number().min(0.01).max(0.9).default(DEFAULT_QUOTA_WARN_THRESHOLD).description("Remaining quota fraction below which UI warns user"),
+  quotaExhaustedThreshold: Schema.number().min(0).max(0.5).default(DEFAULT_QUOTA_EXHAUSTED_THRESHOLD).description("Remaining quota fraction at or below which sticky session switches account"),
+  failureSwitchThreshold: Schema.number().min(1).max(10).default(DEFAULT_FAILURE_SWITCH_THRESHOLD).description("Consecutive AUTH/QUOTA/RATE_LIMIT failures on same account before switching"),
+  includeNonGeminiModels: Schema.boolean().default(false).description("Expose non-Gemini models returned by fetchAvailableModels (experimental)"),
+  defaultThinkingEffort: effortEnum.description(
+    "Default reasoning effort when caller omits reasoningEffort"
+  ),
+  storageDir: Schema.string().description(
+    "Optional override directory for Antigravity credentials and settings"
+  ),
+  wirePolicyV2: Schema.boolean().default(true).description("Separate model capability ceilings from default maxOutputTokens policy and gated enabledCreditTypes"),
+  retrySafetyV2: Schema.boolean().default(true).description("Enable strict 429/RetryInfo/quotaResetDelay classification and stop rapid 600ms retry loops"),
+  diagnosticMode: diagnosticModeEnum.description(
+    "Sanitized protocol metadata trace mode written to private DSH plugin storage (off by default)"
+  ),
+  diagnosticRetainDays: Schema.number().min(1).max(30).default(DEFAULT_DIAGNOSTIC_RETAIN_DAYS).description("Retention window in days for rotated sanitized protocol diagnostics")
 });
+function unwrapVolatile(raw) {
+  let current = raw;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (current !== null && typeof current === "object" && "get" in current && typeof current.get === "function") {
+      current = current.get();
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+function isAllowedEndpointUrl(trimmed) {
+  if (trimmed.startsWith("https://")) return true;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:") return false;
+    return parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" || parsed.hostname === "::1" || parsed.hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
 function sanitizeEndpointList(raw) {
-  if (!Array.isArray(raw)) return [...DEFAULT_ENDPOINTS];
+  const value = unwrapVolatile(raw);
+  if (!Array.isArray(value)) return [...DEFAULT_ENDPOINTS];
   const cleaned = [];
-  for (const entry of raw) {
-    if (typeof entry !== "string") continue;
-    const trimmed = entry.trim().replace(/\/+$/, "");
-    if (trimmed.startsWith("https://")) cleaned.push(trimmed);
+  for (const entry of value) {
+    const item = unwrapVolatile(entry);
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim().replace(/\/+$/, "");
+    if (isAllowedEndpointUrl(trimmed)) cleaned.push(trimmed);
   }
   return cleaned.length > 0 ? [...new Set(cleaned)] : [...DEFAULT_ENDPOINTS];
 }
 function clampNumber(raw, fallback, min, max, integer = false) {
-  if (typeof raw !== "number" || !Number.isFinite(raw)) return fallback;
-  const clamped = Math.min(max, Math.max(min, raw));
+  const value = unwrapVolatile(raw);
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const clamped = Math.min(max, Math.max(min, value));
   return integer ? Math.trunc(clamped) : clamped;
 }
+function readOptionalNonEmptyString(raw) {
+  const value = unwrapVolatile(raw);
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : void 0;
+}
+function readBoolean(raw, fallback) {
+  const value = unwrapVolatile(raw);
+  return typeof value === "boolean" ? value : fallback;
+}
 function normalizeConfig(raw) {
-  const input = raw !== null && typeof raw === "object" ? raw : {};
-  const userAgent = typeof input.userAgent === "string" && input.userAgent.trim() !== "" ? input.userAgent.trim() : void 0;
-  const storageDir = typeof input.storageDir === "string" && input.storageDir.trim() !== "" ? input.storageDir.trim() : void 0;
-  const oauthClientId = typeof input.oauthClientId === "string" && input.oauthClientId.trim() !== "" ? input.oauthClientId.trim() : void 0;
-  const oauthClientSecret = typeof input.oauthClientSecret === "string" && input.oauthClientSecret.trim() !== "" ? input.oauthClientSecret.trim() : void 0;
-  const effort = input.defaultThinkingEffort;
+  const unwrappedRoot = unwrapVolatile(raw);
+  const input = unwrappedRoot !== null && typeof unwrappedRoot === "object" ? unwrappedRoot : {};
+  const userAgent = readOptionalNonEmptyString(input.userAgent);
+  const storageDir = readOptionalNonEmptyString(input.storageDir);
+  const oauthClientId = readOptionalNonEmptyString(input.oauthClientId);
+  const oauthClientSecret = readOptionalNonEmptyString(input.oauthClientSecret);
+  const effort = unwrapVolatile(input.defaultThinkingEffort);
   const defaultThinkingEffort = effort === "low" || effort === "medium" || effort === "high" || effort === "xhigh" ? effort : "high";
+  const diagRaw = unwrapVolatile(input.diagnosticMode);
+  const diagnosticMode = diagRaw === "metadata" ? "metadata" : "off";
   const quotaExhaustedThreshold = clampNumber(
     input.quotaExhaustedThreshold,
     DEFAULT_QUOTA_EXHAUSTED_THRESHOLD,
@@ -1022,7 +1142,7 @@ function normalizeConfig(raw) {
       10,
       true
     ),
-    includeNonGeminiModels: input.includeNonGeminiModels === true,
+    includeNonGeminiModels: readBoolean(input.includeNonGeminiModels, false),
     defaultThinkingEffort,
     storageDir,
     requestImagePixelBudget: clampNumber(
@@ -1037,6 +1157,16 @@ function normalizeConfig(raw) {
       DEFAULT_REQUEST_IMAGE_MAX_BYTES,
       1024,
       20971520,
+      true
+    ),
+    wirePolicyV2: readBoolean(input.wirePolicyV2, true),
+    retrySafetyV2: readBoolean(input.retrySafetyV2, true),
+    diagnosticMode,
+    diagnosticRetainDays: clampNumber(
+      input.diagnosticRetainDays,
+      DEFAULT_DIAGNOSTIC_RETAIN_DAYS,
+      1,
+      30,
       true
     )
   };
@@ -1172,6 +1302,7 @@ function deriveUpstreamSessionId(accountId, sessionId, generation = 0) {
 }
 
 // src/host/quota.ts
+var VALID_CREDIT_TYPE_RE = /^[A-Z0-9_]{2,64}$/;
 function asRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
@@ -1191,6 +1322,26 @@ function readNumber(obj, ...keys) {
   }
   return void 0;
 }
+function readPositiveSafeInt(obj, ...keys) {
+  if (!obj) return void 0;
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === "number" && Number.isSafeInteger(val) && val > 0) {
+      return val;
+    }
+  }
+  return void 0;
+}
+function readNonNegSafeInt(obj, ...keys) {
+  if (!obj) return void 0;
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === "number" && Number.isSafeInteger(val) && val >= 0) {
+      return val;
+    }
+  }
+  return void 0;
+}
 function extractProjectId(data) {
   const raw = data.cloudaicompanionProject ?? data.projectId ?? data.project;
   if (typeof raw === "string" && raw.trim() !== "") return raw.trim();
@@ -1206,6 +1357,59 @@ function normalizeTierLabel(tierId, tierName) {
   if (combined.includes("free")) return "Free";
   return tierName || tierId;
 }
+function parseAvailableCreditsRaw(raw) {
+  if (!Array.isArray(raw)) {
+    return {
+      state: "parse_failed",
+      parseError: "availableCredits field is not an array"
+    };
+  }
+  if (raw.length === 0) {
+    return {
+      state: "empty",
+      availableCredits: []
+    };
+  }
+  const entries = [];
+  const creditTypes = [];
+  const seenTypes = /* @__PURE__ */ new Set();
+  for (const item of raw) {
+    const obj = asRecord(item);
+    if (!obj) {
+      return {
+        state: "parse_failed",
+        parseError: "availableCredits contains non-object entry"
+      };
+    }
+    const rawCreditType = readString(obj, "creditType", "credit_type");
+    if (!rawCreditType || !VALID_CREDIT_TYPE_RE.test(rawCreditType)) {
+      return {
+        state: "parse_failed",
+        parseError: "availableCredits entry missing valid creditType"
+      };
+    }
+    const minAmountRaw = obj.minimumCreditAmountForUsage ?? obj.minimum_credit_amount_for_usage;
+    let minAmount;
+    if (typeof minAmountRaw === "string" && minAmountRaw.trim() !== "") {
+      minAmount = minAmountRaw.trim();
+    } else if (typeof minAmountRaw === "number" && Number.isFinite(minAmountRaw)) {
+      minAmount = String(minAmountRaw);
+    }
+    entries.push({
+      creditType: rawCreditType,
+      ...minAmount !== void 0 ? { minimumCreditAmountForUsage: minAmount } : {}
+    });
+    if (!seenTypes.has(rawCreditType)) {
+      seenTypes.add(rawCreditType);
+      creditTypes.push(rawCreditType);
+    }
+  }
+  return {
+    state: "present",
+    enabledCreditTypes: creditTypes,
+    availableCredits: entries
+  };
+}
 function extractTierInfo(data) {
   const projectId = extractProjectId(data);
   const paidTier = asRecord(data.paidTier);
@@ -1215,10 +1419,26 @@ function extractTierInfo(data) {
   const tierObj = paidTier ?? currentTier ?? defaultAllowed;
   const tierId = readString(tierObj, "id", "tierId");
   const tierName = readString(tierObj, "name", "displayName");
+  let creditsParsed = { state: "absent" };
+  const paidHasCredits = paidTier !== void 0 && (Object.prototype.hasOwnProperty.call(paidTier, "availableCredits") || Object.prototype.hasOwnProperty.call(paidTier, "available_credits"));
+  const currentHasCredits = currentTier !== void 0 && (Object.prototype.hasOwnProperty.call(currentTier, "availableCredits") || Object.prototype.hasOwnProperty.call(currentTier, "available_credits"));
+  if (paidHasCredits && paidTier) {
+    creditsParsed = parseAvailableCreditsRaw(
+      paidTier.availableCredits ?? paidTier.available_credits
+    );
+  } else if (currentHasCredits && currentTier) {
+    creditsParsed = parseAvailableCreditsRaw(
+      currentTier.availableCredits ?? currentTier.available_credits
+    );
+  }
   return {
     projectId,
     tierId,
-    tierLabel: normalizeTierLabel(tierId, tierName)
+    tierLabel: normalizeTierLabel(tierId, tierName),
+    availableCreditsState: creditsParsed.state,
+    ...creditsParsed.enabledCreditTypes ? { enabledCreditTypes: creditsParsed.enabledCreditTypes } : {},
+    ...creditsParsed.availableCredits ? { availableCredits: creditsParsed.availableCredits } : {},
+    ...creditsParsed.parseError ? { parseError: creditsParsed.parseError } : {}
   };
 }
 async function loadCodeAssist(params) {
@@ -1306,27 +1526,47 @@ function parseAvailableModelsResponse(raw) {
     const supportsThinking = typeof obj.supportsThinking === "boolean" ? obj.supportsThinking : typeof obj.supports_thinking === "boolean" ? obj.supports_thinking : void 0;
     const supportsImages = typeof obj.supportsImages === "boolean" ? obj.supportsImages : typeof obj.supports_images === "boolean" ? obj.supports_images : void 0;
     const isInternal = obj.isInternal === true || obj.is_internal === true;
+    const disabled = obj.disabled === true;
+    const supportsAdaptiveThinking = typeof obj.supportsAdaptiveThinking === "boolean" ? obj.supportsAdaptiveThinking : typeof obj.supports_adaptive_thinking === "boolean" ? obj.supports_adaptive_thinking : void 0;
+    const minThinkingBudget = readNonNegSafeInt(
+      obj,
+      "minThinkingBudget",
+      "min_thinking_budget"
+    );
+    const inputTokenLimit = readPositiveSafeInt(
+      obj,
+      "maxTokens",
+      "max_tokens",
+      "inputTokenLimit",
+      "input_token_limit"
+    );
+    const maxOutputTokensCapability = readPositiveSafeInt(
+      obj,
+      "maxOutputTokens",
+      "max_output_tokens",
+      "outputTokenLimit",
+      "output_token_limit"
+    );
     results.push({
       id,
       displayName: readString(obj, "displayName", "display_name", "label"),
       model: readString(obj, "model") ?? readString(modelOrAlias, "model"),
       modelProvider: readString(obj, "modelProvider", "model_provider"),
-      maxTokens: readNumber(
-        obj,
-        "maxTokens",
-        "max_tokens",
-        "inputTokenLimit",
-        "input_token_limit"
-      ),
-      maxOutputTokens: readNumber(
-        obj,
-        "maxOutputTokens",
-        "max_output_tokens",
-        "outputTokenLimit",
-        "output_token_limit"
-      ),
+      maxTokens: inputTokenLimit,
+      maxOutputTokens: maxOutputTokensCapability,
+      capabilities: {
+        ...inputTokenLimit !== void 0 ? { inputTokenLimit } : {},
+        ...maxOutputTokensCapability !== void 0 ? { maxOutputTokensCapability } : {},
+        ...supportsImages !== void 0 ? { supportsImages } : {},
+        ...supportsThinking !== void 0 ? { supportsThinking } : {},
+        ...supportsAdaptiveThinking !== void 0 ? { supportsAdaptiveThinking } : {},
+        ...minThinkingBudget !== void 0 ? { minThinkingBudget } : {}
+      },
       supportsThinking,
+      ...supportsAdaptiveThinking !== void 0 ? { supportsAdaptiveThinking } : {},
+      ...minThinkingBudget !== void 0 ? { minThinkingBudget } : {},
       supportsImages,
+      ...disabled ? { disabled: true } : {},
       isInternal,
       ...remainingFraction !== void 0 ? { remainingFraction: Math.max(0, Math.min(1, remainingFraction)) } : {},
       ...resetTime ? { resetTime } : {}
@@ -1470,6 +1710,7 @@ async function fetchAccountQuotaAndModels(params) {
   let projectId = params.projectIdHint;
   let tierLabel;
   let tierId;
+  let tierInfo;
   try {
     const assist = await loadCodeAssist({
       client: params.client,
@@ -1478,6 +1719,7 @@ async function fetchAccountQuotaAndModels(params) {
       projectIdHint: projectId,
       signal: params.signal
     });
+    tierInfo = assist;
     if (assist.projectId) projectId = assist.projectId;
     tierLabel = assist.tierLabel;
     tierId = assist.tierId;
@@ -1537,11 +1779,13 @@ async function fetchAccountQuotaAndModels(params) {
       ...errors.length > 0 && groups.length === 0 ? { error: errors.join("; ") } : {},
       groups
     },
-    models
+    models,
+    ...tierInfo ? { tierInfo } : {}
   };
 }
 
 // src/host/catalog.ts
+var POLICY_DEFAULT_MAX_OUTPUT_TOKENS = 65536;
 var EFFORT_ORDER = [
   "low",
   "medium",
@@ -1607,6 +1851,7 @@ var STATIC_GEMINI_MODELS = [
     defaultEnabled: true,
     contextWindow: 1048576,
     defaultMaxTokens: 65536,
+    maxOutputTokensCapability: 262144,
     supportsReasoning: true,
     supportedEfforts: ["low", "medium", "high", "xhigh"],
     defaultEffort: "high",
@@ -1838,6 +2083,16 @@ var AntigravityCatalog = class {
   dynamicModels = [];
   catalogSource = "static";
   upstreamFallbackIds = /* @__PURE__ */ new Map();
+  capabilitiesById = /* @__PURE__ */ new Map();
+  disposed = false;
+  persistQueue = Promise.resolve();
+  markDisposed() {
+    this.disposed = true;
+  }
+  async flushAndDispose() {
+    this.disposed = true;
+    await this.persistQueue.catch(() => void 0);
+  }
   migrateEnabledIds(rawIds) {
     const cleaned = rawIds.filter((s) => typeof s === "string" && s.trim() !== "").map((s) => s.trim());
     const migrated = [...new Set(cleaned.map((s) => normalizeModelId(s)))];
@@ -1875,13 +2130,19 @@ var AntigravityCatalog = class {
   }
   async saveDynamicModels(models) {
     this.dynamicModels = [...models];
-    if (models.length === 0) return;
+    if (models.length === 0 || this.disposed) return;
     this.catalogSource = "upstream";
-    await writePrivateJsonFile(this.cachePath, {
+    const snapshot = {
       version: 1,
       updatedAt: Date.now(),
-      models: this.dynamicModels
-    }).catch(() => void 0);
+      models: structuredClone(this.dynamicModels)
+    };
+    const next = this.persistQueue.then(async () => {
+      if (this.disposed) return;
+      await writePrivateJsonFile(this.cachePath, snapshot).catch(() => void 0);
+    });
+    this.persistQueue = next.catch(() => void 0);
+    await next;
   }
   updateDynamicModels(models) {
     void this.saveDynamicModels(models);
@@ -1920,7 +2181,7 @@ var AntigravityCatalog = class {
     }
     const staticById = new Map(STATIC_GEMINI_MODELS.map((m) => [m.id, m]));
     const visibleDynamic = this.dynamicModels.filter((dyn) => {
-      if (dyn.isInternal) return false;
+      if (dyn.isInternal || dyn.disabled) return false;
       const effectiveText = `${dyn.id} ${dyn.displayName ?? ""}`;
       if (!this.config.includeNonGeminiModels && !isGeminiModelId(effectiveText)) {
         return false;
@@ -1972,8 +2233,17 @@ var AntigravityCatalog = class {
     const hasDynamic = this.dynamicModels.length > 0;
     const byId = /* @__PURE__ */ new Map();
     this.upstreamFallbackIds.clear();
+    this.capabilitiesById.clear();
     for (const entry of STATIC_GEMINI_MODELS) {
       const q = quotaByModel.get(entry.id) ?? poolFallbackQuota.get(entry.pool);
+      const capabilityOutput = entry.maxOutputTokensCapability ?? entry.defaultMaxTokens;
+      const policyDefault = this.config.wirePolicyV2 ? Math.min(POLICY_DEFAULT_MAX_OUTPUT_TOKENS, capabilityOutput) : entry.defaultMaxTokens;
+      this.capabilitiesById.set(entry.id, {
+        inputTokenLimit: entry.contextWindow,
+        maxOutputTokensCapability: capabilityOutput,
+        supportsImages: entry.supportsImages,
+        supportsThinking: entry.supportsReasoning
+      });
       byId.set(entry.id, {
         id: entry.id,
         name: entry.name,
@@ -1981,7 +2251,7 @@ var AntigravityCatalog = class {
         enabled: enabledSet.has(entry.id),
         defaultEnabled: entry.defaultEnabled,
         contextWindow: entry.contextWindow,
-        defaultMaxTokens: entry.defaultMaxTokens,
+        defaultMaxTokens: policyDefault,
         supportsReasoning: entry.supportsReasoning,
         ...entry.supportedEfforts ? { supportedEfforts: [...entry.supportedEfforts] } : {},
         ...entry.defaultEffort ? { defaultEffort: entry.defaultEffort } : {},
@@ -2027,14 +2297,27 @@ var AntigravityCatalog = class {
       const remainingFraction = minFraction ?? fallbackQ?.remainingFraction;
       const resetTime = dyn.resetTime ?? Object.values(bucket.variants).find((v) => v?.resetTime)?.resetTime ?? quotaByModel.get(familyId)?.resetTime ?? fallbackQ?.resetTime;
       const cleanDisplayName = dyn.displayName ? stripEffortDisplaySuffix(dyn.displayName) : familyId;
+      const staticEntry = staticById.get(familyId);
+      const existingCaps = this.capabilitiesById.get(familyId);
+      const inputTokenLimit = dyn.maxTokens ?? existing?.contextWindow ?? 1048576;
+      const maxOutputTokensCapability = dyn.maxOutputTokens ?? existingCaps?.maxOutputTokensCapability ?? staticEntry?.maxOutputTokensCapability ?? existing?.defaultMaxTokens ?? POLICY_DEFAULT_MAX_OUTPUT_TOKENS;
+      const policyDefaultMaxTokens = this.config.wirePolicyV2 ? Math.min(POLICY_DEFAULT_MAX_OUTPUT_TOKENS, maxOutputTokensCapability) : dyn.maxOutputTokens ?? existing?.defaultMaxTokens ?? POLICY_DEFAULT_MAX_OUTPUT_TOKENS;
+      this.capabilitiesById.set(familyId, {
+        inputTokenLimit,
+        maxOutputTokensCapability,
+        supportsImages: dyn.supportsImages ?? existing?.supportsImages ?? true,
+        supportsThinking: supportsReasoning,
+        ...dyn.supportsAdaptiveThinking !== void 0 ? { supportsAdaptiveThinking: dyn.supportsAdaptiveThinking } : {},
+        ...dyn.minThinkingBudget !== void 0 ? { minThinkingBudget: dyn.minThinkingBudget } : {}
+      });
       byId.set(familyId, {
         id: familyId,
         name: existing?.name ?? cleanDisplayName,
         description: existing?.description ?? `Antigravity upstream model (${dyn.modelProvider ?? "Google"})`,
         enabled: enabledSet.has(familyId),
         defaultEnabled: existing?.defaultEnabled ?? false,
-        contextWindow: dyn.maxTokens ?? existing?.contextWindow ?? 1048576,
-        defaultMaxTokens: dyn.maxOutputTokens ?? existing?.defaultMaxTokens ?? 65536,
+        contextWindow: inputTokenLimit,
+        defaultMaxTokens: policyDefaultMaxTokens,
         supportsReasoning,
         ...supportedEfforts ? { supportedEfforts } : {},
         ...defaultEffort ? { defaultEffort } : {},
@@ -2111,6 +2394,49 @@ var AntigravityCatalog = class {
       // Omit toolUpdate so DSH resolves deferLoading tools cleanly on turn 0, keeping tools prefix constant.
     };
   }
+  getModelCapabilities(modelId) {
+    const canonical = normalizeModelId(modelId);
+    const catalog = this.mergedCatalog();
+    const option = catalog.find((m) => m.id === canonical || m.id === modelId) ?? catalog[0] ?? STATIC_GEMINI_MODELS[0];
+    return this.capabilitiesById.get(option.id) ?? {
+      inputTokenLimit: option.contextWindow,
+      maxOutputTokensCapability: Math.max(option.defaultMaxTokens, POLICY_DEFAULT_MAX_OUTPUT_TOKENS),
+      supportsImages: option.supportsImages,
+      supportsThinking: option.supportsReasoning
+    };
+  }
+  resolveRequestPolicy(modelId, explicitMaxTokens) {
+    const canonical = normalizeModelId(modelId);
+    const catalog = this.mergedCatalog();
+    const option = catalog.find((m) => m.id === canonical || m.id === modelId) ?? catalog[0] ?? STATIC_GEMINI_MODELS[0];
+    const capabilities = this.getModelCapabilities(option.id);
+    const defaultMaxTokens = this.config.wirePolicyV2 ? Math.min(POLICY_DEFAULT_MAX_OUTPUT_TOKENS, capabilities.maxOutputTokensCapability) : option.defaultMaxTokens;
+    let resolvedMaxTokens;
+    if (explicitMaxTokens !== void 0) {
+      if (typeof explicitMaxTokens !== "number" || !Number.isSafeInteger(explicitMaxTokens) || explicitMaxTokens <= 0) {
+        throw new LlmError(
+          `Invalid maxTokens (${String(explicitMaxTokens)}) for model "${option.id}": expected a positive safe integer`,
+          "INVALID_REQUEST"
+        );
+      }
+      if (explicitMaxTokens > capabilities.maxOutputTokensCapability) {
+        throw new LlmError(
+          `Requested maxTokens (${explicitMaxTokens}) exceeds model "${option.id}" maxOutputTokens capability (${capabilities.maxOutputTokensCapability})`,
+          "INVALID_REQUEST"
+        );
+      }
+      resolvedMaxTokens = explicitMaxTokens;
+    } else if (this.config.wirePolicyV2) {
+      resolvedMaxTokens = defaultMaxTokens;
+    }
+    return {
+      canonicalModel: option.id,
+      capabilities,
+      defaultMaxTokens,
+      ...resolvedMaxTokens !== void 0 ? { resolvedMaxTokens } : {},
+      allowCredits: this.config.wirePolicyV2
+    };
+  }
   resolveUpstreamDispatch(modelId, requestedEffort) {
     const canonical = normalizeModelId(modelId);
     const catalog = this.mergedCatalog();
@@ -2165,11 +2491,444 @@ var AntigravityCatalog = class {
 };
 
 // src/host/client.ts
-import { LlmError, ProviderRequestId } from "@deepseek-ai/dsh-llm";
+import { LlmError as LlmError2, ProviderRequestId } from "@deepseek-ai/dsh-llm";
+
+// src/host/diagnostics.ts
+import crypto from "node:crypto";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path4 from "node:path";
+var TRACE_FILENAME = "protocol-trace.jsonl";
+var DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
+var DEFAULT_MAX_FILES = 5;
+var MS_PER_DAY = 24 * 60 * 60 * 1e3;
+var SAFE_HEADER_NAMES = /* @__PURE__ */ new Set([
+  "user-agent",
+  "content-type",
+  "accept-encoding",
+  "x-goog-user-project",
+  "content-length"
+]);
+function sanitizeErrorDetailText(raw, maxLen = 240) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.trim();
+  if (!trimmed) return void 0;
+  const scrubbed = trimmed.replace(/ya29\.[A-Za-z0-9._-]+/g, "<redacted-token>").replace(/\bsk-[A-Za-z0-9._-]{12,}/g, "<redacted-key>").replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>").replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<redacted-email>").replace(/(?:\/Users\/|\/home\/|[A-Za-z]:\\Users\\)[^\s"'`]+/g, "<redacted-path>").replace(/([?&](?:key|token|code|secret|access_token|refresh_token)=)[^&\s]+/gi, "$1<redacted>").replace(/\s+/g, " ");
+  return scrubbed.length > maxLen ? `${scrubbed.slice(0, maxLen - 3)}...` : scrubbed;
+}
+function asRecord2(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  return value;
+}
+function extractAllowlistedBodyMetadata(body, byteLength, hmacSecret) {
+  const env = asRecord2(body);
+  if (!env) return void 0;
+  const req = asRecord2(env.request);
+  const genCfg = asRecord2(req?.generationConfig);
+  const thinking = asRecord2(genCfg?.thinkingConfig);
+  const labels = asRecord2(req?.labels);
+  const contents = Array.isArray(req?.contents) ? req.contents : [];
+  const tools = Array.isArray(req?.tools) ? req.tools : [];
+  const contentsRoles = contents.map((item) => {
+    const rec = asRecord2(item);
+    return typeof rec?.role === "string" ? rec.role : "unknown";
+  });
+  let toolDeclCount = 0;
+  for (const grp of tools) {
+    const rec = asRecord2(grp);
+    if (Array.isArray(rec?.functionDeclarations)) {
+      toolDeclCount += rec.functionDeclarations.length;
+    }
+  }
+  const envelopeKeyOrder = Object.keys(env);
+  const requestKeyOrder = req ? Object.keys(req) : [];
+  const enabledCreditTypes = Array.isArray(env.enabledCreditTypes) ? env.enabledCreditTypes.filter((item) => typeof item === "string") : void 0;
+  const generationConfigOut = genCfg ? {
+    ...typeof genCfg.maxOutputTokens === "number" ? { maxOutputTokens: genCfg.maxOutputTokens } : {},
+    ...thinking ? {
+      thinkingConfig: {
+        ...typeof thinking.includeThoughts === "boolean" ? { includeThoughts: thinking.includeThoughts } : {},
+        ...typeof thinking.thinkingLevel === "string" ? { thinkingLevel: thinking.thinkingLevel } : {},
+        ...typeof thinking.thinkingBudget === "number" ? { thinkingBudget: thinking.thinkingBudget } : {}
+      }
+    } : {}
+  } : void 0;
+  const structureSkeleton = JSON.stringify({
+    envelopeKeyOrder,
+    requestKeyOrder,
+    model: typeof env.model === "string" ? env.model : void 0,
+    requestType: typeof env.requestType === "string" ? env.requestType : void 0,
+    enabledCreditTypes,
+    generationConfig: generationConfigOut,
+    labelsKeys: labels ? Object.keys(labels).sort() : [],
+    hasSystemInstruction: Boolean(req?.systemInstruction),
+    contentsRoles,
+    toolsGroupCount: tools.length,
+    toolDeclCount
+  });
+  const structureHmac = crypto.createHmac("sha256", hmacSecret).update(structureSkeleton).digest("hex");
+  return {
+    envelopeKeyOrder,
+    requestKeyOrder,
+    model: typeof env.model === "string" ? env.model : void 0,
+    upstreamModel: typeof env.model === "string" ? env.model : void 0,
+    requestType: typeof env.requestType === "string" ? env.requestType : void 0,
+    userAgentField: typeof env.userAgent === "string" ? env.userAgent : void 0,
+    ...enabledCreditTypes ? { enabledCreditTypes } : {},
+    hasProject: typeof env.project === "string" && env.project.length > 0,
+    ...generationConfigOut ? { generationConfig: generationConfigOut } : {},
+    labelsKeys: labels ? Object.keys(labels).sort() : [],
+    hasSystemInstruction: Boolean(req?.systemInstruction),
+    contentsCount: contents.length,
+    contentsRoles,
+    toolsGroupCount: tools.length,
+    toolDeclCount,
+    ...typeof byteLength === "number" ? { byteLength } : {},
+    structureHmac
+  };
+}
+function isSystemRootAlias(cursor) {
+  if (process.platform !== "darwin") return false;
+  return cursor === "/var" || cursor === "/tmp" || cursor === "/etc";
+}
+function assertNoSymlinkInExistingComponents(targetDir) {
+  const resolved = path4.resolve(targetDir);
+  const parsed = path4.parse(resolved);
+  const rel = resolved.slice(parsed.root.length);
+  const parts = rel.split(path4.sep).filter(Boolean);
+  let cursor = parsed.root || path4.sep;
+  for (const part of parts) {
+    cursor = path4.join(cursor, part);
+    try {
+      const stat = fs.lstatSync(cursor);
+      if (stat.isSymbolicLink()) {
+        if (isSystemRootAlias(cursor)) {
+          continue;
+        }
+        throw new Error(`Refusing symlink diagnostic directory component`);
+      }
+      if (!stat.isDirectory()) {
+        throw new Error(`Diagnostic parent path component is not a directory`);
+      }
+    } catch (err) {
+      const code = err?.code;
+      if (code === "ENOENT") {
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+async function ensurePrivateDirNoSymlinks(targetDir) {
+  assertNoSymlinkInExistingComponents(targetDir);
+  await fsp.mkdir(targetDir, { recursive: true, mode: 448 });
+  const stat = await fsp.lstat(targetDir);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error("Diagnostic directory validation failed");
+  }
+  await fsp.chmod(targetDir, 448);
+}
+async function appendLineSafe(filePath, line) {
+  try {
+    const stat = await fsp.lstat(filePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error("Refusing symlink diagnostic trace file");
+    }
+    if (!stat.isFile()) {
+      throw new Error("Diagnostic trace target is not a regular file");
+    }
+  } catch (err) {
+    if (err?.code !== "ENOENT") {
+      throw err;
+    }
+  }
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_APPEND | noFollow;
+  const handle = await fsp.open(filePath, flags, 384);
+  try {
+    const fdStat = await handle.stat();
+    if (!fdStat.isFile()) {
+      throw new Error("Opened diagnostic descriptor is not a regular file");
+    }
+    await handle.chmod(384);
+    await handle.write(line, null, "utf8");
+  } finally {
+    await handle.close();
+  }
+}
+var JsonlDiagnosticSink = class {
+  dir;
+  mode;
+  retainDays;
+  maxFileBytes;
+  maxFiles;
+  hmacSecret;
+  writeQueue = Promise.resolve();
+  disposed = false;
+  lastError;
+  constructor(options) {
+    this.dir = path4.resolve(options.diagnosticDir);
+    this.mode = options.mode;
+    this.retainDays = Math.min(30, Math.max(1, Math.trunc(options.retainDays ?? 7)));
+    this.maxFileBytes = Math.max(1024, Math.trunc(options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES));
+    this.maxFiles = Math.max(1, Math.trunc(options.maxFiles ?? DEFAULT_MAX_FILES));
+    this.hmacSecret = crypto.randomBytes(32);
+  }
+  get enabled() {
+    return !this.disposed && this.mode === "metadata";
+  }
+  get tracePath() {
+    return path4.join(this.dir, TRACE_FILENAME);
+  }
+  record(event) {
+    if (!this.enabled) return;
+    const record = this.buildSanitizedRecord(event);
+    const line = `${JSON.stringify(record)}
+`;
+    this.writeQueue = this.writeQueue.then(() => this.persistLine(line)).catch((err) => {
+      this.lastError = sanitizeErrorDetailText(
+        err instanceof Error ? err.message : String(err)
+      );
+    });
+  }
+  buildSanitizedRecord(event) {
+    let endpointOrigin = "invalid-endpoint";
+    try {
+      const parsed = new URL(event.endpoint);
+      endpointOrigin = parsed.origin;
+    } catch {
+      endpointOrigin = "unknown-endpoint";
+    }
+    let safeUserAgent;
+    const headerPresence = {};
+    if (event.headers) {
+      for (const [rawKey, rawVal] of Object.entries(event.headers)) {
+        const lower = rawKey.toLowerCase();
+        if (lower === "authorization") {
+          headerPresence.authorization = Boolean(rawVal);
+          continue;
+        }
+        if (SAFE_HEADER_NAMES.has(lower)) {
+          headerPresence[lower] = Boolean(rawVal);
+          if (lower === "user-agent" && typeof rawVal === "string") {
+            safeUserAgent = rawVal;
+          }
+        }
+      }
+    }
+    const sessionHash = event.sessionId ? crypto.createHmac("sha256", this.hmacSecret).update(event.sessionId).digest("hex").slice(0, 16) : void 0;
+    const accountHash = event.accountIdHash ? crypto.createHmac("sha256", this.hmacSecret).update(event.accountIdHash).digest("hex").slice(0, 16) : void 0;
+    const requestMetadata = event.body !== void 0 ? extractAllowlistedBodyMetadata(event.body, event.byteLength, this.hmacSecret) : void 0;
+    const hasResponseFields = event.httpStatus !== void 0 || event.classifiedCode !== void 0 || event.retryAfterMs !== void 0 || event.errorDetailSummary !== void 0 || event.finishReason !== void 0 || event.durationMs !== void 0;
+    return {
+      schemaVersion: 1,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      requestId: event.requestId,
+      ...sessionHash ? { sessionHash } : {},
+      source: event.source,
+      method: event.method,
+      attempt: event.attempt,
+      endpointOrigin,
+      ...accountHash ? { accountHash } : {},
+      ...Object.keys(headerPresence).length > 0 ? { headerPresence } : {},
+      ...safeUserAgent ? { userAgent: safeUserAgent } : {},
+      ...requestMetadata ? { requestMetadata } : {},
+      ...hasResponseFields ? {
+        responseMetadata: {
+          ...event.httpStatus !== void 0 ? { httpStatus: event.httpStatus } : {},
+          ...event.classifiedCode ? { classifiedCode: event.classifiedCode } : {},
+          ...event.classifiedSubType ? { classifiedSubType: event.classifiedSubType } : {},
+          ...event.retryAfterMs !== void 0 ? { retryAfterMs: event.retryAfterMs } : {},
+          ...event.parsedDelaySource ? { parsedDelaySource: event.parsedDelaySource } : {},
+          ...event.errorDetailSummary ? { errorDetailSummary: sanitizeErrorDetailText(event.errorDetailSummary) } : {},
+          ...event.finishReason ? { finishReason: event.finishReason } : {},
+          ...event.modelVersion ? { modelVersion: event.modelVersion } : {},
+          ...event.usageSummary ? { usageSummary: event.usageSummary } : {},
+          ...event.durationMs !== void 0 ? { durationMs: event.durationMs } : {}
+        }
+      } : {},
+      ...event.wirePolicyV2 !== void 0 || event.retrySafetyV2 !== void 0 || event.resolvedMaxTokens !== void 0 || event.entitlementSource !== void 0 ? {
+        policyDecision: {
+          ...event.wirePolicyV2 !== void 0 ? { wirePolicyV2: event.wirePolicyV2 } : {},
+          ...event.retrySafetyV2 !== void 0 ? { retrySafetyV2: event.retrySafetyV2 } : {},
+          ...event.resolvedMaxTokens !== void 0 ? { resolvedMaxTokens: event.resolvedMaxTokens } : {},
+          ...event.entitlementSource ? { entitlementSource: event.entitlementSource } : {},
+          ...event.entitlementGeneration !== void 0 ? { entitlementGeneration: event.entitlementGeneration } : {}
+        }
+      } : {}
+    };
+  }
+  async persistLine(line) {
+    if (this.disposed || this.mode !== "metadata") return;
+    await ensurePrivateDirNoSymlinks(this.dir);
+    await this.rotateIfNeeded(Buffer.byteLength(line, "utf8"));
+    await this.pruneExpiredFiles();
+    await appendLineSafe(this.tracePath, line);
+    this.lastError = void 0;
+  }
+  async rotateIfNeeded(incomingBytes) {
+    let stat;
+    try {
+      stat = await fsp.lstat(this.tracePath);
+      if (stat.isSymbolicLink()) {
+        throw new Error("Refusing symlink diagnostic trace file");
+      }
+    } catch (err) {
+      if (err?.code === "ENOENT") return;
+      throw err;
+    }
+    if (stat.size + incomingBytes <= this.maxFileBytes) return;
+    for (let idx = this.maxFiles - 1; idx >= 1; idx -= 1) {
+      const src = idx === 1 ? this.tracePath : `${this.tracePath}.${idx - 1}`;
+      const dst = `${this.tracePath}.${idx}`;
+      try {
+        const srcStat = await fsp.lstat(src);
+        if (srcStat.isSymbolicLink()) {
+          throw new Error("Refusing symlink diagnostic trace file during rotation");
+        }
+        await fsp.rename(src, dst);
+        await fsp.chmod(dst, 384);
+      } catch (err) {
+        if (err?.code !== "ENOENT") {
+          throw err;
+        }
+      }
+    }
+  }
+  async pruneExpiredFiles() {
+    const cutoffMs = Date.now() - this.retainDays * MS_PER_DAY;
+    let entries = [];
+    try {
+      entries = await fsp.readdir(this.dir);
+    } catch (err) {
+      if (err?.code === "ENOENT") return;
+      throw err;
+    }
+    for (const name2 of entries) {
+      if (!name2.startsWith(TRACE_FILENAME)) continue;
+      const suffix = name2.slice(TRACE_FILENAME.length);
+      if (suffix.startsWith(".")) {
+        const idx = Number(suffix.slice(1));
+        if (Number.isInteger(idx) && idx >= this.maxFiles) {
+          await fsp.unlink(path4.join(this.dir, name2)).catch(() => void 0);
+          continue;
+        }
+      }
+      const full = path4.join(this.dir, name2);
+      try {
+        const stat = await fsp.lstat(full);
+        if (stat.isSymbolicLink()) continue;
+        if (stat.mtimeMs < cutoffMs) {
+          await fsp.unlink(full);
+        }
+      } catch {
+      }
+    }
+  }
+  async flush() {
+    await this.writeQueue;
+  }
+  async readAllRecordsForTest() {
+    await this.flush();
+    assertNoSymlinkInExistingComponents(this.dir);
+    try {
+      const stat = await fsp.lstat(this.tracePath);
+      if (stat.isSymbolicLink()) {
+        throw new Error("Refusing symlink diagnostic trace file");
+      }
+      const raw = await fsp.readFile(this.tracePath, "utf8");
+      return raw.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    } catch (err) {
+      if (err?.code === "ENOENT") return [];
+      throw err;
+    }
+  }
+  async summarize() {
+    await this.flush();
+    let recordCount = 0;
+    let fileBytes = 0;
+    let rotatedFiles = 0;
+    let writable = this.enabled;
+    try {
+      assertNoSymlinkInExistingComponents(this.dir);
+      const entries = await fsp.readdir(this.dir).catch(() => []);
+      for (const name2 of entries) {
+        if (!name2.startsWith(TRACE_FILENAME)) continue;
+        const full = path4.join(this.dir, name2);
+        const stat = await fsp.lstat(full).catch(() => void 0);
+        if (!stat || stat.isSymbolicLink() || !stat.isFile()) continue;
+        fileBytes += stat.size;
+        if (name2 === TRACE_FILENAME) {
+          const text = await fsp.readFile(full, "utf8").catch(() => "");
+          recordCount = text ? text.split("\n").filter(Boolean).length : 0;
+        } else {
+          rotatedFiles += 1;
+        }
+      }
+    } catch (err) {
+      writable = false;
+      this.lastError = sanitizeErrorDetailText(err instanceof Error ? err.message : String(err));
+    }
+    return {
+      mode: this.mode,
+      retainDays: this.retainDays,
+      recordCount,
+      fileBytes,
+      rotatedFiles,
+      writable,
+      ...this.lastError ? { lastError: this.lastError } : {}
+    };
+  }
+  async clear() {
+    await this.flush();
+    try {
+      assertNoSymlinkInExistingComponents(this.dir);
+      const entries = await fsp.readdir(this.dir).catch(() => []);
+      for (const name2 of entries) {
+        if (!name2.startsWith(TRACE_FILENAME)) continue;
+        const full = path4.join(this.dir, name2);
+        const stat = await fsp.lstat(full).catch(() => void 0);
+        if (!stat || stat.isSymbolicLink()) continue;
+        await fsp.unlink(full).catch(() => void 0);
+      }
+      this.lastError = void 0;
+    } catch (err) {
+      this.lastError = sanitizeErrorDetailText(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }
+  async dispose() {
+    this.disposed = true;
+    await this.writeQueue;
+  }
+};
+var NOOP_DIAGNOSTIC_OBSERVER = {
+  enabled: false,
+  record() {
+  },
+  async summarize() {
+    return {
+      mode: "off",
+      retainDays: 7,
+      recordCount: 0,
+      fileBytes: 0,
+      rotatedFiles: 0,
+      writable: false
+    };
+  },
+  async clear() {
+  },
+  async dispose() {
+  }
+};
+
+// src/host/client.ts
 var DEFAULT_ENDPOINT_COOLDOWN_MS = 3e4;
 var SANDBOX_ENDPOINT_COOLDOWN_MS = 6e4;
 var SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES = 1;
 var SAME_ACCOUNT_MAX_WAIT_MS = 8e3;
+var SAME_ACCOUNT_MAX_WAIT_V2_MS = 15e3;
+var SAME_ACCOUNT_MIN_WAIT_V2_MS = 1e3;
 function isSandboxEndpoint(urlOrHost) {
   return urlOrHost.toLowerCase().includes("sandbox.googleapis.com");
 }
@@ -2241,35 +3000,143 @@ function extractStructuredRetryMs(obj, depth = 0) {
   }
   return void 0;
 }
-function parseRetryDelayMs(bodyText, retryAfterHeader) {
+function parseDurationOrSeconds(v) {
+  if (typeof v === "string") {
+    const parsed = parseDurationMs(v);
+    if (parsed !== void 0) return parsed;
+    const asSec = Number(v);
+    if (Number.isFinite(asSec) && asSec > 0) return Math.round(asSec * 1e3);
+  } else if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+    return Math.round(v * 1e3);
+  }
+  return void 0;
+}
+function extractRpcStructuredMeta(parsedJson) {
+  if (!parsedJson || typeof parsedJson !== "object" || Array.isArray(parsedJson)) {
+    return {};
+  }
+  const root = parsedJson;
+  const errObj = root.error && typeof root.error === "object" && !Array.isArray(root.error) ? root.error : root;
+  const errorStatus = typeof errObj.status === "string" && errObj.status.trim() !== "" ? errObj.status.trim() : void 0;
+  let retryInfoDelayMs;
+  let quotaResetDelayMs;
+  let errorReason;
+  const details = Array.isArray(errObj.details) ? errObj.details : [];
+  for (const item of details) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item;
+    const typeStr = typeof rec["@type"] === "string" ? rec["@type"] : "";
+    if (typeof rec.reason === "string" && rec.reason.trim() !== "" && !errorReason) {
+      errorReason = rec.reason.trim();
+    }
+    if (typeStr.includes("RetryInfo") || "retryDelay" in rec || "retry_delay" in rec) {
+      const delay = parseDurationOrSeconds(rec.retryDelay ?? rec.retry_delay);
+      if (delay !== void 0 && retryInfoDelayMs === void 0) {
+        retryInfoDelayMs = delay;
+      }
+    }
+    const meta = rec.metadata && typeof rec.metadata === "object" && !Array.isArray(rec.metadata) ? rec.metadata : void 0;
+    if (meta) {
+      const qDelay = parseDurationOrSeconds(
+        meta.quotaResetDelay ?? meta.quota_reset_delay
+      );
+      if (qDelay !== void 0 && quotaResetDelayMs === void 0) {
+        quotaResetDelayMs = qDelay;
+      }
+      const mRetry = parseDurationOrSeconds(meta.retryDelay ?? meta.retry_delay);
+      if (mRetry !== void 0 && retryInfoDelayMs === void 0) {
+        retryInfoDelayMs = mRetry;
+      }
+    }
+  }
+  const fallbackDelayMs = extractStructuredRetryMs(parsedJson);
+  return {
+    retryInfoDelayMs,
+    quotaResetDelayMs,
+    fallbackDelayMs,
+    errorReason,
+    errorStatus
+  };
+}
+function parseRetryDelayDetails(bodyText, retryAfterHeader) {
+  let rpcMeta = {};
+  try {
+    const parsedJson = JSON.parse(bodyText);
+    rpcMeta = extractRpcStructuredMeta(parsedJson);
+  } catch {
+  }
+  let headerRetryMs;
   if (retryAfterHeader) {
     const trimmed = retryAfterHeader.trim();
     const numeric = Number(trimmed);
     if (Number.isFinite(numeric) && numeric > 0) {
-      return Math.round(numeric * 1e3) + 200;
-    }
-    const parsedDur = parseDurationMs(trimmed);
-    if (parsedDur !== void 0) return parsedDur + 200;
-    const dateMs = Date.parse(trimmed);
-    if (Number.isFinite(dateMs)) {
-      const diff = dateMs - Date.now();
-      if (diff > 0) return diff + 200;
+      headerRetryMs = Math.round(numeric * 1e3) + 200;
+    } else {
+      const parsedDur = parseDurationMs(trimmed);
+      if (parsedDur !== void 0) {
+        headerRetryMs = parsedDur + 200;
+      } else {
+        const dateMs = Date.parse(trimmed);
+        if (Number.isFinite(dateMs)) {
+          const diff = dateMs - Date.now();
+          if (diff > 0) headerRetryMs = Math.round(diff) + 200;
+        }
+      }
     }
   }
-  try {
-    const parsedJson = JSON.parse(bodyText);
-    const structured = extractStructuredRetryMs(parsedJson);
-    if (structured !== void 0) return structured + 200;
-  } catch {
+  if (rpcMeta.retryInfoDelayMs !== void 0) {
+    return {
+      retryAfterMs: rpcMeta.retryInfoDelayMs + 200,
+      ...rpcMeta.quotaResetDelayMs !== void 0 ? { quotaResetDelayMs: rpcMeta.quotaResetDelayMs } : {},
+      delaySource: "retry_info",
+      ...rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {},
+      ...rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}
+    };
+  }
+  if (rpcMeta.quotaResetDelayMs !== void 0) {
+    return {
+      retryAfterMs: rpcMeta.quotaResetDelayMs + 200,
+      quotaResetDelayMs: rpcMeta.quotaResetDelayMs,
+      delaySource: "quota_reset_delay",
+      ...rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {},
+      ...rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}
+    };
+  }
+  if (headerRetryMs !== void 0) {
+    return {
+      retryAfterMs: headerRetryMs,
+      delaySource: "retry_after_header",
+      ...rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {},
+      ...rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}
+    };
+  }
+  if (rpcMeta.fallbackDelayMs !== void 0) {
+    return {
+      retryAfterMs: rpcMeta.fallbackDelayMs + 200,
+      delaySource: "body_regex",
+      ...rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {},
+      ...rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}
+    };
   }
   for (const re of TEXT_DELAY_PATTERNS) {
     const match = re.exec(bodyText);
     if (match?.[1]) {
       const parsed = parseDurationMs(match[1]);
-      if (parsed !== void 0) return parsed + 1e3;
+      if (parsed !== void 0) {
+        return {
+          retryAfterMs: parsed + 1e3,
+          delaySource: "body_regex",
+          ...rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {},
+          ...rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}
+        };
+      }
     }
   }
-  return void 0;
+  return {
+    delaySource: "none",
+    ...rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {},
+    ...rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}
+  };
 }
 function extractMessageFromBody(bodyText) {
   const trimmed = bodyText.trim();
@@ -2286,10 +3153,15 @@ function extractMessageFromBody(bodyText) {
   }
   return trimmed.length > 600 ? `${trimmed.slice(0, 600)}...` : trimmed;
 }
-function classifyUpstreamHttpError(status, bodyText, retryAfterHeader) {
-  const message = extractMessageFromBody(bodyText);
-  const lower = `${message}
+function classifyUpstreamHttpError(status, bodyText, retryAfterHeader, options) {
+  const retrySafetyV2 = options?.retrySafetyV2 !== false;
+  const rawMessage = extractMessageFromBody(bodyText);
+  const message = sanitizeErrorDetailText(rawMessage, 240) ?? rawMessage;
+  const lower = `${rawMessage}
 ${bodyText}`.toLowerCase();
+  const delayMeta = parseRetryDelayDetails(bodyText, retryAfterHeader);
+  const metaTag = delayMeta.errorStatus || delayMeta.errorReason ? `[${[delayMeta.errorStatus, delayMeta.errorReason].filter(Boolean).join("/")}] ` : "";
+  const sanitizedDetail = `${metaTag}${message}`;
   const isOneMillionContextError = lower.includes("maximum number of tokens allowed 1048576") || lower.includes("input token count exceeds the maximum");
   const isContextError = isOneMillionContextError || lower.includes("context_length_exceeded") || lower.includes("context length exceeded") || lower.includes("exceeds the maximum number of tokens") || lower.includes("prompt is too long") || lower.includes("input is too long for this model");
   const isSignatureError = status === 400 && (lower.includes("thoughtsignature") || lower.includes("thought_signature") || lower.includes("invalid signature") || lower.includes("thinking block"));
@@ -2318,14 +3190,57 @@ ${bodyText}`.toLowerCase();
     };
   }
   if (status === 429 || status === 529) {
-    const retryAfterMs = parseRetryDelayMs(bodyText, retryAfterHeader);
-    const isExhaustedQuota = lower.includes("quota_exhausted") || lower.includes("exhausted your capacity") || lower.includes("quota exceeded") || retryAfterMs !== void 0 && retryAfterMs > 6e4;
+    const retryAfterMs = delayMeta.retryAfterMs;
+    const isExplicitQuotaExhaustion = lower.includes("quota_exhausted") || lower.includes("exhausted your capacity") || lower.includes("quota exceeded") || lower.includes("daily limit") || delayMeta.errorReason === "QUOTA_EXHAUSTED" || delayMeta.quotaResetDelayMs !== void 0 || retryAfterMs !== void 0 && retryAfterMs > 6e4;
+    const isExplicitRateLimit = delayMeta.errorReason === "RATE_LIMIT_EXCEEDED" || lower.includes("rate limit") || lower.includes("rate_limit") || lower.includes("too many requests") || lower.includes("per minute") || retryAfterMs !== void 0 && retryAfterMs <= 6e4;
+    if (isExplicitQuotaExhaustion) {
+      return {
+        code: "QUOTA",
+        category: "QUOTA",
+        status,
+        message: sanitizedDetail,
+        retryable: false,
+        subType: "quota_exhausted",
+        ...retryAfterMs !== void 0 ? { retryAfterMs } : {},
+        ...delayMeta.quotaResetDelayMs !== void 0 ? { quotaResetDelayMs: delayMeta.quotaResetDelayMs } : {},
+        delaySource: delayMeta.delaySource,
+        ...delayMeta.errorReason ? { errorReason: delayMeta.errorReason } : {},
+        ...delayMeta.errorStatus ? { errorStatus: delayMeta.errorStatus } : {},
+        sanitizedDetail,
+        isOneMillionContextError: false,
+        isSignatureError: false,
+        isModelNotFound: false
+      };
+    }
+    if (isExplicitRateLimit || !retrySafetyV2) {
+      return {
+        code: "RATE_LIMIT",
+        category: "RATE_LIMIT",
+        status,
+        message: sanitizedDetail,
+        retryable: !retrySafetyV2 || retryAfterMs !== void 0 && retryAfterMs <= SAME_ACCOUNT_MAX_WAIT_V2_MS,
+        subType: isExplicitRateLimit ? "rate_limited" : "resource_exhausted_unknown",
+        ...retryAfterMs !== void 0 ? { retryAfterMs } : {},
+        delaySource: delayMeta.delaySource,
+        ...delayMeta.errorReason ? { errorReason: delayMeta.errorReason } : {},
+        ...delayMeta.errorStatus ? { errorStatus: delayMeta.errorStatus } : {},
+        sanitizedDetail,
+        isOneMillionContextError: false,
+        isSignatureError: false,
+        isModelNotFound: false
+      };
+    }
     return {
-      code: isExhaustedQuota ? "QUOTA" : "RATE_LIMIT",
-      category: isExhaustedQuota ? "QUOTA" : "RATE_LIMIT",
+      code: "QUOTA",
+      category: "QUOTA",
       status,
-      message,
-      retryAfterMs,
+      message: sanitizedDetail,
+      retryable: false,
+      subType: "resource_exhausted_unknown",
+      delaySource: delayMeta.delaySource,
+      ...delayMeta.errorReason ? { errorReason: delayMeta.errorReason } : {},
+      ...delayMeta.errorStatus ? { errorStatus: delayMeta.errorStatus } : {},
+      sanitizedDetail,
       isOneMillionContextError: false,
       isSignatureError: false,
       isModelNotFound: false
@@ -2385,7 +3300,7 @@ ${bodyText}`.toLowerCase();
     isModelNotFound: false
   };
 }
-var AntigravityUpstreamError = class extends LlmError {
+var AntigravityUpstreamError = class extends LlmError2 {
   classified;
   constructor(classified, requestId, cause) {
     super(
@@ -2448,7 +3363,7 @@ async function sleepWithAbort(ms, signal) {
 function linkTimeoutSignal(outerSignal, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => {
-    controller.abort(new LlmError(`Antigravity request timed out after ${timeoutMs}ms`, "TIMEOUT"));
+    controller.abort(new LlmError2(`Antigravity request timed out after ${timeoutMs}ms`, "TIMEOUT"));
   }, timeoutMs);
   const onOuterAbort = () => {
     controller.abort(outerSignal?.reason);
@@ -2470,25 +3385,26 @@ function linkTimeoutSignal(outerSignal, timeoutMs) {
   };
 }
 var AntigravityHttpClient = class {
-  constructor(config) {
+  constructor(config, observer = NOOP_DIAGNOSTIC_OBSERVER) {
     this.config = config;
+    this.observer = observer;
   }
   endpointHealth = new EndpointHealthTracker();
   async post(options) {
-    const transient429Limit = options.allowSameAccount429Retry ? SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES : 0;
+    const transient429Limit = options.allowSameAccount429Retry && !options.disableRetry ? SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES : 0;
     let transientAttempts = 0;
     for (; ; ) {
       try {
-        return await this.postAcrossEndpoints(options);
+        return await this.postAcrossEndpoints(options, transientAttempts + 1);
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
-          const isExplicitShortBackoff = error.classified.retryAfterMs !== void 0 && error.classified.retryAfterMs <= SAME_ACCOUNT_MAX_WAIT_MS;
-          const isTransient429 = error.classified.status === 429 && error.classified.category === "RATE_LIMIT" && isExplicitShortBackoff && transientAttempts < transient429Limit;
+          const maxWait = this.config.retrySafetyV2 ? SAME_ACCOUNT_MAX_WAIT_V2_MS : SAME_ACCOUNT_MAX_WAIT_MS;
+          const isExplicitShortBackoff = error.classified.retryAfterMs !== void 0 && error.classified.retryAfterMs <= maxWait;
+          const allowedByRetrySafety = !this.config.retrySafetyV2 || error.classified.subType === "rate_limited";
+          const isTransient429 = error.classified.status === 429 && error.classified.category === "RATE_LIMIT" && allowedByRetrySafety && isExplicitShortBackoff && transientAttempts < transient429Limit;
           if (isTransient429) {
-            const waitMs = Math.min(
-              SAME_ACCOUNT_MAX_WAIT_MS,
-              error.classified.retryAfterMs ?? (transientAttempts + 1) * 1200
-            );
+            const rawWait = error.classified.retryAfterMs ?? (transientAttempts + 1) * 1200;
+            const waitMs = this.config.retrySafetyV2 ? Math.max(SAME_ACCOUNT_MIN_WAIT_V2_MS, Math.min(maxWait, rawWait)) : Math.min(maxWait, rawWait);
             transientAttempts += 1;
             await sleepWithAbort(waitMs, options.signal);
             continue;
@@ -2498,7 +3414,7 @@ var AntigravityHttpClient = class {
       }
     }
   }
-  async postAcrossEndpoints(options) {
+  async postAcrossEndpoints(options, retryRound = 1) {
     const candidates = this.endpointHealth.orderedEndpoints(this.config.endpoints);
     const headers = buildOutboundHeaders({
       accessToken: options.accessToken,
@@ -2507,6 +3423,7 @@ var AntigravityHttpClient = class {
       isContentRequest: options.isContentRequest
     });
     const bodyJson = JSON.stringify(options.body);
+    const bodyBytes = Buffer.byteLength(bodyJson, "utf8");
     const timeoutMs = options.timeoutMs ?? this.config.requestTimeoutMs;
     let lastError;
     for (let i = 0; i < candidates.length; i++) {
@@ -2514,6 +3431,8 @@ var AntigravityHttpClient = class {
       const hasNext = i + 1 < candidates.length;
       const query = options.queryString ? `?${options.queryString}` : "";
       const url = `${endpoint}/v1internal:${options.method}${query}`;
+      const attemptNum = (retryRound - 1) * candidates.length + (i + 1);
+      const startedAt = Date.now();
       const { signal, cleanup } = linkTimeoutSignal(options.signal, timeoutMs);
       try {
         const response = await fetch(url, {
@@ -2524,13 +3443,62 @@ var AntigravityHttpClient = class {
         });
         if (response.ok) {
           this.endpointHealth.markHealthy(endpoint);
+          if (this.observer.enabled) {
+            this.observer.record({
+              requestId: options.requestId ?? `${options.method}-${startedAt}`,
+              sessionId: options.diagnosticSessionId,
+              source: options.diagnosticSource ?? (options.isContentRequest ? "direct-adapter" : "aux"),
+              method: options.method,
+              attempt: attemptNum,
+              endpoint,
+              accountIdHash: options.diagnosticAccountId,
+              entitlementSource: options.entitlementSource,
+              entitlementGeneration: options.entitlementGeneration,
+              wirePolicyV2: this.config.wirePolicyV2,
+              retrySafetyV2: this.config.retrySafetyV2,
+              resolvedMaxTokens: options.resolvedMaxTokens,
+              headers,
+              body: options.body,
+              byteLength: bodyBytes,
+              httpStatus: response.status,
+              durationMs: Date.now() - startedAt
+            });
+          }
           return { response, endpoint };
         }
         const errText = await response.text();
         const retryAfter = response.headers.get("retry-after");
-        const classified = classifyUpstreamHttpError(response.status, errText, retryAfter);
+        const classified = classifyUpstreamHttpError(response.status, errText, retryAfter, {
+          retrySafetyV2: this.config.retrySafetyV2
+        });
         const upstreamError = new AntigravityUpstreamError(classified, options.requestId);
-        if (hasNext && shouldTryNextEndpoint(response.status, endpoint)) {
+        if (this.observer.enabled) {
+          this.observer.record({
+            requestId: options.requestId ?? `${options.method}-${startedAt}`,
+            sessionId: options.diagnosticSessionId,
+            source: options.diagnosticSource ?? (options.isContentRequest ? "direct-adapter" : "aux"),
+            method: options.method,
+            attempt: attemptNum,
+            endpoint,
+            accountIdHash: options.diagnosticAccountId,
+            entitlementSource: options.entitlementSource,
+            entitlementGeneration: options.entitlementGeneration,
+            wirePolicyV2: this.config.wirePolicyV2,
+            retrySafetyV2: this.config.retrySafetyV2,
+            resolvedMaxTokens: options.resolvedMaxTokens,
+            headers,
+            body: options.body,
+            byteLength: bodyBytes,
+            httpStatus: response.status,
+            classifiedCode: classified.code,
+            classifiedSubType: classified.subType,
+            retryAfterMs: classified.retryAfterMs,
+            parsedDelaySource: classified.delaySource,
+            errorDetailSummary: classified.sanitizedDetail ?? classified.message,
+            durationMs: Date.now() - startedAt
+          });
+        }
+        if (!options.disableRetry && hasNext && shouldTryNextEndpoint(response.status, endpoint)) {
           this.endpointHealth.markFailure(endpoint);
           lastError = upstreamError;
           continue;
@@ -2538,7 +3506,7 @@ var AntigravityHttpClient = class {
         throw upstreamError;
       } catch (error) {
         if (options.signal?.aborted) {
-          throw new LlmError("Request aborted by caller", "ABORTED", {
+          throw new LlmError2("Request aborted by caller", "ABORTED", {
             ...options.requestId ? { requestId: ProviderRequestId(options.requestId) } : {},
             cause: error
           });
@@ -2546,7 +3514,7 @@ var AntigravityHttpClient = class {
         if (error instanceof AntigravityUpstreamError) {
           throw error;
         }
-        const isTimeout = error instanceof LlmError && error.code === "TIMEOUT";
+        const isTimeout = error instanceof LlmError2 && error.code === "TIMEOUT";
         const message = error instanceof Error ? error.message : String(error);
         const transportErr = new AntigravityUpstreamError(
           {
@@ -2560,7 +3528,7 @@ var AntigravityHttpClient = class {
           options.requestId,
           error
         );
-        if (hasNext) {
+        if (!options.disableRetry && hasNext) {
           this.endpointHealth.markFailure(endpoint);
           lastError = transportErr;
           continue;
@@ -2586,6 +3554,7 @@ var AntigravityHttpClient = class {
 
 // src/host/translate.ts
 import {
+  LlmError as LlmError3,
   ToolCallId,
   offloadedImageText,
   requestImageHandleText
@@ -2729,6 +3698,30 @@ var CacheTelemetryTracker = class {
 };
 
 // src/host/translate.ts
+var ALLOWED_CREDIT_TYPES = /* @__PURE__ */ new Set(["GOOGLE_ONE_AI"]);
+function normalizeEnabledCreditTypes(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return void 0;
+  const deduped = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!ALLOWED_CREDIT_TYPES.has(trimmed) || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    deduped.push(trimmed);
+  }
+  return deduped.length > 0 ? deduped : void 0;
+}
+function validateMaxOutputTokens(value) {
+  if (value === void 0) return void 0;
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isSafeInteger(value) || value <= 0) {
+    throw new LlmError3(
+      `Invalid maxTokens value: ${String(value)}. Expected a positive safe integer.`,
+      "INVALID_REQUEST"
+    );
+  }
+  return value;
+}
 function flattenTextBlocks(blocks) {
   const parts = [];
   for (const block of blocks) {
@@ -3114,7 +4107,7 @@ function buildAntigravityRequest(input) {
   );
   const hasToolActivity = tools !== void 0 && tools.length > 0 || hasToolInteractions;
   const modelTurns = contents.filter((c) => c.role === "model").length;
-  const requestId = buildOfficialRequestId(
+  const requestId = input.requestId ?? buildOfficialRequestId(
     options.sessionId,
     contents.length,
     input.trajectoryId,
@@ -3133,8 +4126,11 @@ function buildAntigravityRequest(input) {
     used_non_gemini_model: String(isNonGemini)
   };
   const generationConfig = {};
-  if (typeof options.maxTokens === "number" && Number.isFinite(options.maxTokens) && options.maxTokens > 0) {
-    generationConfig.maxOutputTokens = Math.trunc(options.maxTokens);
+  if (options.maxTokens !== void 0) {
+    const validatedMaxOutputTokens = validateMaxOutputTokens(options.maxTokens);
+    if (!input.omitMaxOutputTokens && validatedMaxOutputTokens !== void 0) {
+      generationConfig.maxOutputTokens = validatedMaxOutputTokens;
+    }
   }
   const thinkingConfig = buildThinkingConfig({
     model: canonicalModel,
@@ -3180,6 +4176,10 @@ function buildAntigravityRequest(input) {
   };
   if (hasToolActivity) {
     envelope.requestType = "agent";
+  }
+  const enabledCreditTypes = normalizeEnabledCreditTypes(input.enabledCreditTypes);
+  if (enabledCreditTypes && enabledCreditTypes.length > 0) {
+    envelope.enabledCreditTypes = enabledCreditTypes;
   }
   return { envelope, requestId, canonicalModel, upstreamModel, hasToolActivity };
 }
@@ -3413,7 +4413,7 @@ function createStreamIdleWatchdog(parentSignal, idleTimeoutMs) {
     if (timer !== void 0) clearTimeout(timer);
     timer = setTimeout(() => {
       controller.abort(
-        new LlmError2(
+        new LlmError4(
           `Antigravity stream idle timeout after ${idleTimeoutMs}ms`,
           "TIMEOUT"
         )
@@ -3452,9 +4452,17 @@ var AntigravityService = class {
     this.resolveAttachments = deps?.resolveAttachments;
     this.resolveFsHostMapper = deps?.resolveFsHostMapper;
     this.onAdaptersUpdated = deps?.onAdaptersUpdated;
+    this.diagnostics = config.diagnosticMode === "metadata" ? new JsonlDiagnosticSink({
+      diagnosticDir: path5.join(
+        resolveAntigravityStorageDir(config.storageDir),
+        "diagnostics"
+      ),
+      mode: "metadata",
+      retainDays: config.diagnosticRetainDays
+    }) : NOOP_DIAGNOSTIC_OBSERVER;
     this.accounts = new AntigravityAccountManager(config);
     this.catalog = new AntigravityCatalog(config);
-    this.client = new AntigravityHttpClient(config);
+    this.client = new AntigravityHttpClient(config, this.diagnostics);
     this.oauth = new AntigravityOAuthManager(config, async (creds) => {
       const account = await this.accounts.upsertAccountFromOAuth(creds);
       await this.refreshQuotaAndModelsForAccount(account.id).catch(() => void 0);
@@ -3466,11 +4474,20 @@ var AntigravityService = class {
   catalog;
   client;
   oauth;
+  diagnostics;
   telemetry = new CacheTelemetryTracker();
   adapter;
   resolveAttachments;
   resolveFsHostMapper;
   onAdaptersUpdated;
+  disposed = false;
+  async dispose() {
+    this.disposed = true;
+    this.oauth.cancelLogin();
+    await this.accounts.flushAndDispose();
+    await this.catalog.flushAndDispose();
+    await this.diagnostics.dispose?.();
+  }
   notifyAdaptersUpdated() {
     this.onAdaptersUpdated?.();
   }
@@ -3485,6 +4502,11 @@ var AntigravityService = class {
         email: account.email,
         signal
       });
+      await this.accounts.updateAccountEntitlement(
+        account.id,
+        info,
+        "loadCodeAssist"
+      );
       if (info.projectId) {
         await this.accounts.updateAccountMeta(account.id, {
           projectId: info.projectId,
@@ -3501,8 +4523,9 @@ var AntigravityService = class {
     await this.accounts.ensureLoaded();
     await this.catalog.ensureLoaded();
     const target = accountId ? this.accounts.getAccountById(accountId) : this.accounts.getActiveAccount();
-    if (!target) return void 0;
+    if (!target || this.disposed || signal?.aborted) return void 0;
     const fresh = await this.accounts.ensureFreshToken(target.id, signal);
+    if (this.disposed || signal?.aborted) return void 0;
     const result = await fetchAccountQuotaAndModels({
       client: this.client,
       config: this.config,
@@ -3512,8 +4535,16 @@ var AntigravityService = class {
       projectIdHint: fresh.projectId,
       signal
     });
+    if (this.disposed || signal?.aborted) return result.snapshot;
     this.accounts.setQuota(result.snapshot);
-    if (result.models.length > 0) {
+    if (result.tierInfo) {
+      await this.accounts.updateAccountEntitlement(
+        fresh.id,
+        result.tierInfo,
+        "loadCodeAssist"
+      );
+    }
+    if (result.models.length > 0 && !this.disposed && !signal?.aborted) {
       await this.catalog.saveDynamicModels(result.models);
     }
     return result.snapshot;
@@ -3524,6 +4555,7 @@ var AntigravityService = class {
     const active = this.accounts.getActiveAccount();
     const quota = active ? this.accounts.getQuota(active.id) : void 0;
     const options = this.catalog.mergedCatalog(quota);
+    const diagnostics = await this.diagnostics.summarize?.();
     return {
       providerId: PROVIDER_ID,
       providerName: PROVIDER_DISPLAY_NAME,
@@ -3535,6 +4567,11 @@ var AntigravityService = class {
       ...this.accounts.getColdNotice() ? { coldNotice: this.accounts.getColdNotice() } : {},
       recentSwitches: this.accounts.getRecentSwitches(),
       telemetry: this.telemetry.summary(),
+      ...diagnostics ? { diagnostics } : {},
+      flags: {
+        wirePolicyV2: this.config.wirePolicyV2,
+        retrySafetyV2: this.config.retrySafetyV2
+      },
       models: {
         enabledModelIds: this.catalog.getEnabledModelIds(),
         options,
@@ -3554,11 +4591,13 @@ var AntigravityService = class {
         ok: false,
         detail: "No Google account connected yet."
       });
+      const diagnostics2 = await this.diagnostics.summarize?.();
       return {
         ok: false,
         checkedAt: Date.now(),
         userAgent,
-        checks
+        checks,
+        ...diagnostics2 ? { diagnostics: diagnostics2 } : {}
       };
     }
     let fresh;
@@ -3578,11 +4617,13 @@ var AntigravityService = class {
         detail: error instanceof Error ? error.message : String(error),
         latencyMs: Date.now() - t0
       });
+      const diagnostics2 = await this.diagnostics.summarize?.();
       return {
         ok: false,
         checkedAt: Date.now(),
         userAgent,
-        checks
+        checks,
+        ...diagnostics2 ? { diagnostics: diagnostics2 } : {}
       };
     }
     const t1 = Date.now();
@@ -3600,6 +4641,11 @@ var AntigravityService = class {
         tierLabel: assist.tierLabel,
         tierId: assist.tierId
       });
+      await this.accounts.updateAccountEntitlement(
+        fresh.id,
+        assist,
+        "loadCodeAssist"
+      );
       checks.push({
         name: "loadCodeAssist",
         ok: true,
@@ -3654,11 +4700,13 @@ var AntigravityService = class {
       ok: cleanHeadersOk,
       detail: cleanHeadersOk ? "Content requests omit x-goog-user-project and client spoof headers" : "Header hygiene check failed"
     });
+    const diagnostics = await this.diagnostics.summarize?.();
     return {
       ok: checks.every((c) => c.ok),
       checkedAt: Date.now(),
       userAgent,
-      checks
+      checks,
+      ...diagnostics ? { diagnostics } : {}
     };
   }
   async resolveImages(options, signal) {
@@ -3673,7 +4721,7 @@ var AntigravityService = class {
     if (refs.size === 0) return void 0;
     const attachments = this.resolveAttachments?.();
     if (!attachments || typeof attachments.readImageRequest !== "function") {
-      throw new LlmError2(
+      throw new LlmError4(
         "Antigravity image input requires the DSH durable attachment service",
         "UNSUPPORTED_CONTENT"
       );
@@ -3757,20 +4805,40 @@ var AntigravityAdapter = class extends LlmAdapter {
     };
   }
   providerRetryPolicy(provider) {
+    if (!this.service.config.retrySafetyV2) {
+      return resolveRetryPolicy(
+        {
+          mode: "normal",
+          maxRetries: 2,
+          retryableCodes: [
+            "RATE_LIMIT",
+            "SERVER",
+            "TIMEOUT",
+            "TRANSPORT",
+            "EMPTY_RESPONSE"
+          ],
+          backoff: {
+            initialDelayMs: 600,
+            maxDelayMs: 8e3,
+            jitterRatio: 0.1
+          }
+        },
+        `antigravity:${provider}`
+      );
+    }
     return resolveRetryPolicy(
       {
         mode: "normal",
         maxRetries: 2,
         retryableCodes: [
-          "RATE_LIMIT",
           "SERVER",
           "TIMEOUT",
           "TRANSPORT",
           "EMPTY_RESPONSE"
         ],
         backoff: {
-          initialDelayMs: 600,
-          maxDelayMs: 8e3,
+          initialDelayMs: 1e3,
+          maxDelayMs: 12e3,
           jitterRatio: 0.1
         }
       },
@@ -3796,7 +4864,7 @@ var AntigravityAdapter = class extends LlmAdapter {
     signal?.throwIfAborted();
     const active = this.service.accounts.getActiveAccount();
     if (!active) {
-      throw new LlmError2(
+      throw new LlmError4(
         "No Antigravity Google account is signed in. Open Settings -> Antigravity or run /antigravity-accounts to connect one.",
         "AUTH"
       );
@@ -3805,8 +4873,8 @@ var AntigravityAdapter = class extends LlmAdapter {
       const fresh = await this.service.accounts.ensureFreshToken(active.id, signal);
       await this.service.ensureAccountProjectId(fresh, signal);
     } catch (error) {
-      if (error instanceof LlmError2) throw error;
-      throw new LlmError2(
+      if (error instanceof LlmError4) throw error;
+      throw new LlmError4(
         `Antigravity credential refresh failed: ${error instanceof Error ? error.message : String(error)}`,
         "AUTH",
         { cause: error }
@@ -3815,12 +4883,17 @@ var AntigravityAdapter = class extends LlmAdapter {
     const resolvedModel = await this.resolveModel(provider, model, signal);
     return {
       model: resolvedModel,
-      stream: (options) => this.stream(options)
+      stream: (opts) => this.stream({ diagnosticSource: "agent-loop", ...opts })
     };
   }
   async *stream(options) {
     await this.service.accounts.ensureLoaded();
     await this.service.catalog.ensureLoaded();
+    const policy = this.service.catalog.resolveRequestPolicy(
+      options.model,
+      options.maxTokens
+    );
+    const effectiveOptions = policy.resolvedMaxTokens !== void 0 && options.maxTokens !== policy.resolvedMaxTokens ? { ...options, maxTokens: policy.resolvedMaxTokens } : options;
     const dispatch = this.service.catalog.resolveUpstreamDispatch(
       options.model,
       options.reasoningEffort
@@ -3829,11 +4902,10 @@ var AntigravityAdapter = class extends LlmAdapter {
     const pool = classifyPool(canonicalModel);
     const sessionKey = options.sessionId?.trim() || "default";
     const images = await this.service.resolveImages(options, options.signal);
-    let failoverAttemptsRemaining = 1;
-    let streamRetryAttemptsRemaining = Math.max(
-      2,
-      this.service.config.endpoints.length
-    );
+    const disableRetry = options.disableRetry === true;
+    const disableAccountFailover = options.disableAccountFailover === true;
+    let failoverAttemptsRemaining = disableAccountFailover ? 0 : 1;
+    let streamRetryAttemptsRemaining = disableRetry ? 0 : Math.max(2, this.service.config.endpoints.length);
     let sameEndpointStreamRetried = false;
     let bumped1M = false;
     let activeUpstreamModel = dispatch.upstreamModel;
@@ -3846,7 +4918,7 @@ var AntigravityAdapter = class extends LlmAdapter {
           pool
         ).account;
       } catch (error) {
-        throw new LlmError2(
+        throw new LlmError4(
           error instanceof Error ? error.message : String(error),
           "AUTH",
           { cause: error }
@@ -3865,13 +4937,14 @@ var AntigravityAdapter = class extends LlmAdapter {
           sessionKey,
           category: "AUTH",
           message: msg,
-          pool
+          pool,
+          allowFailover: !disableAccountFailover
         });
-        if (switched && failoverAttemptsRemaining > 0) {
+        if (!disableAccountFailover && switched && failoverAttemptsRemaining > 0) {
           failoverAttemptsRemaining -= 1;
           continue;
         }
-        throw new LlmError2(
+        throw new LlmError4(
           `Antigravity OAuth refresh failed (${selected.email}): ${msg}`,
           "AUTH",
           { cause: error }
@@ -3885,9 +4958,11 @@ var AntigravityAdapter = class extends LlmAdapter {
         freshAccount.id,
         sessionKey
       );
+      const trustedEntitlement = policy.allowCredits ? this.service.accounts.resolveTrustedEntitlement(freshAccount.id) : void 0;
+      const enabledCreditTypes = policy.allowCredits && trustedEntitlement?.availableCreditsState === "present" ? trustedEntitlement.enabledCreditTypes : void 0;
       const trajectoryId = this.getOrCreateTrajectoryId(freshAccount.id, sessionKey);
       const { envelope, requestId } = buildAntigravityRequest({
-        options,
+        options: effectiveOptions,
         accountId: freshAccount.id,
         accountEmail: freshAccount.email,
         projectId,
@@ -3896,7 +4971,8 @@ var AntigravityAdapter = class extends LlmAdapter {
         defaultThinkingEffort: this.service.config.defaultThinkingEffort,
         upstreamModel: activeUpstreamModel,
         effectiveEffort: dispatch.effectiveEffort,
-        images
+        images,
+        enabledCreditTypes
       });
       await this.ensureTrajectoryAclRegistered({
         accountId: freshAccount.id,
@@ -3917,13 +4993,20 @@ var AntigravityAdapter = class extends LlmAdapter {
           requestId,
           isContentRequest: true,
           signal: options.signal,
-          allowSameAccount429Retry: true
+          allowSameAccount429Retry: !disableRetry,
+          disableRetry,
+          diagnosticSource: options.diagnosticSource ?? "direct-adapter",
+          diagnosticSessionId: sessionKey,
+          diagnosticAccountId: freshAccount.id,
+          entitlementSource: trustedEntitlement?.source,
+          entitlementGeneration: trustedEntitlement?.accountGeneration,
+          resolvedMaxTokens: policy.resolvedMaxTokens
         });
         response = res.response;
         usedEndpoint = res.endpoint;
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
-          if (error.classified.isOneMillionContextError && !bumped1M) {
+          if (!disableRetry && error.classified.isOneMillionContextError && !bumped1M) {
             bumped1M = true;
             this.service.accounts.bumpUpstreamSessionGeneration(
               freshAccount.id,
@@ -3931,7 +5014,7 @@ var AntigravityAdapter = class extends LlmAdapter {
             );
             continue;
           }
-          if ((error.classified.isModelNotFound || error.classified.status === 404) && fallbackVariantIdx < dispatch.fallbackUpstreamModels.length) {
+          if (!disableRetry && (error.classified.isModelNotFound || error.classified.status === 404) && fallbackVariantIdx < dispatch.fallbackUpstreamModels.length) {
             activeUpstreamModel = dispatch.fallbackUpstreamModels[fallbackVariantIdx];
             fallbackVariantIdx += 1;
             continue;
@@ -3942,9 +5025,10 @@ var AntigravityAdapter = class extends LlmAdapter {
             category: error.classified.category,
             message: error.classified.message,
             retryAfterMs: error.classified.retryAfterMs,
-            pool
+            pool,
+            allowFailover: !disableAccountFailover
           });
-          if (switched && failoverAttemptsRemaining > 0) {
+          if (!disableAccountFailover && switched && failoverAttemptsRemaining > 0) {
             failoverAttemptsRemaining -= 1;
             continue;
           }
@@ -3952,7 +5036,7 @@ var AntigravityAdapter = class extends LlmAdapter {
         throw error;
       }
       if (!response.body) {
-        throw new LlmError2(
+        throw new LlmError4(
           "Antigravity stream response contained no body",
           "EMPTY_RESPONSE"
         );
@@ -3971,7 +5055,7 @@ var AntigravityAdapter = class extends LlmAdapter {
       try {
         for (; ; ) {
           if (watchdog.signal.aborted) {
-            throw watchdog.signal.reason instanceof Error ? watchdog.signal.reason : new LlmError2("Antigravity stream aborted", "ABORTED");
+            throw watchdog.signal.reason instanceof Error ? watchdog.signal.reason : new LlmError4("Antigravity stream aborted", "ABORTED");
           }
           const readPromise = reader.read();
           const abortPromise = new Promise((_resolve, reject) => {
@@ -3996,7 +5080,7 @@ var AntigravityAdapter = class extends LlmAdapter {
         }
         const finalized = decoder.finish();
         if (!finalized.hasOutput && !emittedAnyChunk) {
-          throw new LlmError2(
+          throw new LlmError4(
             "Antigravity upstream stream completed with zero content blocks",
             "EMPTY_RESPONSE"
           );
@@ -4007,6 +5091,33 @@ var AntigravityAdapter = class extends LlmAdapter {
           accountEmail: freshAccount.email,
           usage: finalized.usage
         });
+        if (this.service.diagnostics.enabled) {
+          const finishChunk = finalized.chunks.find(
+            (c) => c.type === "finish"
+          );
+          this.service.diagnostics.record({
+            requestId,
+            sessionId: sessionKey,
+            source: options.diagnosticSource ?? "direct-adapter",
+            method: "streamGenerateContent:complete",
+            attempt: 1,
+            endpoint: usedEndpoint,
+            accountIdHash: freshAccount.id,
+            entitlementSource: trustedEntitlement?.source,
+            entitlementGeneration: trustedEntitlement?.accountGeneration,
+            wirePolicyV2: this.service.config.wirePolicyV2,
+            retrySafetyV2: this.service.config.retrySafetyV2,
+            resolvedMaxTokens: policy.resolvedMaxTokens,
+            finishReason: finishChunk?.reason?.kind,
+            usageSummary: {
+              inputTokens: finalized.usage.inputTokens,
+              outputTokens: finalized.usage.outputTokens,
+              cacheReadTokens: finalized.usage.cacheReadTokens,
+              reasoningTokens: finalized.usage.reasoningTokens,
+              totalTokens: finalized.usage.totalTokens
+            }
+          });
+        }
         for (const chunk of finalized.chunks) {
           yield chunk;
         }
@@ -4016,14 +5127,34 @@ var AntigravityAdapter = class extends LlmAdapter {
           await reader.cancel();
         } catch {
         }
+        if (this.service.diagnostics.enabled) {
+          this.service.diagnostics.record({
+            requestId,
+            sessionId: sessionKey,
+            source: options.diagnosticSource ?? "direct-adapter",
+            method: "streamGenerateContent:error",
+            attempt: 1,
+            endpoint: usedEndpoint || "unknown",
+            accountIdHash: freshAccount.id,
+            entitlementSource: trustedEntitlement?.source,
+            entitlementGeneration: trustedEntitlement?.accountGeneration,
+            wirePolicyV2: this.service.config.wirePolicyV2,
+            retrySafetyV2: this.service.config.retrySafetyV2,
+            resolvedMaxTokens: policy.resolvedMaxTokens,
+            classifiedCode: error instanceof LlmError4 ? error.code : void 0,
+            errorDetailSummary: sanitizeErrorDetailText(
+              error instanceof Error ? error.message : String(error)
+            )
+          });
+        }
         if (options.signal?.aborted) {
-          throw new LlmError2("Antigravity stream aborted by caller", "ABORTED", {
+          throw new LlmError4("Antigravity stream aborted by caller", "ABORTED", {
             cause: error
           });
         }
         if (error instanceof AntigravityUpstreamError) {
           const isRetriableStreamStatus = error.classified.status !== void 0 && (error.classified.status >= 500 || error.classified.status === 408) || error.classified.category === "SERVER" || error.classified.category === "TRANSPORT";
-          if (!emittedAnyChunk && isRetriableStreamStatus && usedEndpoint) {
+          if (!disableRetry && !emittedAnyChunk && isRetriableStreamStatus && usedEndpoint) {
             if (!sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
               sameEndpointStreamRetried = true;
               streamRetryAttemptsRemaining -= 1;
@@ -4032,7 +5163,7 @@ var AntigravityAdapter = class extends LlmAdapter {
             }
             this.service.client.endpointHealth.markFailure(usedEndpoint);
           }
-          if (!emittedAnyChunk && isRetriableStreamStatus && streamRetryAttemptsRemaining > 0) {
+          if (!disableRetry && !emittedAnyChunk && isRetriableStreamStatus && streamRetryAttemptsRemaining > 0) {
             streamRetryAttemptsRemaining -= 1;
             continue;
           }
@@ -4042,22 +5173,23 @@ var AntigravityAdapter = class extends LlmAdapter {
             category: error.classified.category,
             message: error.classified.message,
             retryAfterMs: error.classified.retryAfterMs,
-            pool
+            pool,
+            allowFailover: !disableAccountFailover
           });
-          if (!emittedAnyChunk && switched && failoverAttemptsRemaining > 0) {
+          if (!disableAccountFailover && !emittedAnyChunk && switched && failoverAttemptsRemaining > 0) {
             failoverAttemptsRemaining -= 1;
             continue;
           }
         }
-        if (error instanceof LlmError2) throw error;
+        if (error instanceof LlmError4) throw error;
         if (!emittedAnyChunk && usedEndpoint) {
           this.service.client.endpointHealth.markFailure(usedEndpoint);
         }
-        if (!emittedAnyChunk && streamRetryAttemptsRemaining > 0) {
+        if (!disableRetry && !emittedAnyChunk && streamRetryAttemptsRemaining > 0) {
           streamRetryAttemptsRemaining -= 1;
           continue;
         }
-        throw new LlmError2(
+        throw new LlmError4(
           `Antigravity stream failed: ${error instanceof Error ? error.message : String(error)}`,
           "TRANSPORT",
           { cause: error }
@@ -4119,6 +5251,11 @@ function registerAntigravityCommands(ctx, service) {
           lines.push(
             `Telemetry: ${status.telemetry.turnCount} turns, cache hit ${formatPct(status.telemetry.aggregateCacheHitRate)} (${status.telemetry.totalCacheReadTokens} cached / ${status.telemetry.totalUncachedInputTokens} uncached input)`
           );
+          if (status.diagnostics) {
+            lines.push(
+              `Diagnostics: mode=${status.diagnostics.mode}, records=${status.diagnostics.recordCount}, bytes=${status.diagnostics.fileBytes}`
+            );
+          }
           return { kind: "success", text: lines.join("\n") };
         }
       });
@@ -4387,6 +5524,19 @@ function registerAntigravityWebApi(ctx, service) {
               const report = await service.runDoctor();
               return sendJson(res, 200, { ok: true, value: report });
             }
+            if (subpath === "diagnostics") {
+              if (req.method !== "GET") return sendMethodNotAllowed(res);
+              const summary = await service.diagnostics.summarize?.();
+              return sendJson(res, 200, { ok: true, value: summary });
+            }
+            if (subpath === "diagnostics/clear") {
+              if (req.method !== "POST") return sendMethodNotAllowed(res);
+              await service.diagnostics.clear?.();
+              return sendJson(res, 200, {
+                ok: true,
+                value: await service.getStatusPayload()
+              });
+            }
             if (subpath === "dismiss-cold-notice") {
               if (req.method !== "POST") return sendMethodNotAllowed(res);
               service.accounts.dismissColdNotice();
@@ -4451,22 +5601,24 @@ function apply(ctx, rawConfig) {
     };
   }, "dsh-antigravity: adapter");
   let disposed = false;
+  const disposalAbort = new AbortController();
   void service.accounts.ensureLoaded().then(async () => {
-    if (disposed) return;
+    if (disposed || disposalAbort.signal.aborted) return;
     await service.catalog.ensureLoaded();
-    if (disposed) return;
+    if (disposed || disposalAbort.signal.aborted) return;
     const active = service.accounts.getActiveAccount();
     if (active && !active.needsReauth) {
-      await service.refreshQuotaAndModelsForAccount(active.id).catch(() => void 0);
+      await service.refreshQuotaAndModelsForAccount(active.id, disposalAbort.signal).catch(() => void 0);
     }
-    if (!disposed) {
+    if (!disposed && !disposalAbort.signal.aborted) {
       service.notifyAdaptersUpdated();
     }
   }).catch(() => void 0);
   ctx.effect(
     () => () => {
       disposed = true;
-      service.oauth.cancelLogin();
+      disposalAbort.abort();
+      return service.dispose().catch(() => void 0);
     },
     "dsh-antigravity: cleanup"
   );

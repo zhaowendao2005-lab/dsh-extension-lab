@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   LlmAdapter,
   LlmError,
@@ -19,6 +20,12 @@ import {
   type AntigravityPluginConfig,
 } from './config.ts';
 import {
+  JsonlDiagnosticSink,
+  NOOP_DIAGNOSTIC_OBSERVER,
+  sanitizeErrorDetailText,
+  type ProtocolDiagnosticObserver,
+} from './diagnostics.ts';
+import {
   buildHubUserAgent,
   buildOutboundHeaders,
   deriveTrajectoryId,
@@ -31,6 +38,7 @@ import {
   fetchAccountQuotaAndModels,
   loadCodeAssist,
 } from './quota.ts';
+import { resolveAntigravityStorageDir } from './storage.ts';
 import {
   GeminiSseStreamDecoder,
   buildAntigravityRequest,
@@ -44,6 +52,15 @@ import type {
   DoctorReport,
   QuotaSnapshotSummary,
 } from '../shared/types.ts';
+
+export interface AntigravityGenerateOptions extends GenerateOptions {
+  /** Disable local retries and cross-endpoint fallback (single-shot probe safety). */
+  disableRetry?: boolean;
+  /** Disable sticky account cooldown/failover (pinned single-account probe safety). */
+  disableAccountFailover?: boolean;
+  /** Optional diagnostic caller tag. */
+  diagnosticSource?: 'agent-loop' | 'direct-adapter' | 'aux';
+}
 
 interface AttachmentImageVersionLike {
   data: Uint8Array;
@@ -151,12 +168,14 @@ export class AntigravityService {
   readonly catalog: AntigravityCatalog;
   readonly client: AntigravityHttpClient;
   readonly oauth: AntigravityOAuthManager;
+  readonly diagnostics: ProtocolDiagnosticObserver;
   readonly telemetry = new CacheTelemetryTracker();
   readonly adapter: AntigravityAdapter;
 
   private readonly resolveAttachments?: () => AttachmentStoreLike | undefined;
   private readonly resolveFsHostMapper?: () => ((hostPath: string) => string | undefined) | undefined;
   private readonly onAdaptersUpdated?: () => void;
+  private disposed = false;
 
   constructor(
     readonly config: AntigravityPluginConfig,
@@ -170,15 +189,34 @@ export class AntigravityService {
     this.resolveFsHostMapper = deps?.resolveFsHostMapper;
     this.onAdaptersUpdated = deps?.onAdaptersUpdated;
 
+    this.diagnostics =
+      config.diagnosticMode === 'metadata'
+        ? new JsonlDiagnosticSink({
+            diagnosticDir: path.join(
+              resolveAntigravityStorageDir(config.storageDir),
+              'diagnostics',
+            ),
+            mode: 'metadata',
+            retainDays: config.diagnosticRetainDays,
+          })
+        : NOOP_DIAGNOSTIC_OBSERVER;
     this.accounts = new AntigravityAccountManager(config);
     this.catalog = new AntigravityCatalog(config);
-    this.client = new AntigravityHttpClient(config);
+    this.client = new AntigravityHttpClient(config, this.diagnostics);
     this.oauth = new AntigravityOAuthManager(config, async (creds) => {
       const account = await this.accounts.upsertAccountFromOAuth(creds);
       await this.refreshQuotaAndModelsForAccount(account.id).catch(() => undefined);
       this.notifyAdaptersUpdated();
     });
     this.adapter = new AntigravityAdapter(this);
+  }
+
+  async dispose(): Promise<void> {
+    this.disposed = true;
+    this.oauth.cancelLogin();
+    await this.accounts.flushAndDispose();
+    await this.catalog.flushAndDispose();
+    await this.diagnostics.dispose?.();
   }
 
   notifyAdaptersUpdated(): void {
@@ -199,6 +237,11 @@ export class AntigravityService {
         email: account.email,
         signal,
       });
+      await this.accounts.updateAccountEntitlement(
+        account.id,
+        info,
+        'loadCodeAssist',
+      );
       if (info.projectId) {
         await this.accounts.updateAccountMeta(account.id, {
           projectId: info.projectId,
@@ -223,9 +266,10 @@ export class AntigravityService {
     const target = accountId
       ? this.accounts.getAccountById(accountId)
       : this.accounts.getActiveAccount();
-    if (!target) return undefined;
+    if (!target || this.disposed || signal?.aborted) return undefined;
 
     const fresh = await this.accounts.ensureFreshToken(target.id, signal);
+    if (this.disposed || signal?.aborted) return undefined;
     const result = await fetchAccountQuotaAndModels({
       client: this.client,
       config: this.config,
@@ -235,9 +279,17 @@ export class AntigravityService {
       projectIdHint: fresh.projectId,
       signal,
     });
+    if (this.disposed || signal?.aborted) return result.snapshot;
 
     this.accounts.setQuota(result.snapshot);
-    if (result.models.length > 0) {
+    if (result.tierInfo) {
+      await this.accounts.updateAccountEntitlement(
+        fresh.id,
+        result.tierInfo,
+        'loadCodeAssist',
+      );
+    }
+    if (result.models.length > 0 && !this.disposed && !signal?.aborted) {
       await this.catalog.saveDynamicModels(result.models);
     }
     return result.snapshot;
@@ -250,6 +302,7 @@ export class AntigravityService {
     const active = this.accounts.getActiveAccount();
     const quota = active ? this.accounts.getQuota(active.id) : undefined;
     const options = this.catalog.mergedCatalog(quota);
+    const diagnostics = await this.diagnostics.summarize?.();
 
     return {
       providerId: PROVIDER_ID,
@@ -264,6 +317,11 @@ export class AntigravityService {
         : {}),
       recentSwitches: this.accounts.getRecentSwitches(),
       telemetry: this.telemetry.summary(),
+      ...(diagnostics ? { diagnostics } : {}),
+      flags: {
+        wirePolicyV2: this.config.wirePolicyV2,
+        retrySafetyV2: this.config.retrySafetyV2,
+      },
       models: {
         enabledModelIds: this.catalog.getEnabledModelIds(),
         options,
@@ -286,11 +344,13 @@ export class AntigravityService {
         ok: false,
         detail: 'No Google account connected yet.',
       });
+      const diagnostics = await this.diagnostics.summarize?.();
       return {
         ok: false,
         checkedAt: Date.now(),
         userAgent,
         checks,
+        ...(diagnostics ? { diagnostics } : {}),
       };
     }
 
@@ -311,11 +371,13 @@ export class AntigravityService {
         detail: error instanceof Error ? error.message : String(error),
         latencyMs: Date.now() - t0,
       });
+      const diagnostics = await this.diagnostics.summarize?.();
       return {
         ok: false,
         checkedAt: Date.now(),
         userAgent,
         checks,
+        ...(diagnostics ? { diagnostics } : {}),
       };
     }
 
@@ -334,6 +396,11 @@ export class AntigravityService {
         tierLabel: assist.tierLabel,
         tierId: assist.tierId,
       });
+      await this.accounts.updateAccountEntitlement(
+        fresh.id,
+        assist,
+        'loadCodeAssist',
+      );
       checks.push({
         name: 'loadCodeAssist',
         ok: true,
@@ -397,11 +464,13 @@ export class AntigravityService {
         : 'Header hygiene check failed',
     });
 
+    const diagnostics = await this.diagnostics.summarize?.();
     return {
       ok: checks.every((c) => c.ok),
       checkedAt: Date.now(),
       userAgent,
       checks,
+      ...(diagnostics ? { diagnostics } : {}),
     };
   }
 
@@ -524,20 +593,41 @@ export class AntigravityAdapter extends LlmAdapter {
   }
 
   providerRetryPolicy(provider: string) {
+    if (!this.service.config.retrySafetyV2) {
+      return resolveRetryPolicy(
+        {
+          mode: 'normal',
+          maxRetries: 2,
+          retryableCodes: [
+            'RATE_LIMIT',
+            'SERVER',
+            'TIMEOUT',
+            'TRANSPORT',
+            'EMPTY_RESPONSE',
+          ],
+          backoff: {
+            initialDelayMs: 600,
+            maxDelayMs: 8000,
+            jitterRatio: 0.1,
+          },
+        },
+        `antigravity:${provider}`,
+      );
+    }
+
     return resolveRetryPolicy(
       {
         mode: 'normal',
         maxRetries: 2,
         retryableCodes: [
-          'RATE_LIMIT',
           'SERVER',
           'TIMEOUT',
           'TRANSPORT',
           'EMPTY_RESPONSE',
         ],
         backoff: {
-          initialDelayMs: 600,
-          maxDelayMs: 8000,
+          initialDelayMs: 1000,
+          maxDelayMs: 12000,
           jitterRatio: 0.1,
         },
       },
@@ -594,13 +684,24 @@ export class AntigravityAdapter extends LlmAdapter {
     const resolvedModel = await this.resolveModel(provider, model, signal);
     return {
       model: resolvedModel,
-      stream: (options) => this.stream(options),
+      stream: (opts: AntigravityGenerateOptions) =>
+        this.stream({ diagnosticSource: 'agent-loop', ...opts }),
     };
   }
 
-  async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+  async *stream(options: AntigravityGenerateOptions): AsyncIterable<StreamChunk> {
     await this.service.accounts.ensureLoaded();
     await this.service.catalog.ensureLoaded();
+
+    const policy = this.service.catalog.resolveRequestPolicy(
+      options.model,
+      options.maxTokens,
+    );
+    const effectiveOptions: GenerateOptions =
+      policy.resolvedMaxTokens !== undefined &&
+      options.maxTokens !== policy.resolvedMaxTokens
+        ? { ...options, maxTokens: policy.resolvedMaxTokens }
+        : options;
 
     const dispatch = this.service.catalog.resolveUpstreamDispatch(
       options.model,
@@ -611,11 +712,12 @@ export class AntigravityAdapter extends LlmAdapter {
     const sessionKey = options.sessionId?.trim() || 'default';
     const images = await this.service.resolveImages(options, options.signal);
 
-    let failoverAttemptsRemaining = 1;
-    let streamRetryAttemptsRemaining = Math.max(
-      2,
-      this.service.config.endpoints.length,
-    );
+    const disableRetry = options.disableRetry === true;
+    const disableAccountFailover = options.disableAccountFailover === true;
+    let failoverAttemptsRemaining = disableAccountFailover ? 0 : 1;
+    let streamRetryAttemptsRemaining = disableRetry
+      ? 0
+      : Math.max(2, this.service.config.endpoints.length);
     let sameEndpointStreamRetried = false;
     let bumped1M = false;
     let activeUpstreamModel = dispatch.upstreamModel;
@@ -650,8 +752,9 @@ export class AntigravityAdapter extends LlmAdapter {
           category: 'AUTH',
           message: msg,
           pool,
+          allowFailover: !disableAccountFailover,
         });
-        if (switched && failoverAttemptsRemaining > 0) {
+        if (!disableAccountFailover && switched && failoverAttemptsRemaining > 0) {
           failoverAttemptsRemaining -= 1;
           continue;
         }
@@ -671,9 +774,17 @@ export class AntigravityAdapter extends LlmAdapter {
         sessionKey,
       );
 
+      const trustedEntitlement = policy.allowCredits
+        ? this.service.accounts.resolveTrustedEntitlement(freshAccount.id)
+        : undefined;
+      const enabledCreditTypes =
+        policy.allowCredits && trustedEntitlement?.availableCreditsState === 'present'
+          ? trustedEntitlement.enabledCreditTypes
+          : undefined;
+
       const trajectoryId = this.getOrCreateTrajectoryId(freshAccount.id, sessionKey);
       const { envelope, requestId } = buildAntigravityRequest({
-        options,
+        options: effectiveOptions,
         accountId: freshAccount.id,
         accountEmail: freshAccount.email,
         projectId,
@@ -683,6 +794,7 @@ export class AntigravityAdapter extends LlmAdapter {
         upstreamModel: activeUpstreamModel,
         effectiveEffort: dispatch.effectiveEffort,
         images,
+        enabledCreditTypes,
       });
 
       await this.ensureTrajectoryAclRegistered({
@@ -705,13 +817,20 @@ export class AntigravityAdapter extends LlmAdapter {
           requestId,
           isContentRequest: true,
           signal: options.signal,
-          allowSameAccount429Retry: true,
+          allowSameAccount429Retry: !disableRetry,
+          disableRetry,
+          diagnosticSource: options.diagnosticSource ?? 'direct-adapter',
+          diagnosticSessionId: sessionKey,
+          diagnosticAccountId: freshAccount.id,
+          entitlementSource: trustedEntitlement?.source,
+          entitlementGeneration: trustedEntitlement?.accountGeneration,
+          resolvedMaxTokens: policy.resolvedMaxTokens,
         });
         response = res.response;
         usedEndpoint = res.endpoint;
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
-          if (error.classified.isOneMillionContextError && !bumped1M) {
+          if (!disableRetry && error.classified.isOneMillionContextError && !bumped1M) {
             bumped1M = true;
             this.service.accounts.bumpUpstreamSessionGeneration(
               freshAccount.id,
@@ -721,6 +840,7 @@ export class AntigravityAdapter extends LlmAdapter {
           }
 
           if (
+            !disableRetry &&
             (error.classified.isModelNotFound || error.classified.status === 404) &&
             fallbackVariantIdx < dispatch.fallbackUpstreamModels.length
           ) {
@@ -736,8 +856,9 @@ export class AntigravityAdapter extends LlmAdapter {
             message: error.classified.message,
             retryAfterMs: error.classified.retryAfterMs,
             pool,
+            allowFailover: !disableAccountFailover,
           });
-          if (switched && failoverAttemptsRemaining > 0) {
+          if (!disableAccountFailover && switched && failoverAttemptsRemaining > 0) {
             failoverAttemptsRemaining -= 1;
             continue;
           }
@@ -810,6 +931,34 @@ export class AntigravityAdapter extends LlmAdapter {
           usage: finalized.usage,
         });
 
+        if (this.service.diagnostics.enabled) {
+          const finishChunk = finalized.chunks.find(
+            (c): c is Extract<StreamChunk, { type: 'finish' }> => c.type === 'finish',
+          );
+          this.service.diagnostics.record({
+            requestId,
+            sessionId: sessionKey,
+            source: options.diagnosticSource ?? 'direct-adapter',
+            method: 'streamGenerateContent:complete',
+            attempt: 1,
+            endpoint: usedEndpoint,
+            accountIdHash: freshAccount.id,
+            entitlementSource: trustedEntitlement?.source,
+            entitlementGeneration: trustedEntitlement?.accountGeneration,
+            wirePolicyV2: this.service.config.wirePolicyV2,
+            retrySafetyV2: this.service.config.retrySafetyV2,
+            resolvedMaxTokens: policy.resolvedMaxTokens,
+            finishReason: finishChunk?.reason?.kind,
+            usageSummary: {
+              inputTokens: finalized.usage.inputTokens,
+              outputTokens: finalized.usage.outputTokens,
+              cacheReadTokens: finalized.usage.cacheReadTokens,
+              reasoningTokens: finalized.usage.reasoningTokens,
+              totalTokens: finalized.usage.totalTokens,
+            },
+          });
+        }
+
         for (const chunk of finalized.chunks) {
           yield chunk;
         }
@@ -819,6 +968,27 @@ export class AntigravityAdapter extends LlmAdapter {
           await reader.cancel();
         } catch {
           // Ignore stream cancellation error on cleanup.
+        }
+        if (this.service.diagnostics.enabled) {
+          this.service.diagnostics.record({
+            requestId,
+            sessionId: sessionKey,
+            source: options.diagnosticSource ?? 'direct-adapter',
+            method: 'streamGenerateContent:error',
+            attempt: 1,
+            endpoint: usedEndpoint || 'unknown',
+            accountIdHash: freshAccount.id,
+            entitlementSource: trustedEntitlement?.source,
+            entitlementGeneration: trustedEntitlement?.accountGeneration,
+            wirePolicyV2: this.service.config.wirePolicyV2,
+            retrySafetyV2: this.service.config.retrySafetyV2,
+            resolvedMaxTokens: policy.resolvedMaxTokens,
+            classifiedCode:
+              error instanceof LlmError ? error.code : undefined,
+            errorDetailSummary: sanitizeErrorDetailText(
+              error instanceof Error ? error.message : String(error),
+            ),
+          });
         }
         if (options.signal?.aborted) {
           throw new LlmError('Antigravity stream aborted by caller', 'ABORTED', {
@@ -832,7 +1002,7 @@ export class AntigravityAdapter extends LlmAdapter {
             error.classified.category === 'SERVER' ||
             error.classified.category === 'TRANSPORT';
 
-          if (!emittedAnyChunk && isRetriableStreamStatus && usedEndpoint) {
+          if (!disableRetry && !emittedAnyChunk && isRetriableStreamStatus && usedEndpoint) {
             // Retry once on the same endpoint before cooling it down so Daily-only models
             // (e.g. gemini-4-*) do not prematurely fall back to Prod where they 429.
             if (!sameEndpointStreamRetried && streamRetryAttemptsRemaining > 0) {
@@ -844,7 +1014,7 @@ export class AntigravityAdapter extends LlmAdapter {
             this.service.client.endpointHealth.markFailure(usedEndpoint);
           }
 
-          if (!emittedAnyChunk && isRetriableStreamStatus && streamRetryAttemptsRemaining > 0) {
+          if (!disableRetry && !emittedAnyChunk && isRetriableStreamStatus && streamRetryAttemptsRemaining > 0) {
             streamRetryAttemptsRemaining -= 1;
             continue;
           }
@@ -856,8 +1026,9 @@ export class AntigravityAdapter extends LlmAdapter {
             message: error.classified.message,
             retryAfterMs: error.classified.retryAfterMs,
             pool,
+            allowFailover: !disableAccountFailover,
           });
-          if (!emittedAnyChunk && switched && failoverAttemptsRemaining > 0) {
+          if (!disableAccountFailover && !emittedAnyChunk && switched && failoverAttemptsRemaining > 0) {
             failoverAttemptsRemaining -= 1;
             continue;
           }
@@ -866,7 +1037,7 @@ export class AntigravityAdapter extends LlmAdapter {
         if (!emittedAnyChunk && usedEndpoint) {
           this.service.client.endpointHealth.markFailure(usedEndpoint);
         }
-        if (!emittedAnyChunk && streamRetryAttemptsRemaining > 0) {
+        if (!disableRetry && !emittedAnyChunk && streamRetryAttemptsRemaining > 0) {
           streamRetryAttemptsRemaining -= 1;
           continue;
         }

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "sourceType": "allowlist_rebuilt_from_local_capture_metadata",
+    "sources": [
+      "capture/cli-flows.jsonl",
+      "capture/cli2-flows.jsonl",
+      "capture/plugin-flows.jsonl",
+      "capture/plugin-aux-flows.jsonl"
+    ],
+    "redactionPolicy": "allowlist_structural_reconstruction",
+    "excludedFields": [
+      "authorization_bearer_tokens",
+      "refresh_tokens",
+      "emails",
+      "project_ids",
+      "session_ids_real",
+      "system_prompt_text",
+      "user_prompt_text",
+      "tool_schemas_full",
+      "local_paths"
+    ]
+  },
+  "baselineArtifacts": {
+    "packageName": "dsh-antigravity",
+    "baselineVersion": "1.1.3",
+    "libIndexSha256": "c430eba81d1bdaf3204cb70dd135d1665786d86bcc956bc19bcdf81855e01726",
+    "libClientSha256": "b6926d1fc66af6a90e190349d73391e2d008f6bfedf30fb69d44eeeb59835fec",
+    "desktopInstalledHashChecked": false,
+    "desktopHashNote": "Installed desktop profile (~/.dsh) is outside workspace sandbox; verified workspace build hash only."
+  },
+  "observedProtocolBaseline": {
+    "cli": {
+      "clientVersion": "antigravity/cli/1.5.9 (aidev_client; os_type=darwin; arch=arm64; cl=1021519450; auth_method=consumer)",
+      "endpoint": "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+      "model": "gemini-3.8-flash-low",
+      "envelopeKeys": ["project", "requestId", "request", "model", "userAgent", "requestType", "enabledCreditTypes"],
+      "enabledCreditTypes": ["GOOGLE_ONE_AI"],
+      "generationConfig": {
+        "maxOutputTokens": 65536,
+        "thinkingConfig": {
+          "includeThoughts": true,
+          "thinkingLevel": "LOW"
+        }
+      },
+      "requestBodyBytes": [41933, 41935],
+      "responseStatus": 200
+    },
+    "pluginDirectAdapterScript": {
+      "userAgent": "antigravity/hub/2.28.0 (aidev_client; os_type=darwin; arch=arm64; cl=1008300195)",
+      "endpoint": "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+      "model": "gemini-3.8-flash-low",
+      "envelopeKeys": ["project", "requestId", "request", "model", "userAgent", "requestType"],
+      "generationConfig": {
+        "thinkingConfig": {
+          "includeThoughts": true,
+          "thinkingLevel": "LOW"
+        }
+      },
+      "note": "capture/plugin-request.mjs bypassed LlmRuntime.prepareCall() and omitted GenerateOptions.maxTokens; real DSH LlmRuntime materializes catalog defaultMaxTokens into maxTokens (262144 for gemini-4-hydrogen in v1.1.3)."
+    },
+    "reportedFailingSessionBaseline": {
+      "targetModel": "gemini-4-hydrogen",
+      "dshMaterializedMaxOutputTokens": 262144,
+      "observedErrorStatus": 429,
+      "observedErrorMessage": "Resource has been exhausted.",
+      "retryAmplificationMechanism": "dsh-antigravity v1.1.3 providerRetryPolicy included RATE_LIMIT with 600ms/1200ms local backoff alongside same-account client retry logic."
+    }
+  }
+}

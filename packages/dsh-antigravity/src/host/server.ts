@@ -193,6 +193,21 @@ export function registerAntigravityWebApi(
                 return sendJson(res, 200, { ok: true, value: report });
               }
 
+              if (subpath === 'diagnostics') {
+                if (req.method !== 'GET') return sendMethodNotAllowed(res);
+                const summary = await service.diagnostics.summarize?.();
+                return sendJson(res, 200, { ok: true, value: summary });
+              }
+
+              if (subpath === 'diagnostics/clear') {
+                if (req.method !== 'POST') return sendMethodNotAllowed(res);
+                await service.diagnostics.clear?.();
+                return sendJson(res, 200, {
+                  ok: true,
+                  value: await service.getStatusPayload(),
+                });
+              }
+
               if (subpath === 'dismiss-cold-notice') {
                 if (req.method !== 'POST') return sendMethodNotAllowed(res);
                 service.accounts.dismissColdNotice();

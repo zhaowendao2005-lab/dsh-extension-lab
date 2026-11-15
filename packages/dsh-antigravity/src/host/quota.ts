@@ -1,12 +1,37 @@
-import type { QuotaGroupSummary, QuotaSnapshotSummary } from '../shared/types.ts';
+import type {
+  AvailableCreditsState,
+  QuotaGroupSummary,
+  QuotaSnapshotSummary,
+} from '../shared/types.ts';
 import type { AntigravityHttpClient } from './client.ts';
 import type { AntigravityPluginConfig } from './config.ts';
 import { resolveOfficialFingerprint } from './identity.ts';
+
+const VALID_CREDIT_TYPE_RE = /^[A-Z0-9_]{2,64}$/;
+
+export interface AvailableCreditEntry {
+  creditType: string;
+  minimumCreditAmountForUsage?: string;
+}
 
 export interface CodeAssistTierInfo {
   projectId?: string;
   tierId?: string;
   tierLabel?: string;
+  availableCreditsState: AvailableCreditsState;
+  enabledCreditTypes?: string[];
+  availableCredits?: AvailableCreditEntry[];
+  parseError?: string;
+}
+
+export interface ModelCapabilities {
+  inputTokenLimit: number;
+  maxOutputTokensCapability: number;
+  combinedContextWindow?: number;
+  supportsImages: boolean;
+  supportsThinking: boolean;
+  supportsAdaptiveThinking?: boolean;
+  minThinkingBudget?: number;
 }
 
 export interface UpstreamModelDescriptor {
@@ -16,8 +41,12 @@ export interface UpstreamModelDescriptor {
   modelProvider?: string;
   maxTokens?: number;
   maxOutputTokens?: number;
+  capabilities?: Partial<ModelCapabilities>;
   supportsThinking?: boolean;
+  supportsAdaptiveThinking?: boolean;
+  minThinkingBudget?: number;
   supportsImages?: boolean;
+  disabled?: boolean;
   isInternal?: boolean;
   remainingFraction?: number;
   resetTime?: string;
@@ -26,6 +55,7 @@ export interface UpstreamModelDescriptor {
 export interface FetchedAccountQuotaResult {
   snapshot: QuotaSnapshotSummary;
   models: UpstreamModelDescriptor[];
+  tierInfo?: CodeAssistTierInfo;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -52,6 +82,34 @@ function readNumber(obj: Record<string, unknown> | undefined, ...keys: string[])
   return undefined;
 }
 
+export function readPositiveSafeInt(
+  obj: Record<string, unknown> | undefined,
+  ...keys: string[]
+): number | undefined {
+  if (!obj) return undefined;
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === 'number' && Number.isSafeInteger(val) && val > 0) {
+      return val;
+    }
+  }
+  return undefined;
+}
+
+function readNonNegSafeInt(
+  obj: Record<string, unknown> | undefined,
+  ...keys: string[]
+): number | undefined {
+  if (!obj) return undefined;
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === 'number' && Number.isSafeInteger(val) && val >= 0) {
+      return val;
+    }
+  }
+  return undefined;
+}
+
 function extractProjectId(data: Record<string, unknown>): string | undefined {
   const raw = data.cloudaicompanionProject ?? data.projectId ?? data.project;
   if (typeof raw === 'string' && raw.trim() !== '') return raw.trim();
@@ -69,6 +127,69 @@ function normalizeTierLabel(tierId: string | undefined, tierName: string | undef
   return tierName || tierId;
 }
 
+function parseAvailableCreditsRaw(raw: unknown): {
+  state: AvailableCreditsState;
+  enabledCreditTypes?: string[];
+  availableCredits?: AvailableCreditEntry[];
+  parseError?: string;
+} {
+  if (!Array.isArray(raw)) {
+    return {
+      state: 'parse_failed',
+      parseError: 'availableCredits field is not an array',
+    };
+  }
+  if (raw.length === 0) {
+    return {
+      state: 'empty',
+      availableCredits: [],
+    };
+  }
+
+  const entries: AvailableCreditEntry[] = [];
+  const creditTypes: string[] = [];
+  const seenTypes = new Set<string>();
+
+  for (const item of raw) {
+    const obj = asRecord(item);
+    if (!obj) {
+      return {
+        state: 'parse_failed',
+        parseError: 'availableCredits contains non-object entry',
+      };
+    }
+    const rawCreditType = readString(obj, 'creditType', 'credit_type');
+    if (!rawCreditType || !VALID_CREDIT_TYPE_RE.test(rawCreditType)) {
+      return {
+        state: 'parse_failed',
+        parseError: 'availableCredits entry missing valid creditType',
+      };
+    }
+    const minAmountRaw = obj.minimumCreditAmountForUsage ?? obj.minimum_credit_amount_for_usage;
+    let minAmount: string | undefined;
+    if (typeof minAmountRaw === 'string' && minAmountRaw.trim() !== '') {
+      minAmount = minAmountRaw.trim();
+    } else if (typeof minAmountRaw === 'number' && Number.isFinite(minAmountRaw)) {
+      minAmount = String(minAmountRaw);
+    }
+
+    entries.push({
+      creditType: rawCreditType,
+      ...(minAmount !== undefined ? { minimumCreditAmountForUsage: minAmount } : {}),
+    });
+    if (!seenTypes.has(rawCreditType)) {
+      seenTypes.add(rawCreditType);
+      creditTypes.push(rawCreditType);
+    }
+  }
+
+  return {
+    state: 'present',
+    enabledCreditTypes: creditTypes,
+    availableCredits: entries,
+  };
+}
+
 export function extractTierInfo(data: Record<string, unknown>): CodeAssistTierInfo {
   const projectId = extractProjectId(data);
   const paidTier = asRecord(data.paidTier);
@@ -81,10 +202,39 @@ export function extractTierInfo(data: Record<string, unknown>): CodeAssistTierIn
   const tierObj = paidTier ?? currentTier ?? defaultAllowed;
   const tierId = readString(tierObj, 'id', 'tierId');
   const tierName = readString(tierObj, 'name', 'displayName');
+
+  let creditsParsed: ReturnType<typeof parseAvailableCreditsRaw> = { state: 'absent' };
+  const paidHasCredits =
+    paidTier !== undefined &&
+    (Object.prototype.hasOwnProperty.call(paidTier, 'availableCredits') ||
+      Object.prototype.hasOwnProperty.call(paidTier, 'available_credits'));
+  const currentHasCredits =
+    currentTier !== undefined &&
+    (Object.prototype.hasOwnProperty.call(currentTier, 'availableCredits') ||
+      Object.prototype.hasOwnProperty.call(currentTier, 'available_credits'));
+
+  if (paidHasCredits && paidTier) {
+    creditsParsed = parseAvailableCreditsRaw(
+      paidTier.availableCredits ?? paidTier.available_credits,
+    );
+  } else if (currentHasCredits && currentTier) {
+    creditsParsed = parseAvailableCreditsRaw(
+      currentTier.availableCredits ?? currentTier.available_credits,
+    );
+  }
+
   return {
     projectId,
     tierId,
     tierLabel: normalizeTierLabel(tierId, tierName),
+    availableCreditsState: creditsParsed.state,
+    ...(creditsParsed.enabledCreditTypes
+      ? { enabledCreditTypes: creditsParsed.enabledCreditTypes }
+      : {}),
+    ...(creditsParsed.availableCredits
+      ? { availableCredits: creditsParsed.availableCredits }
+      : {}),
+    ...(creditsParsed.parseError ? { parseError: creditsParsed.parseError } : {}),
   };
 }
 
@@ -216,28 +366,53 @@ export function parseAvailableModelsResponse(
           ? obj.supports_images
           : undefined;
     const isInternal = obj.isInternal === true || obj.is_internal === true;
+    const disabled = obj.disabled === true;
+    const supportsAdaptiveThinking =
+      typeof obj.supportsAdaptiveThinking === 'boolean'
+        ? obj.supportsAdaptiveThinking
+        : typeof obj.supports_adaptive_thinking === 'boolean'
+          ? obj.supports_adaptive_thinking
+          : undefined;
+    const minThinkingBudget = readNonNegSafeInt(
+      obj,
+      'minThinkingBudget',
+      'min_thinking_budget',
+    );
+    const inputTokenLimit = readPositiveSafeInt(
+      obj,
+      'maxTokens',
+      'max_tokens',
+      'inputTokenLimit',
+      'input_token_limit',
+    );
+    const maxOutputTokensCapability = readPositiveSafeInt(
+      obj,
+      'maxOutputTokens',
+      'max_output_tokens',
+      'outputTokenLimit',
+      'output_token_limit',
+    );
 
     results.push({
       id,
       displayName: readString(obj, 'displayName', 'display_name', 'label'),
       model: readString(obj, 'model') ?? readString(modelOrAlias, 'model'),
       modelProvider: readString(obj, 'modelProvider', 'model_provider'),
-      maxTokens: readNumber(
-        obj,
-        'maxTokens',
-        'max_tokens',
-        'inputTokenLimit',
-        'input_token_limit',
-      ),
-      maxOutputTokens: readNumber(
-        obj,
-        'maxOutputTokens',
-        'max_output_tokens',
-        'outputTokenLimit',
-        'output_token_limit',
-      ),
+      maxTokens: inputTokenLimit,
+      maxOutputTokens: maxOutputTokensCapability,
+      capabilities: {
+        ...(inputTokenLimit !== undefined ? { inputTokenLimit } : {}),
+        ...(maxOutputTokensCapability !== undefined ? { maxOutputTokensCapability } : {}),
+        ...(supportsImages !== undefined ? { supportsImages } : {}),
+        ...(supportsThinking !== undefined ? { supportsThinking } : {}),
+        ...(supportsAdaptiveThinking !== undefined ? { supportsAdaptiveThinking } : {}),
+        ...(minThinkingBudget !== undefined ? { minThinkingBudget } : {}),
+      },
       supportsThinking,
+      ...(supportsAdaptiveThinking !== undefined ? { supportsAdaptiveThinking } : {}),
+      ...(minThinkingBudget !== undefined ? { minThinkingBudget } : {}),
       supportsImages,
+      ...(disabled ? { disabled: true } : {}),
       isInternal,
       ...(remainingFraction !== undefined
         ? { remainingFraction: Math.max(0, Math.min(1, remainingFraction)) }
@@ -447,6 +622,7 @@ export async function fetchAccountQuotaAndModels(params: {
   let projectId = params.projectIdHint;
   let tierLabel: string | undefined;
   let tierId: string | undefined;
+  let tierInfo: CodeAssistTierInfo | undefined;
 
   try {
     const assist = await loadCodeAssist({
@@ -456,6 +632,7 @@ export async function fetchAccountQuotaAndModels(params: {
       projectIdHint: projectId,
       signal: params.signal,
     });
+    tierInfo = assist;
     if (assist.projectId) projectId = assist.projectId;
     tierLabel = assist.tierLabel;
     tierId = assist.tierId;
@@ -520,5 +697,6 @@ export async function fetchAccountQuotaAndModels(params: {
       groups,
     },
     models,
+    ...(tierInfo ? { tierInfo } : {}),
   };
 }

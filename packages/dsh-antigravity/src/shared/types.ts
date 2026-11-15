@@ -5,6 +5,10 @@
 
 export type ReasoningEffortValue = 'low' | 'medium' | 'high' | 'xhigh';
 
+export type DiagnosticMode = 'off' | 'metadata';
+
+export type AvailableCreditsState = 'absent' | 'present' | 'empty' | 'parse_failed';
+
 export type SwitchReason = 'manual' | 'quota' | 'streak' | 'unavailable';
 
 export interface AccountPublicSummary {
@@ -14,6 +18,9 @@ export interface AccountPublicSummary {
   projectId?: string;
   tierLabel?: string;
   tierId?: string;
+  availableCreditsState?: AvailableCreditsState;
+  enabledCreditTypes?: string[];
+  entitlementGeneration?: number;
   isActive: boolean;
   needsReauth: boolean;
   lastError?: string;
@@ -109,6 +116,16 @@ export interface CatalogModelOption {
   isDynamic?: boolean;
 }
 
+export interface DiagnosticsStatusSummary {
+  mode: DiagnosticMode;
+  retainDays: number;
+  recordCount: number;
+  fileBytes: number;
+  rotatedFiles: number;
+  writable: boolean;
+  lastError?: string;
+}
+
 export interface DoctorCheckItem {
   name: string;
   ok: boolean;
@@ -121,6 +138,7 @@ export interface DoctorReport {
   checkedAt: number;
   userAgent: string;
   checks: DoctorCheckItem[];
+  diagnostics?: DiagnosticsStatusSummary;
 }
 
 export interface AntigravityStatusPayload {
@@ -134,6 +152,11 @@ export interface AntigravityStatusPayload {
   coldNotice?: SwitchEventRecord;
   recentSwitches: SwitchEventRecord[];
   telemetry: CacheTelemetrySummary;
+  diagnostics?: DiagnosticsStatusSummary;
+  flags?: {
+    wirePolicyV2: boolean;
+    retrySafetyV2: boolean;
+  };
   models: {
     enabledModelIds: string[];
     options: CatalogModelOption[];

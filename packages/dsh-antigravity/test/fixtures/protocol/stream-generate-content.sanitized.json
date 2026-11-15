@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "sourceType": "allowlist_rebuilt_canonical_request_shapes",
+    "redacted": ["prompts", "tool_definitions_real", "session_ids_real", "request_ids_real"]
+  },
+  "syntheticRequestInput": {
+    "familyModel": "gemini-4-hydrogen",
+    "reasoningEffort": "medium",
+    "projectId": "aicode-consumers",
+    "sessionId": "fixture-session-001",
+    "systemPrompt": "You are a helpful coding assistant.",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reply with OK."
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "ping_tool",
+        "description": "Synthetic deterministic test tool.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "echo": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "expectedEnvelopeKeysCommon": [
+    "project",
+    "requestId",
+    "request",
+    "model",
+    "userAgent",
+    "requestType"
+  ],
+  "expectedRequestKeysCommon": [
+    "contents",
+    "systemInstruction",
+    "tools",
+    "labels",
+    "generationConfig",
+    "sessionId"
+  ],
+  "cliReferenceComparison": {
+    "model": "gemini-3.8-flash-low",
+    "envelopeKeysWithCredits": [
+      "project",
+      "requestId",
+      "request",
+      "model",
+      "userAgent",
+      "requestType",
+      "enabledCreditTypes"
+    ],
+    "enabledCreditTypes": ["GOOGLE_ONE_AI"],
+    "generationConfig": {
+      "maxOutputTokens": 65536,
+      "thinkingConfig": {
+        "includeThoughts": true,
+        "thinkingLevel": "LOW"
+      }
+    }
+  }
+}

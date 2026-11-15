@@ -271,3 +271,25 @@ python3 capture/compare.py > capture/REPORT-DIFF.md
 - token 过期后的 refresh 流程、端点 fallback（`daily → sandbox → cloudcode-pa`）、限流/429 重试路径未触发；
 - `recordTrajectoryAnalytics` 缺失是否有服务端副作用（如某类能力统计门槛）无法从客户端侧判定；
 - 非 `aicode-consumers` project（如自建 project + `x-goog-user-project`）场景未测。
+
+
+---
+
+## Clarification & Remediation Update (Phase 1 Baseline Alignment)
+
+### 1. Why `capture/plugin-flows.jsonl` Omitted `maxOutputTokens` While Real DSH Emitted `262144`
+- `capture/plugin-request.mjs` called `service.adapter.stream(...)` directly **without** `maxTokens` in `GenerateOptions`, so `translate.ts` left `generationConfig.maxOutputTokens` unset.
+- Real DSH user sessions do **not** call `adapter.stream()` directly; they run through `LlmRuntime.prepareCall()` / `LlmRuntime.resolveCallWithInfo()` (`@deepseek-ai/dsh-llm`) inside `@deepseek-ai/dsh-agent-loop`.
+- Whenever caller `GenerateOptions.maxTokens` is omitted, `LlmRuntime.resolveCallWithInfo()` materializes `info.defaultMaxTokens` (obtained from `adapter.resolveModel()`) into `resolvedConfig.maxTokens` and records `adapterDefaults.maxTokens = true` in durable `request/header` session events.
+- In `v1.1.3`, `catalog.ts` copied upstream descriptor `dyn.maxOutputTokens` (`262144` for `gemini-4-hydrogen-*`) directly into DSH `defaultMaxTokens`, causing real DSH sessions on Hydrogen to emit `generationConfig.maxOutputTokens: 262144`, whereas official Antigravity CLI 1.5.9 emitted `generationConfig.maxOutputTokens: 65536`.
+
+### 2. Additional Root Causes Verified in Baseline Code
+1. **Conflated capability vs default request policy**: Upstream `maxOutputTokens` (`262144`) is a capability ceiling, not an automatic per-turn request default. Explicit caller `maxTokens` must also validate integer/positive boundaries (preventing `0.5 -> Math.trunc(0.5) = 0`) and reject `> maxOutputTokensCapability` locally with `INVALID_REQUEST`.
+2. **Account entitlement omission (`enabledCreditTypes`)**: Official `loadCodeAssist` (`paidTier.availableCredits`) returned `[{ "creditType": "GOOGLE_ONE_AI", "minimumCreditAmountForUsage": "50" }]`. Official CLI serialized `enabledCreditTypes: ["GOOGLE_ONE_AI"]` on `streamGenerateContent` requests, whereas `v1.1.3` discarded `availableCredits`.
+3. **Config `.volatile()` lifecycle bug**: Every field in `src/host/config.ts` used `.volatile()`, causing Cordis/Schemastery to pass volatile reference wrappers (`{ get(), set() }`) to `normalizeConfig()`, silently falling back to defaults.
+4. **429 double-layer retry amplification**: Bare `429: Resource has been exhausted.` lacked explicit rate-limit delay metadata, yet was classified as `RATE_LIMIT` and retried rapidly via DSH `providerRetryPolicy` (`600ms` initial backoff, `maxRetries: 2`).
+
+### 3. Two-Layer Verification Standard
+All protocol remediation tests cover both:
+1. **Runtime Layer (`ctx.llm.stream()` + `LlmRuntime.prepareCall()`)**: Verifies actual DSH `resolveModel()` default materialization, explicit `maxTokens` pass-through/rejection, capability preservation, and single-variable outbound wire bodies.
+2. **Full Agent Loop Layer (`@deepseek-ai/dsh-agent-loop` + `@deepseek-ai/dsh-session`)**: Verifies persisted `request/header` (`adapterDefaults.maxTokens`), `request/context` (`contextWindow`), multi-turn tool calls with `thoughtSignature` replay, session fork/resume, and `dsh-llm-retry` error behavior.

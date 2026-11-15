@@ -1,5 +1,5 @@
 import Schema from '@deepseek-ai/schemastery';
-import type { ReasoningEffortValue } from '../shared/types.ts';
+import type { DiagnosticMode, ReasoningEffortValue } from '../shared/types.ts';
 
 export const PROVIDER_ID = 'antigravity' as const;
 export const PROVIDER_DISPLAY_NAME = 'Antigravity (Cloud Code · Unofficial)';
@@ -18,6 +18,7 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60_000;
 export const DEFAULT_OAUTH_PORT = 51121;
 export const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 4_194_304;
 export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1_048_576;
+export const DEFAULT_DIAGNOSTIC_RETAIN_DAYS = 7;
 
 export interface AntigravityPluginConfig {
   userAgent?: string;
@@ -35,6 +36,10 @@ export interface AntigravityPluginConfig {
   storageDir?: string;
   requestImagePixelBudget: number;
   requestImageMaxBytes: number;
+  wirePolicyV2: boolean;
+  retrySafetyV2: boolean;
+  diagnosticMode: DiagnosticMode;
+  diagnosticRetainDays: number;
 }
 
 const effortEnum = (Schema.union as (values: string[]) => any)([
@@ -44,69 +49,115 @@ const effortEnum = (Schema.union as (values: string[]) => any)([
   'xhigh',
 ]).default('high');
 
+const diagnosticModeEnum = (Schema.union as (values: string[]) => any)([
+  'off',
+  'metadata',
+]).default('off');
+
 export const Config = Schema.object({
-  userAgent: Schema.string()
-    .description('Optional Hub User-Agent override (sanitized against Antigravity Hub version floor)')
-    .volatile(),
+  userAgent: Schema.string().description(
+    'Optional Hub User-Agent override (sanitized against Antigravity Hub version floor)',
+  ),
   endpoints: Schema.array(Schema.string())
     .default([...DEFAULT_ENDPOINTS])
-    .description('Ordered Cloud Code internal endpoints (Daily -> Sandbox -> Prod)')
-    .volatile(),
+    .description('Ordered Cloud Code internal endpoints (Daily -> Sandbox -> Prod)'),
   oauthPort: Schema.number()
     .min(1024)
     .max(65535)
     .default(DEFAULT_OAUTH_PORT)
-    .description('Preferred localhost port for OAuth PKCE callback listener')
-    .volatile(),
+    .description('Preferred localhost port for OAuth PKCE callback listener'),
   requestTimeoutMs: Schema.number()
     .min(5000)
     .max(600000)
     .default(DEFAULT_REQUEST_TIMEOUT_MS)
-    .description('HTTP request / header connect timeout in milliseconds')
-    .volatile(),
+    .description('HTTP request / header connect timeout in milliseconds'),
   streamIdleTimeoutMs: Schema.number()
     .min(5000)
     .max(600000)
     .default(DEFAULT_STREAM_IDLE_TIMEOUT_MS)
-    .description('Streaming idle watchdog timeout between SSE chunks in milliseconds')
-    .volatile(),
+    .description('Streaming idle watchdog timeout between SSE chunks in milliseconds'),
   quotaWarnThreshold: Schema.number()
     .min(0.01)
     .max(0.9)
     .default(DEFAULT_QUOTA_WARN_THRESHOLD)
-    .description('Remaining quota fraction below which UI warns user')
-    .volatile(),
+    .description('Remaining quota fraction below which UI warns user'),
   quotaExhaustedThreshold: Schema.number()
     .min(0)
     .max(0.5)
     .default(DEFAULT_QUOTA_EXHAUSTED_THRESHOLD)
-    .description('Remaining quota fraction at or below which sticky session switches account')
-    .volatile(),
+    .description('Remaining quota fraction at or below which sticky session switches account'),
   failureSwitchThreshold: Schema.number()
     .min(1)
     .max(10)
     .default(DEFAULT_FAILURE_SWITCH_THRESHOLD)
-    .description('Consecutive AUTH/QUOTA/RATE_LIMIT failures on same account before switching')
-    .volatile(),
+    .description('Consecutive AUTH/QUOTA/RATE_LIMIT failures on same account before switching'),
   includeNonGeminiModels: Schema.boolean()
     .default(false)
-    .description('Expose non-Gemini models returned by fetchAvailableModels (experimental)')
-    .volatile(),
-  defaultThinkingEffort: effortEnum
-    .description('Default reasoning effort when caller omits reasoningEffort')
-    .volatile(),
-  storageDir: Schema.string()
-    .description('Optional override directory for Antigravity credentials and settings')
-    .volatile(),
+    .description('Expose non-Gemini models returned by fetchAvailableModels (experimental)'),
+  defaultThinkingEffort: effortEnum.description(
+    'Default reasoning effort when caller omits reasoningEffort',
+  ),
+  storageDir: Schema.string().description(
+    'Optional override directory for Antigravity credentials and settings',
+  ),
+  wirePolicyV2: Schema.boolean()
+    .default(true)
+    .description('Separate model capability ceilings from default maxOutputTokens policy and gated enabledCreditTypes'),
+  retrySafetyV2: Schema.boolean()
+    .default(true)
+    .description('Enable strict 429/RetryInfo/quotaResetDelay classification and stop rapid 600ms retry loops'),
+  diagnosticMode: diagnosticModeEnum.description(
+    'Sanitized protocol metadata trace mode written to private DSH plugin storage (off by default)',
+  ),
+  diagnosticRetainDays: Schema.number()
+    .min(1)
+    .max(30)
+    .default(DEFAULT_DIAGNOSTIC_RETAIN_DAYS)
+    .description('Retention window in days for rotated sanitized protocol diagnostics'),
 });
 
+function unwrapVolatile(raw: unknown): unknown {
+  let current = raw;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (
+      current !== null &&
+      typeof current === 'object' &&
+      'get' in current &&
+      typeof (current as { get?: unknown }).get === 'function'
+    ) {
+      current = (current as { get: () => unknown }).get();
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
+function isAllowedEndpointUrl(trimmed: string): boolean {
+  if (trimmed.startsWith('https://')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:') return false;
+    return (
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '::1' ||
+      parsed.hostname === '[::1]'
+    );
+  } catch {
+    return false;
+  }
+}
+
 function sanitizeEndpointList(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [...DEFAULT_ENDPOINTS];
+  const value = unwrapVolatile(raw);
+  if (!Array.isArray(value)) return [...DEFAULT_ENDPOINTS];
   const cleaned: string[] = [];
-  for (const entry of raw) {
-    if (typeof entry !== 'string') continue;
-    const trimmed = entry.trim().replace(/\/+$/, '');
-    if (trimmed.startsWith('https://')) cleaned.push(trimmed);
+  for (const entry of value) {
+    const item = unwrapVolatile(entry);
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim().replace(/\/+$/, '');
+    if (isAllowedEndpointUrl(trimmed)) cleaned.push(trimmed);
   }
   return cleaned.length > 0 ? [...new Set(cleaned)] : [...DEFAULT_ENDPOINTS];
 }
@@ -118,35 +169,40 @@ function clampNumber(
   max: number,
   integer = false,
 ): number {
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return fallback;
-  const clamped = Math.min(max, Math.max(min, raw));
+  const value = unwrapVolatile(raw);
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  const clamped = Math.min(max, Math.max(min, value));
   return integer ? Math.trunc(clamped) : clamped;
 }
 
+function readOptionalNonEmptyString(raw: unknown): string | undefined {
+  const value = unwrapVolatile(raw);
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+}
+
+function readBoolean(raw: unknown, fallback: boolean): boolean {
+  const value = unwrapVolatile(raw);
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 export function normalizeConfig(raw: unknown): AntigravityPluginConfig {
+  const unwrappedRoot = unwrapVolatile(raw);
   const input =
-    raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const userAgent =
-    typeof input.userAgent === 'string' && input.userAgent.trim() !== ''
-      ? input.userAgent.trim()
-      : undefined;
-  const storageDir =
-    typeof input.storageDir === 'string' && input.storageDir.trim() !== ''
-      ? input.storageDir.trim()
-      : undefined;
-  const oauthClientId =
-    typeof input.oauthClientId === 'string' && input.oauthClientId.trim() !== ''
-      ? input.oauthClientId.trim()
-      : undefined;
-  const oauthClientSecret =
-    typeof input.oauthClientSecret === 'string' && input.oauthClientSecret.trim() !== ''
-      ? input.oauthClientSecret.trim()
-      : undefined;
-  const effort = input.defaultThinkingEffort;
+    unwrappedRoot !== null && typeof unwrappedRoot === 'object'
+      ? (unwrappedRoot as Record<string, unknown>)
+      : {};
+  const userAgent = readOptionalNonEmptyString(input.userAgent);
+  const storageDir = readOptionalNonEmptyString(input.storageDir);
+  const oauthClientId = readOptionalNonEmptyString(input.oauthClientId);
+  const oauthClientSecret = readOptionalNonEmptyString(input.oauthClientSecret);
+  const effort = unwrapVolatile(input.defaultThinkingEffort);
   const defaultThinkingEffort: ReasoningEffortValue =
     effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh'
       ? effort
       : 'high';
+
+  const diagRaw = unwrapVolatile(input.diagnosticMode);
+  const diagnosticMode: DiagnosticMode = diagRaw === 'metadata' ? 'metadata' : 'off';
 
   const quotaExhaustedThreshold = clampNumber(
     input.quotaExhaustedThreshold,
@@ -188,7 +244,7 @@ export function normalizeConfig(raw: unknown): AntigravityPluginConfig {
       10,
       true,
     ),
-    includeNonGeminiModels: input.includeNonGeminiModels === true,
+    includeNonGeminiModels: readBoolean(input.includeNonGeminiModels, false),
     defaultThinkingEffort,
     storageDir,
     requestImagePixelBudget: clampNumber(
@@ -203,6 +259,16 @@ export function normalizeConfig(raw: unknown): AntigravityPluginConfig {
       DEFAULT_REQUEST_IMAGE_MAX_BYTES,
       1024,
       20_971_520,
+      true,
+    ),
+    wirePolicyV2: readBoolean(input.wirePolicyV2, true),
+    retrySafetyV2: readBoolean(input.retrySafetyV2, true),
+    diagnosticMode,
+    diagnosticRetainDays: clampNumber(
+      input.diagnosticRetainDays,
+      DEFAULT_DIAGNOSTIC_RETAIN_DAYS,
+      1,
+      30,
       true,
     ),
   };

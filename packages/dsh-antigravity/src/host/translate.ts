@@ -1,4 +1,5 @@
 import {
+  LlmError,
   ToolCallId,
   offloadedImageText,
   requestImageHandleText,
@@ -60,6 +61,45 @@ export interface BuildRequestInput {
   images?: ReadonlyMap<string, ResolvedImageData>;
   nowMs?: number;
   trajectoryId?: string;
+  requestId?: string;
+  /** Allowlisted entitlement credit types (emitted only when wirePolicyV2 & trusted entitlement allow it). */
+  enabledCreditTypes?: readonly string[];
+  /** Explicit override to omit generationConfig.maxOutputTokens (e.g. server_default ablation variant). */
+  omitMaxOutputTokens?: boolean;
+}
+
+const ALLOWED_CREDIT_TYPES = new Set<string>(['GOOGLE_ONE_AI']);
+
+export function normalizeEnabledCreditTypes(
+  raw?: readonly string[],
+): string[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!ALLOWED_CREDIT_TYPES.has(trimmed) || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    deduped.push(trimmed);
+  }
+  return deduped.length > 0 ? deduped : undefined;
+}
+
+export function validateMaxOutputTokens(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isSafeInteger(value) ||
+    value <= 0
+  ) {
+    throw new LlmError(
+      `Invalid maxTokens value: ${String(value)}. Expected a positive safe integer.`,
+      'INVALID_REQUEST',
+    );
+  }
+  return value;
 }
 
 interface GeminiPart {
@@ -567,12 +607,14 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
   const hasToolActivity = (tools !== undefined && tools.length > 0) || hasToolInteractions;
 
   const modelTurns = contents.filter((c) => c.role === 'model').length;
-  const requestId = buildOfficialRequestId(
-    options.sessionId,
-    contents.length,
-    input.trajectoryId,
-    input.nowMs,
-  );
+  const requestId =
+    input.requestId ??
+    buildOfficialRequestId(
+      options.sessionId,
+      contents.length,
+      input.trajectoryId,
+      input.nowMs,
+    );
   const trajId = extractTrajectoryId(requestId);
   const isClaudeModel = upstreamModel.toLowerCase().includes('claude');
   const isNonGemini = !isGeminiModelId(upstreamModel);
@@ -588,8 +630,11 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
 
   // Ordered generationConfig: maxOutputTokens -> thinkingConfig -> temperature -> stopSequences
   const generationConfig: Record<string, unknown> = {};
-  if (typeof options.maxTokens === 'number' && Number.isFinite(options.maxTokens) && options.maxTokens > 0) {
-    generationConfig.maxOutputTokens = Math.trunc(options.maxTokens);
+  if (options.maxTokens !== undefined) {
+    const validatedMaxOutputTokens = validateMaxOutputTokens(options.maxTokens);
+    if (!input.omitMaxOutputTokens && validatedMaxOutputTokens !== undefined) {
+      generationConfig.maxOutputTokens = validatedMaxOutputTokens;
+    }
   }
   const thinkingConfig = buildThinkingConfig({
     model: canonicalModel,
@@ -632,7 +677,7 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
   innerRequest.sessionId = upstreamSessionId;
 
   // Ordered top-level envelope:
-  // project -> requestId -> request -> model -> userAgent -> requestType
+  // project -> requestId -> request -> model -> userAgent -> requestType -> enabledCreditTypes
   const envelope: Record<string, unknown> = {
     project: input.projectId || 'aicode-consumers',
     requestId,
@@ -642,6 +687,10 @@ export function buildAntigravityRequest(input: BuildRequestInput): {
   };
   if (hasToolActivity) {
     envelope.requestType = 'agent';
+  }
+  const enabledCreditTypes = normalizeEnabledCreditTypes(input.enabledCreditTypes);
+  if (enabledCreditTypes && enabledCreditTypes.length > 0) {
+    envelope.enabledCreditTypes = enabledCreditTypes;
   }
 
   return { envelope, requestId, canonicalModel, upstreamModel, hasToolActivity };

@@ -62,6 +62,8 @@
     "switchReasonManual": "手动切换账号",
     "switchReasonQuota": "配额 <= 5% 或已耗尽",
     "switchReasonStreak": "连续上游失败达阈值",
-    "switchReasonUnavailable": "原账号不可用"
+    "switchReasonUnavailable": "原账号不可用",
+    "diagnosticsMode": "协议诊断追踪模式: {{mode}}（{{count}} 条记录，{{bytes}} 字节）",
+    "clearDiagnostics": "清除诊断记录"
   }
 }

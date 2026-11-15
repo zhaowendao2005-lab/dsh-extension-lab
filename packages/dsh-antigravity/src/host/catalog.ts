@@ -1,4 +1,5 @@
 import {
+  LlmError,
   ReasoningEffortId,
   type LlmModelBadge,
   type LlmModelInfo,
@@ -13,8 +14,22 @@ import type {
   ReasoningEffortValue,
 } from '../shared/types.ts';
 import { PROVIDER_ID, type AntigravityPluginConfig } from './config.ts';
-import { classifyPool, type UpstreamModelDescriptor } from './quota.ts';
+import {
+  classifyPool,
+  type ModelCapabilities,
+  type UpstreamModelDescriptor,
+} from './quota.ts';
 import { readJsonFile, resolveAntigravityStorageDir, writePrivateJsonFile } from './storage.ts';
+
+export const POLICY_DEFAULT_MAX_OUTPUT_TOKENS = 65_536;
+
+export interface AntigravityRequestPolicy {
+  canonicalModel: string;
+  capabilities: ModelCapabilities;
+  defaultMaxTokens: number;
+  resolvedMaxTokens?: number;
+  allowCredits: boolean;
+}
 
 export const EFFORT_ORDER: readonly ReasoningEffortValue[] = [
   'low',
@@ -106,6 +121,7 @@ export interface StaticModelEntry {
   defaultEnabled: boolean;
   contextWindow: number;
   defaultMaxTokens: number;
+  maxOutputTokensCapability?: number;
   supportsReasoning: boolean;
   supportedEfforts?: readonly ReasoningEffortValue[];
   defaultEffort?: ReasoningEffortValue;
@@ -124,6 +140,7 @@ export const STATIC_GEMINI_MODELS: readonly StaticModelEntry[] = [
     defaultEnabled: true,
     contextWindow: 1_048_576,
     defaultMaxTokens: 65_536,
+    maxOutputTokensCapability: 262_144,
     supportsReasoning: true,
     supportedEfforts: ['low', 'medium', 'high', 'xhigh'],
     defaultEffort: 'high',
@@ -389,6 +406,18 @@ export class AntigravityCatalog {
   private dynamicModels: UpstreamModelDescriptor[] = [];
   private catalogSource: 'upstream' | 'cache' | 'static' = 'static';
   private upstreamFallbackIds = new Map<string, string>();
+  private capabilitiesById = new Map<string, ModelCapabilities>();
+  private disposed = false;
+  private persistQueue: Promise<void> = Promise.resolve();
+
+  markDisposed(): void {
+    this.disposed = true;
+  }
+
+  async flushAndDispose(): Promise<void> {
+    this.disposed = true;
+    await this.persistQueue.catch(() => undefined);
+  }
 
   constructor(private readonly config: AntigravityPluginConfig) {
     const storageDir = resolveAntigravityStorageDir(config.storageDir);
@@ -443,13 +472,19 @@ export class AntigravityCatalog {
 
   async saveDynamicModels(models: UpstreamModelDescriptor[]): Promise<void> {
     this.dynamicModels = [...models];
-    if (models.length === 0) return;
+    if (models.length === 0 || this.disposed) return;
     this.catalogSource = 'upstream';
-    await writePrivateJsonFile(this.cachePath, {
+    const snapshot: StoredCatalogCache = {
       version: 1,
       updatedAt: Date.now(),
-      models: this.dynamicModels,
-    } satisfies StoredCatalogCache).catch(() => undefined);
+      models: structuredClone(this.dynamicModels),
+    };
+    const next = this.persistQueue.then(async () => {
+      if (this.disposed) return;
+      await writePrivateJsonFile(this.cachePath, snapshot).catch(() => undefined);
+    });
+    this.persistQueue = next.catch(() => undefined);
+    await next;
   }
 
   updateDynamicModels(models: UpstreamModelDescriptor[]): void {
@@ -498,7 +533,7 @@ export class AntigravityCatalog {
 
     const staticById = new Map(STATIC_GEMINI_MODELS.map((m) => [m.id, m]));
     const visibleDynamic = this.dynamicModels.filter((dyn) => {
-      if (dyn.isInternal) return false;
+      if (dyn.isInternal || dyn.disabled) return false;
       const effectiveText = `${dyn.id} ${dyn.displayName ?? ''}`;
       if (!this.config.includeNonGeminiModels && !isGeminiModelId(effectiveText)) {
         return false;
@@ -568,9 +603,20 @@ export class AntigravityCatalog {
     const hasDynamic = this.dynamicModels.length > 0;
     const byId = new Map<string, CatalogModelOption>();
     this.upstreamFallbackIds.clear();
+    this.capabilitiesById.clear();
 
     for (const entry of STATIC_GEMINI_MODELS) {
       const q = quotaByModel.get(entry.id) ?? poolFallbackQuota.get(entry.pool);
+      const capabilityOutput = entry.maxOutputTokensCapability ?? entry.defaultMaxTokens;
+      const policyDefault = this.config.wirePolicyV2
+        ? Math.min(POLICY_DEFAULT_MAX_OUTPUT_TOKENS, capabilityOutput)
+        : entry.defaultMaxTokens;
+      this.capabilitiesById.set(entry.id, {
+        inputTokenLimit: entry.contextWindow,
+        maxOutputTokensCapability: capabilityOutput,
+        supportsImages: entry.supportsImages,
+        supportsThinking: entry.supportsReasoning,
+      });
       byId.set(entry.id, {
         id: entry.id,
         name: entry.name,
@@ -578,7 +624,7 @@ export class AntigravityCatalog {
         enabled: enabledSet.has(entry.id),
         defaultEnabled: entry.defaultEnabled,
         contextWindow: entry.contextWindow,
-        defaultMaxTokens: entry.defaultMaxTokens,
+        defaultMaxTokens: policyDefault,
         supportsReasoning: entry.supportsReasoning,
         ...(entry.supportedEfforts ? { supportedEfforts: [...entry.supportedEfforts] } : {}),
         ...(entry.defaultEffort ? { defaultEffort: entry.defaultEffort } : {}),
@@ -663,6 +709,32 @@ export class AntigravityCatalog {
         ? stripEffortDisplaySuffix(dyn.displayName)
         : familyId;
 
+      const staticEntry = staticById.get(familyId);
+      const existingCaps = this.capabilitiesById.get(familyId);
+      const inputTokenLimit = dyn.maxTokens ?? existing?.contextWindow ?? 1_048_576;
+      const maxOutputTokensCapability =
+        dyn.maxOutputTokens ??
+        existingCaps?.maxOutputTokensCapability ??
+        staticEntry?.maxOutputTokensCapability ??
+        existing?.defaultMaxTokens ??
+        POLICY_DEFAULT_MAX_OUTPUT_TOKENS;
+      const policyDefaultMaxTokens = this.config.wirePolicyV2
+        ? Math.min(POLICY_DEFAULT_MAX_OUTPUT_TOKENS, maxOutputTokensCapability)
+        : (dyn.maxOutputTokens ?? existing?.defaultMaxTokens ?? POLICY_DEFAULT_MAX_OUTPUT_TOKENS);
+
+      this.capabilitiesById.set(familyId, {
+        inputTokenLimit,
+        maxOutputTokensCapability,
+        supportsImages: dyn.supportsImages ?? existing?.supportsImages ?? true,
+        supportsThinking: supportsReasoning,
+        ...(dyn.supportsAdaptiveThinking !== undefined
+          ? { supportsAdaptiveThinking: dyn.supportsAdaptiveThinking }
+          : {}),
+        ...(dyn.minThinkingBudget !== undefined
+          ? { minThinkingBudget: dyn.minThinkingBudget }
+          : {}),
+      });
+
       byId.set(familyId, {
         id: familyId,
         name: existing?.name ?? cleanDisplayName,
@@ -671,8 +743,8 @@ export class AntigravityCatalog {
           `Antigravity upstream model (${dyn.modelProvider ?? 'Google'})`,
         enabled: enabledSet.has(familyId),
         defaultEnabled: existing?.defaultEnabled ?? false,
-        contextWindow: dyn.maxTokens ?? existing?.contextWindow ?? 1_048_576,
-        defaultMaxTokens: dyn.maxOutputTokens ?? existing?.defaultMaxTokens ?? 65_536,
+        contextWindow: inputTokenLimit,
+        defaultMaxTokens: policyDefaultMaxTokens,
         supportsReasoning,
         ...(supportedEfforts ? { supportedEfforts } : {}),
         ...(defaultEffort ? { defaultEffort } : {}),
@@ -775,6 +847,70 @@ export class AntigravityCatalog {
       // Freeze top-level systemInstruction and place mid-conversation updates in history.
       systemPromptUpdate: 'in-history',
       // Omit toolUpdate so DSH resolves deferLoading tools cleanly on turn 0, keeping tools prefix constant.
+    };
+  }
+
+  getModelCapabilities(modelId: string): ModelCapabilities {
+    const canonical = normalizeModelId(modelId);
+    const catalog = this.mergedCatalog();
+    const option =
+      catalog.find((m) => m.id === canonical || m.id === modelId) ??
+      catalog[0] ??
+      STATIC_GEMINI_MODELS[0];
+    return (
+      this.capabilitiesById.get(option.id) ?? {
+        inputTokenLimit: option.contextWindow,
+        maxOutputTokensCapability: Math.max(option.defaultMaxTokens, POLICY_DEFAULT_MAX_OUTPUT_TOKENS),
+        supportsImages: option.supportsImages,
+        supportsThinking: option.supportsReasoning,
+      }
+    );
+  }
+
+  resolveRequestPolicy(
+    modelId: string,
+    explicitMaxTokens?: number,
+  ): AntigravityRequestPolicy {
+    const canonical = normalizeModelId(modelId);
+    const catalog = this.mergedCatalog();
+    const option =
+      catalog.find((m) => m.id === canonical || m.id === modelId) ??
+      catalog[0] ??
+      STATIC_GEMINI_MODELS[0];
+    const capabilities = this.getModelCapabilities(option.id);
+    const defaultMaxTokens = this.config.wirePolicyV2
+      ? Math.min(POLICY_DEFAULT_MAX_OUTPUT_TOKENS, capabilities.maxOutputTokensCapability)
+      : option.defaultMaxTokens;
+
+    let resolvedMaxTokens: number | undefined;
+    if (explicitMaxTokens !== undefined) {
+      if (
+        typeof explicitMaxTokens !== 'number' ||
+        !Number.isSafeInteger(explicitMaxTokens) ||
+        explicitMaxTokens <= 0
+      ) {
+        throw new LlmError(
+          `Invalid maxTokens (${String(explicitMaxTokens)}) for model "${option.id}": expected a positive safe integer`,
+          'INVALID_REQUEST',
+        );
+      }
+      if (explicitMaxTokens > capabilities.maxOutputTokensCapability) {
+        throw new LlmError(
+          `Requested maxTokens (${explicitMaxTokens}) exceeds model "${option.id}" maxOutputTokens capability (${capabilities.maxOutputTokensCapability})`,
+          'INVALID_REQUEST',
+        );
+      }
+      resolvedMaxTokens = explicitMaxTokens;
+    } else if (this.config.wirePolicyV2) {
+      resolvedMaxTokens = defaultMaxTokens;
+    }
+
+    return {
+      canonicalModel: option.id,
+      capabilities,
+      defaultMaxTokens,
+      ...(resolvedMaxTokens !== undefined ? { resolvedMaxTokens } : {}),
+      allowCredits: this.config.wirePolicyV2,
     };
   }
 

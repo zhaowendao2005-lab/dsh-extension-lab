@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "sourceType": "sanitized_upstream_error_catalog"
+  },
+  "cases": {
+    "bare429ResourceExhausted": {
+      "status": 429,
+      "headers": {},
+      "body": {
+        "error": {
+          "code": 429,
+          "message": "Resource has been exhausted (e.g. check quota).",
+          "status": "RESOURCE_EXHAUSTED"
+        }
+      }
+    },
+    "rateLimitWithRetryInfo": {
+      "status": 429,
+      "headers": {},
+      "body": {
+        "error": {
+          "code": 429,
+          "message": "Too many requests per minute.",
+          "status": "RESOURCE_EXHAUSTED",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              "reason": "RATE_LIMIT_EXCEEDED",
+              "domain": "cloudcode-pa.googleapis.com"
+            },
+            {
+              "@type": "type.googleapis.com/google.rpc.RetryInfo",
+              "retryDelay": "2.5s"
+            }
+          ]
+        }
+      }
+    },
+    "rateLimitWithHttpHeaderSeconds": {
+      "status": 429,
+      "headers": {
+        "retry-after": "3"
+      },
+      "body": {
+        "error": {
+          "code": 429,
+          "message": "RATE_LIMIT_EXCEEDED: slow down",
+          "status": "RESOURCE_EXHAUSTED"
+        }
+      }
+    },
+    "rateLimitWithHttpHeaderDate": {
+      "status": 429,
+      "headers": {
+        "retry-after": "relative_future_5s_test"
+      },
+      "body": {
+        "error": {
+          "code": 429,
+          "message": "Rate limit exceeded",
+          "status": "RESOURCE_EXHAUSTED"
+        }
+      }
+    },
+    "quotaExhaustedWithResetDelay": {
+      "status": 429,
+      "headers": {},
+      "body": {
+        "error": {
+          "code": 429,
+          "message": "You have exhausted your capacity on this model.",
+          "status": "RESOURCE_EXHAUSTED",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              "reason": "QUOTA_EXHAUSTED",
+              "metadata": {
+                "quotaResetDelay": "1800s"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "overloaded503": {
+      "status": 503,
+      "headers": {},
+      "body": {
+        "error": {
+          "code": 503,
+          "message": "The service is currently unavailable.",
+          "status": "UNAVAILABLE"
+        }
+      }
+    },
+    "badRequestMaxOutputTokens": {
+      "status": 400,
+      "headers": {},
+      "body": {
+        "error": {
+          "code": 400,
+          "message": "Invalid value at 'request.generation_config.max_output_tokens'",
+          "status": "INVALID_ARGUMENT"
+        }
+      }
+    }
+  }
+}

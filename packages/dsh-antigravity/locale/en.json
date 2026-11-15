@@ -62,6 +62,8 @@
     "switchReasonManual": "manual selection",
     "switchReasonQuota": "quota <= 5% / exhausted",
     "switchReasonStreak": "consecutive upstream failures",
-    "switchReasonUnavailable": "previous account unavailable"
+    "switchReasonUnavailable": "previous account unavailable",
+    "diagnosticsMode": "Protocol trace mode: {{mode}} ({{count}} records, {{bytes}} bytes)",
+    "clearDiagnostics": "Clear Trace"
   }
 }

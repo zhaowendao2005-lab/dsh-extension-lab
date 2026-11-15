@@ -13,6 +13,7 @@ const NODE_MODULES_SEARCH = [
   path.join(packagesRoot, 'model-intelligence-test', 'node_modules'),
   path.join(packagesRoot, 'dsh-btw-side', 'node_modules'),
   path.join(packagesRoot, 'dsh-plugin-dev-sandbox', 'node_modules'),
+  path.resolve(packagesRoot, '..', 'extracted_files', 'dsh', 'node_modules'),
 ];
 
 function findPackageDir(pkgName) {
@@ -108,4 +109,75 @@ export async function importHostModule(relPath) {
 
 export async function importDshLlm() {
   return import(resolveDeepseekEntry('@deepseek-ai/dsh-llm'));
+}
+
+export async function importDshPackage(pkgName) {
+  const dir = findPackageDir(pkgName);
+  if (!dir) {
+    throw new Error(`Cannot locate ${pkgName} in workspace or extracted DSH node_modules`);
+  }
+  const indexJs = path.join(dir, 'lib', 'index.js');
+  if (existsSync(indexJs)) return import(pathToFileURL(indexJs).href);
+  const indexMjs = path.join(dir, 'lib', 'index.mjs');
+  return import(pathToFileURL(indexMjs).href);
+}
+
+const extractedNodeModules = path.resolve(packagesRoot, '..', 'extracted_files', 'dsh', 'node_modules');
+const extractedCache = new Map();
+
+function resolveExtractedEntry(pkgName) {
+  const dir = path.join(extractedNodeModules, pkgName);
+  if (!existsSync(dir)) {
+    throw new Error(`Cannot locate ${pkgName} in extracted DSH node_modules`);
+  }
+  if (pkgName === '@deepseek-ai/schemastery') {
+    return pathToFileURL(path.join(dir, 'lib', 'index.mjs')).href;
+  }
+  const js = path.join(dir, 'lib', 'index.js');
+  if (existsSync(js)) return pathToFileURL(js).href;
+  return pathToFileURL(path.join(dir, 'lib', 'index.mjs')).href;
+}
+
+/**
+ * Compile a `src/host/*.ts` module against `extracted_files/dsh/node_modules/@deepseek-ai/*`
+ * so `LlmError`/`LlmAdapter`/`Context`/`Schema` share a single ESM instance with real DSH packages.
+ */
+export async function importHostModuleFromExtracted(relPath) {
+  if (extractedCache.has(relPath)) {
+    return extractedCache.get(relPath);
+  }
+  const esbuild = loadEsbuild();
+  const entryPath = path.join(pkgRoot, relPath);
+  const outFile = path.join(tempRoot, `extracted-${++bundleSeq}-${path.basename(relPath, '.ts')}.mjs`);
+
+  const rewriteExtractedPlugin = {
+    name: 'rewrite-extracted-deepseek-externals',
+    setup(build) {
+      build.onResolve({ filter: /^@deepseek-ai\// }, (args) => ({
+        path: resolveExtractedEntry(args.path),
+        external: true,
+      }));
+    },
+  };
+
+  await esbuild.build({
+    entryPoints: [entryPath],
+    bundle: true,
+    outfile: outFile,
+    format: 'esm',
+    platform: 'node',
+    target: 'node22',
+    sourcemap: 'inline',
+    external: ['node:*'],
+    plugins: [rewriteExtractedPlugin],
+    logLevel: 'silent',
+  });
+
+  const modPromise = import(pathToFileURL(outFile).href);
+  extractedCache.set(relPath, modPromise);
+  return modPromise;
+}
+
+export async function importExtractedPackage(pkgName) {
+  return import(resolveExtractedEntry(pkgName));
 }

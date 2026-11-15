@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type {
   AccountPublicSummary,
+  AvailableCreditsState,
   QuotaGroupSummary,
   QuotaSnapshotSummary,
   SwitchEventRecord,
@@ -13,12 +14,24 @@ import {
   refreshGoogleAccessToken,
   type OAuthCredentialsResult,
 } from './oauth.ts';
+import type { CodeAssistTierInfo } from './quota.ts';
 import {
   readJsonFile,
   resolveAntigravityStorageDir,
   resolveLegacyCredentialCandidates,
   writePrivateJsonFile,
 } from './storage.ts';
+
+export interface AccountEntitlement {
+  projectId?: string;
+  tierId?: string;
+  tierLabel?: string;
+  availableCreditsState: AvailableCreditsState;
+  enabledCreditTypes?: string[];
+  source: 'loadCodeAssist' | 'manual' | 'none';
+  fetchedAt: number;
+  accountGeneration: number;
+}
 
 export interface AccountRecord {
   id: string;
@@ -30,6 +43,8 @@ export interface AccountRecord {
   projectId?: string;
   tierLabel?: string;
   tierId?: string;
+  accountGeneration?: number;
+  entitlement?: AccountEntitlement;
   needsReauth: boolean;
   lastError?: string;
   cooldownUntil?: number;
@@ -82,6 +97,8 @@ export class AntigravityAccountManager {
 
   private recentSwitches: SwitchEventRecord[] = [];
   private coldNotice: SwitchEventRecord | undefined;
+  private disposed = false;
+  private persistQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly config: AntigravityPluginConfig) {
     this.accountsPath = path.join(
@@ -152,19 +169,35 @@ export class AntigravityAccountManager {
     }
   }
 
+  markDisposed(): void {
+    this.disposed = true;
+  }
+
+  async flushAndDispose(): Promise<void> {
+    this.disposed = true;
+    await this.persistQueue.catch(() => undefined);
+  }
+
   private async persist(): Promise<void> {
+    if (this.disposed) return;
     const payload: StoredAccountsState = {
       version: 1,
       ...(this.activeAccountId ? { activeAccountId: this.activeAccountId } : {}),
-      accounts: this.accounts,
+      accounts: structuredClone(this.accounts),
     };
-    await writePrivateJsonFile(this.accountsPath, payload);
+    const next = this.persistQueue.then(async () => {
+      if (this.disposed) return;
+      await writePrivateJsonFile(this.accountsPath, payload);
+    });
+    this.persistQueue = next.catch(() => undefined);
+    await next;
   }
 
   listAccounts(): AccountPublicSummary[] {
     return this.accounts.map((acc) => {
       const q = this.quotaCache.get(acc.id);
       const lowest = lowestFractionOf(q);
+      const trusted = this.resolveTrustedEntitlement(acc.id);
       return {
         id: acc.id,
         email: acc.email,
@@ -172,6 +205,11 @@ export class AntigravityAccountManager {
         ...(acc.projectId ? { projectId: acc.projectId } : {}),
         ...(acc.tierLabel ? { tierLabel: acc.tierLabel } : {}),
         ...(acc.tierId ? { tierId: acc.tierId } : {}),
+        ...(acc.entitlement
+          ? { availableCreditsState: acc.entitlement.availableCreditsState }
+          : {}),
+        ...(trusted?.enabledCreditTypes ? { enabledCreditTypes: trusted.enabledCreditTypes } : {}),
+        ...(trusted ? { entitlementGeneration: trusted.accountGeneration } : {}),
         isActive: acc.id === this.activeAccountId,
         needsReauth: acc.needsReauth,
         ...(acc.lastError ? { lastError: acc.lastError } : {}),
@@ -248,6 +286,8 @@ export class AntigravityAccountManager {
       existing.needsReauth = false;
       existing.lastError = undefined;
       existing.cooldownUntil = undefined;
+      existing.accountGeneration = (existing.accountGeneration ?? 1) + 1;
+      existing.entitlement = undefined;
       this.activeAccountId = existing.id;
       await this.persist();
       return existing;
@@ -260,6 +300,7 @@ export class AntigravityAccountManager {
       accessToken: creds.accessToken,
       refreshToken: creds.refreshToken,
       expiresAt: creds.expiresAt,
+      accountGeneration: 1,
       needsReauth: false,
       addedAt: Date.now(),
     };
@@ -306,6 +347,8 @@ export class AntigravityAccountManager {
     let changed = false;
     if (patch.projectId && acc.projectId !== patch.projectId) {
       acc.projectId = patch.projectId;
+      acc.accountGeneration = (acc.accountGeneration ?? 1) + 1;
+      acc.entitlement = undefined;
       changed = true;
     }
     if (patch.tierLabel && acc.tierLabel !== patch.tierLabel) {
@@ -317,6 +360,54 @@ export class AntigravityAccountManager {
       changed = true;
     }
     if (changed) await this.persist();
+  }
+
+  async updateAccountEntitlement(
+    accountId: string,
+    tierInfo: CodeAssistTierInfo,
+    source: AccountEntitlement['source'] = 'loadCodeAssist',
+  ): Promise<AccountEntitlement | undefined> {
+    const acc = this.getAccountById(accountId);
+    if (!acc) return undefined;
+    const currentGen = acc.accountGeneration ?? 1;
+    acc.accountGeneration = currentGen;
+
+    if (tierInfo.projectId) acc.projectId = tierInfo.projectId;
+    if (tierInfo.tierId) acc.tierId = tierInfo.tierId;
+    if (tierInfo.tierLabel) acc.tierLabel = tierInfo.tierLabel;
+
+    const entitlement: AccountEntitlement = {
+      ...(tierInfo.projectId ? { projectId: tierInfo.projectId } : {}),
+      ...(tierInfo.tierId ? { tierId: tierInfo.tierId } : {}),
+      ...(tierInfo.tierLabel ? { tierLabel: tierInfo.tierLabel } : {}),
+      availableCreditsState: tierInfo.availableCreditsState,
+      ...(tierInfo.enabledCreditTypes
+        ? { enabledCreditTypes: [...tierInfo.enabledCreditTypes] }
+        : {}),
+      source,
+      fetchedAt: Date.now(),
+      accountGeneration: currentGen,
+    };
+    acc.entitlement = entitlement;
+    await this.persist();
+    return entitlement;
+  }
+
+  async invalidateAccountEntitlement(accountId: string): Promise<void> {
+    const acc = this.getAccountById(accountId);
+    if (!acc) return;
+    acc.accountGeneration = (acc.accountGeneration ?? 1) + 1;
+    acc.entitlement = undefined;
+    await this.persist();
+  }
+
+  resolveTrustedEntitlement(accountId: string): AccountEntitlement | undefined {
+    const acc = this.getAccountById(accountId);
+    if (!acc || acc.needsReauth || !acc.entitlement) return undefined;
+    const expectedGen = acc.accountGeneration ?? 1;
+    if (acc.entitlement.source !== 'loadCodeAssist') return undefined;
+    if (acc.entitlement.accountGeneration !== expectedGen) return undefined;
+    return acc.entitlement;
   }
 
   /**
@@ -357,6 +448,8 @@ export class AntigravityAccountManager {
         const msg = error instanceof Error ? error.message : String(error);
         if (/invalid_grant|unauthorized_client|revoked/i.test(msg)) {
           current.needsReauth = true;
+          current.accountGeneration = (current.accountGeneration ?? 1) + 1;
+          current.entitlement = undefined;
         }
         current.lastError = msg;
         await this.persist();
@@ -562,6 +655,7 @@ export class AntigravityAccountManager {
     message: string;
     retryAfterMs?: number;
     pool?: QuotaGroupSummary['pool'];
+    allowFailover?: boolean;
   }): SwitchEventRecord | undefined {
     const acc = this.getAccountById(params.accountId);
     if (acc) {
@@ -596,6 +690,10 @@ export class AntigravityAccountManager {
 
     binding.failureStreak += 1;
     binding.lastFailureCategory = params.category;
+
+    if (params.allowFailover === false) {
+      return undefined;
+    }
 
     const shouldSwitchNow =
       params.category === 'QUOTA' ||

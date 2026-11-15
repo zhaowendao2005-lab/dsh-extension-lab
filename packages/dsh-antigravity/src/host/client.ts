@@ -1,5 +1,11 @@
 import { LlmError, ProviderRequestId } from '@deepseek-ai/dsh-llm';
 import type { AntigravityPluginConfig } from './config.ts';
+import {
+  NOOP_DIAGNOSTIC_OBSERVER,
+  sanitizeErrorDetailText,
+  type ProtocolDiagnosticEventInput,
+  type ProtocolDiagnosticObserver,
+} from './diagnostics.ts';
 import { buildOutboundHeaders } from './identity.ts';
 
 export type LlmErrorCode =
@@ -24,12 +30,31 @@ export type StickyFailureCategory =
   | 'TRANSPORT'
   | 'UNKNOWN';
 
+export type RetryDelaySource =
+  | 'retry_info'
+  | 'quota_reset_delay'
+  | 'retry_after_header'
+  | 'body_regex'
+  | 'none';
+
+export type Upstream429SubType =
+  | 'rate_limited'
+  | 'quota_exhausted'
+  | 'resource_exhausted_unknown';
+
 export interface ClassifiedUpstreamError {
   code: LlmErrorCode;
   category: StickyFailureCategory;
   status?: number;
   message: string;
+  retryable?: boolean;
   retryAfterMs?: number;
+  quotaResetDelayMs?: number;
+  delaySource?: RetryDelaySource;
+  subType?: Upstream429SubType;
+  errorReason?: string;
+  errorStatus?: string;
+  sanitizedDetail?: string;
   isOneMillionContextError: boolean;
   isSignatureError: boolean;
   isModelNotFound: boolean;
@@ -39,6 +64,8 @@ const DEFAULT_ENDPOINT_COOLDOWN_MS = 30_000;
 const SANDBOX_ENDPOINT_COOLDOWN_MS = 60_000;
 const SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES = 1;
 const SAME_ACCOUNT_MAX_WAIT_MS = 8_000;
+const SAME_ACCOUNT_MAX_WAIT_V2_MS = 15_000;
+const SAME_ACCOUNT_MIN_WAIT_V2_MS = 1_000;
 
 export function isSandboxEndpoint(urlOrHost: string): boolean {
   return urlOrHost.toLowerCase().includes('sandbox.googleapis.com');
@@ -129,41 +156,194 @@ function extractStructuredRetryMs(obj: unknown, depth = 0): number | undefined {
   return undefined;
 }
 
-export function parseRetryDelayMs(
+export interface ParsedRetryDelayDetails {
+  retryAfterMs?: number;
+  quotaResetDelayMs?: number;
+  delaySource: RetryDelaySource;
+  errorReason?: string;
+  errorStatus?: string;
+}
+
+function parseDurationOrSeconds(v: unknown): number | undefined {
+  if (typeof v === 'string') {
+    const parsed = parseDurationMs(v);
+    if (parsed !== undefined) return parsed;
+    const asSec = Number(v);
+    if (Number.isFinite(asSec) && asSec > 0) return Math.round(asSec * 1000);
+  } else if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+    return Math.round(v * 1000);
+  }
+  return undefined;
+}
+
+function extractRpcStructuredMeta(parsedJson: unknown): {
+  retryInfoDelayMs?: number;
+  quotaResetDelayMs?: number;
+  fallbackDelayMs?: number;
+  errorReason?: string;
+  errorStatus?: string;
+} {
+  if (!parsedJson || typeof parsedJson !== 'object' || Array.isArray(parsedJson)) {
+    return {};
+  }
+  const root = parsedJson as Record<string, unknown>;
+  const errObj =
+    root.error && typeof root.error === 'object' && !Array.isArray(root.error)
+      ? (root.error as Record<string, unknown>)
+      : root;
+  const errorStatus =
+    typeof errObj.status === 'string' && errObj.status.trim() !== ''
+      ? errObj.status.trim()
+      : undefined;
+
+  let retryInfoDelayMs: number | undefined;
+  let quotaResetDelayMs: number | undefined;
+  let errorReason: string | undefined;
+
+  const details = Array.isArray(errObj.details) ? errObj.details : [];
+  for (const item of details) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const typeStr = typeof rec['@type'] === 'string' ? rec['@type'] : '';
+
+    if (typeof rec.reason === 'string' && rec.reason.trim() !== '' && !errorReason) {
+      errorReason = rec.reason.trim();
+    }
+
+    if (typeStr.includes('RetryInfo') || 'retryDelay' in rec || 'retry_delay' in rec) {
+      const delay = parseDurationOrSeconds(rec.retryDelay ?? rec.retry_delay);
+      if (delay !== undefined && retryInfoDelayMs === undefined) {
+        retryInfoDelayMs = delay;
+      }
+    }
+
+    const meta =
+      rec.metadata && typeof rec.metadata === 'object' && !Array.isArray(rec.metadata)
+        ? (rec.metadata as Record<string, unknown>)
+        : undefined;
+    if (meta) {
+      const qDelay = parseDurationOrSeconds(
+        meta.quotaResetDelay ?? meta.quota_reset_delay,
+      );
+      if (qDelay !== undefined && quotaResetDelayMs === undefined) {
+        quotaResetDelayMs = qDelay;
+      }
+      const mRetry = parseDurationOrSeconds(meta.retryDelay ?? meta.retry_delay);
+      if (mRetry !== undefined && retryInfoDelayMs === undefined) {
+        retryInfoDelayMs = mRetry;
+      }
+    }
+  }
+
+  const fallbackDelayMs = extractStructuredRetryMs(parsedJson);
+  return {
+    retryInfoDelayMs,
+    quotaResetDelayMs,
+    fallbackDelayMs,
+    errorReason,
+    errorStatus,
+  };
+}
+
+export function parseRetryDelayDetails(
   bodyText: string,
   retryAfterHeader?: string | null,
-): number | undefined {
+): ParsedRetryDelayDetails {
+  let rpcMeta: ReturnType<typeof extractRpcStructuredMeta> = {};
+  try {
+    const parsedJson = JSON.parse(bodyText);
+    rpcMeta = extractRpcStructuredMeta(parsedJson);
+  } catch {
+    // Non-JSON body; inspect header & regex patterns.
+  }
+
+  let headerRetryMs: number | undefined;
   if (retryAfterHeader) {
     const trimmed = retryAfterHeader.trim();
     const numeric = Number(trimmed);
     if (Number.isFinite(numeric) && numeric > 0) {
-      return Math.round(numeric * 1000) + 200;
-    }
-    const parsedDur = parseDurationMs(trimmed);
-    if (parsedDur !== undefined) return parsedDur + 200;
-    const dateMs = Date.parse(trimmed);
-    if (Number.isFinite(dateMs)) {
-      const diff = dateMs - Date.now();
-      if (diff > 0) return diff + 200;
+      headerRetryMs = Math.round(numeric * 1000) + 200;
+    } else {
+      const parsedDur = parseDurationMs(trimmed);
+      if (parsedDur !== undefined) {
+        headerRetryMs = parsedDur + 200;
+      } else {
+        const dateMs = Date.parse(trimmed);
+        if (Number.isFinite(dateMs)) {
+          const diff = dateMs - Date.now();
+          if (diff > 0) headerRetryMs = Math.round(diff) + 200;
+        }
+      }
     }
   }
 
-  try {
-    const parsedJson = JSON.parse(bodyText);
-    const structured = extractStructuredRetryMs(parsedJson);
-    if (structured !== undefined) return structured + 200;
-  } catch {
-    // Non-JSON body; inspect text patterns next.
+  if (rpcMeta.retryInfoDelayMs !== undefined) {
+    return {
+      retryAfterMs: rpcMeta.retryInfoDelayMs + 200,
+      ...(rpcMeta.quotaResetDelayMs !== undefined
+        ? { quotaResetDelayMs: rpcMeta.quotaResetDelayMs }
+        : {}),
+      delaySource: 'retry_info',
+      ...(rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {}),
+      ...(rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}),
+    };
+  }
+
+  if (rpcMeta.quotaResetDelayMs !== undefined) {
+    return {
+      retryAfterMs: rpcMeta.quotaResetDelayMs + 200,
+      quotaResetDelayMs: rpcMeta.quotaResetDelayMs,
+      delaySource: 'quota_reset_delay',
+      ...(rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {}),
+      ...(rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}),
+    };
+  }
+
+  if (headerRetryMs !== undefined) {
+    return {
+      retryAfterMs: headerRetryMs,
+      delaySource: 'retry_after_header',
+      ...(rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {}),
+      ...(rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}),
+    };
+  }
+
+  if (rpcMeta.fallbackDelayMs !== undefined) {
+    return {
+      retryAfterMs: rpcMeta.fallbackDelayMs + 200,
+      delaySource: 'body_regex',
+      ...(rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {}),
+      ...(rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}),
+    };
   }
 
   for (const re of TEXT_DELAY_PATTERNS) {
     const match = re.exec(bodyText);
     if (match?.[1]) {
       const parsed = parseDurationMs(match[1]);
-      if (parsed !== undefined) return parsed + 1000;
+      if (parsed !== undefined) {
+        return {
+          retryAfterMs: parsed + 1000,
+          delaySource: 'body_regex',
+          ...(rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {}),
+          ...(rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}),
+        };
+      }
     }
   }
-  return undefined;
+
+  return {
+    delaySource: 'none',
+    ...(rpcMeta.errorReason ? { errorReason: rpcMeta.errorReason } : {}),
+    ...(rpcMeta.errorStatus ? { errorStatus: rpcMeta.errorStatus } : {}),
+  };
+}
+
+export function parseRetryDelayMs(
+  bodyText: string,
+  retryAfterHeader?: string | null,
+): number | undefined {
+  return parseRetryDelayDetails(bodyText, retryAfterHeader).retryAfterMs;
 }
 
 function extractMessageFromBody(bodyText: string): string {
@@ -187,9 +367,18 @@ export function classifyUpstreamHttpError(
   status: number,
   bodyText: string,
   retryAfterHeader?: string | null,
+  options?: { retrySafetyV2?: boolean },
 ): ClassifiedUpstreamError {
-  const message = extractMessageFromBody(bodyText);
-  const lower = `${message}\n${bodyText}`.toLowerCase();
+  const retrySafetyV2 = options?.retrySafetyV2 !== false;
+  const rawMessage = extractMessageFromBody(bodyText);
+  const message = sanitizeErrorDetailText(rawMessage, 240) ?? rawMessage;
+  const lower = `${rawMessage}\n${bodyText}`.toLowerCase();
+  const delayMeta = parseRetryDelayDetails(bodyText, retryAfterHeader);
+  const metaTag =
+    delayMeta.errorStatus || delayMeta.errorReason
+      ? `[${[delayMeta.errorStatus, delayMeta.errorReason].filter(Boolean).join('/')}] `
+      : '';
+  const sanitizedDetail = `${metaTag}${message}`;
 
   const isOneMillionContextError =
     lower.includes('maximum number of tokens allowed 1048576') ||
@@ -247,18 +436,80 @@ export function classifyUpstreamHttpError(
   }
 
   if (status === 429 || status === 529) {
-    const retryAfterMs = parseRetryDelayMs(bodyText, retryAfterHeader);
-    const isExhaustedQuota =
+    const retryAfterMs = delayMeta.retryAfterMs;
+    const isExplicitQuotaExhaustion =
       lower.includes('quota_exhausted') ||
       lower.includes('exhausted your capacity') ||
       lower.includes('quota exceeded') ||
+      lower.includes('daily limit') ||
+      delayMeta.errorReason === 'QUOTA_EXHAUSTED' ||
+      delayMeta.quotaResetDelayMs !== undefined ||
       (retryAfterMs !== undefined && retryAfterMs > 60_000);
+
+    const isExplicitRateLimit =
+      delayMeta.errorReason === 'RATE_LIMIT_EXCEEDED' ||
+      lower.includes('rate limit') ||
+      lower.includes('rate_limit') ||
+      lower.includes('too many requests') ||
+      lower.includes('per minute') ||
+      (retryAfterMs !== undefined && retryAfterMs <= 60_000);
+
+    if (isExplicitQuotaExhaustion) {
+      return {
+        code: 'QUOTA',
+        category: 'QUOTA',
+        status,
+        message: sanitizedDetail,
+        retryable: false,
+        subType: 'quota_exhausted',
+        ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        ...(delayMeta.quotaResetDelayMs !== undefined
+          ? { quotaResetDelayMs: delayMeta.quotaResetDelayMs }
+          : {}),
+        delaySource: delayMeta.delaySource,
+        ...(delayMeta.errorReason ? { errorReason: delayMeta.errorReason } : {}),
+        ...(delayMeta.errorStatus ? { errorStatus: delayMeta.errorStatus } : {}),
+        sanitizedDetail,
+        isOneMillionContextError: false,
+        isSignatureError: false,
+        isModelNotFound: false,
+      };
+    }
+
+    if (isExplicitRateLimit || !retrySafetyV2) {
+      return {
+        code: 'RATE_LIMIT',
+        category: 'RATE_LIMIT',
+        status,
+        message: sanitizedDetail,
+        retryable:
+          !retrySafetyV2 ||
+          (retryAfterMs !== undefined && retryAfterMs <= SAME_ACCOUNT_MAX_WAIT_V2_MS),
+        subType: isExplicitRateLimit ? 'rate_limited' : 'resource_exhausted_unknown',
+        ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        delaySource: delayMeta.delaySource,
+        ...(delayMeta.errorReason ? { errorReason: delayMeta.errorReason } : {}),
+        ...(delayMeta.errorStatus ? { errorStatus: delayMeta.errorStatus } : {}),
+        sanitizedDetail,
+        isOneMillionContextError: false,
+        isSignatureError: false,
+        isModelNotFound: false,
+      };
+    }
+
+    // Bare / ambiguous 429 ("Resource has been exhausted" without explicit delay or rate-limit evidence):
+    // Fail safely to QUOTA so DSH llm-retry will not rapidly re-slam upstream at 600ms/1200ms.
     return {
-      code: isExhaustedQuota ? 'QUOTA' : 'RATE_LIMIT',
-      category: isExhaustedQuota ? 'QUOTA' : 'RATE_LIMIT',
+      code: 'QUOTA',
+      category: 'QUOTA',
       status,
-      message,
-      retryAfterMs,
+      message: sanitizedDetail,
+      retryable: false,
+      subType: 'resource_exhausted_unknown',
+      delaySource: delayMeta.delaySource,
+      ...(delayMeta.errorReason ? { errorReason: delayMeta.errorReason } : {}),
+      ...(delayMeta.errorStatus ? { errorStatus: delayMeta.errorStatus } : {}),
+      sanitizedDetail,
       isOneMillionContextError: false,
       isSignatureError: false,
       isModelNotFound: false,
@@ -447,41 +698,58 @@ export interface UpstreamCallOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   allowSameAccount429Retry?: boolean;
+  disableRetry?: boolean;
+  diagnosticSource?: ProtocolDiagnosticEventInput['source'];
+  diagnosticSessionId?: string;
+  diagnosticAccountId?: string;
+  entitlementSource?: string;
+  entitlementGeneration?: number;
+  resolvedMaxTokens?: number;
 }
 
 export class AntigravityHttpClient {
   readonly endpointHealth = new EndpointHealthTracker();
 
-  constructor(private readonly config: AntigravityPluginConfig) {}
+  constructor(
+    private readonly config: AntigravityPluginConfig,
+    private readonly observer: ProtocolDiagnosticObserver = NOOP_DIAGNOSTIC_OBSERVER,
+  ) {}
 
   async post(options: UpstreamCallOptions): Promise<{
     response: Response;
     endpoint: string;
   }> {
-    const transient429Limit = options.allowSameAccount429Retry
-      ? SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES
-      : 0;
+    const transient429Limit =
+      options.allowSameAccount429Retry && !options.disableRetry
+        ? SAME_ACCOUNT_MAX_TRANSIENT_429_RETRIES
+        : 0;
 
     let transientAttempts = 0;
 
     for (;;) {
       try {
-        return await this.postAcrossEndpoints(options);
+        return await this.postAcrossEndpoints(options, transientAttempts + 1);
       } catch (error) {
         if (error instanceof AntigravityUpstreamError) {
+          const maxWait = this.config.retrySafetyV2
+            ? SAME_ACCOUNT_MAX_WAIT_V2_MS
+            : SAME_ACCOUNT_MAX_WAIT_MS;
           const isExplicitShortBackoff =
             error.classified.retryAfterMs !== undefined &&
-            error.classified.retryAfterMs <= SAME_ACCOUNT_MAX_WAIT_MS;
+            error.classified.retryAfterMs <= maxWait;
+          const allowedByRetrySafety =
+            !this.config.retrySafetyV2 || error.classified.subType === 'rate_limited';
           const isTransient429 =
             error.classified.status === 429 &&
             error.classified.category === 'RATE_LIMIT' &&
+            allowedByRetrySafety &&
             isExplicitShortBackoff &&
             transientAttempts < transient429Limit;
           if (isTransient429) {
-            const waitMs = Math.min(
-              SAME_ACCOUNT_MAX_WAIT_MS,
-              error.classified.retryAfterMs ?? (transientAttempts + 1) * 1200,
-            );
+            const rawWait = error.classified.retryAfterMs ?? (transientAttempts + 1) * 1200;
+            const waitMs = this.config.retrySafetyV2
+              ? Math.max(SAME_ACCOUNT_MIN_WAIT_V2_MS, Math.min(maxWait, rawWait))
+              : Math.min(maxWait, rawWait);
             transientAttempts += 1;
             await sleepWithAbort(waitMs, options.signal);
             continue;
@@ -492,7 +760,10 @@ export class AntigravityHttpClient {
     }
   }
 
-  private async postAcrossEndpoints(options: UpstreamCallOptions): Promise<{
+  private async postAcrossEndpoints(
+    options: UpstreamCallOptions,
+    retryRound = 1,
+  ): Promise<{
     response: Response;
     endpoint: string;
   }> {
@@ -504,6 +775,7 @@ export class AntigravityHttpClient {
       isContentRequest: options.isContentRequest,
     });
     const bodyJson = JSON.stringify(options.body);
+    const bodyBytes = Buffer.byteLength(bodyJson, 'utf8');
     const timeoutMs = options.timeoutMs ?? this.config.requestTimeoutMs;
 
     let lastError: AntigravityUpstreamError | undefined;
@@ -513,6 +785,8 @@ export class AntigravityHttpClient {
       const hasNext = i + 1 < candidates.length;
       const query = options.queryString ? `?${options.queryString}` : '';
       const url = `${endpoint}/v1internal:${options.method}${query}`;
+      const attemptNum = (retryRound - 1) * candidates.length + (i + 1);
+      const startedAt = Date.now();
 
       const { signal, cleanup } = linkTimeoutSignal(options.signal, timeoutMs);
       try {
@@ -525,15 +799,65 @@ export class AntigravityHttpClient {
 
         if (response.ok) {
           this.endpointHealth.markHealthy(endpoint);
+          if (this.observer.enabled) {
+            this.observer.record({
+              requestId: options.requestId ?? `${options.method}-${startedAt}`,
+              sessionId: options.diagnosticSessionId,
+              source: options.diagnosticSource ?? (options.isContentRequest ? 'direct-adapter' : 'aux'),
+              method: options.method,
+              attempt: attemptNum,
+              endpoint,
+              accountIdHash: options.diagnosticAccountId,
+              entitlementSource: options.entitlementSource,
+              entitlementGeneration: options.entitlementGeneration,
+              wirePolicyV2: this.config.wirePolicyV2,
+              retrySafetyV2: this.config.retrySafetyV2,
+              resolvedMaxTokens: options.resolvedMaxTokens,
+              headers,
+              body: options.body,
+              byteLength: bodyBytes,
+              httpStatus: response.status,
+              durationMs: Date.now() - startedAt,
+            });
+          }
           return { response, endpoint };
         }
 
         const errText = await response.text();
         const retryAfter = response.headers.get('retry-after');
-        const classified = classifyUpstreamHttpError(response.status, errText, retryAfter);
+        const classified = classifyUpstreamHttpError(response.status, errText, retryAfter, {
+          retrySafetyV2: this.config.retrySafetyV2,
+        });
         const upstreamError = new AntigravityUpstreamError(classified, options.requestId);
 
-        if (hasNext && shouldTryNextEndpoint(response.status, endpoint)) {
+        if (this.observer.enabled) {
+          this.observer.record({
+            requestId: options.requestId ?? `${options.method}-${startedAt}`,
+            sessionId: options.diagnosticSessionId,
+            source: options.diagnosticSource ?? (options.isContentRequest ? 'direct-adapter' : 'aux'),
+            method: options.method,
+            attempt: attemptNum,
+            endpoint,
+            accountIdHash: options.diagnosticAccountId,
+            entitlementSource: options.entitlementSource,
+            entitlementGeneration: options.entitlementGeneration,
+            wirePolicyV2: this.config.wirePolicyV2,
+            retrySafetyV2: this.config.retrySafetyV2,
+            resolvedMaxTokens: options.resolvedMaxTokens,
+            headers,
+            body: options.body,
+            byteLength: bodyBytes,
+            httpStatus: response.status,
+            classifiedCode: classified.code,
+            classifiedSubType: classified.subType,
+            retryAfterMs: classified.retryAfterMs,
+            parsedDelaySource: classified.delaySource,
+            errorDetailSummary: classified.sanitizedDetail ?? classified.message,
+            durationMs: Date.now() - startedAt,
+          });
+        }
+
+        if (!options.disableRetry && hasNext && shouldTryNextEndpoint(response.status, endpoint)) {
           this.endpointHealth.markFailure(endpoint);
           lastError = upstreamError;
           continue;
@@ -565,7 +889,7 @@ export class AntigravityHttpClient {
           options.requestId,
           error,
         );
-        if (hasNext) {
+        if (!options.disableRetry && hasNext) {
           this.endpointHealth.markFailure(endpoint);
           lastError = transportErr;
           continue;

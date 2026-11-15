@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "sourceType": "allowlist_rebuilt_from_fetchAvailableModels",
+    "sourceCapture": "capture/cli-flows.jsonl#7"
+  },
+  "response": {
+    "defaultAgentModelId": "gemini-4-hydrogen-medium",
+    "models": {
+      "gemini-4-hydrogen-low": {
+        "model": "MODEL_PLACEHOLDER_M527",
+        "displayName": "Gemini 4 Hydrogen (Low)",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 262144,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 1,
+        "minThinkingBudget": 32,
+        "recommended": true,
+        "tagTitle": "New",
+        "quotaInfo": {
+          "remainingFraction": 0.832767,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      },
+      "gemini-4-hydrogen-medium": {
+        "model": "MODEL_PLACEHOLDER_M526",
+        "displayName": "Gemini 4 Hydrogen (Medium)",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 262144,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 2,
+        "minThinkingBudget": 32,
+        "recommended": true,
+        "tagTitle": "New",
+        "quotaInfo": {
+          "remainingFraction": 0.832767,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      },
+      "gemini-4-hydrogen-high": {
+        "model": "MODEL_PLACEHOLDER_M525",
+        "displayName": "Gemini 4 Hydrogen (High)",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 262144,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 3,
+        "minThinkingBudget": 32,
+        "recommended": true,
+        "tagTitle": "New",
+        "quotaInfo": {
+          "remainingFraction": 0.832767,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      },
+      "gemini-4-hydrogen-xhigh": {
+        "model": "MODEL_PLACEHOLDER_M528",
+        "displayName": "Gemini 4 Hydrogen (XHigh)",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 262144,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 100,
+        "minThinkingBudget": 32,
+        "recommended": true,
+        "tagTitle": "New",
+        "quotaInfo": {
+          "remainingFraction": 0.832767,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      },
+      "gemini-4-argon-high": {
+        "model": "MODEL_PLACEHOLDER_M417",
+        "displayName": "Gemini 4 Argon (High)",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 65536,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 3,
+        "minThinkingBudget": 32,
+        "recommended": true,
+        "tagTitle": "New",
+        "quotaInfo": {
+          "remainingFraction": 0.91373265,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      },
+      "gemini-3.8-flash-low": {
+        "model": "MODEL_PLACEHOLDER_M320",
+        "displayName": "Gemini 3.8 Flash (Low)",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 65536,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 1,
+        "minThinkingBudget": 32,
+        "recommended": true,
+        "quotaInfo": {
+          "remainingFraction": 0.832767,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      },
+      "gemini-3.1-flash-lite": {
+        "model": "MODEL_PLACEHOLDER_M50",
+        "displayName": "Gemini 3.1 Flash Lite",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 65535,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 1,
+        "minThinkingBudget": 128,
+        "recommended": true,
+        "quotaInfo": {
+          "remainingFraction": 0.832767,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      },
+      "gemini-4-carbon-disabled": {
+        "model": "MODEL_PLACEHOLDER_M670",
+        "displayName": "Gemini 4 Carbon",
+        "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+        "modelProvider": "MODEL_PROVIDER_GOOGLE",
+        "maxTokens": 1048576,
+        "maxOutputTokens": 262144,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "thinkingLevel": 2,
+        "minThinkingBudget": 128,
+        "disabled": true,
+        "recommended": true,
+        "tagTitle": "Unavailable"
+      },
+      "claude-sonnet-5-5-medium": {
+        "model": "MODEL_PLACEHOLDER_M404",
+        "displayName": "Claude Sonnet 5.5 (Medium)",
+        "apiProvider": "API_PROVIDER_ANTHROPIC_VERTEX",
+        "modelProvider": "MODEL_PROVIDER_ANTHROPIC",
+        "maxTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "supportsImages": true,
+        "supportsThinking": true,
+        "supportsAdaptiveThinking": true,
+        "thinkingLevel": 2,
+        "recommended": true,
+        "tagTitle": "New",
+        "quotaInfo": {
+          "remainingFraction": 1,
+          "resetTime": "2026-11-15T00:00:00Z"
+        }
+      }
+    }
+  }
+}

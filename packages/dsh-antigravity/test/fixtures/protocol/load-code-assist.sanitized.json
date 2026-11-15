@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "sourceType": "allowlist_rebuilt_from_loadCodeAssist",
+    "redacted": ["cloudaicompanionProject", "upgradeSubscriptionUri", "privacyNotice"]
+  },
+  "variants": {
+    "g1ProWithGoogleOneAi": {
+      "cloudaicompanionProject": "fixture-project-pro-001",
+      "currentTier": {
+        "id": "free-tier",
+        "name": "Antigravity"
+      },
+      "paidTier": {
+        "id": "g1-pro-tier",
+        "name": "Google AI Pro",
+        "availableCredits": [
+          {
+            "creditType": "GOOGLE_ONE_AI",
+            "minimumCreditAmountForUsage": "50"
+          }
+        ]
+      },
+      "allowedTiers": [
+        {
+          "id": "free-tier",
+          "name": "Antigravity",
+          "isDefault": true
+        },
+        {
+          "id": "standard-tier",
+          "name": "Antigravity"
+        }
+      ],
+      "gcpManaged": false
+    },
+    "freeTierNoCreditsField": {
+      "cloudaicompanionProject": "fixture-project-free-001",
+      "currentTier": {
+        "id": "free-tier",
+        "name": "Antigravity"
+      },
+      "allowedTiers": [
+        {
+          "id": "free-tier",
+          "name": "Antigravity",
+          "isDefault": true
+        }
+      ],
+      "gcpManaged": false
+    },
+    "paidTierEmptyCredits": {
+      "cloudaicompanionProject": "fixture-project-empty-001",
+      "currentTier": {
+        "id": "free-tier",
+        "name": "Antigravity"
+      },
+      "paidTier": {
+        "id": "g1-pro-tier",
+        "name": "Google AI Pro",
+        "availableCredits": []
+      }
+    },
+    "malformedCreditsShape": {
+      "cloudaicompanionProject": "fixture-project-bad-001",
+      "paidTier": {
+        "id": "g1-pro-tier",
+        "name": "Google AI Pro",
+        "availableCredits": "unexpected-string-payload"
+      }
+    },
+    "invalidCreditElement": {
+      "cloudaicompanionProject": "fixture-project-bad-002",
+      "paidTier": {
+        "id": "g1-pro-tier",
+        "name": "Google AI Pro",
+        "availableCredits": [
+          {
+            "minimumCreditAmountForUsage": "50"
+          }
+        ]
+      }
+    }
+  }
+}

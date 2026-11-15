@@ -558,6 +558,35 @@ export function AntigravitySettingsPanel({ ctx }: { ctx: any }) {
           </div>
         )}
 
+        {status?.diagnostics && (
+          <div className="dsha-row-sub" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <span>
+              {t('diagnosticsMode', {
+                mode: status.diagnostics.mode,
+                count: status.diagnostics.recordCount,
+                bytes: status.diagnostics.fileBytes,
+              })}
+            </span>
+            {status.diagnostics.recordCount > 0 && (
+              <button
+                type="button"
+                className="dsha-btn"
+                disabled={busy}
+                onClick={() =>
+                  runAction(() =>
+                    apiFetch<AntigravityStatusPayload>('/antigravity/api/diagnostics/clear', {
+                      method: 'POST',
+                      body: '{}',
+                    }),
+                  )
+                }
+              >
+                {t('clearDiagnostics')}
+              </button>
+            )}
+          </div>
+        )}
+
         {doctor && (
           <div className="dsha-oauth-box">
             <div className="dsha-banner-title">{t('doctorTitle')}</div>

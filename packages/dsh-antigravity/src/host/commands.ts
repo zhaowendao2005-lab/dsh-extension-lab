@@ -68,6 +68,11 @@ export function registerAntigravityCommands(
           lines.push(
             `Telemetry: ${status.telemetry.turnCount} turns, cache hit ${formatPct(status.telemetry.aggregateCacheHitRate)} (${status.telemetry.totalCacheReadTokens} cached / ${status.telemetry.totalUncachedInputTokens} uncached input)`,
           );
+          if (status.diagnostics) {
+            lines.push(
+              `Diagnostics: mode=${status.diagnostics.mode}, records=${status.diagnostics.recordCount}, bytes=${status.diagnostics.fileBytes}`,
+            );
+          }
           return { kind: 'success', text: lines.join('\n') };
         },
       });
