@@ -166,7 +166,14 @@ export function ScmView({ stores }) {
         </div>
       )}
       {!workspace.trust && (
-        <div className="wid-scm__banner wid-scm__banner--warn">未信任该工作区：不能暂存、提交或切换分支</div>
+        <div className="wid-scm__banner wid-scm__banner--warn">
+          <span>未信任该工作区：不能暂存、提交或切换分支</span>
+          <span className="wid-scm__banner-actions">
+            <button type="button" className="wid-button wid-button--sm wid-button--primary" onClick={() => void stores.actions.setTrusted(true)}>
+              信任此工作区
+            </button>
+          </span>
+        </div>
       )}
 
       <div className="wid-scm__commit">

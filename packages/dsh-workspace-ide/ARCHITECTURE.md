@@ -4,7 +4,7 @@
 
 ## 一句话定位
 
-DSH 的一个**全局面板插件**：左栏文件树、中栏 CM6 编辑器与 diff、右栏（可停靠）SCM 与提交图谱、底部真 PTY 终端。
+DSH 的一个**右栏工作台插件**：它是右栏（rightbar）的一个宿主 tab；内部左栏是文件/搜索，工作区是可分栏的标签页（文件、diff、提交图谱、当前改动、设置），底部是真 PTY 终端。
 它**不注册任何模型工具**，不参与会话对话——纯人用工作台；数据全部来自 Host（文件系统 + `git` CLI + PTY），浏览器只做渲染与交互。
 
 ## 依赖方向
@@ -12,8 +12,8 @@ DSH 的一个**全局面板插件**：左栏文件树、中栏 CM6 编辑器与 
 ```text
 DSH ModuleLoader（window.__ModuleLoader__.load）
   └─ frontend/index.js  apply(ctx)                     ← 唯一入口，只做接线与资源注册
-       ├─ ctx.slots.register('main', key='workspace-ide')  → views/Workbench
-       ├─ ctx.slots.register('sidebar.panellist', id=…)    → views/Icon
+       ├─ ctx.sidebarRightTabs.register({ id, kind, keepMounted, guide }) → 右栏 tab 类型
+       ├─ ctx.slots.register('sidebar.right.pane.tab', key=id) → views/WorkbenchHost
        └─ ctx.remote.$mount(remoteInfo)                    → Host service
 
 views/*.tsx ──使用──> stores/*.stores.ts ──调用──> stores/*.datasource.ts ──Remote──> backend/service.js
@@ -54,7 +54,8 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 | --- | --- | --- |
 | `workspace` | 根目录、仓库名、信任状态、限制参数（文件大小阈值、log 页长） | 文件内容、git 状态（各自域持有） |
 | `files` | 目录展开态与列表缓存、选中/焦点、排序与过滤、文件图标映射 | 文件正文（编辑器域）、git 状态 |
-| `editor` | 打开标签、每标签 `{path,version,dirty,scroll,cursor,eol,bom,largeMode}`、保存/冲突状态 | 文件正文的第二份真相（正文在 CM6 `EditorState`，只有 dirty/version 回镜像到 store） |
+| `editor` | 打开文件的正文与每文件 `{path,version,dirty,cursor,eol,bom,mode}`、保存/冲突状态 | 标签顺序与分栏归属（`layout` 域）；CM6 只呈现 store 里的文本 |
+| `layout` | 内部标签元数据、每组 `{tabs,active}`、分栏树 `{dir,ratio,a,b}`、`activeGroup`、拖拽中间态、组尺寸 | 文件正文、git 事实；树只存结构，组只存 tab id |
 | `scm` | `git.status` 快照镜像、提交信息草稿、写操作队列可视化、逐文件展开态 | 变更事实（Host 计算）、文件内容 |
 | `graph` | `git.graph` 行窗口、滚动锚点、选中提交、refs 徽章、过滤词 | 布局（Host 算）、提交详情（按需拉） |
 | `diff` | 当前 diff 视图的目标与解析后 hunk、折叠态 | 原文（Host 出结构化 hunk） |
@@ -88,10 +89,11 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 
 | 项 | 要求 |
 | --- | --- |
-| 渲染面 | `main` keyed slot，`key='workspace-ide'`；不占用 `conversation` key；**拿不到 sessionId**（`scope:'root'`），根目录自行解析 |
-| 侧栏入口 | `sidebar.panellist` list 项 `{ id:'workspace-ide', order, label }`；点击即 `ctx.layout.selectPanel('workspace-ide')` |
+| 渲染面 | `sidebar.right.pane.tab` keyed slot，`key='dsh-workspace-ide'`，**session 作用域**（inject 收到会话 id）；不注册 `main`、不调用 `selectPanel` |
+| 入口 | `ctx.sidebarRightTabs.register` 的 `guide` 卡片（右栏开始页）+ 快捷键；**没有** `sidebar.panellist` 左栏图标 |
+| 根目录 | 按会话解析：该会话手动选择 > `session.header.cwd` > lastRoot；Host 决策，wire 不放任意路径 |
 | 主题 | 只用 `--dsw-alias-*` / `--dsw-*` token；禁硬编码色值（构建期扫描）；明暗两套都要过 |
-| macOS 顶栏 | 主面板根元素 `padding-top: var(--dsh-frame-top-clearance, 0px)`；左侧用 `--dsh-frame-leading-clearance` |
+| 顶栏/左缘 | 右栏 body 不在窗口顶/左缘，**不**吃 `--dsh-frame-top-clearance` / `--dsh-frame-leading-clearance`；宿主 tab 条已经处理 |
 | 字号 | 代码 = `var(--dsh-code-font-size)`、正文 = `var(--dsh-content-font-size)`、终端 = `var(--dsh-terminal-font-size)` |
 | 外部依赖 | 不 require 任何 `@deepseek-ai/*` client 包；`react`/`react-dom` 由宿主提供（external） |
 | 资源 | 不打包独立 CSS 文件（内联进 JS 后运行时注入 `<style id="dsh-workspace-ide/css">`）；不依赖图片资源路由 |
@@ -102,10 +104,12 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 
 | 阶段 | 行为 |
 | --- | --- |
-| 插件 apply | 注册 slot + 面板图标；构建 stores（不启动任何 IO）；`ctx.remote.$mount` 挂载 Remote |
-| 面板首次打开 | `workspace.resolve` → 若无根目录显示空态引导（「打开文件夹」）；有则 `git.status` + `files.list(root)` + `git.graph(firstPage)` |
-| 面板关闭（切回对话） | 保留 stores；**停轮询**；CM6 实例保留但不再 layout；终端继续跑（Host 侧 PTY 存活） |
-| 面板重新打开 | 恢复滚动与标签；刷新一次 status；终端重新 attach（按 `offset` 续读 + `terminal.list` 对账回收孤儿终端） |
+| 插件 apply | 注册右栏 tab 类型 + body；每个会话首次渲染时构建 stores（不启动 IO）；`ctx.remote.$mount` 挂载 Remote |
+| tab 首次可见 | `workspace.resolve { sessionId }` → 无根目录显示欢迎页；有则 `git.status` + `files.list(root)` + 恢复该会话的标签/分栏布局 |
+| tab 不可见（切会话 / 收起右栏） | body 由 `keepMounted` 保留；**停 watch/轮询/window 监听**；编辑器正文在 store 里，终端 PTY 继续跑 |
+| tab 再次可见 | `workspace.resolve` 对齐 Host 单根 → 刷新 status → 恢复 watch；编辑器与内部布局原样 |
+| tab 关闭 | 宿主 close handler 调 `deactivate()`；运行时保留到插件卸载（快速重开不丢未保存） |
+| 插件 dispose | 关闭全部 PTY、取消在途 git 子进程、清空定时器与 listener、解除 Remote、移除 `<style>` |
 | 插件 dispose | 关闭全部 PTY（`terminate()`）、取消在途 git 子进程、清空定时器与 listener、解除 Remote、移除 `<style>` |
 | 浏览器刷新 | 一切重来；Host 侧孤儿终端由下次 `terminal.list` 对账清理（或 Host 侧空闲超时 30 min 回收） |
 
@@ -128,7 +132,8 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 
 | 指标 | 目标 |
 | --- | --- |
-| 面板首次可交互 | ≤ 400 ms（不含 git 子进程） |
+| tab 首次可交互 | ≤ 400 ms（不含 git 子进程） |
+| 350px 右栏可用 | 无横向滚动；单栏 diff；标签行不折行 |
 | `git.status`（1 万文件、干净） | ≤ 150 ms |
 | `git.graph` 首页 2000 条 | ≤ 250 ms（含 Host 布局） |
 | 打开 1 MB 文件 | ≤ 120 ms 首屏 |
@@ -146,6 +151,8 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 4. `frontend/**` 与 `styles` 中不得出现 `#[0-9a-fA-F]{3,8}` / `rgb(` 字面量（`--dsw-*` token 与 `transparent`/`currentColor` 除外）。
 5. bundle 体积断言 + 不得含 `new Worker(` / `importScripts(` / `.wasm`。
 6. `shared/**` 不得 import 任何带环境依赖的模块（只允许纯数据与 zod）。
+7. `frontend/**` 不得出现 `position: fixed`（右栏工作台的浮层必须相对 `.wid-root` 定位）。
+8. 分栏树/拖拽的纯函数放 `frontend/service/{split,dnd}.js`；标签归属只写在 `layout` 域，`views` 不自行排序/分组。
 
 ## 与其它包的关系
 

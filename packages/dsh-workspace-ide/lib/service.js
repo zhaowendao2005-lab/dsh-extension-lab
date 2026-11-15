@@ -82,11 +82,13 @@ export class WorkspaceIdeService extends Service {
       case 'workspace.resolve':
         return await this.workspace.resolve({ sessionId });
       case 'workspace.open':
-        return await this.workspace.open(payload);
+        return await this.workspace.open({ ...payload, sessionId });
       case 'workspace.state':
         return await this.workspace.state();
       case 'workspace.trust':
         return await this.workspace.setTrusted(payload);
+      case 'workspace.useSessionRoot':
+        return await this.workspace.useSessionRoot({ sessionId });
       default:
         throw ideError('E_UNSUPPORTED', `未知动作 ${action}`, {});
     }

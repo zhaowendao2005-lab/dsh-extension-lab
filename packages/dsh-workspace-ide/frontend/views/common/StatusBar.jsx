@@ -8,34 +8,49 @@ export function StatusBar({ stores }) {
   const scm = useStore(stores.scm);
   const editor = useStore(stores.editor);
   const files = useStore(stores.files);
+  const layout = useStore(stores.layout);
 
-  const active = editor.tabs.find((tab) => tab.path === editor.activePath) ?? null;
+  const group = layout.groups[layout.activeGroup];
+  const tab = group && group.active ? layout.tabs[group.active] : null;
+  const activePath = tab && tab.kind === 'file' ? tab.path : null;
+  const active = activePath ? editor.tabs.find((item) => item.path === activePath) ?? null : null;
   const status = scm.status;
   const changes = status
     ? status.staged.length + status.working.length + status.untracked.length + status.conflicts.length
     : null;
   const branch = workspace.git?.isRepo
-    ? (workspace.git.detached ? `HEAD@${(workspace.git.sha ?? '').slice(0, 7)}` : workspace.git.branch ?? 'HEAD')
+    ? (workspace.git.detached ? 'HEAD@' + (workspace.git.sha ?? '').slice(0, 7) : workspace.git.branch ?? 'HEAD')
     : null;
 
   return (
     <footer className="wid-statusbar" aria-label="状态栏">
-      <span className="wid-statusbar__item" title={workspace.root ?? '未选择工作区'}>
+      <button
+        type="button"
+        className="wid-statusbar__item"
+        title={workspace.root ?? '未选择工作区'}
+        onClick={() => stores.actions.toggleMenu('workspace')}
+      >
         <Icon name="folder" size={11} />
         {workspace.name ?? '—'}
-      </span>
-      <span className="wid-statusbar__item" title={branch ? `分支 ${branch}` : '当前工作区不是 Git 仓库'}>
+      </button>
+      <button
+        type="button"
+        className="wid-statusbar__item"
+        title={branch ? '打开提交图谱' : '当前工作区不是 Git 仓库'}
+        onClick={() => stores.actions.openGraph()}
+      >
         <Icon name="branch" size={11} />
         {branch ?? '无仓库'}
         {status && (status.branch.ahead > 0 || status.branch.behind > 0) && (
           <span className="wid-hint">
-            {status.branch.ahead > 0 ? `↑${status.branch.ahead}` : ''}
-            {status.branch.behind > 0 ? `↓${status.branch.behind}` : ''}
+            {status.branch.ahead > 0 ? '↑' + status.branch.ahead : ''}
+            {status.branch.behind > 0 ? '↓' + status.branch.behind : ''}
           </span>
         )}
-      </span>
+      </button>
       {changes !== null && (
-        <button type="button" className="wid-statusbar__item" onClick={() => stores.actions.setActivity('scm')} title="变更数">
+        <button type="button" className="wid-statusbar__item" onClick={() => stores.actions.openChanges()} title="打开改动">
+          <span className="wid-statusbar__dot" aria-hidden="true" />
           {changes} 变更
         </button>
       )}
@@ -55,7 +70,7 @@ export function StatusBar({ stores }) {
       {active ? (
         <>
           <span className="wid-statusbar__item" title="行,列">
-            {editor.cursor ? `${editor.cursor.line},${editor.cursor.column}` : '—'}
+            {active.cursor ? active.cursor.line + ',' + active.cursor.column : '—'}
           </span>
           <span className="wid-statusbar__item" title="语言">
             {languageLabelForPath(active.path)}

@@ -8,13 +8,15 @@ import { z } from 'zod';
 const recordSchema = z.object({
   lastRoot: z.string().max(4096).nullable(),
   trustedRoots: z.array(z.string().max(4096)).max(200),
+  // A manual folder choice per session; absent means "use the session's own cwd".
+  sessionRoots: z.record(z.string(), z.string().max(4096)).default({}),
   updatedAt: z.number().int().min(0),
 });
 
-const EMPTY = Object.freeze({ lastRoot: null, trustedRoots: [], updatedAt: 0 });
+const EMPTY = Object.freeze({ lastRoot: null, trustedRoots: [], sessionRoots: {}, updatedAt: 0 });
 
 export function createStore(ctx) {
-  let state = { ...EMPTY, trustedRoots: [] };
+  let state = { ...EMPTY, trustedRoots: [], sessionRoots: {} };
   let domain = null;
   let ready = null;
   let rewriteQueued = false;
@@ -36,7 +38,14 @@ export function createStore(ctx) {
       };
       domain = await facility.open(spec);
       const stored = table().get('main');
-      if (stored) state = { lastRoot: stored.lastRoot ?? null, trustedRoots: [...(stored.trustedRoots ?? [])], updatedAt: stored.updatedAt ?? 0 };
+      if (stored) {
+        state = {
+          lastRoot: stored.lastRoot ?? null,
+          trustedRoots: [...(stored.trustedRoots ?? [])],
+          sessionRoots: { ...(stored.sessionRoots ?? {}) },
+          updatedAt: stored.updatedAt ?? 0,
+        };
+      }
     } catch (error) {
       console.warn('[workspace-ide] storage domain unavailable, using memory only:', error?.message ?? error);
       domain = null;
@@ -44,7 +53,11 @@ export function createStore(ctx) {
   }
 
   function snapshot() {
-    return { lastRoot: state.lastRoot, trustedRoots: [...state.trustedRoots] };
+    return {
+      lastRoot: state.lastRoot,
+      trustedRoots: [...state.trustedRoots],
+      sessionRoots: { ...state.sessionRoots },
+    };
   }
 
   async function persist() {
@@ -68,6 +81,23 @@ export function createStore(ctx) {
     },
     get trustedRoots() {
       return [...state.trustedRoots];
+    },
+    /** The folder this session explicitly opened, or null for "follow the session cwd". */
+    sessionRoot(sessionId) {
+      if (!sessionId) return null;
+      return state.sessionRoots[sessionId] ?? null;
+    },
+    setSessionRoot(sessionId, root) {
+      if (!sessionId) return;
+      state.sessionRoots = { ...state.sessionRoots, [sessionId]: root };
+      void persist();
+    },
+    clearSessionRoot(sessionId) {
+      if (!sessionId || !(sessionId in state.sessionRoots)) return;
+      const next = { ...state.sessionRoots };
+      delete next[sessionId];
+      state.sessionRoots = next;
+      void persist();
     },
     snapshot,
     setLastRoot(root) {

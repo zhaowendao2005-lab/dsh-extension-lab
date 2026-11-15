@@ -47,18 +47,21 @@ export function SettingsView({ stores }) {
         <h3 className="wid-settings__title">最近打开</h3>
         {workspace.recents?.length ? (
           <ul className="wid-settings__list">
-            {workspace.recents.map((item) => (
-              <li key={item.root ?? item.path ?? String(item)}>
-                <button
-                  type="button"
-                  className="wid-settings__link wid-mono"
-                  title={item.root ?? item.path ?? ''}
-                  onClick={() => void stores.actions.openRoot(item.root ?? item.path)}
-                >
-                  {item.name ?? item.root ?? item.path}
-                </button>
-              </li>
-            ))}
+            {workspace.recents.map((item) => {
+              const root = typeof item === 'string' ? item : (item?.root ?? item?.path ?? '');
+              return (
+                <li key={root}>
+                  <button
+                    type="button"
+                    className="wid-settings__link wid-mono"
+                    title={root}
+                    onClick={() => void stores.actions.openRoot(root)}
+                  >
+                    {root}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <span className="wid-hint">还没有记录</span>

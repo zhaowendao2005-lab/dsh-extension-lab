@@ -75,13 +75,23 @@ export function createTerminalController({ client, store, notify }) {
   const controller = {
     store,
 
-    /** Subscribe to a terminal's frames; starts polling on first subscriber. */
+    /**
+     * Subscribe to a terminal's frames; starts polling on first subscriber and stops it when
+     * the last one leaves. A remount (tab hidden then shown) replays the Host ring buffer from
+     * offset 0, so the new xterm still shows recent output instead of a blank screen.
+     */
     attach(id, listener) {
       const item = channel(id);
+      const first = item.listeners.size === 0;
       item.listeners.add(listener);
-      start(id);
+      if (first) {
+        item.stopped = false;
+        item.offset = 0;
+        start(id);
+      }
       return () => {
         item.listeners.delete(listener);
+        if (item.listeners.size === 0) stop(id);
       };
     },
 

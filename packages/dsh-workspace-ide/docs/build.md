@@ -203,6 +203,8 @@ const result = await esbuild.build({
 | R11 | `backend/**` | 裸 `child_process`（只允许 `backend/git/exec.js`、`backend/terminal/manager.js`） | 命令必须集中在唯一出口，便于加硬化参数与脱敏 | `// check-ignore: spawn — <理由>` |
 | R12 | `package.json` | 黑名单依赖（`monaco-editor`、`@gitgraph/*`、`@uiw/react-codemirror`、`diff2html`、`prismjs`、`highlight.js`、`shiki`、`elkjs`、`dagre`、`simple-git`、`isomorphic-git`、`node-pty`） | 体积、worker/wasm 边界、与"只走系统 git CLI"冲突 | 无（要改就走 RFC，先改本文 §7） |
 | R13 | `frontend/**`（`editor/languages.js` 除外） | `@codemirror/lang-*` | 语言包必须集中白名单（§2.2） | 无 |
+| R14 | `frontend/**` | `from 'react'` / `react-dom` | React 由 ModuleLoader 运行时注入，打包第二份会撕开 hooks | 走 `runtime.js` 的 `h`/hooks |
+| R15 | `frontend/**` | `position: fixed` | 工作台住在右栏里，fixed 浮层会越出右栏；浮层必须 absolute 于 `.wid-root` | 无 |
 
 ## 4 本地开发循环
 

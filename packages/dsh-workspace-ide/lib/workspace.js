@@ -26,6 +26,8 @@ async function canonical(root) {
 export function createWorkspace(ctx, store) {
   /** @type {{root: string, name: string}|null} */
   let current = null;
+  /** How the current root was chosen; surfaced to the client so the chip can say why. */
+  let currentSource = null;
   let probeCache = { at: 0, value: null };
 
   async function sessionRoot(sessionId) {
@@ -74,7 +76,23 @@ export function createWorkspace(ctx, store) {
   function recents() {
     const list = [...store.trustedRoots];
     if (store.lastRoot && !list.includes(store.lastRoot)) list.unshift(store.lastRoot);
+    for (const root of Object.values(store.snapshot().sessionRoots ?? {})) {
+      if (typeof root === 'string' && !list.includes(root)) list.push(root);
+    }
     return list.slice(0, 8);
+  }
+
+  /** One resolved workspace payload; git/trust/recents are always fresh enough to render. */
+  async function stateOf(root, source) {
+    return {
+      root,
+      name: path.basename(root) || root,
+      source,
+      git: await probeGit(root),
+      trusted: store.isTrusted(root),
+      recents: recents(),
+      limits: LIMITS,
+    };
   }
 
   /** The wire shape is a plain boolean; the root is already a sibling field. */
@@ -90,30 +108,41 @@ export function createWorkspace(ctx, store) {
       return current?.name ?? null;
     },
 
-    /** Resolve (never throws on "nothing chosen") so the client can show an empty state. */
+    /**
+     * Resolve the root for one session. Precedence is the promise of the right-column
+     * workbench: this session's manual folder choice, then the session's own cwd, then the
+     * last root this browser used. "Nothing chosen" returns an empty state, never throws.
+     */
     async resolve(input = {}) {
       await store.ready();
-      if (!current) {
-        const candidates = [store.lastRoot, await sessionRoot(input.sessionId)];
-        for (const candidate of candidates) {
-          if (!candidate) continue;
-          try {
-            current = await canonical(candidate);
-            store.setLastRoot(current.root);
-            break;
-          } catch {
-            // A stale lastRoot must not block the session fallback.
-          }
+      const sessionId = typeof input.sessionId === 'string' ? input.sessionId : null;
+      const candidates = [
+        { root: store.sessionRoot(sessionId), source: 'override' },
+        { root: await sessionRoot(sessionId), source: 'session' },
+        { root: store.lastRoot, source: 'last' },
+      ];
+      for (const candidate of candidates) {
+        if (!candidate.root) continue;
+        if (current && current.root === candidate.root) {
+          currentSource = candidate.source;
+          return await stateOf(current.root, currentSource);
+        }
+        try {
+          current = await canonical(candidate.root);
+          currentSource = candidate.source;
+          store.setLastRoot(current.root);
+          return await stateOf(current.root, currentSource);
+        } catch {
+          // A stale candidate must not block the next one (e.g. a deleted cwd).
         }
       }
-      if (!current) {
-        return { root: null, name: null, git: { available: true, isRepo: false }, trusted: false, recents: recents(), limits: LIMITS };
-      }
+      if (current) return await stateOf(current.root, currentSource);
       return {
-        root: current.root,
-        name: current.name,
-        git: await probeGit(current.root),
-        trusted: trustState(current.root),
+        root: null,
+        name: null,
+        source: null,
+        git: { available: true, isRepo: false },
+        trusted: false,
         recents: recents(),
         limits: LIMITS,
       };
@@ -122,31 +151,26 @@ export function createWorkspace(ctx, store) {
     async open(input) {
       await store.ready();
       const next = await canonical(input.root);
+      const sessionId = typeof input.sessionId === 'string' ? input.sessionId : null;
       current = next;
+      currentSource = sessionId ? 'override' : 'last';
       probeCache = { at: 0, value: null };
       store.setLastRoot(next.root);
-      const git = await probeGit(next.root);
-      return {
-        root: next.root,
-        name: next.name,
-        git,
-        trusted: trustState(next.root),
-        recents: recents(),
-        limits: LIMITS,
-      };
+      if (sessionId) store.setSessionRoot(sessionId, next.root);
+      return await stateOf(next.root, currentSource);
+    },
+
+    /** Drop this session's override and re-resolve to its own cwd. */
+    async useSessionRoot(input = {}) {
+      await store.ready();
+      const sessionId = typeof input.sessionId === 'string' ? input.sessionId : null;
+      store.clearSessionRoot(sessionId);
+      return await api.resolve({ sessionId });
     },
 
     async state() {
       if (!current) return await api.resolve({});
-      const git = await probeGit(current.root);
-      return {
-        root: current.root,
-        name: current.name,
-        git,
-        trusted: trustState(current.root),
-        recents: recents(),
-        limits: LIMITS,
-      };
+      return await stateOf(current.root, currentSource);
     },
 
     async setTrusted(input) {
@@ -186,6 +210,7 @@ export function createWorkspace(ctx, store) {
 
     reset() {
       current = null;
+      currentSource = null;
       probeCache = { at: 0, value: null };
     },
   };

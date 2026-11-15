@@ -1,9 +1,9 @@
 {
   "name": "dsh-workspace-ide",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "DSH 全局面板：文件树 / SCM / 提交图谱 + 编辑器与 diff + 真 PTY 终端",
+  "description": "DSH 右栏工作台：文件树 / SCM / 提交图谱 + 编辑器与 diff + 真 PTY 终端",
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
@@ -34,6 +34,7 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-shortcuts"
       ]
     }

@@ -74,24 +74,33 @@
 ## 2. workspace
 
 ### `workspace.resolve`
-默认根目录：若 Host 记着上次根目录且仍存在 → 用它；否则取最近活跃会话（`ctx.sessionController`，`updatedAt` 最大且有 `cwd`）的 `cwd`。
+根目录按会话解析（右栏工作台一个会话一份）：**该会话手动选择的目录 > 会话 `session.header.cwd` > 上次根目录**。优先级里的「手动选择」只由 `workspace.open` 记录，`workspace.useSessionRoot` 清除；Host 从不信任 wire 上传来的任意路径。
 ```js
-payload: {}
-→ { root: string|null, name: string|null, trust: 'trusted'|'untrusted'|'unknown',
-    recents: string[], limits }
+payload: {}                                // 信封 sessionId 可选；有则按该会话解析
+→ { root: string|null, name: string|null, source: 'override'|'session'|'last'|null,
+    trust: 'trusted'|'untrusted'|'unknown', git, recents: string[], limits }
 ```
+`source` 只是呈现提示（「自定义 / 会话目录 / 上次」），不参与鉴权。
 
 ### `workspace.open`
 ```js
 payload: { root: string }                  // 绝对路径，必须存在且是目录
-→ { root, name, trust }
+→ { root, name, source: 'override'|'last', trust, git, recents, limits }
 错误: E_NOT_DIR | E_OUTSIDE_ROOT(当 root 在禁区内，如 /dev)
+```
+信封带 `sessionId` 时，这次选择会记到该会话的 `sessionRoots`，下次 `resolve` 直接命中。
+
+### `workspace.useSessionRoot`
+清除该会话的手动目录选择并重新按 `cwd` 解析。
+```js
+payload: {}
+→ 同 `workspace.resolve`（source 通常为 'session' 或 'last'）
 ```
 
 ### `workspace.state`
 ```js
 payload: {}
-→ { root, name, trust,
+→ { root, name, source: 'override'|'session'|'last'|null, trust,
     git: { available: boolean, isRepo: boolean, branch: string|null, head: string|null, bare: boolean,
            version: string|null,      // `git --version` 归一后的 "2.39.3"；<2.15 时 porcelain v2 不可用 → UI 提示升级
            shallow: boolean,          // 浅克隆：log 不完整，图谱显示"历史不完整"
@@ -480,6 +489,7 @@ async function call(action, payload) {
 | 版本 | 变更 | 兼容性 |
 | --- | --- | --- |
 | v1 | 初版：workspace / files / git / terminal / watch 五组动作 | — |
+| v3 | 右栏工作台：`workspace.resolve/open/state` 新增 `source`（override/session/last）；`workspace.resolve` 信封 `sessionId` 参与根目录优先级；`workspace.open` 记录会话级目录选择；新动作 `workspace.useSessionRoot` 清除会话选择 | 只增不改：老客户端忽略 `source` 即可，旧的「lastRoot 优先」行为在无 sessionId 时保持 |
 | v2 | 增补：错误码 `E_INVALID_ARG`、`E_PERMISSION`；`E_GIT_FAILED.detail.reason`；`workspace.state.git.version/shallow/repoEpoch`；`git.status.untrackedMode`/`repoEpoch` 与 `Change.stages`；`git.diff` 新增 `kind:'untracked'`、`files[].truncated`、行级 `noNewline`；`git.refs` 的 `upstreamGone`/`remote[].url`；`git.stageHunk.expectedIndexSha`；`git.graph.maxLane`/`GraphRow.parents`；`git.stage/unstage/discard` 统一 `all`；新动作 `git.init`；`files.search.queryId` 回显；`files.list` 的 `hasChildren`/`ignored`/`target`；`files.stat.writable/mode`；`files.read.expectedVersion`；`files.write.force`；`limits.longLineChars`；`git.diff` 的 `context:-1` 语义与行号基准；`Hunk.oldNoEol/newNoEol`；`git.graph` 的 `layoutEpoch`/`totalKnown`/`GraphRow.degraded`/行带语义/`search`(P1)；lane 回收改为条件触发；`terminal.write` 64 KiB 上限、OSC 0/2 剥离归 Host、`shell-unavailable`、`terminal.rename`(P1)；`git.network.remote` 限定为已配置 remote 名；`watch.reason` 扩展两种失效原因；trust 精确匹配与「未信任 diff 只给摘要」写进契约 | **只增不改**：老客户端忽略新字段即可，无破坏性变更 |
 
 > 任何新增/修改动作、字段、错误码都必须在本表追加一行——与 `AGENTS.md`「文档同步」要求一致。

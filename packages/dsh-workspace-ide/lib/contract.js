@@ -15,6 +15,7 @@ export const payloadSchemas = {
   'workspace.open': z.strictObject({ root: z.string().min(1).max(4096) }),
   'workspace.state': z.strictObject({}),
   'workspace.trust': z.strictObject({ trusted: z.boolean() }),
+  'workspace.useSessionRoot': z.strictObject({}),
 
   'files.list': z.strictObject({ path: REL_PATH.optional(), refresh: z.boolean().optional() }),
   'files.stat': z.strictObject({ path: z.string().min(1).max(4096) }),

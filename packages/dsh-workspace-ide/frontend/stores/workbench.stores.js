@@ -6,7 +6,13 @@
 import { createStore } from '../store.js';
 import { LIMITS } from '../../shared/contract.js';
 import { IdeError, isTrustError } from '../service/client.js';
-import { DEFAULT_EDITOR_PREFS, loadLayout, readEditorPrefs, saveLayout } from '../service/layout.js';
+import {
+  DEFAULT_EDITOR_PREFS, loadLayout, loadWorkbench, readEditorPrefs, saveLayout, saveWorkbench,
+} from '../service/layout.js';
+import { createLayoutStore } from './layout.stores.js';
+import {
+  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, fileTabId,
+} from '../service/tabs.js';
 import { createTerminalController } from './terminal.stores.js';
 import { createEditorDomain } from './editor.stores.js';
 import { createScmDomain } from './scm.stores.js';
@@ -18,22 +24,26 @@ const EMPTY_LIMITS = LIMITS;
 
 export function createStores({ client, sessionId, host }) {
   const ui = createStore({
-    activityView: 'explorer',
+    activityView: 'files',
     sidebarWidth: 260,
     panelHeight: 220,
     sidebarCollapsed: false,
+    navManual: false,
+    compact: false,
     panelCollapsed: false,
-    settingsOpen: false,
     menu: null,
-    diffOpen: false,
+    tabMenu: null,
     diffRatio: 0.5,
     editor: { ...DEFAULT_EDITOR_PREFS },
     modal: null,
-    conflictOpen: false,
     quickOpen: false,
     quickQuery: '',
     quickActive: 0,
   });
+
+  // Internal tabs, groups and the split tree. Its onChange feeds the per-session
+  // localStorage snapshot; the store itself stays free of browser APIs.
+  const layoutModel = createLayoutStore({ onChange: () => scheduleWorkbenchPersist() });
 
   const workspace = createStore({
     phase: 'idle',
@@ -146,9 +156,9 @@ export function createStores({ client, sessionId, host }) {
 
   let noticeId = 0;
 
-  function notify(level, message, detail) {
+  function notify(level, message, detail, code) {
     noticeId += 1;
-    const item = { id: noticeId, level, message, detail: detail ?? null, at: Date.now() };
+    const item = { id: noticeId, level, message, detail: detail ?? null, code: code ?? null, at: Date.now() };
     notices.set((current) => ({ items: [...current.items, item].slice(-6) }));
     return item.id;
   }
@@ -160,7 +170,7 @@ export function createStores({ client, sessionId, host }) {
   /** Uniform failure handling: an error bar line, and the code kept for the view. */
   function fail(scope, error, fallback) {
     const message = error instanceof IdeError ? error.message : (error?.message ?? fallback ?? '操作失败');
-    notify('error', message, error instanceof IdeError ? error.detail : null);
+    notify('error', message, error instanceof IdeError ? error.detail : null, error instanceof IdeError ? error.code : null);
     scope?.patch?.({ error: message });
     return error;
   }
@@ -168,11 +178,11 @@ export function createStores({ client, sessionId, host }) {
   function restoreLayout(state = ui.getSnapshot()) {
     const persisted = loadLayout();
     ui.patch({
-      sidebarWidth: clamp(persisted.sidebarWidth ?? state.sidebarWidth, 180, 600),
+      sidebarWidth: clamp(persisted.sidebarWidth ?? state.sidebarWidth, 160, 360),
       panelHeight: clamp(persisted.panelHeight ?? state.panelHeight, 120, 600),
       sidebarCollapsed: Boolean(persisted.sidebarCollapsed),
       panelCollapsed: Boolean(persisted.panelCollapsed),
-      activityView: persisted.activityView ?? state.activityView,
+      activityView: persisted.activityView === 'search' ? 'search' : 'files',
       editor: readEditorPrefs(persisted),
     });
   }
@@ -189,16 +199,102 @@ export function createStores({ client, sessionId, host }) {
     });
   }
 
+  // --- internal workbench layout (tabs / groups / split tree) -----------------
+  let workbenchTimer = null;
+  let workbenchRestored = false;
+  let booted = false;
+  let disposed = false;
+
+  function scheduleWorkbenchPersist() {
+    if (!sessionId) return;
+    if (workbenchTimer) clearTimeout(workbenchTimer);
+    workbenchTimer = setTimeout(() => {
+      workbenchTimer = null;
+      persistWorkbench();
+    }, 200);
+  }
+
+  function persistWorkbench() {
+    if (!sessionId) return;
+    saveWorkbench(sessionId, layoutModel.actions.serialize());
+  }
+
+  /** Runs once per session, after the root is known; a broken snapshot falls back to welcome. */
+  function restoreWorkbench() {
+    if (workbenchRestored) return;
+    workbenchRestored = true;
+    const saved = loadWorkbench(sessionId);
+    if (!saved) return;
+    layoutModel.actions.restore(saved);
+    const state = layoutModel.store.getSnapshot();
+    for (const tab of Object.values(state.tabs)) {
+      if (tab.kind === 'file' && tab.path) void editorDomain.openPath(tab.path);
+    }
+    const group = state.groups[state.activeGroup];
+    const active = group && group.active ? state.tabs[group.active] : null;
+    if (active && active.kind === 'file' && active.path) editor.patch({ activePath: active.path });
+  }
+
+  function findTab(tabId) {
+    return layoutModel.store.getSnapshot().tabs[tabId] ?? null;
+  }
+
+  function tabsOfGroup(groupId) {
+    const group = layoutModel.store.getSnapshot().groups[groupId];
+    return group ? [...group.tabs] : [];
+  }
+
+  function fileTabsOf(ids) {
+    const tabs = layoutModel.store.getSnapshot().tabs;
+    return ids.filter((id) => tabs[id]?.kind === 'file');
+  }
+
+  /**
+   * The Host keeps one root at a time. When it moves, every path we still hold belongs to the
+   * old tree, so file tabs/editor buffers/diff/conflict must be dropped before the next save.
+   */
+  function resetRootScopedState() {
+    diffDomain.close();
+    conflictDomain.close();
+    const snapshot = layoutModel.store.getSnapshot();
+    for (const tab of Object.values(snapshot.tabs)) {
+      if (tab.kind === 'file') layoutModel.actions.close(tab.id);
+    }
+    ui.patch({ menu: null, tabMenu: null });
+    files.patch({ entries: {}, expanded: [], selected: null, loading: [], error: null, visible: {} });
+    editor.patch({ tabs: [], activePath: null, conflicts: [], reveal: null });
+    graph.patch({
+      rows: [], commits: [], maxLane: 0, hasMore: false, loadingMore: false, selected: null,
+      phase: 'idle', error: null, layoutMs: 0, refs: null, filter: '', filterRef: null,
+    });
+  }
+
   const actions = {
     restoreLayout,
 
     setActivity(view) {
-      ui.patch({ activityView: view, sidebarCollapsed: ui.getSnapshot().sidebarCollapsed && view !== 'terminal' ? false : ui.getSnapshot().sidebarCollapsed });
+      ui.patch({
+        activityView: view === 'search' ? 'search' : 'files',
+        sidebarCollapsed: false,
+        navManual: true,
+        menu: null,
+      });
       persistLayout();
     },
 
     toggleSidebar() {
-      ui.patch({ sidebarCollapsed: !ui.getSnapshot().sidebarCollapsed });
+      ui.patch({ sidebarCollapsed: !ui.getSnapshot().sidebarCollapsed, navManual: true });
+      persistLayout();
+    },
+
+    /** Width comes from the right column, not the window; the narrow state owns the drawer. */
+    setColumnWidth(width) {
+      const state = ui.getSnapshot();
+      const compact = Number(width) > 0 && width < 520;
+      if (compact === state.compact) return;
+      const patch = { compact };
+      if (!state.navManual) patch.sidebarCollapsed = compact;
+      ui.patch(patch);
       persistLayout();
     },
 
@@ -222,27 +318,31 @@ export function createStores({ client, sessionId, host }) {
     },
 
     toggleSettings() {
-      ui.patch({ settingsOpen: !ui.getSnapshot().settingsOpen });
+      return actions.openSettings();
+    },
+
+    /** Apply one workspace.resolve/state payload without inventing fields. */
+    applyWorkspace(next) {
+      workspace.patch({
+        phase: 'ready',
+        root: next?.root ?? null,
+        name: next?.name ?? null,
+        git: next?.git ?? { available: false, isRepo: false },
+        trust: Boolean(next?.trusted),
+        recents: next?.recents ?? [],
+        limits: next?.limits ?? EMPTY_LIMITS,
+        error: null,
+      });
     },
 
     async boot() {
       workspace.patch({ phase: 'loading' });
       try {
         const resolved = await client.call('workspace.resolve', {});
-        workspace.patch({
-          phase: 'ready',
-          root: resolved.root ?? null,
-          name: resolved.name ?? null,
-          git: resolved.git ?? { available: false, isRepo: false },
-          trust: Boolean(resolved.trusted),
-          recents: resolved.recents ?? [],
-          limits: resolved.limits ?? EMPTY_LIMITS,
-          error: null,
-        });
-        if (resolved.root) {
-          await actions.refreshWorkspace();
-          void actions.startWatch();
-        }
+        actions.applyWorkspace(resolved);
+        if (resolved.root) await actions.refreshWorkspace();
+        // Restore after the root is known so file tabs can be filtered by it later.
+        restoreWorkbench();
         // A browser refresh leaves the Host owning live PTYs; adopt them instead of showing
         // an empty panel and leaking processes until the idle reaper fires.
         void terminals.reconcile();
@@ -250,6 +350,53 @@ export function createStores({ client, sessionId, host }) {
         console.error('[workspace-ide] boot failed', error);
         workspace.patch({ phase: 'error', error: error?.message ?? '无法确定工作区' });
         fail(workspace, error, '无法确定工作区');
+      }
+    },
+
+    /**
+     * The Host right sidebar keeps one workbench body per session. Visible means "this is the
+     * session on screen": boot once, then re-resolve because another session's workbench may
+     * have moved the Host's single root in the meantime.
+     */
+    async activate() {
+      if (disposed) return;
+      if (!booted) {
+        booted = true;
+        await actions.boot();
+      } else if (workspace.getSnapshot().root) {
+        await actions.ensureRoot();
+      } else {
+        await actions.boot();
+      }
+      if (workspace.getSnapshot().root) void actions.startWatch();
+    },
+
+    deactivate() {
+      const modal = ui.getSnapshot().modal;
+      if (modal) {
+        ui.patch({ modal: null });
+        modal.resolve?.(false);
+      }
+      ui.patch({ menu: null, tabMenu: null, quickOpen: false });
+      layoutModel.actions.endDrag();
+      persistWorkbench();
+      void actions.stopWatch();
+    },
+
+    async ensureRoot() {
+      try {
+        const resolved = await client.call('workspace.resolve', {});
+        const previous = workspace.getSnapshot();
+        const changed = (resolved?.root ?? null) !== previous.root;
+        actions.applyWorkspace(resolved);
+        if (!resolved?.root) return;
+        if (changed) {
+          resetRootScopedState();
+          await actions.listDir('');
+        }
+        await actions.refreshScm();
+      } catch (error) {
+        fail(workspace, error, '无法确认工作区');
       }
     },
 
@@ -292,7 +439,9 @@ export function createStores({ client, sessionId, host }) {
         const opened = await client.call('workspace.open', { root });
         workspace.patch({ root: opened.root, name: opened.name, git: opened.git, trust: Boolean(opened.trusted), phase: 'ready', error: null });
         diffDomain.close();
-        ui.patch({ diffOpen: false, menu: null });
+        conflictDomain.close();
+        ui.patch({ menu: null, tabMenu: null });
+        layoutModel.actions.restore({});
         files.patch({ entries: {}, expanded: [], selected: null, loading: [], error: null, visible: {} });
         editor.patch({ tabs: [], activePath: null, conflicts: [], reveal: null });
         graph.patch({
@@ -320,10 +469,35 @@ export function createStores({ client, sessionId, host }) {
       }
     },
 
+    /** Forget this session's manual folder choice and go back to the session's own cwd. */
+    async useSessionRoot() {
+      try {
+        const previous = workspace.getSnapshot().root;
+        const resolved = await client.call('workspace.useSessionRoot', {});
+        actions.applyWorkspace(resolved);
+        if (!resolved?.root) return;
+        if (resolved.root !== previous) {
+          resetRootScopedState();
+          await actions.listDir('');
+          await actions.refreshScm();
+          void actions.startWatch();
+        } else {
+          await actions.refreshWorkspace();
+        }
+      } catch (error) {
+        fail(workspace, error, '无法恢复会话默认工作区');
+      }
+    },
+
+    /** Groups report their content size so drag/split can respect the minimum pane size. */
+    measureGroup(groupId, width, height) {
+      layoutModel.actions.measure(groupId, width, height);
+    },
+
     /** Called by any view that gets E_TRUST_REQUIRED: show the trust gate once. */
     handleTrustError(error) {
       if (!isTrustError(error)) return false;
-      notify('warn', '此操作需要先信任当前工作区', error.detail ?? null);
+      notify('warn', '此操作需要先信任当前工作区', error.detail ?? null, error.code);
       return true;
     },
 
@@ -459,10 +633,155 @@ export function createStores({ client, sessionId, host }) {
       }
     },
 
-    /** Kept as the single entry point for views: delegates to the editor domain. */
+    /** Every "open" goes through the internal tab model; content stores stay domain-owned. */
     openDiff(target, path) {
-      ui.patch({ diffOpen: true });
-      return diffDomain.open(target, path);
+      const opened = layoutModel.actions.open({ id: DIFF_TAB, kind: 'diff' });
+      if (opened) void diffDomain.open(target, path);
+      return opened;
+    },
+
+    openConflict(path) {
+      const opened = layoutModel.actions.open({ id: CONFLICT_TAB, kind: 'conflict' });
+      if (opened) void conflictDomain.open(path);
+      return opened;
+    },
+
+    openGraph() {
+      return layoutModel.actions.open({ id: GRAPH_TAB, kind: 'graph' });
+    },
+
+    openChanges() {
+      const opened = layoutModel.actions.open({ id: CHANGES_TAB, kind: 'changes' });
+      const state = workspace.getSnapshot();
+      if (state.root && state.git?.isRepo) void actions.refreshScm();
+      return opened;
+    },
+
+    openSettings() {
+      return layoutModel.actions.open({ id: SETTINGS_TAB, kind: 'settings' });
+    },
+
+    openFile(path) {
+      if (!path) return null;
+      ui.patch({ quickOpen: false, menu: null });
+      // In the narrow column the file list is a drawer: opening a file must reveal the editor.
+      if (ui.getSnapshot().compact) ui.patch({ sidebarCollapsed: true, navManual: true });
+      layoutModel.actions.open({ id: fileTabId(path), kind: 'file', path, title: basename(path) });
+      files.patch({ selected: path });
+      editor.patch({ activePath: path });
+      return editorDomain.openPath(path);
+    },
+
+    activateLayoutTab(groupId, tabId) {
+      layoutModel.actions.activate(groupId, tabId);
+      const tab = findTab(tabId);
+      if (tab?.kind === 'file' && tab.path) {
+        files.patch({ selected: tab.path });
+        editor.patch({ activePath: tab.path });
+        void editorDomain.openPath(tab.path);
+      }
+    },
+
+    setActiveGroup(groupId) {
+      layoutModel.actions.setActiveGroup(groupId);
+    },
+
+    splitTab(tabId, groupId, zone) {
+      return layoutModel.actions.split(tabId, groupId, zone);
+    },
+
+    moveTab(tabId, groupId, index) {
+      return layoutModel.actions.move(tabId, groupId, index);
+    },
+
+    resizeSplit(path, ratio) {
+      layoutModel.actions.resize(path, ratio);
+    },
+
+    beginTabDrag(tabId, groupId, x, y) {
+      layoutModel.actions.beginDrag(tabId, groupId, x, y);
+    },
+
+    updateTabDrag(x, y, target) {
+      layoutModel.actions.moveDrag(x, y, target);
+    },
+
+    endTabDrag() {
+      layoutModel.actions.endDrag();
+    },
+
+    canDrop(groupId, zone) {
+      return layoutModel.actions.canDrop(groupId, zone);
+    },
+
+    openTabMenu(groupId, tabId, x, y) {
+      ui.patch({ tabMenu: { groupId, tabId, x, y }, menu: null });
+    },
+
+    closeTabMenu() {
+      if (ui.getSnapshot().tabMenu) ui.patch({ tabMenu: null });
+    },
+
+    /** Close one tab. File tabs keep their dirty-buffer confirmation. */
+    async closeTabById(tabId, { force = false } = {}) {
+      const tab = findTab(tabId);
+      if (!tab) return false;
+      if (tab.kind === 'file' && tab.path) {
+        const editorTab = editor.getSnapshot().tabs.find((item) => item.path === tab.path);
+        if (editorTab?.dirty && !force) {
+          const accepted = await actions.confirm({
+            title: '放弃未保存的更改？',
+            body: (editorTab.title || basename(tab.path)) + ' 有未保存的修改。',
+            detail: tab.path,
+            confirmLabel: '放弃并关闭',
+            danger: true,
+            irreversible: true,
+          });
+          if (!accepted) return false;
+        }
+        editorDomain.closeTab(tab.path, { force: true });
+      } else if (tab.kind === 'diff') {
+        diffDomain.close();
+      } else if (tab.kind === 'conflict') {
+        conflictDomain.close();
+      }
+      layoutModel.actions.close(tabId);
+      return true;
+    },
+
+    /** Batch close with one confirmation for every unsaved file involved. */
+    async closeTabs(ids) {
+      const snapshot = layoutModel.store.getSnapshot();
+      const dirty = ids
+        .map((id) => snapshot.tabs[id])
+        .filter((tab) => tab?.kind === 'file' && tab.path)
+        .map((tab) => editor.getSnapshot().tabs.find((item) => item.path === tab.path))
+        .filter((item) => item?.dirty);
+      if (dirty.length > 0) {
+        const accepted = await actions.confirm({
+          title: '放弃 ' + dirty.length + ' 个未保存的文件？',
+          body: '以下标签有关闭后不会保留的修改：',
+          detail: dirty.slice(0, 5).map((item) => item.path).join('\n') + (dirty.length > 5 ? '\n…' : ''),
+          confirmLabel: '放弃并关闭',
+          danger: true,
+          irreversible: true,
+        });
+        if (!accepted) return false;
+      }
+      for (const id of ids) await actions.closeTabById(id, { force: true });
+      return true;
+    },
+
+    closeOthers(groupId, tabId) {
+      return actions.closeTabs(tabsOfGroup(groupId).filter((id) => id !== tabId));
+    },
+
+    closeGroupTabs(groupId) {
+      return actions.closeTabs(tabsOfGroup(groupId));
+    },
+
+    closeAllTabs() {
+      return actions.closeTabs(Object.keys(layoutModel.store.getSnapshot().tabs));
     },
 
     setEditorPref(key, value) {
@@ -516,18 +835,11 @@ export function createStores({ client, sessionId, host }) {
     },
 
     closeDiff() {
-      diffDomain.close();
-      ui.patch({ diffOpen: false });
-    },
-
-    async openConflict(path) {
-      ui.patch({ conflictOpen: true, diffOpen: false });
-      return await conflictDomain.open(path);
+      return actions.closeTabById(DIFF_TAB);
     },
 
     closeConflict() {
-      conflictDomain.close();
-      ui.patch({ conflictOpen: false });
+      return actions.closeTabById(CONFLICT_TAB);
     },
 
     /** Saving changes the working tree, so the SCM view has to re-read status. */
@@ -543,19 +855,49 @@ export function createStores({ client, sessionId, host }) {
       return result;
     },
 
-    openFile(path) {
-      ui.patch({ quickOpen: false });
-      // Opening a real file leaves the read-only diff surface.
-      if (ui.getSnapshot().diffOpen) ui.patch({ diffOpen: false });
-      return editorDomain.openPath(path);
-    },
-
     activateTab(path) {
       return editorDomain.activateTab(path);
     },
 
     closeTab(path) {
       return editorDomain.closeTab(path);
+    },
+
+    setSearchQuery(query) {
+      search.patch({ query });
+    },
+
+    clearSearch() {
+      search.patch({ query: '', phase: 'idle', hits: [], truncated: false, engine: null, elapsedMs: 0, error: null });
+    },
+
+    async runSearch(query) {
+      const needle = String(query ?? '').trim();
+      if (needle.length < 2) {
+        search.patch({ phase: 'idle', hits: [], error: null });
+        return;
+      }
+      search.patch({ phase: 'loading', error: null });
+      try {
+        const result = await client.call('files.search', { query: needle });
+        search.patch({
+          phase: 'ready',
+          hits: result?.hits ?? [],
+          truncated: Boolean(result?.truncated),
+          engine: result?.engine ?? null,
+          elapsedMs: result?.elapsedMs ?? 0,
+          error: null,
+        });
+      } catch (error) {
+        search.patch({ phase: 'error', error: error?.message ?? '搜索失败' });
+        fail(search, error, '搜索失败');
+      }
+    },
+
+    openAt(path, line, column) {
+      void actions.openFile(path).then(() => {
+        editor.patch({ reveal: { path, line, column: column ?? 1, seq: Date.now() } });
+      });
     },
 
     dismissNotice,
@@ -601,7 +943,7 @@ export function createStores({ client, sessionId, host }) {
     notify,
     fail,
     refreshScm: actions.refreshScm,
-    closePanel: () => ui.patch({ conflictOpen: false }),
+    closePanel: () => { layoutModel.actions.close(CONFLICT_TAB); },
   });
   const scmDomain = createScmDomain({
     client,
@@ -612,7 +954,7 @@ export function createStores({ client, sessionId, host }) {
     confirm: actions.confirm,
     prompt: actions.prompt,
     refreshScm: actions.refreshScm,
-    openFile: (path) => editorDomain.openPath(path),
+    openFile: (path) => actions.openFile(path),
   });
 
   // --- watcher -------------------------------------------------------------------------
@@ -647,8 +989,8 @@ export function createStores({ client, sessionId, host }) {
       }
       if ((frame.events ?? []).length > 0) {
         await actions.refreshScm();
-        const view = ui.getSnapshot().activityView;
-        if (view === 'graph' && graph.getSnapshot().phase === 'ready') void graphDomain.load({ reset: true });
+        const hasGraph = Boolean(layoutModel.store.getSnapshot().tabs[GRAPH_TAB]);
+        if (hasGraph && graph.getSnapshot().phase === 'ready') void graphDomain.load({ reset: true });
       }
       if (frame.stopped) {
         notify('warn', '文件监听已停止，改为手动刷新', frame.reason ? { reason: frame.reason } : null);
@@ -675,9 +1017,22 @@ export function createStores({ client, sessionId, host }) {
 
 
   return {
-    ui, workspace, notices, files, editor, search, quick, scm, graph, diff, conflict, terminal, terminals,
-    actions: { ...actions, ...editorDomain, setCommitMessage: (text) => scm.patch({ message: text }) },
+    ui, layout: layoutModel.store, workspace, notices, files, editor, search, quick, scm, graph, diff, conflict,
+    terminal, terminals,
+    actions: {
+      ...actions,
+      ...editorDomain,
+      setCommitMessage: (text) => scm.patch({ message: text }),
+      dispose() {
+        disposed = true;
+        if (workbenchTimer) clearTimeout(workbenchTimer);
+        workbenchTimer = null;
+        void actions.stopWatch();
+      },
+    },
 
+    layoutActions: layoutModel.actions,
+    host,
     scmActions: scmDomain,
     diffActions: diffDomain,
     conflictActions: conflictDomain,
@@ -693,4 +1048,9 @@ function joinPath(dir, name) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Math.round(Number(value) || min)));
+}
+
+function basename(path) {
+  const index = String(path ?? '').lastIndexOf('/');
+  return index === -1 ? String(path ?? '') : String(path ?? '').slice(index + 1);
 }

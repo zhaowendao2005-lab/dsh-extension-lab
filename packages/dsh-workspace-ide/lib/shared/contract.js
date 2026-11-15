@@ -6,7 +6,7 @@
 
 /** Every Remote action. `P` marks the phase it becomes reachable in. */
 export const ACTIONS = [
-  'workspace.resolve', 'workspace.open', 'workspace.state', 'workspace.trust',
+  'workspace.resolve', 'workspace.open', 'workspace.state', 'workspace.trust', 'workspace.useSessionRoot',
   'files.list', 'files.stat', 'files.read', 'files.write', 'files.create',
   'files.rename', 'files.delete', 'files.search', 'files.index',
   'git.status', 'git.refs', 'git.log', 'git.graph', 'git.graph.search', 'git.commit',

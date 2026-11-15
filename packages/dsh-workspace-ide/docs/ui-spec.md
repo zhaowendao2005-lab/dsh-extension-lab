@@ -21,76 +21,72 @@
 - **工作区相关的状态（根目录、信任、最近打开）仍然只在 Host**（`workspace.resolve`），不能借道 `localStorage`——那会绕过 `E_TRUST_REQUIRED` 的门禁。
 - `localStorage` 不可用（隐私模式/被禁）时静默退化为内存默认值，不弹错误。
 
-## 2 整体布局
+## 2 整体布局（右栏工作台 v2）
+
+工作台是 DSH 右栏里的一个宿主 tab；宿主已经提供 tab 条与右栏宽度拖拽，本插件只画 body。body 内部**两栏**：左栏是文件/搜索（可收起），右侧是工作区（内部标签行 + 可拖动分栏的编辑组），底部是可收起的终端面板。
 
 ```css
-@property --wid-sidebar-w { syntax: "<length>"; inherits: true; initial-value: 260px }
-@property --wid-panel-h   { syntax: "<length>"; inherits: true; initial-value: 220px }
+.wid-frame { height: 100%; container-type: inline-size; container-name: widframe }
 .wid-root {
-  --wid-activity-w: 48px; --wid-titlebar-h: 30px; --wid-statusbar-h: 22px; --wid-split-h: 4px;
-  box-sizing: border-box; display: grid; height: 100%; min-height: 0;
-  grid-template-columns: var(--wid-activity-w) var(--wid-sidebar-w) minmax(0, 1fr);
-  grid-template-rows: var(--wid-titlebar-h) minmax(0, 1fr) var(--wid-split-h) var(--wid-panel-h) var(--wid-statusbar-h);
+  --wid-nav-w: clamp(180px, 30cqi, 260px);
+  --wid-toolbar-h: 30px; --wid-tabbar-h: 28px; --wid-statusbar-h: 22px; --wid-split-h: 4px;
+  display: grid; height: 100%; min-width: 0; min-height: 0; overflow: clip; padding: 0;
+  grid-template-columns: var(--wid-nav-w) minmax(0, 1fr);
+  grid-template-rows: var(--wid-toolbar-h) minmax(0, 1fr) var(--wid-split-h) var(--wid-panel-h) var(--wid-statusbar-h);
   grid-template-areas:
-    "titlebar titlebar titlebar"
-    "activity sidebar  editor"
-    "activity sidebar  split"
-    "activity sidebar  panel"
-    "status   status   status";
-  padding-top: var(--dsh-frame-top-clearance, 0px);            /* macOS 红绿灯带 */
-  padding-inline-start: var(--dsh-frame-leading-clearance, 0px);
-  background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-family); font-size: var(--dsh-content-font-size, 14px);
-  transition: --wid-sidebar-w .16s var(--ds-ease-in-out), --wid-panel-h .16s var(--ds-ease-in-out);
+    'toolbar toolbar'
+    'nav     work'
+    'split   split'
+    'panel   panel'
+    'status  status';
 }
-.wid-root[data-sidebar="collapsed"] { --wid-sidebar-w: 0px }
-.wid-root[data-panel="collapsed"]   { --wid-panel-h: 0px; --wid-split-h: 0px }
+.wid-root[data-nav='collapsed']   { --wid-nav-w: 0px }
+.wid-root[data-panel='collapsed'] { --wid-panel-h: 0px; --wid-split-h: 0px }
 ```
 
 | 区域 | grid-area | 默认 | 最小 | 最大 | 可变性 |
 | --- | --- | --- | --- | --- | --- |
-| 标题栏 | `titlebar` | 30px | 30px | 30px | 固定（吃顶部 clearance） |
-| 活动栏 | `activity` | 48px | 48px | 48px | 固定 |
-| 侧栏 | `sidebar` | 260px | 180px | 600px | 拖拽，步进 1px、快照对齐 10px |
-| 编辑区 | `editor` | flex | 320px | — | 吃剩余空间 |
-| 面板分隔条 | `split` | 4px | 4px | 4px | 固定热区（视觉 1px 边框画在上沿） |
-| 底部面板 | `panel` | 220px | 120px | 600px 且 ≤ 根高−200px | 拖拽 |
-| 状态栏 | `status` | 22px | 22px | 22px | 固定 |
+| 工具栏 | `toolbar` | 30px | 30px | 30px | 固定；根 chip、分支、快速打开、图谱、改动、终端、⋯ |
+| 左栏 | `nav` | `clamp(180px, 30cqi, 260px)` | 160px | 360px | 内部不提供拖拽；收起 = 0；窄屏变抽屉 |
+| 工作区 | `work` | flex | 0 | — | 吃剩余空间；内部可再分栏 |
+| 面板分隔条 | `split` | 4px | 4px | 4px | 仅在终端面板展开时存在 |
+| 终端面板 | `panel` | 220px | 120px | ≤ 根高−240px | 拖拽；默认收起 |
+| 状态栏 | `status` | 22px | 20px | 22px | 固定；窄态精简 |
 
-持久化（插件 storage，`v1` schema，沿用契约里 `workspace_ide/trust` 的前缀风格；拖拽 `pointerup` 与折叠切换时写入，防抖 200ms）：
+**内部标签与分栏**（细节见新增 §16）：
+
+- 每个编辑组 = 一条 28px 标签行 + 内容区；文件、diff、提交图谱、当前改动、设置都是标签。
+- 分栏树最多 4 个组，左右/上下可嵌套；新组最小 180×140px；分隔条 4px 热区、比例 0.2–0.8、双击复位。
+- 拖标签到组边缘分栏、到中心移动；拖拽期间只在目标变化时更新高亮，松手一次提交。
+
+**断点**（容器查询，基于右栏宽度，不是窗口宽度）：
+
+| 断点 | 行为 |
+| --- | --- |
+| ≥720px | 左栏并排；工具栏显示分支；标签最大 180 |
+| 520–719px | 左栏可并排可收起；分支隐藏、状态栏保留分支 |
+| <520px | 左栏变抽屉（默认收起，带遮罩）；标签最大 140；状态栏 20px |
+
+持久化（`frontend/service/layout.js`，浏览器 localStorage）：
 
 ```json
-{ "workspace_ide/ui.layout":   { "sidebarWidth": 260, "panelHeight": 220, "sidebarCollapsed": false, "panelCollapsed": false, "activityView": "explorer" },
-  "workspace_ide/ui.scm":      { "groupsCollapsed": { "staged": false, "working": false, "untracked": false, "conflicts": false } },
-  "workspace_ide/ui.files":    { "expanded": [], "selected": null },
-  "workspace_ide/ui.editor":   { "tabs": [], "activePath": null },
-  "workspace_ide/ui.terminal": { "activeTerminalId": null } }
+{ "workspace_ide/ui.layout": { "sidebarWidth": 240, "panelHeight": 220, "sidebarCollapsed": false, "panelCollapsed": true, "activityView": "files", "editor": { "fontSize": 13, "wrap": true, "tabSize": 2 } },
+  "workspace_ide/ui.workbench.v1.<sessionId>": { "version": 1, "tree": {}, "groups": {}, "tabs": {}, "activeGroup": "g1" } }
 ```
 
-**不持久化**：终端标签列表（由 `terminal.list` 对账）、diff 折叠态、选中以外的临时态、任何 git 事实。macOS 顶部/左侧留白在其它平台自动为 `0px`，因此**不写平台判断**。`prefers-reduced-motion: reduce` 时把两个过渡设 `none`。活动栏点开侧栏时不改宽度，只切 `activityView`。
+**不持久化**：编辑器正文/未保存内容、终端标签列表（由 `terminal.list` 对账）、拖拽中间态、组尺寸、任何 git 事实。右栏宽度与显隐归宿主；`localStorage` 不可用时静默退化为内存默认值。
 
-## 3 活动栏
+## 3 左栏（文件 / 搜索）
 
-| 序 | id | 图标 | 行为 |
-| --- | --- | --- | --- |
-| 1 | `explorer` | 文件夹 | 侧栏切文件树 |
-| 2 | `scm` | 分叉+圆点 | 侧栏切 SCM；有变更时 badge |
-| 3 | `graph` | 泳道节点 | 侧栏切提交图谱 |
-| 4 | `terminal` | `>_` | 切换底部面板显隐（**不 kill**） |
-| 5 | `settings` | 齿轮 | 面板内设置页（根目录 / 信任 / 刷新策略） |
+顶部 28px 头部：`[文件][搜索]` 分段（`role="tablist"`，选中项底 `--dsw-alias-bg-layer-2` + 字 `--dsw-alias-label-primary`）、刷新/新建/新建文件夹、收起箭头（`⌥⌘⇧B`）。没有竖直活动栏。
 
 | 项 | 值 |
 | --- | --- |
-| 容器 | 48px 宽，底 `--dsw-alias-bg-base`，右侧 1px `--dsw-alias-border-l1` |
-| 按钮 | 48×48，图标居中，`aria-pressed` 表当前视图 |
-| 图标 | 20×20 viewBox，`stroke: currentColor`，`stroke-width: 1.5`，`fill: none`，`stroke-linecap: round` |
-| 常态 / hover | 图标 `--dsw-alias-label-secondary` / `--dsw-alias-label-primary` + 底 `--dsw-alias-interactive-bg-hover` |
-| 选中 | 图标 `--dsw-alias-label-primary` + 左侧 2px 竖条 `--dsw-alias-brand-primary`（高 24px） |
-| badge | 右上，高 16px、`min-width: 16px`、圆角 8px、10px 字；底 `--dsw-alias-state-business-primary`、字 `--dsw-alias-label-primary-foreground`；>99 显示 `99+` |
-| tooltip | 原生 `title` 兜底 + 自绘（延迟 600ms）；底 `--dsw-alias-tooltip-bg`、字 `--dsw-alias-label-primary-foreground`、键位 `<kbd>` 底 `--dsw-alias-tooltip-key-bg` |
-| 键盘 | 单一 tablist：Tab 进入，↑/↓ 在 5 项间移动，Enter/Space 激活 |
+| 容器 | `var(--wid-nav-w)` 宽，底 `--dsw-alias-bg-base`，右侧 1px `--dsw-alias-border-l1` |
+| 收起 | 宽 0，工具栏出现「展开文件栏」按钮；窄屏 <520px 默认收起，展开为 280px 抽屉 + 35% 遮罩 |
+| 视图 | `files`（文件树）/ `search`（工作区搜索）；切换不改宽度 |
 
-图标为内联 SVG 组件（`frontend/views/activity/ActivityIcons.tsx`），**不引图标库、不复用宿主 `sidebar.panel.icon` factory**（`ARCHITECTURE.md`）。
+图标为内联 SVG 组件（`frontend/views/common/Icon.jsx`），**不引图标库、不复用宿主 `sidebar.panel.icon` factory**（`ARCHITECTURE.md`）。
 
 ## 4 文件树
 
@@ -165,9 +161,9 @@
 
 详情面板（右，宽 `min(420px, 45%)`，可关）：meta 网格 2 列×N 行（标签 11px `--dsw-alias-label-tertiary`，值 12px `--dsw-alias-label-primary`），行序 = 哈希（可复制）/ 作者 / 时间（绝对+相对）/ refs / 父提交（可按 sha 跳转）；文件列表复用 §5 行规格的只读版（无 hover 操作），点击 → `git.diff { target: { kind: 'commit', sha, path } }`；cherry-pick / tag 按钮 `disabled` + tooltip（P1/P2）。
 
-## 7 编辑器标签栏
+## 7 内部标签行（每个编辑组一条）
 
-高 26px，底部 1px `--dsw-alias-border-l1`；标签 `max-width: 200px`、`min-width: 88px`、`flex: 0 1 200px`、`padding: 0 8px`、12px。非活动标签字 `--dsw-alias-label-secondary`、底 `--dsw-alias-bg-layer-2`；活动标签字 `--dsw-alias-label-primary`、底 `--dsw-alias-bg-base`、上沿 2px `--dsw-alias-brand-primary`。脏点直径 8px、`--dsw-alias-label-primary`；hover 该标签时脏点**原地**换成 14×14 关闭按钮（`opacity` 过渡 120ms），非脏标签直接显示关闭按钮（14×14，`--dsw-alias-label-tertiary`，hover 变 `--dsw-alias-label-primary` + `--dsw-alias-interactive-bg-hover` 底）。溢出横向滚动（`scrollbar-width: thin`）不折行，右侧固定 18×18「全部关闭」。中键关闭走 `auxclick` 且 `button === 1`；拖拽排序 **P1**（P0 `draggable={false}`）；切标签时 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`。
+高 28px，底 `--dsw-alias-bg-layer-2`，下沿 1px `--dsw-alias-border-l1`；标签 `max-width: 180px`、`min-width: 72px`、`padding: 0 6px 0 8px`、12px、图标 12px。活动标签底 `--dsw-alias-bg-base`、上沿 2px `--dsw-alias-brand-primary`、上圆角 `--dsw-radius-sm`；非活动字 `--dsw-alias-label-secondary`，hover 底 `--dsw-alias-interactive-bg-hover`。脏点 6px、`--dsw-alias-label-primary`，hover 时隐藏并换成 16×16 关闭按钮；非活动标签的关闭按钮默认 `opacity: 0`，hover/活动时出现。溢出横向滚动（隐藏滚动条）不折行；行尾 24px「⋯」打开组级菜单。中键关闭走 `auxclick` 且 `button === 1`；右键菜单见 §18；拖拽分栏见 §18；切标签后活动标签 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`。
 
 ## 8 diff 视图
 
@@ -290,9 +286,10 @@
 | --- | --- |
 | 单击 / 双击 | 单击：树节点、graph 行、SCM 行**选中**（SCM 行单击即出该文件 diff）；双击：树文件打开到编辑器、目录展开/折叠、graph 行开详情 |
 | 焦点环 | 只用 `:focus-visible`：`outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px`；鼠标点击不出环 |
-| 右键菜单 | `onContextMenu`（`preventDefault` + 记坐标）；`pointerdown` 捕获阶段关外部；`Esc` 关闭；↑/↓ 移动、`Enter` 执行、`Tab` 关闭；容器 `role="menu"`、项 `role="menuitem"`；渲染为面板内 `position: fixed` 浮层 + `--dsw-shadow-lv3` |
-| 分隔条 | `pointerdown` + `setPointerCapture`；拖动中同步 `document.body.style.cursor`；`pointerup` 解绑并写 storage；双击恢复默认（260 / 220）；热区用负 margin 扩到 8px |
-| 标签拖拽排序(P1) | HTML5 `dragstart/dragover/drop`，占位条 2px `--dsw-alias-brand-primary` |
+| 右键菜单 | `onContextMenu`（`preventDefault` + 记坐标）；`pointerdown` 捕获阶段关外部；`Esc` 关闭；↑/↓ 移动、`Enter` 执行、`Tab` 关闭；容器 `role="menu"`、项 `role="menuitem"`；渲染为根容器内 `position: absolute` 浮层 + `--dsw-shadow-lv3`（**不允许 fixed**，不能越出右栏） |
+| 分隔条 | `pointerdown` + 窗口级 move/up；拖动中同步 `document.body.style.cursor`；`pointerup` 解绑并写 storage；双击恢复默认；热区用负 margin 扩到 8px |
+| 标签拖拽 | pointer events（不用 HTML5 DnD）：移动 ≥4px 才进入拖拽；幽灵跟随指针；按组内容矩形 25% 边缘判定五区；`Esc`/窗口失焦取消；松手一次提交 |
+| 标签右键 | 关闭当前 / 关闭其他 / 关闭所有 / 拆分四向 / 复制相对路径；批量关闭有脏文件时一次确认 |
 | `prefers-reduced-motion` | 关折叠过渡、标签脏点↔关闭的尺寸过渡；spinner 改 1.5s 淡入淡出；骨架屏静止 |
 | 触控 | 不做手势；热区 ≥8px 已满足最小可点尺寸 |
 
@@ -339,14 +336,16 @@ ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
 
 | 命令 id | 键 | 说明 |
 | --- | --- | --- |
-| `workspace-ide.explorer` | `⌥⌘⇧E` | 打开面板并切到资源管理器 |
-| `workspace-ide.search` | `⌥⌘⇧F` | 切到工作区搜索 |
-| `workspace-ide.scm` | `⌥⌘⇧G` | 切到源代码管理 |
-| `workspace-ide.graph` | `⌥⌘⇧R` | 切到提交图谱（`⌘⇧H` 为宿主保留） |
+| `workspace-ide.explorer` | `⌥⌘⇧E` | 打开/聚焦工作台，左栏切「文件」 |
+| `workspace-ide.search` | `⌥⌘⇧F` | 打开工作台，左栏切「搜索」 |
+| `workspace-ide.scm` | `⌥⌘⇧G` | 打开/聚焦「改动」标签 |
+| `workspace-ide.graph` | `⌥⌘⇧R` | 打开/聚焦「提交图谱」标签（`⌘⇧H` 为宿主保留） |
 | `workspace-ide.panel` | `⌥⌘⇧J` | 终端面板显隐 |
-| `workspace-ide.quickOpen` | `⌥⌘⇧O` | 快速打开（另有标题栏按钮） |
+| `workspace-ide.quickOpen` | `⌥⌘⇧O` | 快速打开（另有工具栏按钮） |
 | `workspace-ide.save` | `⌥⌘⇧S` | 保存当前文件 |
 | `workspace-ide.saveAll` | `⌥⌘⇧A` | 保存全部（`A` 带 shift 才可注册） |
+| `workspace-ide.nav`（新） | `⌥⌘⇧B` | 收起/展开左栏 |
+| `workspace-ide.closeTab`（新） | `⌥⌘⇧W` | 关闭当前内部标签（`⌘W` 仍归宿主，关整个工作台） |
 
 6. **不注册的键**：`⌘W`（桌面属宿主 `page.close`、Web 属浏览器）、`⌘P`/`⌘⇧F`/`⌘⇧O`/`⌘⇧G`/`⌘⇧H` 均已被宿主占用；这些功能全部有面板内入口（活动栏、标题栏「快速打开」按钮、标签栏关闭按钮与中键）。
 7. **终端面板的键盘冲突**：`regions` 只声明 `page`；xterm 焦点在 `terminal` 区，宿主不会把我们的命令派进来，`Ctrl+C` 等保持 xterm 原生语义（未注册 `KeyC`）。
@@ -439,16 +438,16 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ## 17 响应式
 
-断点用**容器查询**（宿主面板宽 ≠ 窗口宽）：`container-type: inline-size` 挂 `.wid-root`，按 `inline-size` 判定。
+断点用**容器查询**（右栏宽 ≠ 窗口宽）：`container-type: inline-size` 挂 `.wid-frame`，`@container widframe` 判定；**不用 `@media` 判断面板宽度**。
 
 | 断点 | 行为 |
 | --- | --- |
-| ≥1200px | 侧栏 260px、面板 220px，正常布局 |
-| <1200px | 侧栏默认折叠（`data-sidebar="collapsed"`，仍可由活动栏点开），活动栏不变 |
-| <900px | 底部面板默认收起（`data-panel="collapsed"`），终端走活动栏开关；编辑区 `min-width: 320px` |
-| <900px 且侧栏展开 | 侧栏宽度取 `min(260px, 40%)`，编辑区优先 |
-| 状态栏裁剪优先级 | 保留顺序：变更计数 → 分支 → 语言 → 编码；先隐藏：缩进 → 光标行列 → ahead/behind（`display: none` 顺序即优先级） |
-| <640px | 图谱隐藏作者列与时间列（只留 hash）；diff 若内联形态未实现则显示 `disabled` 提示 |
+| ≥720px | 左栏并排；工具栏显示分支；标签最大 180px |
+| 520–719px | 左栏可并排可收起；分支只在状态栏；标签最大 150px |
+| <520px | 左栏变抽屉（默认收起，`data-nav` 控制，带遮罩）；状态栏 20px；标签最大 140px；工具栏根 chip 截断 |
+| 分栏约束 | 左右分栏需组宽 ≥360px（每侧 180）；上下分栏需组高 ≥280px；放不下的方向在拖拽/菜单里置灰 |
+| 状态栏裁剪优先级 | 保留顺序：变更计数 → 分支 → 语言 → 编码；先隐藏：缩进 → 光标行列 → ahead/behind |
+| <640px 内容 | 图谱隐藏作者/时间列；diff 用单栏统一视图 |
 
 ## 与契约的差异（已复核：全部处理）
 
@@ -472,3 +471,40 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 - 所有色值仍只来自 `--dsw-alias-*` 与派生变量；搜索样式集中在 `frontend/styles/search.css`。
 - 差异视图支持「并排 / 统一」两种布局（并排用 `MergeView`，统一用 `unifiedMergeView`，只读、无 revert 控件）；Markdown 文件在标签栏提供预览开关，图标为自绘 `preview`。
 - 终端标签双击可重命名（走 `terminal.rename`，只改显示名，不重启 shell）。
+
+## 18 内部标签页与拖动分栏
+
+### 18.1 标签模型
+
+| 类型 | id | 单例 | 来源 |
+| --- | --- | --- | --- |
+| 文件 | `file:<相对路径>` | 否 | 文件树、快速打开、搜索 |
+| 差异 | `view:diff` | 是 | 「改动」行点击、图谱提交 |
+| 冲突 | `view:conflict` | 是 | 冲突行的三栏视图 |
+| 提交图谱 | `view:graph` | 是 | 工具栏 ⑂、状态栏分支、欢迎页 |
+| 当前改动 | `view:changes` | 是 | 工具栏 ±、状态栏变更数、欢迎页 |
+| 设置 | `view:settings` | 是 | 工具栏「⋯」 |
+
+- 同一 id 全工作区只存在一份；打开已存在的标签只聚焦，不复制。
+- 每组有 `active`；组获得焦点（pointerdown）时成为 `activeGroup`，新打开的标签落在活动组。
+- 标签行右侧「⋯」：关闭该组所有标签、关闭所有分栏。标签右键：关闭当前 / 关闭其他 / 关闭所有 / 拆分四向 / 复制相对路径。
+- 关闭文件标签前若有未保存修改 → 面板内确认框；批量关闭只弹一次，列出前 5 个路径。
+
+### 18.2 拖动分栏
+
+- 在标签上 pointerdown + 移动 ≥4px 进入拖拽；`×` 不触发拖拽；`Esc` 取消；拖到组外取消。
+- 目标组内容矩形按 25% 边缘划分五区：左/右 = 左右分栏，上/下 = 上下分栏，中心 = 移动到该组。
+- 拖拽中显示幽灵（跟随指针，90% 不透明、`--dsw-shadow-lv3`）与目标区高亮（品牌色 12% 底 + 2px 描边 + 文案）。
+- 松手才提交布局；拖拽中不重排、不加过渡。
+- 约束：总组数 ≤4；新组最小 180×140；放不下的方向不可投放（高亮不出现）。
+- 分隔条：4px 热区，比例 0.2–0.8，双击恢复 50/50；组空自动合并（只剩一组时显示欢迎页）。
+- 菜单里的「拆分四向」与拖拽走同一路径，是无障碍替代。
+
+### 18.3 空组与欢迎页
+
+空组显示工作区名/根路径 + 「打开文件… / 查看改动 / 提交图谱 / 设置」；首次打开只有欢迎页，不自动打开改动或图谱。
+
+### 18.4 双层 tab 的视觉区分
+
+- L1（宿主右栏 tab 条）：宿主 chip 胶囊，本插件不控制。
+- L2（内部标签行）：编辑器标签风格（上圆角、活动标签与内容同底、上沿 2px、关闭按钮 hover 出现）；不加外框/阴影，避免看起来像第二层宿主 chrome。

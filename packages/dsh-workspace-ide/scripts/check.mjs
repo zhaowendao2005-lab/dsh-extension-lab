@@ -156,6 +156,11 @@ eachMatch('R14', inFrontend, (line) => {
   return `imports '${match[1]}' directly; use runtime.tsx (h/Fragment/hooks)`;
 });
 
+// R15 — every overlay stays inside the right column: no fixed positioning in the plugin UI.
+eachMatch('R15', inFrontend, (line) => (/position\s*:\s*fixed/.test(line)
+  ? 'position:fixed can leave the right column; position it absolutely under .wid-root'
+  : null));
+
 if (failed > 0) {
   console.error(`static check failed: ${failed} violation(s)`);
   process.exit(1);

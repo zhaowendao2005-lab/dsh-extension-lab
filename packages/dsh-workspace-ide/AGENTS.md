@@ -8,7 +8,8 @@
 - `frontend/views` 按语义 DOM 层级组织，只做三件事：订阅 store、派发动作、绑定 DOM/CM6/xterm 实例。**禁止 `useState`/`useReducer`**；`useRef` 只用于 DOM、焦点、编辑器与终端句柄。
 - `frontend/stores/<domain>.stores.ts` 是该域唯一状态与动作入口；IO 只经同域 `.datasource.ts`。
 - `.datasource.ts` 只负责选择「真实 Remote 动作」，不承载业务状态，不吞 `ok:false`。
-- 跨域编排只允许一处：`stores/workbench.stores.ts`（打开文件、选中变更出 diff、切分支刷新）。
+- 跨域编排只允许一处：`stores/workbench.stores.ts`（打开文件、选中变更出 diff、切分支刷新、标签/分栏的打开与关闭）。
+- 标签归属、每组活动标签、分栏树只写在 `stores/layout.stores.ts`；`views` 只渲染，不自行排序、分组或计算分栏。
 - `frontend/service` 只放无 IO 的纯函数（路径、键位、语言探测、diff 文案、语法高亮映射）。禁止浏览器导入 `backend/**`、`node:*`；两端只能共享 `shared/`（纯数据 + zod schema）。
 - **禁止 require 任何 `@deepseek-ai/*` client 包**（`practices.md:35`）。需要控件就自己写，类名统一加 `wid-` 前缀。
 
@@ -23,7 +24,7 @@
 ## Host 侧
 
 - `backend/service.js` 是唯一动作分发点：严格 zod 校验 payload、解析根目录、信任门禁、并发闸门、写队列、错误映射。
-- 根目录**只能**由 Host 解析：`ctx.sessionController.resolveAgent(sessionId)?.session.header.cwd` 或用户在面板里显式选择；不允许 wire 传任意绝对路径直接当根。
+- 根目录**只能**由 Host 解析：该会话手动选择（`workspace.open` 记录在 `sessionRoots`）> `ctx.sessionController.resolveAgent(sessionId)?.session.header.cwd` > `lastRoot`；不允许 wire 传任意绝对路径直接当根。
 - 所有路径先 `path.resolve(root, rel)` 再 `realpath`，前缀比较带 `/` 边界；越界一律 `E_OUTSIDE_ROOT`。**校验在 Host，不在前端。**
 - 错误不得静默：每个 `catch` 都要落到 `ErrCode` 之一；`E_GIT_FAILED` 必须带过滤后的 stderr，且脱敏。
 - 生命周期：终端、git 子进程、watcher、定时器都挂 `ctx.effect` 的 disposer；插件 dispose 后不得有残留进程。
@@ -53,6 +54,14 @@
 - 关闭 = `terminate()` + 等 `done` + 2 s 强杀；标签切走不 kill；插件 dispose 全 kill。
 - 实现复制自 `packages/dsh-plugin-dev-sandbox`，**不改该包、不共享模块**。
 
+## 右栏与内部布局
+
+- 渲染面只有 `sidebar.right.pane.tab`（session 作用域），不注册 `main`、不调用 `ctx.layout.selectPanel`；右栏显隐由宿主占用者决定，本插件不调 `openRightbar/closeRightbar`。
+- 所有浮层（右键菜单、拖影、确认框、通知、快速打开）相对 `.wid-root` 定位；**构建期禁止 `position: fixed`**，不允许覆盖右栏以外的区域。
+- 每个会话一个 runtime（client + stores）；不可见时停 watch/轮询/window 监听，可见时 `workspace.resolve` 对齐 Host 单根再刷新。
+- 分栏最多 4 组、最小新组 180×140；树/组合并在 `service/split.js` 的纯函数里做，视图只调 layout 动作。
+- 标签关闭：文件先处理未保存确认；组清空后（非最后组）合并；`关闭所有` 只作用于当前组，绝不关宿主 tab。
+
 ## 图谱
 
 - 布局在 Host 算（`backend/git/layout.js`，移植 `git-graph-plus`，Apache-2.0 版权头必须保留），wire 只传 `rows[].{hash,lane,color,segments}`。
@@ -79,7 +88,8 @@
 | 编辑器扩展组合/阈值 | `docs/editor.md` |
 | 图谱布局或 wire 结构 | `docs/graph.md` |
 | PTY 通道或轮询 | `docs/terminal.md` |
-| 布局/尺寸/token 映射/快捷键 | `docs/ui-spec.md` |
+| 布局/尺寸/token 映射/快捷键/内部标签/分栏 | `docs/ui-spec.md` |
+| 渲染面、会话根、标签生命周期 | `ARCHITECTURE.md` |
 | 构建参数/依赖/体积预算 | `docs/build.md` |
 | 里程碑任务状态 | `docs/milestones.md` |
 

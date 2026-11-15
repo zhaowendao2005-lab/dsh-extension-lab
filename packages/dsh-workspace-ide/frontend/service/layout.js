@@ -4,6 +4,7 @@
  * (docs/ui-spec.md §2 → 持久化)
  */
 const KEY = 'workspace_ide/ui.layout';
+const WORKBENCH_PREFIX = 'workspace_ide/ui.workbench.v1.';
 
 export function loadLayout() {
   try {
@@ -35,5 +36,31 @@ export function saveLayout(value) {
     window.localStorage.setItem(KEY, JSON.stringify(value));
   } catch {
     // Private-mode storage failures must never break the panel.
+  }
+}
+
+/**
+ * Per-session workbench layout (tabs, groups, split tree). The Host right sidebar already
+ * persists which host tab is open per session; this key keeps our internal arrangement in
+ * the same scope so switching sessions never mixes two workspaces' tabs.
+ */
+export function loadWorkbench(sessionId) {
+  if (!sessionId) return null;
+  try {
+    const raw = window.localStorage.getItem(WORKBENCH_PREFIX + sessionId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveWorkbench(sessionId, value) {
+  if (!sessionId) return;
+  try {
+    window.localStorage.setItem(WORKBENCH_PREFIX + sessionId, JSON.stringify(value));
+  } catch {
+    // Same rule as saveLayout: layout is a preference, never worth an error bar.
   }
 }

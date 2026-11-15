@@ -32,7 +32,7 @@ export function createScmDomain({ client, scm, workspace, notify, fail, confirm,
       return result;
     } catch (error) {
       if (isTrustError(error)) {
-        notify('warn', '此操作需要先信任当前工作区', error.detail ?? null);
+        notify('warn', '此操作需要先信任当前工作区', error.detail ?? null, error.code);
         return null;
       }
       fail(scm, error, `${label} 失败`);

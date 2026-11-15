@@ -67,7 +67,7 @@ export function DiffView({ stores }) {
   if (diff.phase === 'idle') {
     return (
       <div className="wid-diff wid-diff--empty">
-        <span className="wid-hint">从源代码管理里选择一个文件查看差异</span>
+        <span className="wid-hint">从「改动」标签里选择一个文件查看差异</span>
       </div>
     );
   }
@@ -110,7 +110,7 @@ export function DiffView({ stores }) {
             暂存文件
           </button>
         )}
-        <button type="button" className="wid-icon-button" title="关闭差异" onClick={() => stores.diffActions.close()}>
+        <button type="button" className="wid-icon-button" title="关闭差异标签" onClick={() => void stores.actions.closeDiff()}>
           <Icon name="close" size={12} />
         </button>
       </div>
