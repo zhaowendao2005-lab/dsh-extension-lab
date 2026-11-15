@@ -1224,3 +1224,185 @@ body[data-wid-dragging='true'] { cursor: grabbing; user-select: none; }
 }
 
 .wid-scm__banner-actions { display: inline-flex; flex: 0 0 auto; gap: 6px; }
+
+/* The editor draws its own caret/selection; a nested focus ring reads as a black box. */
+.wid-root .cm-editor.cm-focused { outline: none; }
+.wid-root .cm-editor .cm-scroller:focus-visible,
+.wid-root .cm-editor .cm-content:focus-visible,
+.wid-root .wid-editor__pane :focus-visible { outline: none; }
+
+/* Context menus may be taller than the old 210px estimate; scroll instead of clipping. */
+.wid-contextmenu {
+  max-height: calc(100% - 8px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* ---------- frame-level full view (shell.overlay child) ---------- */
+.wid-fullview-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--dsw-alias-bg-mask-1);
+  pointer-events: auto;
+}
+
+.wid-fullview {
+  position: relative;
+  display: flex;
+  width: 80%;
+  height: 80%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+
+.wid-fullview__close {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 8px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.wid-fullview__close:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.wid-fullview .wid-frame { width: 100%; height: 100%; }
+
+/* ---------- shortcut settings ---------- */
+.wid-shortcuts__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 24px;
+}
+
+.wid-shortcuts__keys {
+  min-width: 88px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 20px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.wid-shortcuts__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wid-shortcuts__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+  padding: 0 2px;
+  font-size: 12px;
+}
+
+@container widframe (max-width: 519px) {
+  .wid-toolbar__optional { display: none; }
+}
+
+/* ---------- SCM two-level tree ---------- */
+.wid-scm { position: relative; }
+.wid-scm__commit { flex: 0 0 auto; }
+
+.wid-scm__tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.wid-scm__canvas { position: relative; min-width: 0; }
+
+.wid-scm__node,
+.wid-scm__row--tree {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.wid-scm__node {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 600;
+  user-select: none;
+}
+
+.wid-scm__node:hover,
+.wid-scm__row--tree:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.wid-scm__node-title { overflow: hidden; text-overflow: ellipsis; }
+.wid-scm__node-count { color: var(--dsw-alias-label-tertiary); font-weight: 400; }
+.wid-scm__node-spacer { flex: 1; }
+
+.wid-scm__row--tree { padding-inline-start: 18px; }
+.wid-scm__file-icon { display: grid; place-items: center; color: var(--dsw-alias-label-secondary); flex: 0 0 auto; }
+.wid-scm__path { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+.wid-scm__dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dsw-alias-label-tertiary); font-size: 11px; flex: 1 1 auto; direction: rtl; text-align: start; }
+
+.wid-scm__ctx {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 184px;
+  padding: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+
+.wid-scm__ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  text-align: start;
+}
+
+.wid-scm__ctx-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.wid-scm__ctx-item:disabled { opacity: 0.45; cursor: not-allowed; }
+.wid-scm__ctx-sep { height: 1px; margin: 4px 0; background: var(--dsw-alias-border-l1); }
+
+/* The change tree owns the only scrollbar; the panel itself never scrolls. */
+.wid-scm { overflow: hidden; }

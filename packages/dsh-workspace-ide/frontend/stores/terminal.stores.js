@@ -15,7 +15,7 @@ export function createTerminalController({ client, store, notify }) {
   function channel(id) {
     let item = channels.get(id);
     if (!item) {
-      item = { offset: 0, timer: null, listeners: new Set(), stopped: false };
+      item = { offset: 0, timer: null, listeners: new Set(), stopped: false, inFlight: false };
       channels.set(id, item);
     }
     return item;
@@ -29,7 +29,8 @@ export function createTerminalController({ client, store, notify }) {
 
   async function poll(id) {
     const item = channel(id);
-    if (item.stopped) return;
+    if (item.stopped || item.inFlight) return;
+    item.inFlight = true;
     try {
       const frame = await client.call('terminal.poll', { terminalId: id, offset: item.offset });
       if (frame.offset !== item.offset || frame.data) {
@@ -55,6 +56,8 @@ export function createTerminalController({ client, store, notify }) {
       emit(id, { type: 'error', error });
       notify?.('error', '终端读取失败', { code: error?.code });
       stop(id);
+    } finally {
+      item.inFlight = false;
     }
   }
 

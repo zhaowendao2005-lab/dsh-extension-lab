@@ -8,6 +8,7 @@ import { ConflictView } from '../editor/ConflictView.jsx';
 import { GraphView } from '../graph/GraphView.jsx';
 import { ScmView } from '../scm/ScmView.jsx';
 import { SettingsView } from '../common/SettingsView.jsx';
+import { ShortcutsView } from '../ShortcutsView.jsx';
 
 /** One editor group: tab row plus the active tab's content, with a drop overlay while dragging. */
 export function EditorGroup({ stores, groupId }) {
@@ -56,6 +57,7 @@ function TabContent({ stores, tab }) {
   if (tab.kind === 'graph') return <div className="wid-tabcontent"><GraphView stores={stores} /></div>;
   if (tab.kind === 'changes') return <div className="wid-tabcontent"><ScmView stores={stores} /></div>;
   if (tab.kind === 'settings') return <div className="wid-tabcontent"><SettingsView stores={stores} /></div>;
+  if (tab.kind === 'shortcuts') return <div className="wid-tabcontent"><ShortcutsView stores={stores} /></div>;
   return <div className="wid-empty"><span className="wid-hint">未知的标签类型</span></div>;
 }
 

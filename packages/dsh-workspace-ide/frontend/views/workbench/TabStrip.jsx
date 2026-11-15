@@ -5,29 +5,24 @@ import { zoneAt } from '../../service/split.js';
 
 const DRAG_THRESHOLD = 4;
 
-function rootRect() {
-  const node = document.querySelector('.wid-root');
-  return node ? node.getBoundingClientRect() : { left: 0, top: 0, width: 1200, height: 800 };
+function rootOf(element) {
+  const node = element && element.closest ? element.closest('.wid-root') : null;
+  return node ?? document.querySelector('.wid-root');
 }
 
-function rootPoint(clientX, clientY, width, height) {
-  const rect = rootRect();
+function rootPoint(element, clientX, clientY, width, height) {
+  const node = rootOf(element);
+  const rect = node ? node.getBoundingClientRect() : { left: 0, top: 0, width: 1200, height: 800 };
   return {
     x: Math.max(4, Math.min(clientX - rect.left, rect.width - width)),
     y: Math.max(4, Math.min(clientY - rect.top, rect.height - height)),
   };
 }
 
-function bodyRectOf(groupId) {
-  const group = document.querySelector('[data-wid-group="' + groupId + '"]');
-  const body = group ? group.querySelector('.wid-group__body') : null;
-  return body ? body.getBoundingClientRect() : null;
-}
-
+/** Resolve the group element the pointer is over; never query another workbench instance's DOM. */
 function groupAt(x, y) {
   const node = document.elementFromPoint(x, y);
-  const group = node && node.closest ? node.closest('[data-wid-group]') : null;
-  return group ? group.getAttribute('data-wid-group') : null;
+  return node && node.closest ? node.closest('[data-wid-group]') : null;
 }
 
 function changesOf(status) {
@@ -47,12 +42,12 @@ export function TabStrip({ stores, groupId }) {
 
   useEffect(() => {
     const node = scrollRef.current;
-    if (!node || !activeId) return;
+    if (!node || !activeId || layout.drag) return;
     const active = node.querySelector('[data-active="true"]');
     if (active && typeof active.scrollIntoView === 'function') {
       active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
-  }, [activeId]);
+  }, [activeId, Boolean(layout.drag)]);
 
   if (!group) return null;
 
@@ -62,7 +57,7 @@ export function TabStrip({ stores, groupId }) {
   function openMenu(event, tabId) {
     event.preventDefault();
     event.stopPropagation();
-    const point = rootPoint(event.clientX, event.clientY, 210, 210);
+    const point = rootPoint(event.currentTarget, event.clientX, event.clientY, 220, 260);
     stores.actions.openTabMenu(groupId, tabId, point.x, point.y);
   }
 
@@ -71,7 +66,7 @@ export function TabStrip({ stores, groupId }) {
     event.stopPropagation();
     const node = event.currentTarget;
     const rect = node.getBoundingClientRect();
-    const point = rootPoint(rect.left, rect.bottom + 2, 210, 160);
+    const point = rootPoint(node, rect.left, rect.bottom + 2, 220, 170);
     stores.actions.openTabMenu(groupId, null, point.x, point.y);
   }
 
@@ -80,37 +75,57 @@ export function TabStrip({ stores, groupId }) {
     stores.actions.activateLayoutTab(groupId, tabId);
     const startX = event.clientX;
     const startY = event.clientY;
+    const pointerId = event.pointerId;
     let dragging = false;
     let finished = false;
+    let raf = 0;
+    let pending = null;
 
     function cleanup() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('keydown', onKey, true);
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      pending = null;
       delete document.body.dataset.widDragging;
     }
 
+    /** One geometry + store update per animation frame, not per pointer event. */
     function onMove(moveEvent) {
-      if (finished) return;
+      if (finished || moveEvent.pointerId !== pointerId) return;
+      pending = moveEvent;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (!finished && pending) applyMove(pending);
+      });
+    }
+
+    function applyMove(moveEvent) {
       if (!dragging) {
         if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < DRAG_THRESHOLD) return;
         dragging = true;
         document.body.dataset.widDragging = 'true';
         stores.actions.beginTabDrag(tabId, groupId, moveEvent.clientX, moveEvent.clientY);
       }
-      const targetGroup = groupAt(moveEvent.clientX, moveEvent.clientY);
+      const groupElement = groupAt(moveEvent.clientX, moveEvent.clientY);
       let target = null;
-      if (targetGroup) {
-        const rect = bodyRectOf(targetGroup);
+      if (groupElement) {
+        const targetGroupId = groupElement.getAttribute('data-wid-group');
+        const body = groupElement.querySelector('.wid-group__body');
+        const rect = body ? body.getBoundingClientRect() : null;
         const zone = rect ? zoneAt(rect, moveEvent.clientX, moveEvent.clientY) : null;
-        if (zone && stores.actions.canDrop(targetGroup, zone)) target = { groupId: targetGroup, zone };
+        if (targetGroupId && zone && stores.actions.canDrop(targetGroupId, zone)) {
+          target = { groupId: targetGroupId, zone };
+        }
       }
       stores.actions.updateTabDrag(moveEvent.clientX, moveEvent.clientY, target);
     }
 
-    function onUp() {
-      if (finished) return;
+    function onUp(upEvent) {
+      if (finished || (upEvent && upEvent.pointerId !== pointerId)) return;
       finished = true;
       cleanup();
       if (!dragging) return;
@@ -121,6 +136,14 @@ export function TabStrip({ stores, groupId }) {
         else stores.actions.splitTab(tabId, target.groupId, target.zone);
       }
       stores.actions.endTabDrag();
+    }
+
+    /** A cancelled pointer must never commit the pending split as if it were a drop. */
+    function onCancel(cancelEvent) {
+      if (finished || (cancelEvent && cancelEvent.pointerId !== pointerId)) return;
+      finished = true;
+      cleanup();
+      if (dragging) stores.actions.endTabDrag();
     }
 
     function onKey(keyEvent) {
@@ -134,7 +157,7 @@ export function TabStrip({ stores, groupId }) {
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
     window.addEventListener('keydown', onKey, true);
   }
 
@@ -182,7 +205,7 @@ export function TabStrip({ stores, groupId }) {
                 if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
                   event.preventDefault();
                   const rect = event.currentTarget.getBoundingClientRect();
-                  const point = rootPoint(rect.left, rect.bottom + 2, 210, 210);
+                  const point = rootPoint(event.currentTarget, rect.left, rect.bottom + 2, 220, 260);
                   stores.actions.openTabMenu(groupId, tabId, point.x, point.y);
                 }
               }}

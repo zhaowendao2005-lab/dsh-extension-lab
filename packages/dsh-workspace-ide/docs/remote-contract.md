@@ -73,6 +73,8 @@
 
 ## 2. workspace
 
+> 除 `workspace.*` 自身外，所有动作都在 Service 入口按信封 `sessionId` 绑定不可变根上下文并运行在 `AsyncLocalStorage` 中：`files.* / git.* / terminal.* / watch.*` 的路径解析、信任判定与实际执行使用同一份 `{sessionId, root}`，并发会话不再共享可变的 `current`。
+
 ### `workspace.resolve`
 根目录按会话解析（右栏工作台一个会话一份）：**该会话手动选择的目录 > 会话 `session.header.cwd` > 上次根目录**。优先级里的「手动选择」只由 `workspace.open` 记录，`workspace.useSessionRoot` 清除；Host 从不信任 wire 上传来的任意路径。
 ```js
@@ -455,8 +457,8 @@ watch.poll  payload: { token: string, offset: number }
     reason?: 'limit'|'error'|'fs-events-unsupported'|'network-volume' }
 watch.stop  payload: { token: string } → {}
 ```
-- Host 侧合并同类事件（1000 ms debounce + 未完成则丢弃），`dropped:true` 时客户端全量刷新。
-- `stopped:true` → 客户端退回 1500 ms 轮询并显示「自动刷新已降级」。
+- Host 侧合并同类事件（800 ms debounce），队列上限 500；`offset` 是**单调游标**，裁剪旧事件只推进游标、不改写它。客户端传回上次 offset，Host 返回其后的事件；`dropped:true` 表示已裁剪，客户端应全量刷新。
+- watcher 不可用时 `watch.start` 返回 `token:null` + `stopped.reason`；客户端必须继续 1500 ms `git.status` 轮询（P0 正确性路径与 watcher 无关），不得静默停刷。
 
 ## 7. 并发与取消语义
 

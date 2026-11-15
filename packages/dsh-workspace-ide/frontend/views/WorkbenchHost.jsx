@@ -13,8 +13,8 @@ export function WorkbenchHost({ stores, sessionId, useTabInfo }) {
   const tabId = tab ? tab.id : null;
 
   useEffect(() => {
-    if (visible) void stores.actions.activate();
-    else stores.actions.deactivate();
+    stores.actions.setSurfaceVisible('sidebar', visible);
+    return () => stores.actions.setSurfaceVisible('sidebar', false);
   }, [visible, stores]);
 
   useEffect(() => {

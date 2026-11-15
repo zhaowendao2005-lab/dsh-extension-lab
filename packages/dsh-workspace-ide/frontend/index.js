@@ -9,7 +9,9 @@ import { remoteInfo } from '../backend/contract.js';
 import { WORKBENCH_PANEL_ID } from '../shared/contract.js';
 import { createClient } from './service/client.js';
 import { createStores } from './stores/workbench.stores.js';
+import { createStore } from './store.js';
 import { WorkbenchHost } from './views/WorkbenchHost.jsx';
+import { FullViewHost } from './views/FullViewHost.jsx';
 
 const ID = 'dsh-workspace-ide';
 const KIND = WORKBENCH_PANEL_ID;
@@ -36,6 +38,55 @@ window.__ModuleLoader__.load({
       ctx.inject(['remote.workspaceIde', 'sidebarRight', 'sidebarRightTabs'], (remoteCtx) => {
         const service = remoteCtx.get('remote.workspaceIde');
         const uiWorkspace = ctx.get('uiWorkspace');
+
+        const mountedSession = () => {
+          try {
+            return ctx.sidebarRight?.mounted?.getSnapshot?.() ?? null;
+          } catch {
+            return null;
+          }
+        };
+
+        /** Full view lives outside the right column but reuses the same session runtime. */
+        const fullView = createStore({ open: false, sessionId: null });
+
+        const closeSidebarWorkbenchTab = (sessionId) => {
+          try {
+            const tabs = ctx.sidebarRight?.tabsIn?.(sessionId) ?? [];
+            const tab = tabs.find((item) => item.kind === KIND);
+            if (tab) ctx.sidebarRight.close(tab.id);
+          } catch (error) {
+            console.error('[workspace-ide] close sidebar tab failed', error);
+          }
+        };
+
+        const closeFullView = () => {
+          if (!fullView.getSnapshot().open) return false;
+          fullView.set({ open: false, sessionId: null });
+          return true;
+        };
+
+        const openFullView = () => {
+          const sessionId = mountedSession();
+          if (!sessionId) return false;
+          closeSidebarWorkbenchTab(sessionId);
+          fullView.set({ open: true, sessionId });
+          return true;
+        };
+
+        const toggleFullView = () => (fullView.getSnapshot().open ? closeFullView() : openFullView());
+
+        // A full view belongs to one session; switching sessions must not show stale content.
+        try {
+          const offMounted = ctx.sidebarRight.mounted.subscribe(() => {
+            const view = fullView.getSnapshot();
+            if (view.open && view.sessionId && view.sessionId !== mountedSession()) closeFullView();
+          });
+          ctx.effect(() => offMounted, 'workspace-ide.fullview-session');
+        } catch (error) {
+          console.error('[workspace-ide] fullview session watch failed', error);
+        }
+
         const host = {
           pickDirectory: async () => (typeof uiWorkspace?.pickDirectory === 'function' ? await uiWorkspace.pickDirectory() : null),
           toggleSidebar: () => {
@@ -45,6 +96,9 @@ window.__ModuleLoader__.load({
               console.error('[workspace-ide] toggleSidebar failed', error);
             }
           },
+          fullView,
+          toggleFullView,
+          closeFullView,
         };
 
         /** One runtime per session: its own client (sessionId stamped on every request) and stores. */
@@ -66,14 +120,6 @@ window.__ModuleLoader__.load({
           return runtime;
         };
 
-        const mountedSession = () => {
-          try {
-            return ctx.sidebarRight?.mounted?.getSnapshot?.() ?? null;
-          } catch {
-            return null;
-          }
-        };
-
         const activeFilePath = (stores) => {
           const layout = stores.layout.getSnapshot();
           const group = layout.groups[layout.activeGroup];
@@ -83,6 +129,10 @@ window.__ModuleLoader__.load({
 
         /** Reveal the workbench for the on-screen session (the host expands the column itself). */
         const reveal = (sessionId) => {
+          const view = fullView.getSnapshot();
+          // The full view already shows this session's runtime; opening the sidebar tab as
+          // well would mount a second Workbench over the same stores.
+          if (view.open && (!sessionId || view.sessionId === sessionId)) return true;
           try {
             ctx.sidebarRight.openTab(KIND);
             return true;
@@ -138,14 +188,22 @@ window.__ModuleLoader__.load({
           inject: (sessionId) => ({ stores: runtimeFor(sessionId).stores }),
         }, WorkbenchHost)), 'workspace-ide.body');
 
+        // Frame-level full view: the same session runtime, mounted in the frame's overlay seat.
+        ctx.effect(() => remoteCtx.slots.inject('shell.overlay', () => remoteCtx.slots.register({
+          name: 'shell.overlay',
+          id: 'workspace-ide.fullview',
+          order: 60,
+          inject: () => ({ fullView, runtimeFor, close: closeFullView }),
+        }, FullViewHost)), 'workspace-ide.fullview');
+
         // Closing the host tab keeps the runtime in memory (unsaved buffers survive a quick
-        // reopen); it only stops background work.
+        // reopen); it only releases the sidebar surface, not a visible full view.
         ctx.effect(() => {
           const controller = remoteCtx.get('sidebarRight');
           if (!controller || typeof controller.registerCloseHandler !== 'function') return () => {};
           return controller.registerCloseHandler(KIND, (sessionId) => {
             const runtime = runtimes.get(sessionId);
-            if (runtime) runtime.stores.actions.deactivate();
+            if (runtime) runtime.stores.actions.setSurfaceVisible('sidebar', false);
           });
         }, 'workspace-ide.close-handler');
 
@@ -173,6 +231,7 @@ window.__ModuleLoader__.load({
         ctx.inject(['shortcuts'], (shortcutCtx) => {
           const shortcuts = shortcutCtx.get('shortcuts');
           if (!shortcuts?.register) return;
+          host.shortcuts = shortcuts;
           const claim = (binding) => {
             if (!binding) return false;
             try {
@@ -186,7 +245,8 @@ window.__ModuleLoader__.load({
             const defaults = {};
             if (claim(desktop)) for (const platform of ['macos', 'windows', 'linux']) defaults['desktop:' + platform] = desktop;
             if (claim(web)) for (const platform of ['macos', 'windows']) defaults['web:' + platform] = web;
-            if (Object.keys(defaults).length === 0) return false;
+            // A command with no usable default still registers: the user can bind it in the
+            // host shortcut editor, and an unregistered command would be invisible there.
             try {
               shortcutDisposers.push(shortcuts.register({
                 id,
@@ -234,6 +294,8 @@ window.__ModuleLoader__.load({
               const group = layout.groups[layout.activeGroup];
               if (group && group.active) void stores.actions.closeTabById(group.active);
             }), { code: 'KeyW', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyW', modifiers: ['primary', 'alt', 'shift'] }],
+            ['workspace-ide.fullview', '工作台：打开/关闭全视图', () => toggleFullView(),
+              { code: 'KeyV', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyV', modifiers: ['primary', 'alt', 'shift'] }],
           ];
 
           let pending = shortcutsTable.slice();

@@ -9,17 +9,21 @@ export function Notices({ stores }) {
   return (
     <div className="wid-notices" role="log" aria-live="polite">
       {state.items.map((item) => {
-        const untrusted = item.code === 'E_TRUST_REQUIRED';
+        const noticeRoot = item.detail?.root ?? workspace.root;
+        const untrusted = item.code === 'E_TRUST_REQUIRED'
+          && Boolean(workspace.root)
+          && !workspace.trust
+          && noticeRoot === workspace.root;
         return (
           <div key={item.id} className="wid-notice" data-level={item.level}>
             <Icon name={item.level === 'error' ? 'warning' : 'dot'} />
             <span className="wid-notice__text">
               {item.message}
-              {untrusted && workspace.root && (
-                <span className="wid-notice__path wid-mono" title={workspace.root}>{workspace.root}</span>
+              {untrusted && noticeRoot && (
+                <span className="wid-notice__path wid-mono" title={noticeRoot}>{noticeRoot}</span>
               )}
             </span>
-            {untrusted && workspace.root && (
+            {untrusted && noticeRoot && (
               <span className="wid-notice__actions">
                 <button
                   type="button"

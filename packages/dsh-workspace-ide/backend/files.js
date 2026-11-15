@@ -68,13 +68,62 @@ export function createFiles(ctx, workspace) {
     }
   }
 
-  async function readTextFile(absolute) {
+  /**
+   * One full-file cache per (absolute, version). Paging a 100k-line file used to re-read and
+   * re-split the whole file for every 2000-line page; the version key keeps concurrent or
+   * external edits from serving stale text.
+   */
+  const FILE_CACHE_MAX_BYTES = 8 * 1024 * 1024;
+  const fileCache = new Map();
+
+  function invalidateFile(absolute) {
+    fileCache.delete(absolute);
+  }
+
+  async function readTextFile(absolute, version) {
+    const hit = fileCache.get(absolute);
+    if (hit && version && hit.version === version) return hit.text;
     const buffer = await fs.readFile(absolute);
     if (looksBinary(buffer)) throw ideError('E_BINARY', '二进制文件不能按文本打开', { path: absolute });
     if (buffer.length > LIMITS.readBytesMax) {
       throw ideError('E_TOO_LARGE', '文件超过读取上限', { bytes: buffer.length, limit: LIMITS.readBytesMax });
     }
-    return buffer.toString('utf8');
+    const text = buffer.toString('utf8');
+    if (version) {
+      fileCache.set(absolute, { version, text, lines: null, size: buffer.length, at: Date.now() });
+      let bytes = 0;
+      for (const entry of fileCache.values()) bytes += entry.size;
+      for (const [key, entry] of fileCache) {
+        if (bytes <= FILE_CACHE_MAX_BYTES) break;
+        fileCache.delete(key);
+        bytes -= entry.size;
+      }
+    }
+    return text;
+  }
+
+  /** Return text + line split from one cache entry, so paging does not re-split the whole file. */
+  async function readCached(absolute, version) {
+    const text = await readTextFile(absolute, version);
+    const entry = fileCache.get(absolute);
+    if (entry && version && entry.version === version) {
+      if (!entry.lines) entry.lines = splitLines(text);
+      return { text, lines: entry.lines };
+    }
+    return { text, lines: splitLines(text) };
+  }
+
+  /** Read only the bytes a stat probe needs; large files no longer get fully buffered twice. */
+  async function probeHead(absolute, limit) {
+    const handle = await fs.open(absolute, 'r');
+    try {
+      const length = Math.min(limit, 64 * 1024);
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, 0);
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await handle.close().catch(() => {});
+    }
   }
 
   return {
@@ -157,7 +206,7 @@ export function createFiles(ctx, workspace) {
     if (info.isDirectory()) {
       return { type: 'directory', size: 0, mtime: info.mtimeMs, version: statVersion(info), eol: 'lf', bom: false, binary: false, writable: await canWrite(absolute), encoding: 'utf8', mode: info.mode };
     }
-    const buffer = await fs.readFile(absolute);
+    const buffer = info.size <= 1024 * 1024 ? await fs.readFile(absolute) : await probeHead(absolute, info.size);
     const binary = looksBinary(buffer);
     let bom = false;
     let text = '';
@@ -187,8 +236,7 @@ export function createFiles(ctx, workspace) {
     if (expectedVersion && expectedVersion !== version) {
       throw ideError('E_VERSION_CONFLICT', '文件已被改动', { path: relative, expected: expectedVersion, actual: version });
     }
-    const text = await readTextFile(absolute);
-    const lines = splitLines(text);
+    const { text, lines } = await readCached(absolute, version);
     const totalLines = lines.length;
     const size = limit ?? LIMITS.readLinesDefault;
     const max = Math.min(size, LIMITS.readLinesMax);
@@ -243,6 +291,7 @@ export function createFiles(ctx, workspace) {
       }
       const info = await fs.stat(absolute);
       dirCache.delete(path.dirname(absolute));
+      invalidateFile(absolute);
       return { path: relative, version: statVersion(info), size: info.size, created: !existing };
     });
   }
@@ -264,6 +313,7 @@ export function createFiles(ctx, workspace) {
       }
       const info = await fs.stat(absolute);
       dirCache.delete(path.dirname(absolute));
+      invalidateFile(absolute);
       return { path: relative, kind: 'file', version: statVersion(info) };
     });
   }
@@ -293,6 +343,8 @@ export function createFiles(ctx, workspace) {
     }
     dirCache.delete(path.dirname(source));
     dirCache.delete(path.dirname(target));
+    invalidateFile(source);
+    invalidateFile(target);
     return { from, to };
   }
 
@@ -319,6 +371,7 @@ export function createFiles(ctx, workspace) {
       throw ideError('E_PERMISSION', '删除失败', { syscall: error?.code ?? 'rm' });
     }
     dirCache.delete(path.dirname(absolute));
+    invalidateFile(absolute);
     return { path: relative, deleted: true };
   }
 

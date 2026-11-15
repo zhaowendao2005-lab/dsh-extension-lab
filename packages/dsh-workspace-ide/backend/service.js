@@ -58,22 +58,31 @@ export class WorkspaceIdeService extends Service {
       throw invalidArg(error, parsed.action);
     }
 
+    if (group === 'workspace') {
+      return await this.workspaceAction(parsed.action, payload, parsed.sessionId);
+    }
+
+    // Every resource action runs inside the session's immutable root context. Without this,
+    // two sessions interleaving awaits would read/write through one shared `current` root.
+    const context = await this.workspace.contextFor(parsed.sessionId);
+    return await this.workspace.run(context, () => this.dispatchResource(group, parsed.action, payload));
+  }
+
+  async dispatchResource(group, action, payload) {
     switch (group) {
-      case 'workspace':
-        return await this.workspaceAction(parsed.action, payload, parsed.sessionId);
       case 'files':
-        return await this.files.dispatch(parsed.action, payload);
+        return await this.files.dispatch(action, payload);
       case 'git':
-        return await this.git.dispatch(parsed.action, payload);
+        return await this.git.dispatch(action, payload);
       case 'terminal': {
-        const handler = this.terminals[parsed.action.split('.')[1]];
-        if (typeof handler !== 'function') throw ideError('E_UNSUPPORTED', `未知动作 ${parsed.action}`, {});
+        const handler = this.terminals[action.split('.')[1]];
+        if (typeof handler !== 'function') throw ideError('E_UNSUPPORTED', `未知动作 ${action}`, {});
         return await handler.call(this.terminals, payload);
       }
       case 'watch':
-        return await this.watchAction(parsed.action, payload);
+        return await this.watchAction(action, payload);
       default:
-        throw ideError('E_UNSUPPORTED', `未知分组 ${group}`, { action: parsed.action });
+        throw ideError('E_UNSUPPORTED', `未知分组 ${group}`, { action });
     }
   }
 
@@ -83,10 +92,14 @@ export class WorkspaceIdeService extends Service {
         return await this.workspace.resolve({ sessionId });
       case 'workspace.open':
         return await this.workspace.open({ ...payload, sessionId });
-      case 'workspace.state':
-        return await this.workspace.state();
-      case 'workspace.trust':
-        return await this.workspace.setTrusted(payload);
+      case 'workspace.state': {
+        const context = await this.workspace.contextFor(sessionId);
+        return await this.workspace.run(context, () => this.workspace.state(sessionId));
+      }
+      case 'workspace.trust': {
+        const context = await this.workspace.contextFor(sessionId);
+        return await this.workspace.run(context, () => this.workspace.setTrusted(payload));
+      }
       case 'workspace.useSessionRoot':
         return await this.workspace.useSessionRoot({ sessionId });
       default:

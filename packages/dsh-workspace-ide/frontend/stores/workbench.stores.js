@@ -11,7 +11,7 @@ import {
 } from '../service/layout.js';
 import { createLayoutStore } from './layout.stores.js';
 import {
-  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, fileTabId,
+  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, SHORTCUTS_TAB, fileTabId,
 } from '../service/tabs.js';
 import { createTerminalController } from './terminal.stores.js';
 import { createEditorDomain } from './editor.stores.js';
@@ -33,6 +33,7 @@ export function createStores({ client, sessionId, host }) {
     panelCollapsed: false,
     menu: null,
     tabMenu: null,
+    shortcutRecording: false,
     diffRatio: 0.5,
     editor: { ...DEFAULT_EDITOR_PREFS },
     modal: null,
@@ -115,8 +116,12 @@ export function createStores({ client, sessionId, host }) {
     message: '',
     refs: null,
     stashes: [],
-    phase: 'idle',
-    error: null,
+    /** Presentation of the change list: two-level tree (default) or the legacy flat groups. */
+    view: 'tree',
+    collapsed: { changes: false, staged: false },
+    scrollTop: 0,
+    treeHeight: 0,
+    contextMenu: null,
   });
 
   const graph = createStore({
@@ -202,8 +207,14 @@ export function createStores({ client, sessionId, host }) {
   // --- internal workbench layout (tabs / groups / split tree) -----------------
   let workbenchTimer = null;
   let workbenchRestored = false;
+  let scmPollTimer = null;
+  let scmInFlight = null;
+  let refsLoadedAt = 0;
   let booted = false;
   let disposed = false;
+  /** Visible surfaces owning this runtime: 'sidebar' and/or 'overlay'. */
+  const surfaces = new Set();
+  let runtimeActive = false;
 
   function scheduleWorkbenchPersist() {
     if (!sessionId) return;
@@ -254,6 +265,7 @@ export function createStores({ client, sessionId, host }) {
    * old tree, so file tabs/editor buffers/diff/conflict must be dropped before the next save.
    */
   function resetRootScopedState() {
+    refsLoadedAt = 0;
     diffDomain.close();
     conflictDomain.close();
     const snapshot = layoutModel.store.getSnapshot();
@@ -261,6 +273,7 @@ export function createStores({ client, sessionId, host }) {
       if (tab.kind === 'file') layoutModel.actions.close(tab.id);
     }
     ui.patch({ menu: null, tabMenu: null });
+    quick.patch({ phase: 'idle', paths: [], total: 0, truncated: false, loadedAt: 0, error: null });
     files.patch({ entries: {}, expanded: [], selected: null, loading: [], error: null, visible: {} });
     editor.patch({ tabs: [], activePath: null, conflicts: [], reveal: null });
     graph.patch({
@@ -358,8 +371,17 @@ export function createStores({ client, sessionId, host }) {
      * session on screen": boot once, then re-resolve because another session's workbench may
      * have moved the Host's single root in the meantime.
      */
+    /** Sidebar body and full-view overlay share one runtime; only 0→1 / 1→0 act. */
+    setSurfaceVisible(name, visible) {
+      if (visible) surfaces.add(name);
+      else surfaces.delete(name);
+      if (surfaces.size > 0) void actions.activate();
+      else actions.deactivate();
+    },
+
     async activate() {
-      if (disposed) return;
+      if (disposed || runtimeActive) return;
+      runtimeActive = true;
       if (!booted) {
         booted = true;
         await actions.boot();
@@ -368,10 +390,15 @@ export function createStores({ client, sessionId, host }) {
       } else {
         await actions.boot();
       }
-      if (workspace.getSnapshot().root) void actions.startWatch();
+      if (workspace.getSnapshot().root) {
+        void actions.startWatch();
+        actions.startScmPoll();
+      }
     },
 
     deactivate() {
+      if (!runtimeActive) return;
+      runtimeActive = false;
       const modal = ui.getSnapshot().modal;
       if (modal) {
         ui.patch({ modal: null });
@@ -380,6 +407,7 @@ export function createStores({ client, sessionId, host }) {
       ui.patch({ menu: null, tabMenu: null, quickOpen: false });
       layoutModel.actions.endDrag();
       persistWorkbench();
+      actions.stopScmPoll();
       void actions.stopWatch();
     },
 
@@ -441,6 +469,7 @@ export function createStores({ client, sessionId, host }) {
         diffDomain.close();
         conflictDomain.close();
         ui.patch({ menu: null, tabMenu: null });
+        refsLoadedAt = 0;
         layoutModel.actions.restore({});
         files.patch({ entries: {}, expanded: [], selected: null, loading: [], error: null, visible: {} });
         editor.patch({ tabs: [], activePath: null, conflicts: [], reveal: null });
@@ -463,7 +492,15 @@ export function createStores({ client, sessionId, host }) {
       try {
         const next = await client.call('workspace.trust', { trusted });
         workspace.patch({ trust: Boolean(next.trusted) });
-        if (next.trusted) await actions.refreshWorkspace();
+        if (next.trusted) {
+          // Old E_TRUST_REQUIRED notices for this root are now false; dismiss them so the panel
+          // never shows "untrusted" next to an already trusted workspace.
+          notices.set((current) => ({
+            items: current.items.filter((item) => !(item.code === 'E_TRUST_REQUIRED'
+              && (!item.detail?.root || item.detail.root === state.root))),
+          }));
+          await actions.refreshWorkspace();
+        }
       } catch (error) {
         fail(workspace, error, '无法更新信任设置');
       }
@@ -543,24 +580,77 @@ export function createStores({ client, sessionId, host }) {
       files.patch({ selected: path });
     },
 
+    setScmView(view) {
+      scm.patch({ view: view === 'flat' ? 'flat' : 'tree', contextMenu: null });
+    },
+
+    toggleScmNode(key) {
+      const current = scm.getSnapshot().collapsed;
+      scm.patch({ collapsed: { ...current, [key]: !current[key] } });
+    },
+
+    setScmScroll(top) {
+      scm.patch({ scrollTop: top });
+    },
+
+    setScmTreeHeight(height) {
+      const next = Math.max(80, Math.round(height));
+      if (scm.getSnapshot().treeHeight === next) return;
+      scm.patch({ treeHeight: next });
+    },
+
+    openScmMenu(menu) {
+      scm.patch({ contextMenu: menu });
+    },
+
+    closeScmMenu() {
+      if (scm.getSnapshot().contextMenu) scm.patch({ contextMenu: null });
+    },
+
+    /** One status request at a time; refs/stash are refreshed on a slower cadence. */
     async refreshScm() {
+      if (scmInFlight) return scmInFlight;
       const state = workspace.getSnapshot();
       if (!state.root || !state.git?.isRepo) {
         scm.patch({ status: null, phase: 'idle', error: null, writes: [], refs: null, stashes: [] });
-        return;
+        return null;
       }
       scm.patch({ phase: 'loading' });
-      try {
-        const status = await client.call('git.status', { untrackedMode: 'all' });
-        scm.patch({ status, phase: 'ready', error: null });
-        // Branch/stash lists are cheap (`for-each-ref` + `stash list`) and only needed once the
-        // repository is known to be valid, so they ride along with every status refresh.
-        void scmDomain.loadRefs();
-        void scmDomain.loadStashes();
-      } catch (error) {
-        scm.patch({ phase: 'error' });
-        fail(scm, error, '无法读取 Git 状态');
-      }
+      scmInFlight = (async () => {
+        try {
+          const status = await client.call('git.status', { untrackedMode: 'all' });
+          scm.patch({ status, phase: 'ready', error: null });
+          if (Date.now() - refsLoadedAt > 15000) {
+            refsLoadedAt = Date.now();
+            void scmDomain.loadRefs();
+            void scmDomain.loadStashes();
+          }
+          return status;
+        } catch (error) {
+          scm.patch({ phase: 'error' });
+          fail(scm, error, '无法读取 Git 状态');
+          return null;
+        } finally {
+          scmInFlight = null;
+        }
+      })();
+      return await scmInFlight;
+    },
+
+    /** Correctness fallback independent of the filesystem watcher (docs/git-model.md §7). */
+    startScmPoll() {
+      if (scmPollTimer) return;
+      scmPollTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        void actions.refreshScm();
+      }, LIMITS.statusPollMs);
+      scmPollTimer.unref?.();
+    },
+
+    stopScmPoll() {
+      if (!scmPollTimer) return;
+      clearInterval(scmPollTimer);
+      scmPollTimer = null;
     },
 
     /** File operations live here because they need the prompt/confirm plumbing. */
@@ -659,6 +749,18 @@ export function createStores({ client, sessionId, host }) {
 
     openSettings() {
       return layoutModel.actions.open({ id: SETTINGS_TAB, kind: 'settings' });
+    },
+
+    openShortcuts() {
+      return layoutModel.actions.open({ id: SHORTCUTS_TAB, kind: 'shortcuts' });
+    },
+
+    setShortcutRecording(active) {
+      ui.patch({ shortcutRecording: Boolean(active) });
+    },
+
+    toggleFullView() {
+      return host?.toggleFullView?.() ?? false;
     },
 
     openFile(path) {
@@ -900,6 +1002,8 @@ export function createStores({ client, sessionId, host }) {
       });
     },
 
+    notify,
+
     dismissNotice,
 
     /** Panel-internal confirmation (never `window.confirm`); resolves with a boolean. */
@@ -1027,6 +1131,7 @@ export function createStores({ client, sessionId, host }) {
         disposed = true;
         if (workbenchTimer) clearTimeout(workbenchTimer);
         workbenchTimer = null;
+        actions.stopScmPoll();
         void actions.stopWatch();
       },
     },

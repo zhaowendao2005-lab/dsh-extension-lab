@@ -58,7 +58,8 @@
 
 - 渲染面只有 `sidebar.right.pane.tab`（session 作用域），不注册 `main`、不调用 `ctx.layout.selectPanel`；右栏显隐由宿主占用者决定，本插件不调 `openRightbar/closeRightbar`。
 - 所有浮层（右键菜单、拖影、确认框、通知、快速打开）相对 `.wid-root` 定位；**构建期禁止 `position: fixed`**，不允许覆盖右栏以外的区域。
-- 每个会话一个 runtime（client + stores）；不可见时停 watch/轮询/window 监听，可见时 `workspace.resolve` 对齐 Host 单根再刷新。
+- 每个会话一个 runtime（client + stores）；右栏 tab 与 frame 级全视图共享它。可见性用 surface 集合聚合（`sidebar`/`overlay`），全部不可见才停 watch/轮询；关闭宿主 tab 不得暂停仍打开的全视图。
+- Host 的根目录上下文按请求绑定（Service 入口 + `AsyncLocalStorage`）：files/git/terminal/watch 只能读活动上下文，任何新资源都不得重新引入共享可变 `current`。
 - 分栏最多 4 组、最小新组 180×140；树/组合并在 `service/split.js` 的纯函数里做，视图只调 layout 动作。
 - 标签关闭：文件先处理未保存确认；组清空后（非最后组）合并；`关闭所有` 只作用于当前组，绝不关宿主 tab。
 

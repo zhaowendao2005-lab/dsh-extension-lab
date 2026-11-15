@@ -1,22 +1,61 @@
-import { useStore } from '../../runtime.js';
+import { useStore, useEffect, useMemo, useRef } from '../../runtime.js';
 import { Icon } from '../common/Icon.jsx';
 
-const GROUPS = [
-  { key: 'conflicts', label: '合并冲突', icon: 'warning', stageable: true },
-  { key: 'staged', label: '暂存的更改', icon: 'check', unstageable: true },
-  { key: 'working', label: '更改', icon: 'dot', stageable: true, discardable: true },
-  { key: 'untracked', label: '未跟踪', icon: 'plus', stageable: true, discardable: true },
+const ROW_H = 22;
+const OVERSCAN = 12;
+
+const FLAT_GROUPS = [
+  { key: 'conflicts', label: '合并冲突', icon: 'warning' },
+  { key: 'staged', label: '暂存的更改', icon: 'check' },
+  { key: 'working', label: '更改', icon: 'dot' },
+  { key: 'untracked', label: '未跟踪', icon: 'plus' },
 ];
 
 /**
- * Source Control view: the four porcelain-v2 groups, a commit box and per-row stage /
- * unstage / discard. Shapes come from `git.status` (docs/git-model.md §3).
+ * Source Control view: branch/commit header plus a two-level change tree (更改 / 暂存).
+ * The tree and the legacy flat groups share one windowed row list, so a working tree with
+ * tens of thousands of changes renders a bounded number of DOM rows.
  */
 export function ScmView({ stores }) {
   const scm = useStore(stores.scm);
   const workspace = useStore(stores.workspace);
   const ui = useStore(stores.ui);
   const status = scm.status;
+  const treeRef = useRef(null);
+
+  useEffect(() => {
+    const node = treeRef.current;
+    if (!node) return undefined;
+    const report = () => stores.actions.setScmTreeHeight(node.clientHeight);
+    report();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(report);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [stores, scm.view]);
+
+  useEffect(() => {
+    if (!scm.contextMenu) return undefined;
+    function onPointerDown(event) {
+      if (!event.target.closest || !event.target.closest('.wid-scm__ctx')) stores.actions.closeScmMenu();
+    }
+    function onKeyDown(event) {
+      if (event.key === 'Escape') stores.actions.closeScmMenu();
+    }
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [Boolean(scm.contextMenu), stores]);
+
+  // Rebuilding the flattened row list on every scroll/keystroke would be O(N) even though the
+  // DOM is windowed; memoize it on the only three inputs that shape the tree.
+  const rows = useMemo(
+    () => (status ? buildRows(status, scm.view, scm.collapsed) : []),
+    [status, scm.view, scm.collapsed],
+  );
 
   if (!workspace.git?.isRepo) {
     return (
@@ -38,9 +77,38 @@ export function ScmView({ stores }) {
   const stagedCount = (status.staged ?? []).length;
   const busy = scm.writes.length > 0;
   const canCommit = stagedCount > 0 && scm.message.trim().length > 0 && !busy && workspace.trust;
+  const viewport = scm.treeHeight || 360;
+  const start = Math.max(0, Math.floor(scm.scrollTop / ROW_H) - OVERSCAN);
+  const end = Math.min(rows.length, start + Math.ceil(viewport / ROW_H) + OVERSCAN * 2);
+  const slice = rows.slice(start, end);
+
+  function openMenu(event, menu) {
+    event.preventDefault();
+    event.stopPropagation();
+    const panel = event.currentTarget.closest('.wid-scm');
+    const rect = panel ? panel.getBoundingClientRect() : { left: 0, top: 0, width: 360, height: 480 };
+    const width = 210;
+    const height = menu.kind === 'file' ? 250 : 160;
+    const x = Math.max(4, Math.min(event.clientX - rect.left, rect.width - width));
+    const y = Math.max(4, Math.min(event.clientY - rect.top, rect.height - height));
+    stores.actions.openScmMenu({ ...menu, x, y });
+  }
+
+  function rowDiff(row) {
+    if (row.group === 'conflicts') return stores.actions.openConflict(row.change.path);
+    const target = row.group === 'staged'
+      ? { kind: 'index' }
+      : row.group === 'untracked' ? { kind: 'untracked' } : { kind: 'working' };
+    return stores.actions.openDiff(target, row.change.path);
+  }
+
+  function runMenu(item) {
+    stores.actions.closeScmMenu();
+    void item.run();
+  }
 
   return (
-    <div className="wid-scm">
+    <div className="wid-scm" onContextMenu={(event) => openMenu(event, { kind: 'page' })}>
       <div className="wid-scm__branch">
         <button
           type="button"
@@ -50,13 +118,14 @@ export function ScmView({ stores }) {
         >
           <Icon name="branch" size={14} />
           <span className="wid-mono">
-            {branch.detached ? `HEAD @ ${(branch.sha ?? '').slice(0, 7)}` : branch.name ?? 'HEAD'}
+            {branch.detached ? 'HEAD @ ' + String(branch.sha ?? '').slice(0, 7) : branch.name ?? 'HEAD'}
           </span>
         </button>
         {branch.unborn && <span className="wid-hint">尚无提交</span>}
         {branch.ahead > 0 && <span className="wid-hint">↑{branch.ahead}</span>}
         {branch.behind > 0 && <span className="wid-hint">↓{branch.behind}</span>}
         <span className="wid-scm__branch-spacer" />
+        <span className="wid-hint">{scm.view === 'tree' ? 'Tree' : '默认'}</span>
         <button
           type="button"
           className="wid-icon-button"
@@ -142,14 +211,14 @@ export function ScmView({ stores }) {
           </div>
           <ul className="wid-scm__menu-list">
             {(scm.stashes ?? []).map((entry, index) => (
-              <li key={`${entry.ref ?? index}`}>
+              <li key={entry.ref ?? index}>
                 <button
                   type="button"
                   className="wid-scm__menu-item"
                   title={entry.subject ?? entry.ref ?? ''}
                   onClick={() => void stores.scmActions.stashPop(index)}
                 >
-                  <span className="wid-mono">stash@{`{${index}}`}</span>
+                  <span className="wid-mono">{'stash@{' + index + '}'}</span>
                   <span className="wid-scm__menu-msg">{entry.subject ?? ''}</span>
                 </button>
               </li>
@@ -190,10 +259,11 @@ export function ScmView({ stores }) {
               stores.actions.setCommitMessage('');
             }
           }}
+          onContextMenu={(event) => openMenu(event, { kind: 'page' })}
         />
         <div className="wid-scm__commit-row">
           <span className="wid-hint" title={canCommit ? undefined : commitHint({ stagedCount, message: scm.message, busy, trust: workspace.trust })}>
-            {scm.message.length > 72 ? `${scm.message.length}/72` : `${stagedCount} 个已暂存`}
+            {scm.message.length > 72 ? scm.message.length + '/72' : stagedCount + ' 个已暂存'}
           </span>
           <button
             type="button"
@@ -211,109 +281,211 @@ export function ScmView({ stores }) {
         {busy && <div className="wid-scm__queue">正在执行 {scm.writes.join('、')}</div>}
       </div>
 
-      {GROUPS.map((group) => {
-        const items = status[group.key] ?? [];
-        if (!items.length) return null;
-        return (
-          <section key={group.key} className="wid-scm__group" data-group={group.key}>
-            <div className="wid-scm__group-head">
-              <Icon name={group.icon} size={12} />
-              <span className="wid-scm__group-title">{group.label}</span>
-              <span className="wid-hint">{items.length}</span>
-              <span className="wid-scm__group-spacer" />
-              {group.unstageable && (
-                <button
-                  type="button"
-                  className="wid-icon-button"
-                  title="全部取消暂存"
-                  disabled={busy}
-                  onClick={() => void stores.scmActions.unstage(items.map((item) => item.path), true)}
+      <div
+        className="wid-scm__tree"
+        ref={treeRef}
+        onScroll={(event) => stores.actions.setScmScroll(event.currentTarget.scrollTop)}
+        onContextMenu={(event) => openMenu(event, { kind: 'page' })}
+      >
+        <div className="wid-scm__canvas" style={{ height: rows.length * ROW_H + 'px' }}>
+          {slice.map((row, index) => {
+            const position = start + index;
+            const style = { transform: 'translateY(' + position * ROW_H + 'px)', height: ROW_H + 'px' };
+            if (row.kind === 'group') {
+              const collapsed = Boolean(scm.collapsed[row.key]);
+              return (
+                <div
+                  key={'group:' + row.key}
+                  className="wid-scm__node"
+                  style={style}
+                  role="treeitem"
+                  aria-expanded={!collapsed}
+                  onClick={() => stores.actions.toggleScmNode(row.key)}
+                  onContextMenu={(event) => openMenu(event, { kind: 'group', groupKey: row.key })}
                 >
-                  −
-                </button>
-              )}
-              {group.stageable && (
-                <button
-                  type="button"
-                  className="wid-icon-button"
-                  title="全部暂存"
-                  disabled={busy}
-                  onClick={() => void stores.scmActions.stage(items.map((item) => item.path), true)}
-                >
-                  +
-                </button>
-              )}
-            </div>
-            <ul className="wid-scm__list">
-              {items.map((change) => (
-                <li key={`${group.key}:${change.path}:${change.origPath ?? ''}`} className="wid-scm__item">
-                  <button
-                    type="button"
-                    className="wid-scm__row"
-                    title={change.path}
-                    onClick={() => void openRow(stores, group.key, change.path)}
-                    onDoubleClick={() => void stores.actions.openFile(change.path)}
-                  >
-                    <span className="wid-scm__status" data-status={change.status} aria-hidden="true">
-                      {change.status}
-                    </span>
-                    <span className="wid-scm__path">{basename(change.path)}</span>
-                    <span className="wid-scm__dir">{dirname(change.path)}</span>
-                  </button>
-                  <span className="wid-scm__row-actions">
-                    {group.stageable && (
-                      <button
-                        type="button"
-                        className="wid-icon-button"
-                        title="暂存"
-                        disabled={busy}
-                        onClick={() => void stores.scmActions.stage([change.path])}
-                      >
-                        +
-                      </button>
-                    )}
-                    {group.unstageable && (
-                      <button
-                        type="button"
-                        className="wid-icon-button"
-                        title="取消暂存"
-                        disabled={busy}
-                        onClick={() => void stores.scmActions.unstage([change.path])}
-                      >
-                        −
-                      </button>
-                    )}
-                    {group.discardable && (
-                      <button
-                        type="button"
-                        className="wid-icon-button wid-icon-button--danger"
-                        title="丢弃更改"
-                        disabled={busy}
-                        onClick={() => void stores.scmActions.discard([change.path])}
-                      >
-                        <Icon name="trash" size={12} />
-                      </button>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+                  <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={12} />
+                  <span className="wid-scm__node-title">{row.label}</span>
+                  <span className="wid-scm__node-count">{row.count}</span>
+                  <span className="wid-scm__node-spacer" />
+                  {row.key === 'changes' && row.count > 0 && (
+                    <button
+                      type="button"
+                      className="wid-icon-button"
+                      title="全部暂存"
+                      disabled={busy}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void stores.scmActions.stage(collectPaths(status, 'changes'), true);
+                      }}
+                    >
+                      +
+                    </button>
+                  )}
+                  {row.key === 'staged' && row.count > 0 && (
+                    <button
+                      type="button"
+                      className="wid-icon-button"
+                      title="全部取消暂存"
+                      disabled={busy}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void stores.scmActions.unstage(collectPaths(status, 'staged'), true);
+                      }}
+                    >
+                      −
+                    </button>
+                  )}
+                </div>
+              );
+            }
 
-      {!stagedCount && !(status.working ?? []).length && !(status.untracked ?? []).length && !(status.conflicts ?? []).length && (
-        <div className="wid-empty">
-          <span className="wid-hint">没有变更</span>
+            const change = row.change;
+            return (
+              <div
+                key={row.key + ':' + row.group + ':' + change.path + ':' + (change.origPath ?? '')}
+                className="wid-scm__row wid-scm__row--tree"
+                style={style}
+                role="treeitem"
+                title={change.path}
+                onClick={() => void rowDiff(row)}
+                onDoubleClick={() => void stores.actions.openFile(change.path)}
+                onContextMenu={(event) => openMenu(event, { kind: 'file', row })}
+              >
+                <span className="wid-scm__file-icon"><Icon name="file" size={12} /></span>
+                <span className="wid-scm__status" data-status={change.status} aria-hidden="true">{change.status}</span>
+                <span className="wid-scm__path">{basename(change.path)}</span>
+                <span className="wid-scm__dir">{dirname(change.path)}</span>
+              </div>
+            );
+          })}
         </div>
+        {rows.length === 0 && <div className="wid-empty"><span className="wid-hint">没有变更</span></div>}
+      </div>
+
+      {scm.contextMenu && (
+        <ScmMenu
+          menu={scm.contextMenu}
+          stores={stores}
+          scm={scm}
+          status={status}
+          onRun={runMenu}
+        />
       )}
     </div>
   );
 }
 
-/** Working tree changes diff against the index; staged changes diff against HEAD. */
-function diffTargetFor(group) {
-  return group === 'staged' ? { kind: 'index' } : { kind: 'working' };
+function collectPaths(status, bucket) {
+  if (bucket === 'changes') {
+    return [
+      ...(status.working ?? []).map((item) => item.path),
+      ...(status.untracked ?? []).map((item) => item.path),
+      ...(status.conflicts ?? []).map((item) => item.path),
+    ];
+  }
+  return (status.staged ?? []).map((item) => item.path);
+}
+
+function buildRows(status, view, collapsed) {
+  const rows = [];
+  if (view === 'flat') {
+    for (const group of FLAT_GROUPS) {
+      const items = status[group.key] ?? [];
+      if (!items.length) continue;
+      rows.push({ kind: 'group', key: group.key, label: group.label, count: items.length });
+      if (collapsed[group.key]) continue;
+      for (const change of items) rows.push({ kind: 'file', key: group.key, bucket: group.key, group: group.key, change });
+    }
+    return rows;
+  }
+
+  const changes = [
+    ...(status.conflicts ?? []).map((change) => ({ group: 'conflicts', change })),
+    ...(status.working ?? []).map((change) => ({ group: 'working', change })),
+    ...(status.untracked ?? []).map((change) => ({ group: 'untracked', change })),
+  ];
+  rows.push({ kind: 'group', key: 'changes', label: '更改', count: changes.length });
+  if (!collapsed.changes) {
+    for (const item of changes) rows.push({ kind: 'file', key: 'changes', bucket: 'changes', group: item.group, change: item.change });
+  }
+  const staged = status.staged ?? [];
+  rows.push({ kind: 'group', key: 'staged', label: '暂存', count: staged.length });
+  if (!collapsed.staged) {
+    for (const change of staged) rows.push({ kind: 'file', key: 'staged', bucket: 'staged', group: 'staged', change });
+  }
+  return rows;
+}
+
+function ScmMenu({ menu, stores, scm, status, onRun }) {
+  const items = menuItems(menu, stores, scm, status);
+  return (
+    <div className="wid-scm__ctx" style={{ left: menu.x + 'px', top: menu.y + 'px' }} role="menu">
+      {items.map((item, index) => (item.separator ? (
+        <div key={'sep:' + index} className="wid-scm__ctx-sep" role="separator" />
+      ) : (
+        <button
+          key={item.label + ':' + index}
+          type="button"
+          role="menuitem"
+          className="wid-scm__ctx-item"
+          disabled={item.disabled}
+          onClick={() => onRun(item)}
+        >
+          {item.label}
+        </button>
+      )))}
+    </div>
+  );
+}
+
+function menuItems(menu, stores, scm, status) {
+  const viewItems = [
+    { label: (scm.view === 'tree' ? '✓ ' : '') + '使用 Tree 视图', run: () => stores.actions.setScmView('tree') },
+    { label: (scm.view === 'flat' ? '✓ ' : '') + '使用默认视图', run: () => stores.actions.setScmView('flat') },
+  ];
+
+  if (menu.kind === 'page') return viewItems;
+
+  if (menu.kind === 'group') {
+    const collapsed = Boolean(scm.collapsed[menu.groupKey]);
+    return [
+      { label: collapsed ? '展开' : '收起', run: () => stores.actions.toggleScmNode(menu.groupKey) },
+      { separator: true },
+      ...viewItems,
+    ];
+  }
+
+  const row = menu.row;
+  const change = row.change;
+  const path = change.path;
+  const items = [
+    { label: '打开文件', run: () => void stores.actions.openFile(path) },
+    row.group === 'conflicts'
+      ? { label: '解决冲突', run: () => void stores.actions.openConflict(path) }
+      : { label: '查看差异', run: () => void rowDiffFrom(stores, row) },
+    { separator: true },
+  ];
+  if (row.bucket === 'staged') {
+    items.push({ label: '取消暂存', run: () => void stores.scmActions.unstage([path]) });
+  } else {
+    items.push({ label: '暂存', run: () => void stores.scmActions.stage([path]) });
+  }
+  if (row.group === 'working' || row.group === 'untracked') {
+    items.push({ label: '丢弃更改', run: () => void stores.scmActions.discard([path]) });
+  }
+  items.push({ separator: true });
+  items.push({ label: '复制相对路径', run: () => void navigator.clipboard?.writeText(path) });
+  items.push({ separator: true });
+  items.push(...viewItems);
+  return items;
+}
+
+function rowDiffFrom(stores, row) {
+  if (row.group === 'conflicts') return stores.actions.openConflict(row.change.path);
+  const target = row.group === 'staged'
+    ? { kind: 'index' }
+    : row.group === 'untracked' ? { kind: 'untracked' } : { kind: 'working' };
+  return stores.actions.openDiff(target, row.change.path);
 }
 
 function commitHint({ stagedCount, message, busy, trust }) {
@@ -322,12 +494,6 @@ function commitHint({ stagedCount, message, busy, trust }) {
   if (!stagedCount) return '没有已暂存的更改';
   if (!String(message ?? '').trim()) return '提交信息不能为空';
   return undefined;
-}
-
-/** Conflicts open in the three-way view; everything else opens a diff against its side. */
-function openRow(stores, group, path) {
-  if (group === 'conflicts') return stores.actions.openConflict(path);
-  return stores.actions.openDiff(diffTargetFor(group), path);
 }
 
 function basename(path) {

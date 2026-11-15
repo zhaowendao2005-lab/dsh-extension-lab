@@ -89,9 +89,10 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 
 | 项 | 要求 |
 | --- | --- |
-| 渲染面 | `sidebar.right.pane.tab` keyed slot，`key='dsh-workspace-ide'`，**session 作用域**（inject 收到会话 id）；不注册 `main`、不调用 `selectPanel` |
+| 渲染面 | `sidebar.right.pane.tab` keyed slot（session 作用域）承载右栏工作台；`shell.overlay` list 席位承载 frame 级 80% 全视图；两者共享同一会话 runtime。不注册 `main`、不调用 `selectPanel` |
+| 可见性 | 每个 runtime 维护 surface 集合（`sidebar` / `overlay`）：任一可见即保持 activate；全部不可见才停 watch/轮询。关闭宿主 tab 只移除 `sidebar`，不暂停仍打开的全视图 |
 | 入口 | `ctx.sidebarRightTabs.register` 的 `guide` 卡片（右栏开始页）+ 快捷键；**没有** `sidebar.panellist` 左栏图标 |
-| 根目录 | 按会话解析：该会话手动选择 > `session.header.cwd` > lastRoot；Host 决策，wire 不放任意路径 |
+| 根目录 | 按会话解析：该会话手动选择 > `session.header.cwd` > lastRoot；Host 决策，wire 不放任意路径。每个 Remote 请求在 Service 入口绑定 `{sessionId, root}` 并跑在 `AsyncLocalStorage` 里，files/git/terminal/watch 只读活动上下文，不共享可变 `current` |
 | 主题 | 只用 `--dsw-alias-*` / `--dsw-*` token；禁硬编码色值（构建期扫描）；明暗两套都要过 |
 | 顶栏/左缘 | 右栏 body 不在窗口顶/左缘，**不**吃 `--dsh-frame-top-clearance` / `--dsh-frame-leading-clearance`；宿主 tab 条已经处理 |
 | 字号 | 代码 = `var(--dsh-code-font-size)`、正文 = `var(--dsh-content-font-size)`、终端 = `var(--dsh-terminal-font-size)` |
@@ -108,7 +109,8 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 | tab 首次可见 | `workspace.resolve { sessionId }` → 无根目录显示欢迎页；有则 `git.status` + `files.list(root)` + 恢复该会话的标签/分栏布局 |
 | tab 不可见（切会话 / 收起右栏） | body 由 `keepMounted` 保留；**停 watch/轮询/window 监听**；编辑器正文在 store 里，终端 PTY 继续跑 |
 | tab 再次可见 | `workspace.resolve` 对齐 Host 单根 → 刷新 status → 恢复 watch；编辑器与内部布局原样 |
-| tab 关闭 | 宿主 close handler 调 `deactivate()`；运行时保留到插件卸载（快速重开不丢未保存） |
+| tab 关闭 | 宿主 close handler 只移除 `sidebar` surface；全视图仍可见时 runtime 继续运行。运行时保留到插件卸载（快速重开不丢未保存） |
+| 全视图打开/关闭 | 关闭右栏 tab 且保留内部标签/分栏；`overlay` surface 加入/移除。两者之间切换不重建 stores |
 | 插件 dispose | 关闭全部 PTY、取消在途 git 子进程、清空定时器与 listener、解除 Remote、移除 `<style>` |
 | 插件 dispose | 关闭全部 PTY（`terminate()`）、取消在途 git 子进程、清空定时器与 listener、解除 Remote、移除 `<style>` |
 | 浏览器刷新 | 一切重来；Host 侧孤儿终端由下次 `terminal.list` 对账清理（或 Host 侧空闲超时 30 min 回收） |

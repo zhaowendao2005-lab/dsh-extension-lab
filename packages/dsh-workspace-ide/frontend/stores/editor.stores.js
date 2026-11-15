@@ -36,9 +36,14 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
     // Line offsets are 1-based on the wire (docs/remote-contract.md §2).
     let offset = 1;
     let text = '';
+    let first = true;
     for (;;) {
       const page = await client.call('files.read', { path, offset, limit: PAGE, expectedVersion: stat.version });
+      // Pages are line slices joined by '\n' on the Host; the separator itself is not part of
+      // either page, so reinsert it or every 2000-line boundary loses a newline.
+      if (!first && page.text) text += '\n';
       text += page.text;
+      first = false;
       if (page.eof || !page.text) break;
       offset = page.offset + (page.lines ?? 0);
       if (text.length > READ_CELLING) return { stat, tooLarge: true, text: '' };

@@ -1,8 +1,13 @@
 /**
  * Workspace root resolution, trust gate and repository probing.
- * The root is always decided Host-side (AGENTS.md → 根目录只能由 Host 解析).
+ *
+ * The root is decided Host-side and is **per request**: the Service binds a session's
+ * context before dispatch and runs the action inside AsyncLocalStorage. Files/git/terminal
+ * read the active context through these getters, so two sessions can never interleave
+ * their roots on one long-lived `current` variable.
  */
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpath, stat } from 'node:fs/promises';
 import { LIMITS } from '../shared/contract.js';
 import { ideError } from '../shared/errors.js';
@@ -23,12 +28,32 @@ async function canonical(root) {
   return { root: real, name: path.basename(real) || real };
 }
 
+function nullState(recents) {
+  return {
+    root: null,
+    name: null,
+    source: null,
+    git: { available: true, isRepo: false },
+    trusted: false,
+    recents,
+    limits: LIMITS,
+  };
+}
+
 export function createWorkspace(ctx, store) {
-  /** @type {{root: string, name: string}|null} */
-  let current = null;
-  /** How the current root was chosen; surfaced to the client so the chip can say why. */
-  let currentSource = null;
-  let probeCache = { at: 0, value: null };
+  const storage = new AsyncLocalStorage();
+  /** session key -> immutable-ish context {root, name, source, sessionId} */
+  const contexts = new Map();
+  /** Context used only when a request carries no session (legacy/no-session paths). */
+  let fallback = null;
+  /** One probe result per root; the previous global cache leaked git data across roots. */
+  const probeCache = new Map();
+
+  const keyOf = (sessionId) => (sessionId ? String(sessionId) : '__last__');
+
+  function active() {
+    return storage.getStore() ?? fallback;
+  }
 
   async function sessionRoot(sessionId) {
     if (!sessionId) return null;
@@ -41,7 +66,8 @@ export function createWorkspace(ctx, store) {
 
   async function probeGit(root) {
     const now = Date.now();
-    if (probeCache.value && now - probeCache.at < 2000) return probeCache.value;
+    const cached = probeCache.get(root);
+    if (cached && now - cached.at < 2000) return cached.value;
     let value = { available: true, isRepo: false, bare: false, branch: null, head: null, version: null, shallow: false, repoEpoch: '' };
     try {
       const top = await runGit(root, ['rev-parse', '--is-inside-work-tree', '--show-toplevel'], { timeoutMs: LIMITS.statusTimeoutMs });
@@ -69,7 +95,11 @@ export function createWorkspace(ctx, store) {
       if (error?.code === 'E_GIT_MISSING') value = { ...value, available: false, isRepo: false };
       else throw error;
     }
-    probeCache = { at: now, value };
+    probeCache.set(root, { at: now, value });
+    if (probeCache.size > 32) {
+      const oldest = probeCache.keys().next().value;
+      if (oldest) probeCache.delete(oldest);
+    }
     return value;
   }
 
@@ -82,82 +112,88 @@ export function createWorkspace(ctx, store) {
     return list.slice(0, 8);
   }
 
-  /** One resolved workspace payload; git/trust/recents are always fresh enough to render. */
-  async function stateOf(root, source) {
+  async function stateOf(context) {
     return {
-      root,
-      name: path.basename(root) || root,
-      source,
-      git: await probeGit(root),
-      trusted: store.isTrusted(root),
+      root: context.root,
+      name: context.name,
+      source: context.source,
+      git: await probeGit(context.root),
+      trusted: store.isTrusted(context.root),
       recents: recents(),
       limits: LIMITS,
     };
   }
 
-  /** The wire shape is a plain boolean; the root is already a sibling field. */
-  function trustState(root) {
-    return store.isTrusted(root);
+  /** Build the preferred context for one session without mutating shared state. */
+  async function build(sessionId) {
+    const candidates = [
+      { root: sessionId ? store.sessionRoot(sessionId) : null, source: 'override' },
+      { root: await sessionRoot(sessionId), source: 'session' },
+      { root: store.lastRoot, source: 'last' },
+    ];
+    for (const candidate of candidates) {
+      if (!candidate.root) continue;
+      try {
+        const next = await canonical(candidate.root);
+        return { ...next, source: candidate.source, sessionId: sessionId ?? null };
+      } catch {
+        // A stale candidate must not block the next one (e.g. a deleted cwd).
+      }
+    }
+    return null;
+  }
+
+  function remember(sessionId, context) {
+    if (!context) {
+      contexts.delete(keyOf(sessionId));
+      return null;
+    }
+    contexts.set(keyOf(sessionId), context);
+    fallback = context;
+    store.setLastRoot(context.root);
+    return context;
+  }
+
+  /** Bind a session context for dispatch; cached until open/useSessionRoot replaces it. */
+  async function contextFor(sessionId) {
+    await store.ready();
+    const cached = contexts.get(keyOf(sessionId));
+    if (cached) return cached;
+    return remember(sessionId, await build(sessionId));
   }
 
   const api = {
     get root() {
-      return current?.root ?? null;
+      return active()?.root ?? null;
     },
     get name() {
-      return current?.name ?? null;
+      return active()?.name ?? null;
     },
 
-    /**
-     * Resolve the root for one session. Precedence is the promise of the right-column
-     * workbench: this session's manual folder choice, then the session's own cwd, then the
-     * last root this browser used. "Nothing chosen" returns an empty state, never throws.
-     */
+    contextFor,
+
+    /** Run a dispatch inside the session's immutable root context. */
+    run(context, task) {
+      return storage.run(context ?? undefined, task);
+    },
+
     async resolve(input = {}) {
       await store.ready();
       const sessionId = typeof input.sessionId === 'string' ? input.sessionId : null;
-      const candidates = [
-        { root: store.sessionRoot(sessionId), source: 'override' },
-        { root: await sessionRoot(sessionId), source: 'session' },
-        { root: store.lastRoot, source: 'last' },
-      ];
-      for (const candidate of candidates) {
-        if (!candidate.root) continue;
-        if (current && current.root === candidate.root) {
-          currentSource = candidate.source;
-          return await stateOf(current.root, currentSource);
-        }
-        try {
-          current = await canonical(candidate.root);
-          currentSource = candidate.source;
-          store.setLastRoot(current.root);
-          return await stateOf(current.root, currentSource);
-        } catch {
-          // A stale candidate must not block the next one (e.g. a deleted cwd).
-        }
-      }
-      if (current) return await stateOf(current.root, currentSource);
-      return {
-        root: null,
-        name: null,
-        source: null,
-        git: { available: true, isRepo: false },
-        trusted: false,
-        recents: recents(),
-        limits: LIMITS,
-      };
+      const context = remember(sessionId, await build(sessionId));
+      if (!context) return nullState(recents());
+      return await stateOf(context);
     },
 
     async open(input) {
       await store.ready();
       const next = await canonical(input.root);
       const sessionId = typeof input.sessionId === 'string' ? input.sessionId : null;
-      current = next;
-      currentSource = sessionId ? 'override' : 'last';
-      probeCache = { at: 0, value: null };
-      store.setLastRoot(next.root);
+      const context = { ...next, source: sessionId ? 'override' : 'last', sessionId: sessionId ?? null };
+      probeCache.delete(next.root);
       if (sessionId) store.setSessionRoot(sessionId, next.root);
-      return await stateOf(next.root, currentSource);
+      remember(sessionId, context);
+      return await stateOf(context);
     },
 
     /** Drop this session's override and re-resolve to its own cwd. */
@@ -165,28 +201,34 @@ export function createWorkspace(ctx, store) {
       await store.ready();
       const sessionId = typeof input.sessionId === 'string' ? input.sessionId : null;
       store.clearSessionRoot(sessionId);
+      contexts.delete(keyOf(sessionId));
       return await api.resolve({ sessionId });
     },
 
-    async state() {
-      if (!current) return await api.resolve({});
-      return await stateOf(current.root, currentSource);
+    async state(sessionId) {
+      await store.ready();
+      const context = storage.getStore() ?? (sessionId ? contexts.get(keyOf(sessionId)) : fallback);
+      if (!context) return nullState(recents());
+      return await stateOf(context);
     },
 
     async setTrusted(input) {
-      const root = api.requireRoot();
-      if (input.trusted) store.trust(root);
-      else store.untrust(root);
-      return { root, trusted: store.isTrusted(root) };
+      const context = active();
+      if (!context) throw ideError('E_NO_ROOT', '还没有打开工作区', { recents: recents() });
+      if (input.trusted) store.trust(context.root);
+      else store.untrust(context.root);
+      return { root: context.root, trusted: store.isTrusted(context.root) };
     },
 
     requireRoot() {
-      if (!current) throw ideError('E_NO_ROOT', '还没有打开工作区', { recents: recents() });
-      return current.root;
+      const context = active();
+      if (!context) throw ideError('E_NO_ROOT', '还没有打开工作区', { recents: recents() });
+      return context.root;
     },
 
     isTrusted() {
-      return current ? store.isTrusted(current.root) : false;
+      const context = active();
+      return context ? store.isTrusted(context.root) : false;
     },
 
     /** Trust gate for write / terminal / network / watch (docs/security.md §2). */
@@ -196,12 +238,12 @@ export function createWorkspace(ctx, store) {
       throw ideError('E_TRUST_REQUIRED', '此工作区尚未被信任', { reason, root });
     },
 
-    /** Resolve a workspace-relative path and prove it stays inside the root. */
+    /** Resolve a workspace-relative path and prove it stays inside the active root. */
     async resolvePath(rel) {
       const root = api.requireRoot();
       const target = path.resolve(root, rel ?? '');
       const real = await realpath(target).catch(() => target);
-      const normalizedRoot = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+      const normalizedRoot = root.endsWith(path.sep) ? root : root + path.sep;
       if (real !== root && !real.startsWith(normalizedRoot)) {
         throw ideError('E_OUTSIDE_ROOT', '路径在工作区之外', { path: rel });
       }
@@ -209,9 +251,9 @@ export function createWorkspace(ctx, store) {
     },
 
     reset() {
-      current = null;
-      currentSource = null;
-      probeCache = { at: 0, value: null };
+      contexts.clear();
+      fallback = null;
+      probeCache.clear();
     },
   };
 

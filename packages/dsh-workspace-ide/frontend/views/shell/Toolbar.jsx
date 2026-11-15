@@ -1,6 +1,10 @@
 import { useStore, useEffect, useRef } from '../../runtime.js';
 import { Icon } from '../common/Icon.jsx';
 
+const EMPTY_ROWS = [];
+const EMPTY_CATALOG = { getSnapshot: () => EMPTY_ROWS, subscribe: () => () => {} };
+const FULL_VIEW_ID = 'workspace-ide.fullview';
+
 function changesOf(status) {
   if (!status) return 0;
   return (status.staged?.length ?? 0) + (status.working?.length ?? 0)
@@ -12,7 +16,10 @@ export function Toolbar({ stores }) {
   const ui = useStore(stores.ui);
   const workspace = useStore(stores.workspace);
   const scm = useStore(stores.scm);
+  const fullView = useStore(stores.host.fullView);
+  const catalog = useStore(stores.host.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
   const changes = changesOf(scm.status);
+  const fullViewKeys = catalog.find((row) => row.id === FULL_VIEW_ID)?.keys ?? [];
   const branch = workspace.git?.isRepo
     ? (workspace.git.detached ? 'HEAD@' + String(workspace.git.sha ?? '').slice(0, 7) : workspace.git.branch || 'HEAD')
     : null;
@@ -85,6 +92,22 @@ export function Toolbar({ stores }) {
       </button>
       <button type="button" className="wid-icon-button" title="终端（⌥⌘⇧J）" aria-label="终端" onClick={() => stores.actions.togglePanel()}>
         <Icon name="terminal" size={14} />
+      </button>
+      <button
+        type="button"
+        className="wid-icon-button"
+        title={fullView.open ? '关闭全视图（Esc）' : '打开全视图' + (fullViewKeys.length ? '（' + fullViewKeys.join(' + ') + '）' : '')}
+        aria-label={fullView.open ? '关闭全视图' : '打开全视图'}
+        aria-pressed={fullView.open}
+        onClick={() => stores.actions.toggleFullView()}
+      >
+        <Icon name={fullView.open ? 'collapseFull' : 'expand'} size={14} />
+      </button>
+      <button type="button" className="wid-icon-button wid-toolbar__optional" title="快捷键" aria-label="快捷键" onClick={() => stores.actions.openShortcuts()}>
+        <Icon name="keyboard" size={14} />
+      </button>
+      <button type="button" className="wid-icon-button wid-toolbar__optional" title="设置" aria-label="设置" onClick={() => stores.actions.openSettings()}>
+        <Icon name="settings" size={14} />
       </button>
       <button type="button" className="wid-icon-button" title="更多" aria-label="更多" onClick={() => stores.actions.toggleMenu('more')}>
         <Icon name="collapse" size={14} />
