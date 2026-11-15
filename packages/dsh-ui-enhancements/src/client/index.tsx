@@ -481,7 +481,7 @@ window.__ModuleLoader__?.load({
         // Global keydown listener for the configurable Model Picker shortcut (hot-updated).
         ctx.effect(() => {
           const onKeyDown = (event: KeyboardEvent): void => {
-            if (isRecordingShortcut) return
+            if (isRecordingShortcut || event.isComposing || event.keyCode === 229) return
             const cfg = configStore.getSnapshot().config
             if (!cfg.enableModelPicker) return
             if (!matchesShortcut(event, cfg.modelPickerShortcut)) return

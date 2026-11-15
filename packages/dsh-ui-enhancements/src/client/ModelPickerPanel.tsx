@@ -45,6 +45,17 @@ interface AnchorRect {
 
 const LIST_LIMIT = 240
 
+/**
+ * The model catalog is English (ids, provider names, model names), so the
+ * search box accepts ASCII only: IME composition cannot leave CJK text behind
+ * and every keystroke maps to something the catalog can contain.
+ */
+const NON_ASCII = /[^\x20-\x7E]/g
+
+function sanitizeQuery(value: string): string {
+  return value.replace(NON_ASCII, '')
+}
+
 function Highlight({ text, positions }: { text: string; positions: number[] }) {
   if (!positions.length) return <>{text}</>
   const marks = new Set(positions)
@@ -346,6 +357,10 @@ export function ModelPickerPanel({
   }
 
   const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    // Never steal keys from an IME composition: Enter commits the candidate
+    // and arrows pick one, so acting on them would discard the input.
+    const native = event.nativeEvent
+    if (native?.isComposing || native?.keyCode === 229) return
     const isInput = event.target === inputRef.current
     if (event.key === 'ArrowLeft') {
       if (inEffort) {
@@ -463,9 +478,14 @@ export function ModelPickerPanel({
         <input
           ref={inputRef}
           value={query}
-          placeholder="模糊搜索模型，如 ds v3 / cl sonnet / gm pro"
-          aria-label="模型模糊搜索"
-          onChange={(event) => setQuery(event.target.value)}
+          placeholder="模糊搜索模型（仅英文），如 ds v3 / cl sonnet / gm pro"
+          aria-label="模型模糊搜索（仅英文）"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          onChange={(event) => setQuery(sanitizeQuery(event.target.value))}
+          onCompositionEnd={(event) => setQuery(sanitizeQuery(event.currentTarget.value))}
         />
         <span className="dsh-enh-mp-total">{ranked.length}</span>
         <button

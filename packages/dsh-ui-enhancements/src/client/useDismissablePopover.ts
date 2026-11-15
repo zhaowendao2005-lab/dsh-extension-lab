@@ -32,7 +32,8 @@ export function useDismissablePopover(
       }
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
+      // Escape also cancels an IME composition; leave that press to the IME.
+      if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229) return
       event.stopPropagation()
       event.preventDefault()
       if (escapeRef.current?.() === true) return

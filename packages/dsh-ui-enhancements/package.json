@@ -1,6 +1,6 @@
 {
   "name": "dsh-ui-enhancements",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Standalone Swiss-modernist dialog and UI styling for DSH.",
   "type": "module",

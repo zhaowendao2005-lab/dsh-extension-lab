@@ -19,7 +19,9 @@ the package can be composed without a build step. The plugin installs from
 
 ## 模型选择面板
 
-快捷键默认 `Mod+Shift+M`（可在设置里改）。选中模型是两段式确认：
+快捷键默认 `Mod+Shift+M`（可在设置里改）。搜索框只接受英文（ASCII）字符：模型 id、
+提供商名、模型名都是英文，输入法候选（中文/全角符号）不会被写入，也不会抢走用于
+提交候选的 `Enter` 与用于选词的 `↑`/`↓`。选中模型是两段式确认：
 
 1. 第一次 `Enter`（或点击行）勾上复选框，并在该行下面展开思考级别（Effort）行：
    `←` / `→` 调整级别，点击圆点或两侧箭头也可以；级别名与说明来自模型适配器。
