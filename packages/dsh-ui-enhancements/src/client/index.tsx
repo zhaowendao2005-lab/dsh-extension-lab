@@ -25,26 +25,69 @@ function unwrapRemote<T>(result: unknown): T {
   return result as T
 }
 
-function trySwitchHostModel(ctx: any, option: ModelOption): void {
+function sessionIdOf(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value !== null && typeof value === 'object') {
+    const owner = value as { sessionId?: unknown; session?: { sessionId?: unknown } }
+    if (typeof owner.sessionId === 'string') return owner.sessionId
+    if (typeof owner.session?.sessionId === 'string') return owner.session.sessionId
+  }
+  return ''
+}
+
+function resolveActiveSessionId(sessions: any, trackedSessionId: string): string {
+  if (trackedSessionId) return trackedSessionId
+  try {
+    const listState = sessions?.list?.getSnapshot?.()
+    const fromList =
+      listState?.activeId ??
+      listState?.currentId ??
+      listState?.selectedId ??
+      sessions?.activeSessionId ??
+      sessions?.currentSessionId
+    if (typeof fromList === 'string' && fromList) return fromList
+  } catch {
+    /* ignore */
+  }
+  try {
+    const match = window.location.pathname.match(/\/sessions?\/([^/?#]+)/)
+    if (match?.[1]) return decodeURIComponent(match[1])
+  } catch {
+    /* ignore */
+  }
+  return ''
+}
+
+function readProjectedModelKey(sessions: any, sessionId: string): string | undefined {
+  if (!sessions?.binding || !sessionId) return undefined
+  try {
+    const binding = sessions.binding(sessionId)
+    const snap = binding?.session?.projections?.faceOf?.('modelSelection')?.getSnapshot?.()
+    const sel = snap?.next ?? snap?.lastUsed
+    if (sel && typeof sel.provider === 'string' && typeof sel.model === 'string') {
+      return `${sel.provider}:${sel.model}`
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined
+}
+
+function trySwitchHostModel(ctx: any, option: ModelOption, trackedSessionId: string): void {
   const sessions = ctx.get?.('sessions') ?? ctx.sessions
   if (sessions) {
     try {
-      const listState = sessions.list?.getSnapshot?.()
-      const activeId =
-        listState?.activeId ??
-        listState?.currentId ??
-        sessions.activeSessionId ??
-        sessions.currentSessionId
-      if (typeof sessions.setModel === 'function') {
-        void sessions.setModel(activeId, { providerId: option.providerId, modelId: option.modelId })
+      const sessionId = resolveActiveSessionId(sessions, trackedSessionId)
+      if (typeof sessions.selectModel === 'function' && sessionId) {
+        void sessions.selectModel({
+          sessionId,
+          provider: option.providerId,
+          model: option.modelId,
+        })
         return
       }
-      if (typeof sessions.selectModel === 'function') {
-        void sessions.selectModel(option.providerId, option.modelId)
-        return
-      }
-      if (typeof sessions.updateModel === 'function' && activeId) {
-        void sessions.updateModel(activeId, option.providerId, option.modelId)
+      if (typeof sessions.setModel === 'function' && sessionId) {
+        void sessions.setModel(sessionId, { providerId: option.providerId, modelId: option.modelId })
         return
       }
     } catch {
@@ -96,12 +139,22 @@ class PickerController {
   }
   private readonly listeners = new Set<() => void>()
   private remote: any = null
+  private activeSessionId = ''
+  private hostCtx: any = null
 
   getSnapshot = (): PickerState => this.state
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  attachContext(ctx: any): void {
+    this.hostCtx = ctx
+  }
+
+  setActiveSessionId(sessionId: string): void {
+    if (sessionId) this.activeSessionId = sessionId
   }
 
   attachRemote(remote: any): void {
@@ -117,7 +170,13 @@ class PickerController {
   }
 
   open(): void {
-    this.patch({ open: true })
+    const sessions = this.hostCtx?.get?.('sessions') ?? this.hostCtx?.sessions
+    const sessionId = resolveActiveSessionId(sessions, this.activeSessionId)
+    const projectedKey = readProjectedModelKey(sessions, sessionId)
+    this.patch({
+      open: true,
+      ...(projectedKey ? { selectedKey: projectedKey } : {}),
+    })
     if (this.state.providers.length === 0 && !this.state.loading) {
       void this.refresh()
     }
@@ -130,7 +189,7 @@ class PickerController {
 
   select(ctx: any, option: ModelOption): void {
     this.patch({ selectedKey: option.value, open: false })
-    trySwitchHostModel(ctx, option)
+    trySwitchHostModel(ctx, option, this.activeSessionId)
   }
 
   async refresh(): Promise<void> {
@@ -210,6 +269,35 @@ window.__ModuleLoader__?.load({
         const configStore = new ConfigStore()
         const styleManager = new FeatureStyleManager()
         const picker = new PickerController()
+        picker.attachContext(ctx)
+
+        const SessionTracker = ({ sessionId }: { sessionId: string }): null => {
+          React.useEffect(() => {
+            picker.setActiveSessionId(sessionId)
+          }, [sessionId])
+          return null
+        }
+
+        ctx.effect(
+          () =>
+            ctx.slots.inject('conversation.input.dock', () =>
+              ctx.slots.register(
+                {
+                  name: 'conversation.input.dock',
+                  id: `${ENTRY_ID}.session-tracker`,
+                  order: 99,
+                  label: () => 'Enhans 会话跟踪',
+                  inject: (session: unknown) => {
+                    const sessionId = sessionIdOf(session)
+                    picker.setActiveSessionId(sessionId)
+                    return { sessionId }
+                  },
+                },
+                SessionTracker,
+              ),
+            ),
+          `${PACKAGE_ID}.session-tracker`,
+        )
 
         // Initial style mount & reactive hot update on any config change.
         styleManager.apply(configStore.getSnapshot().config)
