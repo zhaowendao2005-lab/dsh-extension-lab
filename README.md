@@ -11,6 +11,7 @@
 | `packages/dsh-btw-side` | 旁路提问（BTW）：基于最新真实请求上下文独立作答，输入框上方常驻栏，不打断主线 |
 | `packages/dsh-workspace-ide` | DSH 右栏工作台：文件树 / 标签页 / 拖动分栏 / SCM 与提交图谱 / 编辑器 / 真终端 |
 | `packages/model-intelligence-test` | 模型智能测试：真实模型指纹（lm-detector 共享参考库）与自定义 Agent 任务评测（模拟） |
+| `packages/dsh-antigravity-acp` | 官方本机 agy ACP 适配器开发预览；支持登录复用和模型目录，生成仍受纯净性门禁阻断 |
 
 ## 开发约定
 
@@ -38,6 +39,13 @@ pnpm release --package dsh-ui-enhancements --version 2.0.0
 ```
 
 预检只读；正式命令只构建目标包，默认递增补丁版本。第一提交仅包含 `packages/<包>/`，第二提交仅包含 `marketplace.json`；随后创建 `<包名>-v<版本>` 包级 Tag，并推送 `main` 与 Tag。其他目录的未提交内容保留。正式发布前须确认目标包内所有改动都属于本次发布。
+
+首次登记新包时，在包内准备 `marketplace-entry.json`，只包含本地化的 `title`、`description` 和 `metadata`（`keywords` / `labels` / `sortKeys`）。预检和正式命令均显式追加 `--init-marketplace`；包名来自 manifest，首个版本由正式命令在包提交后写入市场。没有该选项时缺少市场条目仍然失败，已有条目则拒绝该选项。开发版本无法自动递增，首次稳定版本须同时传入 `--version`。
+
+```bash
+pnpm release --package dsh-antigravity-acp --version 0.1.0 --init-marketplace --dry-run
+pnpm release --package dsh-antigravity-acp --version 0.1.0 --init-marketplace --yes
+```
 
 提交信息默认交互询问（需要真实 TTY）。管道、CI 或代理环境改用显式参数，避免拿到 EOF 后才发现：
 
