@@ -51,8 +51,20 @@ function Highlight({ text, positions }: { text: string; positions: number[] }) {
   )
 }
 
+function hasCardBoundary(el: HTMLElement): boolean {
+  const style = window.getComputedStyle(el)
+  const borderWidth =
+    parseFloat(style.borderTopWidth || '0') +
+    parseFloat(style.borderLeftWidth || '0') +
+    parseFloat(style.borderRightWidth || '0') +
+    parseFloat(style.borderBottomWidth || '0')
+  const radius = parseFloat(style.borderTopLeftRadius || '0')
+  const hasShadow = Boolean(style.boxShadow && style.boxShadow !== 'none')
+  return borderWidth > 0 || radius >= 8 || hasShadow
+}
+
 /**
- * Find the active conversation composer/input container so the model picker
+ * Find the active conversation composer/input card so the model picker
  * matches its exact width and floats directly above it.
  */
 function findComposerContainer(): HTMLElement | null {
@@ -61,7 +73,7 @@ function findComposerContainer(): HTMLElement | null {
       'textarea, [contenteditable="true"], [role="textbox"]',
     ),
   ).filter((el) => {
-    if (el.closest('[role="dialog"]')) return false
+    if (el.closest('[role="dialog"], .dsh-enh-mp-popover')) return false
     const rect = el.getBoundingClientRect()
     return rect.width > 120 && rect.height > 16
   })
@@ -69,25 +81,30 @@ function findComposerContainer(): HTMLElement | null {
   const active = document.activeElement
   const input =
     (active instanceof HTMLElement && candidates.includes(active) ? active : null) ??
-    candidates[candidates.length - 1] ??
+    candidates.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom)[0] ??
     null
   if (!input) return null
 
-  // Walk up to the composer box wrapper (typically wider than the bare textarea
-  // and bounded by a visible border/background container).
+  // Walk up from the bare input to the rounded/bordered composer card, then stop
+  // before climbing into full-pane centering wrappers.
   let current: HTMLElement | null = input
   let best: HTMLElement = input
   const inputWidth = input.getBoundingClientRect().width
-  for (let depth = 0; depth < 6 && current?.parentElement; depth += 1) {
+  for (let depth = 0; depth < 8 && current?.parentElement; depth += 1) {
     const parent: HTMLElement = current.parentElement
     if (parent === document.body || parent.tagName === 'MAIN') break
     const rect = parent.getBoundingClientRect()
-    if (rect.width >= inputWidth && rect.width <= window.innerWidth * 0.92 && rect.height <= 360) {
-      best = parent
-      current = parent
-    } else {
+    if (rect.width < inputWidth || rect.width > window.innerWidth * 0.95 || rect.height > 360) {
       break
     }
+    if (hasCardBoundary(parent)) {
+      best = parent
+      break
+    }
+    if (rect.width - inputWidth <= 120) {
+      best = parent
+    }
+    current = parent
   }
   return best
 }
