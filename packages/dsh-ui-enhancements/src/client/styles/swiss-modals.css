@@ -1,0 +1,130 @@
+/* Swiss Modals, Scrim, Archive Manager & Primitive Controls */
+div[role="presentation"] {
+  --dsw-alias-bg-mask-1: var(--swiss-mask);
+  --dsw-mask-blur: none;
+}
+
+div[role="presentation"] > div[aria-hidden="true"] {
+  background: var(--swiss-mask) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+[data-shortcut-modal="settings"],
+.dsham_modalDialog,
+div[role="presentation"] > div[role="dialog"][aria-modal="true"] {
+  --dsw-radius-xs: 0px;
+  --dsw-radius-sm: 0px;
+  --dsw-radius-md: 0px;
+  --dsw-radius-lg: 0px;
+  --dsw-radius-xl: 0px;
+  --dsw-radius-panel: 0px;
+  --dsw-corner-shape: square;
+
+  --dsw-font-family: var(--swiss-font);
+  --dsh-font-family-text-default: var(--swiss-font);
+
+  --dsw-alias-bg-base: var(--swiss-paper);
+  --dsw-alias-bg-layer-1: var(--swiss-paper);
+  --dsw-alias-bg-layer-2: var(--swiss-paper);
+  --dsw-alias-bg-layer-3: var(--swiss-paper-2);
+  --dsw-alias-bg-overlay: var(--swiss-paper);
+  --dsw-alias-bg-module-platform: var(--swiss-paper-2);
+  --dsw-alias-settings-card-fill: var(--swiss-paper-2);
+  --dsw-alias-settings-card-stroke: var(--swiss-hairline);
+
+  --dsw-alias-border-l1: var(--swiss-hairline);
+  --dsw-alias-border-l2: var(--swiss-hairline);
+  --dsw-alias-border-l3: var(--swiss-hairline);
+  --dsw-alias-border-l4: var(--swiss-hairline);
+
+  --dsw-alias-label-primary: var(--swiss-ink);
+  --dsw-alias-label-secondary: var(--swiss-ink-2);
+  --dsw-alias-label-tertiary: var(--swiss-ink-2);
+  --dsw-alias-label-dimmed: var(--swiss-ink-2);
+  --dsw-alias-label-primary-foreground: var(--swiss-paper);
+
+  --dsw-alias-interactive-bg-hover: var(--swiss-paper-2);
+  --dsw-alias-interactive-bg-active: var(--swiss-hairline);
+  --dsw-specific-sidebar-nav-item-active: var(--swiss-ink);
+
+  --dsw-alias-brand-primary: var(--swiss-ink);
+  --dsw-alias-brand-primary-new-color: var(--swiss-ink);
+  --dsw-alias-button-primary-fill: var(--swiss-ink);
+  --dsw-alias-button-primary-hover: var(--swiss-ink-2);
+  --dsw-alias-button-contrast-fill: var(--swiss-ink);
+  --dsh-button-outline-color: var(--swiss-ink);
+  --dsw-focus-ring-color: var(--swiss-ink);
+  --dsw-alias-switch-thumb: var(--swiss-ink-2);
+
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--swiss-hairline);
+  background: var(--swiss-paper) !important;
+  color: var(--swiss-ink);
+  font-family: var(--swiss-font);
+  -webkit-font-smoothing: antialiased;
+  corner-shape: square;
+}
+
+div[role="presentation"] > div[role="dialog"][aria-modal="true"]:not(
+    [data-shortcut-modal="settings"]
+  ),
+.dsham_modalDialog {
+  border-top: 2px solid var(--swiss-accent) !important;
+}
+
+.dsham_modalDialog {
+  width: 80vw !important;
+  max-width: none !important;
+  max-height: 80vh !important;
+}
+
+.dsham_sidebarCard {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--swiss-hairline) !important;
+  background: var(--swiss-paper) !important;
+  color: var(--swiss-ink) !important;
+}
+
+div[role="presentation"] [role="switch"],
+div[role="presentation"] [role="switch"] *,
+.dsham_modalDialog [role="switch"],
+.dsham_modalDialog [role="switch"] *,
+[data-shortcut-modal="settings"] [role="switch"],
+[data-shortcut-modal="settings"] [role="switch"] * {
+  border-radius: 0 !important;
+  corner-shape: square !important;
+}
+
+div[role="presentation"] input[type="checkbox"],
+div[role="presentation"] input[type="radio"],
+.dsham_modalDialog input[type="checkbox"],
+.dsham_modalDialog input[type="radio"],
+[data-shortcut-modal="settings"] input[type="checkbox"],
+[data-shortcut-modal="settings"] input[type="radio"] {
+  accent-color: var(--swiss-ink);
+}
+
+div[role="presentation"] > div[role="dialog"][aria-modal="true"] :focus-visible,
+.dsham_modalDialog :focus-visible {
+  outline: 2px solid var(--swiss-ink) !important;
+  outline-offset: 2px !important;
+}
+
+div[role="presentation"] > div[role="dialog"][aria-modal="true"] a,
+.dsham_modalDialog a {
+  color: var(--swiss-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  div[role="presentation"] > div[role="dialog"][aria-modal="true"] *,
+  .dsham_modalDialog * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}

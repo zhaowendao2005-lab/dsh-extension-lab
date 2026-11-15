@@ -86,7 +86,7 @@ function positiveInteger(value, fallback, name) {
 }
 
 function runtimeState(home = null) {
-  return { state: "stopped", pid: null, url: null, error: null, exitCode: null, signal: null, dshHome: home };
+  return { state: "stopped", pid: null, url: null, error: null, exitCode: null, signal: null, dshHome: home, pluginLoaded: null };
 }
 
 function commandState() {
@@ -326,6 +326,7 @@ export function createSandboxManager(options = {}) {
       runtime: { ...item.runtime }, command: { ...item.command },
       terminals: [...item.terminals.values()].map((terminal) => ({ ...terminal.state })),
       models: item.models.map((model) => ({ ...model })),
+      modelsConfigured: Boolean(item.modelsConfigured),
       credentials: item.credentialRefs.map((ref) => ({ ref })),
       logs: item.logs.map((line) => ({ ...line })) };
   }
@@ -340,6 +341,9 @@ export function createSandboxManager(options = {}) {
       item.models = saved.selected
         .filter((entry) => entry && typeof entry === "object" && typeof entry.provider === "string" && typeof entry.model === "string")
         .map((entry) => ({ provider: entry.provider, model: entry.model }));
+      item.modelsConfigured = true;
+    } else {
+      item.modelsConfigured = false;
     }
     item.modelsLoaded = true;
     return item.models;
@@ -378,10 +382,60 @@ export function createSandboxManager(options = {}) {
       try {
         const url = new URL(match[0].replace(/[),.;]+$/, ""));
         if (["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) && !url.username && !url.password && url.port !== "0") {
+          const prevUrl = item.runtime.url;
           item.runtime.url = url.href;
+          if (url.href !== prevUrl && item.runtimeBound) {
+            void verifyRuntimePlugin(item, item.runtimeBound, url.href);
+          }
         }
       } catch { /* Incomplete lines and non-URLs are normal process output. */ }
     }
+  }
+
+  function detectRuntimePluginError(item, text) {
+    const clean = String(text).replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+    for (const line of clean.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (/(?:entry did not activate|failed to activate|required entries did not activate|ERR_MODULE_NOT_FOUND|Cannot find module|Cannot find package)/i.test(trimmed)) {
+        item.runtime.pluginLoaded = false;
+        if (!item.runtime.error) item.runtime.error = `插件加载失败: ${trimmed}`;
+        break;
+      }
+    }
+  }
+
+  async function verifyRuntimePlugin(item, bound, url) {
+    if (!bound?.manifest?.dsh?.client) {
+      if (item.runtime.pluginLoaded === null) item.runtime.pluginLoaded = !item.runtime.error;
+      return;
+    }
+    try {
+      const login = await fetch(url, { redirect: "manual" });
+      const cookies = typeof login.headers.getSetCookie === "function"
+        ? login.headers.getSetCookie().map((v) => v.split(";")[0]).join("; ")
+        : "";
+      const target = new URL(login.headers.get("location") || "/", url);
+      const page = await fetch(target, { headers: cookies ? { cookie: cookies } : {} });
+      if (!page.ok) return;
+      const html = await page.text();
+      const bootJson = html.match(/globalThis\["__DSH_BOOT__"\] = ([\s\S]*?)<\/script>/)?.[1];
+      if (!bootJson) return;
+      const boot = JSON.parse(bootJson);
+      const entries = Array.isArray(boot?.entries) ? boot.entries : [];
+      const expectedIds = new Set([bound.binding.name, `plugin-dev-${item.loc.sessionId}`]);
+      const found = entries.some((entry) => entry && expectedIds.has(entry.id));
+      if (item.runtime.url !== url) return;
+      if (found) {
+        if (item.runtime.pluginLoaded === null) item.runtime.pluginLoaded = true;
+      } else {
+        item.runtime.pluginLoaded = false;
+        if (!item.runtime.error) {
+          item.runtime.error = `插件前端入口未注入沙箱 (__DSH_BOOT__ 中缺少 ${bound.binding.name})`;
+        }
+        log(item, "runtime", "system", item.runtime.error);
+      }
+    } catch { /* Probe is best-effort; process logs/exit still surface hard crashes. */ }
   }
 
   async function context(loc, bound, commandId) {
@@ -428,7 +482,10 @@ export function createSandboxManager(options = {}) {
       for (const stream of ["stdout", "stderr"]) {
         child[stream].on("data", (text) => {
           log(item, kind, stream, text);
-          if (kind === "runtime" && !processRecord.stopped && state.state === "running") captureUrl(item, text);
+          if (kind === "runtime" && !processRecord.stopped && state.state === "running") {
+            detectRuntimePluginError(item, text);
+            captureUrl(item, text);
+          }
         });
       }
       child.once("spawn", () => {
@@ -639,6 +696,7 @@ export function createSandboxManager(options = {}) {
         await writeSafe(loc.modelsPath, `${JSON.stringify({ selected: selected.map(({ provider, model }) => ({ provider, model })) }, null, 2)}\n`);
         item.models = selected.map(({ provider, model }) => ({ provider, model }));
         item.modelsLoaded = true;
+        item.modelsConfigured = true;
         return snapshot(item, await binding(loc));
       });
     },
@@ -652,6 +710,7 @@ export function createSandboxManager(options = {}) {
         }
         await terminate(item.runtimeProcess); item.runtimeProcess = null;
         item.runtime = { ...runtimeState(loc.runtimeHome), state: "starting" }; item.urlTail = "";
+        item.runtimeBound = bound;
         try {
           const ctx = await context(loc, bound);
           await overlay(loc, bound, input.modelPatches);

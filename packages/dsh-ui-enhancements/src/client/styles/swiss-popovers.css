@@ -1,0 +1,6 @@
+/* Squared Menus & Non-modal Popovers */
+[role="menu"],
+[role="menu"] [role="menuitem"],
+div[role="dialog"]:not([aria-modal="true"]) {
+  border-radius: 0 !important;
+}

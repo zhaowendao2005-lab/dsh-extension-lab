@@ -698,8 +698,8 @@ packages/dsh-btw-side/                     # package name: dsh-btw-side（未占
 | slot 契约 / 栏位 | `dsh-client-ui-layout/lib/client.js`（root 子槽声明、`ctx.layout.openRightbar`）；`dsh-client-ui-sidebar-right/lib/client.js`（`sidebar.right.pane.tab`、tab registry、`openTab`）；slot 契约目录（98 条，`/tmp/b1.js:19900–20900`） |
 | 现有 btw 行为（基线） | `/Users/qihoo/.dsh/profiles/desktop/node_modules/@michengai/dsh-btw/lib/{index,client}.js` |
 | 手写 Remote 契约先例 | `packages/model-intelligence-test/{shared/contract.js,backend/service/catalog.js,frontend/index.tsx}`（只读参考，不修改该包） |
-| 两层压缩 / takeover gate | `design/btw/research/compression.md`；billion-context `dist/agent/dsh-{native,compaction-gate,acp}.js`；`dsh-compaction-basic/lib/index.js:634-655`（落盘压缩） |
-| 设置分页 / configForms / volatile | `design/btw/research/settings-ui.md`；`dsh-settings/lib/index.js:322-544`（`volatileForm`/`describe`/`mutate`）；`dsh-config-editor/lib/index.js:24,96-140`；`dsh-client-ui-settings/lib/client.js:1270+`；`dsh-api-remotes/lib/types/remote-events.js`（`settings/document-updated`） |
+| 两层压缩 / takeover gate | `docs/research/compression.md`；billion-context `dist/agent/dsh-{native,compaction-gate,acp}.js`；`dsh-compaction-basic/lib/index.js:634-655`（落盘压缩） |
+| 设置分页 / configForms / volatile | `docs/research/settings-ui.md`；`dsh-settings/lib/index.js:322-544`（`volatileForm`/`describe`/`mutate`）；`dsh-config-editor/lib/index.js:24,96-140`；`dsh-client-ui-settings/lib/client.js:1270+`；`dsh-api-remotes/lib/types/remote-events.js`（`settings/document-updated`） |
 | Electron 无 SSE / `$on` allowlist | `dsh-host-webserver/lib/index.js`；`dsh-api-remotes/lib/types/remote-events.js` |
 
 ## 附录 B · 术语

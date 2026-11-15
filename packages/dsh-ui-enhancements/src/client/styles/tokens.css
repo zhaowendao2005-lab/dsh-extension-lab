@@ -1,0 +1,25 @@
+/* Shared Swiss modernist palette — light & dark */
+:root {
+  --swiss-font: "Helvetica Neue", Helvetica, Inter, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+
+  --swiss-paper: #faf9f6;
+  --swiss-paper-2: #f1f0ec;
+  --swiss-ink: #0a0a0b;
+  --swiss-ink-2: #5c5c57;
+  --swiss-hairline: #d8d6cf;
+  --swiss-accent: #9ccc65;
+  --swiss-bar: #9ccc65;
+  --swiss-mask: rgba(10, 10, 11, 0.55);
+}
+
+body[data-ds-dark-theme] {
+  --swiss-paper: #121213;
+  --swiss-paper-2: #1b1b1d;
+  --swiss-ink: #f4f3ef;
+  --swiss-ink-2: #a3a39c;
+  --swiss-hairline: #33332f;
+  --swiss-accent: #a5d6a7;
+  --swiss-bar: #4a7c22;
+  --swiss-mask: rgba(0, 0, 0, 0.66);
+}

@@ -48,6 +48,6 @@ node scripts/build.mjs     # tsc --noEmit + esbuild host/client
 
 ## 设计
 
-完整设计见 `design/btw/DESIGN.md`（捕获、payload 组装、压缩等价性、帧协议、UI、冲突矩阵、验证清单）。
+完整设计见 [docs/DESIGN.md](docs/DESIGN.md)（捕获、payload 组装、压缩等价性、帧协议、UI、冲突矩阵、验证清单）。
 
 P1 限制：无 markdown 渲染、无跨刷新持久化、侧问不执行工具、右侧栏页签为 P2；命令行保留在转录中（用于让 `/btw` 的失败原因可见，DESIGN §5.6 的 commandview 隐藏列为 P2）。

@@ -74,3 +74,47 @@ test('Host apply registers its Service, Typert contribution, tool, and disposer'
   for (const dispose of handlers) await dispose();
   assert.ok(effects.includes('typert disposed'));
 });
+
+test('launch automatically injects default session model when models.json has not been configured', async () => {
+  const saved = [];
+  const launched = [];
+  const ctx = {
+    provide() {},
+    get: (name) => {
+      if (name === 'llm') {
+        return {
+          listProviders: () => [{ id: 'p1', name: 'Provider 1' }],
+          listModels: async () => [{ id: 'm1', name: 'Model 1' }],
+          listConfigurableProviders: () => [],
+        };
+      }
+      return undefined;
+    },
+    sessionController: {
+      resolveAgent: async () => ({
+        session: {
+          id: 'session-1',
+          header: { cwd: '/tmp', model: { provider: 'p1', id: 'm1' } },
+        },
+      }),
+    },
+  };
+  const fakeManager = {
+    status: async () => ({ models: [], modelsConfigured: false }),
+    saveModels: async (input) => {
+      saved.push(input.selectedModels);
+      return { models: input.selectedModels, modelsConfigured: true };
+    },
+    launch: async (input) => {
+      launched.push(input);
+      return { runtime: { state: 'running', error: null } };
+    },
+  };
+
+  const service = Object.create(PluginDevService.prototype);
+  service.manager = fakeManager;
+  const bound = service[symbols.extend]({ ctx });
+  await bound.dispatch({ action: 'launch', sessionId: 'session-1' });
+  assert.deepEqual(saved, [[{ provider: 'p1', model: 'm1' }]]);
+  assert.equal(launched.length, 1);
+});

@@ -2,7 +2,7 @@
 
 Scope: design-only research for a new **Host+Client** plugin `btw` (旁路提问) that registers `/btw`, captures the session's latest real LLM request payload (post-compression), runs an independent answer-only side call/agent, and renders the answer in a dedicated bar. User requirement driving this file: **「对于相关钩子和函数的冲突问题也需要提前考虑」** — conflicts with existing hooks/functions must be anticipated before implementation.
 
-Legend: ✅ verified at cited path:line · ◐ inferred from surrounding code · **UNCERTAIN** flagged inline. Companion doc: `design/btw/research/host-api.md` (capture, seeding, delivery; this file does not repeat it, only resolves conflicts).
+Legend: ✅ verified at cited path:line · ◐ inferred from surrounding code · **UNCERTAIN** flagged inline. Companion doc: `docs/research/host-api.md` (capture, seeding, delivery; this file does not repeat it, only resolves conflicts).
 
 ## 0. Sources
 

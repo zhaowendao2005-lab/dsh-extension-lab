@@ -15,7 +15,7 @@
 ## 文档关系
 
 ```text
-MINI-VSCODE-PLAN.md（根仓库，立项与选型论证、M0–M4 人日）
+docs/MINI-VSCODE-PLAN.md（立项与选型论证、M0–M4 人日）
         │ 结论落到 ↓
 README.md ── 使用者视角（入口/三视图/边界/安全摘要）
 AGENTS.md ── 硬规则（可被构建期检查或 review 判定）
@@ -32,7 +32,7 @@ ARCHITECTURE.md ── 依赖方向 / 状态所有权 / 生命周期 / 性能预
         ├─ docs/build.md      ── 打包、静态检查、发布、故障排查
         └─ docs/milestones.md ── 任务级拆解
 plan/全方案.md + plan/E2E-流程.md ── 决策记录与人工验收剧本
-research/*.md（根仓库）── 选型调研原文，作为论证依据，不作为实现依据
+docs/research/*.md ── 选型调研原文，作为论证依据，不作为实现依据
 ```
 
 **冲突时的优先级**：`AGENTS.md` > `ARCHITECTURE.md` > `docs/remote-contract.md` > 模块文档 > `plan/`。

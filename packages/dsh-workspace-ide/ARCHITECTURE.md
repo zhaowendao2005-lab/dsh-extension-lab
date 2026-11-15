@@ -1,6 +1,6 @@
 # 插件内架构
 
-> 本文只约束 `packages/dsh-workspace-ide` 内部结构。产品背景、选型依据、界面形态见根目录 [MINI-VSCODE-PLAN.md](../../MINI-VSCODE-PLAN.md) 与 `plan/全方案.md`。
+> 本文只约束 `packages/dsh-workspace-ide` 内部结构。产品背景、选型依据、界面形态见 [MINI-VSCODE-PLAN.md](docs/MINI-VSCODE-PLAN.md) 与 `plan/全方案.md`。
 
 ## 一句话定位
 

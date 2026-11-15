@@ -140,6 +140,27 @@ export class PluginDevService extends Service {
     return entries;
   }
 
+  /** Pick a default model when the session has never saved models.json. */
+  async defaultModels(sessionId) {
+    try {
+      const resolved = await this.ctx.sessionController.resolveAgent(sessionId);
+      const agent = resolved && typeof resolved === 'object' ? ('session' in resolved ? resolved : resolved.agent) : null;
+      const model = agent?.session?.header?.model ?? agent?.model;
+      if (model && typeof model.provider === 'string' && typeof model.id === 'string') {
+        return [{ provider: model.provider, model: model.id }];
+      }
+    } catch { /* fall through to catalog fallback */ }
+    try {
+      const { providers } = await this.catalog();
+      for (const provider of providers) {
+        if (Array.isArray(provider.models) && provider.models.length > 0) {
+          return [{ provider: provider.id, model: provider.models[0].id }];
+        }
+      }
+    } catch { /* unavailable catalog */ }
+    return [];
+  }
+
   // Called by both the Remote adapter and the model tool; all semantics live here.
   async dispatch(request) {
     const parsed = requestSchema.parse(request);
@@ -159,7 +180,13 @@ export class PluginDevService extends Service {
       return this.manager.saveModels({ ...input, selectedModels: selected });
     }
     if (action === 'launch') {
-      const current = await this.manager.status(input);
+      let current = await this.manager.status(input);
+      if (!current.modelsConfigured && current.models.length === 0) {
+        const defaults = await this.defaultModels(parsed.sessionId);
+        if (defaults.length > 0) {
+          current = await this.manager.saveModels({ ...input, selectedModels: defaults });
+        }
+      }
       const patches = await this.modelPatches(current.models);
       const credentials = await this.credentialEntries(patches);
       return this.manager.launch({ ...input, modelPatches: patches, credentials });

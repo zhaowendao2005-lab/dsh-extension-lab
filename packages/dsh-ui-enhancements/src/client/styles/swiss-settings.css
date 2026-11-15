@@ -1,0 +1,285 @@
+/* Swiss Settings Dialog — 80% viewport, numbered rail, hairline grid */
+div[role="presentation"]:has(> [data-shortcut-modal="settings"]) {
+  box-sizing: border-box;
+  padding-top: var(--dsh-frame-overlay-top, 0px);
+}
+
+[data-shortcut-modal="settings"] {
+  box-sizing: border-box !important;
+  width: 80vw !important;
+  height: 80vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-top: 3px solid var(--swiss-accent) !important;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden;
+}
+
+[data-shortcut-modal="settings"] > div:first-child {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 64px;
+  padding: 0 24px !important;
+  border-bottom: 1px solid var(--swiss-hairline);
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--swiss-ink) !important;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+[data-shortcut-modal="settings"] > div:first-child::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-right: 12px;
+  background: var(--swiss-accent);
+}
+
+[data-shortcut-modal="settings"] > nav + div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 64px;
+  padding: 0 16px 0 24px !important;
+  border-bottom: 1px solid var(--swiss-hairline);
+}
+
+[data-shortcut-modal="settings"] > nav + div > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 0 !important;
+  border: 1px solid transparent !important;
+  color: var(--swiss-ink);
+}
+
+[data-shortcut-modal="settings"] > nav + div > button:hover {
+  background: var(--swiss-paper-2) !important;
+  border-color: var(--swiss-hairline) !important;
+}
+
+[data-shortcut-modal="settings"] > nav + div > button:focus-visible {
+  border-color: var(--swiss-ink) !important;
+}
+
+[data-shortcut-modal="settings"] > nav {
+  padding: 0 !important;
+  border-right: 1px solid var(--swiss-hairline);
+  overflow: hidden;
+}
+
+[data-shortcut-modal="settings"] > nav > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0 !important;
+  padding: 12px 0 0 !important;
+  counter-reset: swissnav;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--swiss-hairline) transparent;
+}
+
+[data-shortcut-modal="settings"] > nav button {
+  counter-increment: swissnav;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  height: 44px;
+  padding: 0 16px 0 20px !important;
+  border-radius: 0 !important;
+  border-bottom: 1px solid var(--swiss-hairline);
+  background: transparent !important;
+  color: var(--swiss-ink-2) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+[data-shortcut-modal="settings"] > nav button > span:has(> svg) {
+  display: none !important;
+}
+
+[data-shortcut-modal="settings"] > nav button::before {
+  content: counter(swissnav, decimal-leading-zero);
+  flex: none;
+  width: 20px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--swiss-ink-2);
+}
+
+[data-shortcut-modal="settings"] > nav button:not([aria-current="true"]):hover {
+  background: var(--swiss-paper-2) !important;
+  color: var(--swiss-ink) !important;
+}
+
+[data-shortcut-modal="settings"] > nav button[aria-current="true"] {
+  background: var(--swiss-ink) !important;
+  color: var(--swiss-paper) !important;
+  box-shadow: inset 4px 0 0 0 var(--swiss-bar);
+}
+
+[data-shortcut-modal="settings"] > nav button[aria-current="true"]::before {
+  color: var(--swiss-paper);
+  opacity: 0.65;
+}
+
+[data-shortcut-modal="settings"] [role="tablist"] {
+  border: 1px solid var(--swiss-hairline);
+  background: transparent !important;
+  padding: 3px;
+}
+
+[data-shortcut-modal="settings"] [role="tablist"] [role="tab"] {
+  color: var(--swiss-ink-2) !important;
+  font-size: 13px !important;
+  letter-spacing: 0.02em;
+}
+
+[data-shortcut-modal="settings"] [role="tablist"] [role="tab"][aria-selected="true"] {
+  background: var(--swiss-ink) !important;
+  color: var(--swiss-paper) !important;
+}
+
+[data-shortcut-modal="settings"] > nav + div + div {
+  padding: 32px 40px 48px !important;
+  overflow-y: auto;
+  background: var(--swiss-paper);
+  scrollbar-width: thin;
+  scrollbar-color: var(--swiss-hairline) transparent;
+}
+
+[data-shortcut-modal="settings"] > nav + div + div > * {
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+[data-shortcut-modal="settings"] > nav + div + div > * > * {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+}
+
+[data-shortcut-modal="settings"] > nav + div + div :is(h1, h2, h3) {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 900px) {
+  div[role="presentation"]:has(> [data-shortcut-modal="settings"]) {
+    padding-top: 0;
+  }
+
+  [data-shortcut-modal="settings"] {
+    width: 100vw !important;
+    height: 100vh !important;
+    border: 0 !important;
+    border-top: 3px solid var(--swiss-accent) !important;
+    grid-template-columns: 200px minmax(0, 1fr) !important;
+  }
+
+  [data-shortcut-modal="settings"] > nav + div + div {
+    padding: 24px 20px 40px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-shortcut-modal="settings"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: 64px auto minmax(0, 1fr) !important;
+    grid-template-areas: "title" "nav" "options" !important;
+  }
+
+  [data-shortcut-modal="settings"] > div:first-child {
+    grid-area: title;
+    border-bottom: 0;
+    padding-right: 64px !important;
+  }
+
+  [data-shortcut-modal="settings"] > nav {
+    grid-area: nav;
+    border-right: 0;
+    border-top: 1px solid var(--swiss-hairline);
+    border-bottom: 1px solid var(--swiss-hairline);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  [data-shortcut-modal="settings"] > nav > div {
+    flex-direction: row;
+    padding: 0 !important;
+    overflow: visible;
+  }
+
+  [data-shortcut-modal="settings"] > nav button {
+    width: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--swiss-hairline);
+    white-space: nowrap;
+    box-shadow: none !important;
+  }
+
+  [data-shortcut-modal="settings"] > nav button[aria-current="true"] {
+    box-shadow: inset 0 -3px 0 0 var(--swiss-bar) !important;
+  }
+
+  [data-shortcut-modal="settings"] > nav + div {
+    grid-area: title;
+    align-self: start;
+    justify-self: end;
+    height: 64px;
+    padding: 0 16px !important;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  [data-shortcut-modal="settings"] > nav + div + div {
+    grid-area: options;
+    padding: 20px 16px 40px !important;
+  }
+}
+
+[data-shortcut-modal="settings"] :focus-visible {
+  outline: 2px solid var(--swiss-ink) !important;
+  outline-offset: 2px !important;
+}
+
+[data-shortcut-modal="settings"] > nav button[aria-current="true"]:focus-visible {
+  outline-color: var(--swiss-paper) !important;
+  outline-offset: -3px !important;
+}
+
+[data-shortcut-modal="settings"] a {
+  color: var(--swiss-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-shortcut-modal="settings"] * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
