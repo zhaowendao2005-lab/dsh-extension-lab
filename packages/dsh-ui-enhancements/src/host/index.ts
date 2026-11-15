@@ -11,10 +11,7 @@ import {
 } from '../shared/contract'
 
 export const name = PACKAGE_ID
-export const inject = {
-  required: ['typert'],
-  optional: ['llm'],
-}
+export const inject = ['typert']
 
 export const Config = Schema.object({
   enableSwissSettings: Schema.boolean()

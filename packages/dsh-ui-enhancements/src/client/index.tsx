@@ -205,10 +205,7 @@ window.__ModuleLoader__?.load({
 
     return {
       name: PACKAGE_ID,
-      inject: {
-        required: ['slots'],
-        optional: ['remote', 'configForms', 'sessions', 'shortcuts'],
-      },
+      inject: ['slots'],
       async apply(ctx: any) {
         const configStore = new ConfigStore()
         const styleManager = new FeatureStyleManager()

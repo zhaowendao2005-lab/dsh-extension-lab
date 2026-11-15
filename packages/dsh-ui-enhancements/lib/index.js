@@ -16963,10 +16963,7 @@ var hostContribution = {
 
 // src/host/index.ts
 var name = PACKAGE_ID;
-var inject = {
-  required: ["typert"],
-  optional: ["llm"]
-};
+var inject = ["typert"];
 var Config = Schema.object({
   enableSwissSettings: Schema.boolean().default(DEFAULT_CONFIG.enableSwissSettings).description("\u542F\u7528 Swiss \u73B0\u4EE3\u4E3B\u4E49\u8BBE\u7F6E\u5F39\u7A97\u6837\u5F0F\uFF0880% \u89C6\u53E3\u3001\u5E8F\u53F7\u5BFC\u822A\u680F\u3001\u65B9\u6B63\u6392\u7248\uFF09").volatile(),
   enableSwissModals: Schema.boolean().default(DEFAULT_CONFIG.enableSwissModals).description("\u542F\u7528\u901A\u7528\u6A21\u6001\u6846\u3001\u5F52\u6863\u7BA1\u7406\u5668\u4E0E\u5F00\u5173\u63A7\u4EF6\u7684 Swiss \u6837\u5F0F").volatile(),
