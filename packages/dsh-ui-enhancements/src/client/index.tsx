@@ -129,7 +129,7 @@ class PickerController {
   }
 
   select(ctx: any, option: ModelOption): void {
-    this.patch({ selectedKey: option.value })
+    this.patch({ selectedKey: option.value, open: false })
     trySwitchHostModel(ctx, option)
   }
 
