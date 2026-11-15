@@ -4,12 +4,14 @@ import {
   PACKAGE_ID,
   remoteInfo,
   type CatalogProvider,
+  type CatalogReasoningResult,
   type CatalogResult,
 } from '../shared/contract'
 import { ConfigStore } from './configStore'
 import { FeatureStyleManager } from './features'
 import { SettingsIcon, SettingsPage } from './Settings'
 import { ModelPickerPanel, type ModelOption } from './ModelPickerPanel'
+import { restoreComposerFocus } from './composerFocus'
 import { matchesShortcut, toDshBinding } from './shortcuts'
 
 const ENTRY_ID = 'ui-enhancements'
@@ -58,14 +60,25 @@ function resolveActiveSessionId(sessions: any, trackedSessionId: string): string
   return ''
 }
 
-function readProjectedModelKey(sessions: any, sessionId: string): string | undefined {
+interface ProjectedSelection {
+  key: string
+  effort?: string
+}
+
+function readProjectedSelection(
+  sessions: any,
+  sessionId: string,
+): ProjectedSelection | undefined {
   if (!sessions?.binding || !sessionId) return undefined
   try {
     const binding = sessions.binding(sessionId)
     const snap = binding?.session?.projections?.faceOf?.('modelSelection')?.getSnapshot?.()
     const sel = snap?.next ?? snap?.lastUsed
     if (sel && typeof sel.provider === 'string' && typeof sel.model === 'string') {
-      return `${sel.provider}:${sel.model}`
+      return {
+        key: `${sel.provider}:${sel.model}`,
+        ...(typeof sel.reasoningEffort === 'string' ? { effort: sel.reasoningEffort } : {}),
+      }
     }
   } catch {
     /* ignore */
@@ -78,6 +91,7 @@ function trySwitchHostModel(
   option: ModelOption,
   trackedSessionId: string,
   rootCtx?: any,
+  effortId?: string,
 ): void {
   if (sessions) {
     try {
@@ -88,6 +102,7 @@ function trySwitchHostModel(
           directories.directoryFor(sessionId).select({
             provider: option.providerId,
             model: option.modelId,
+            ...(effortId ? { reasoningEffort: effortId } : {}),
           }),
         ).catch((error: unknown) => console.error('[ui-enhancements] model switch failed', error))
         return
@@ -97,6 +112,7 @@ function trySwitchHostModel(
           sessionId,
           provider: option.providerId,
           model: option.modelId,
+          ...(effortId ? { reasoningEffort: effortId } : {}),
         })
         return
       }
@@ -116,6 +132,7 @@ function trySwitchHostModel(
         providerName: option.providerName,
         modelId: option.modelId,
         modelName: option.label,
+        ...(effortId ? { reasoningEffort: effortId } : {}),
       },
     }),
   )
@@ -127,6 +144,10 @@ interface PickerState {
   loading: boolean
   error?: string
   selectedKey?: string
+  /** Last thinking level chosen per `provider:model`. */
+  effortByModel: Record<string, string>
+  /** Lazily resolved thinking levels per `provider:model`. */
+  reasoningByModel: Record<string, CatalogReasoningResult | 'loading'>
 }
 
 class PickerController {
@@ -134,12 +155,16 @@ class PickerController {
     open: false,
     providers: [],
     loading: false,
+    effortByModel: {},
+    reasoningByModel: {},
   }
   private readonly listeners = new Set<() => void>()
   private remote: any = null
   private activeSessionId = ''
   private sessions: any = null
   private rootCtx: any = null
+  /** Element focused before the panel opened, so closing can hand it back. */
+  private lastFocused: HTMLElement | null = null
 
   attachRootCtx(ctx: any): void {
     this.rootCtx = ctx
@@ -166,32 +191,100 @@ class PickerController {
 
   toggle(): void {
     if (this.state.open) {
-      this.close()
+      this.close(true)
     } else {
       this.open()
     }
   }
 
   open(): void {
+    this.lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const sessionId = resolveActiveSessionId(this.sessions, this.activeSessionId)
-    const projectedKey = readProjectedModelKey(this.sessions, sessionId)
+    const projected = readProjectedSelection(this.sessions, sessionId)
     this.patch({
       open: true,
-      ...(projectedKey ? { selectedKey: projectedKey } : {}),
+      ...(projected?.key ? { selectedKey: projected.key } : {}),
+      ...(projected?.key && projected.effort
+        ? { effortByModel: { ...this.state.effortByModel, [projected.key]: projected.effort } }
+        : {}),
     })
     if (this.state.providers.length === 0 && !this.state.loading) {
       void this.refresh()
     }
   }
 
-  close(): void {
+  /**
+   * Close the panel. Focus only comes back when the close was the panel's own
+   * doing (selection, Escape, shortcut toggle): an outside click already put
+   * focus where the user wanted it.
+   */
+  close(restoreFocus = false): void {
     if (!this.state.open) return
     this.patch({ open: false })
+    if (restoreFocus) this.refocus()
   }
 
-  select(_ctx: any, option: ModelOption): void {
-    this.patch({ selectedKey: option.value, open: false })
-    trySwitchHostModel(this.sessions, option, this.activeSessionId, this.rootCtx)
+  select(_ctx: any, option: ModelOption, effortId?: string): void {
+    this.patch({
+      selectedKey: option.value,
+      open: false,
+      ...(effortId
+        ? { effortByModel: { ...this.state.effortByModel, [option.value]: effortId } }
+        : {}),
+    })
+    trySwitchHostModel(this.sessions, option, this.activeSessionId, this.rootCtx, effortId)
+    // Hand focus back to the composer: choosing a model is a step towards
+    // typing, not away from it.
+    this.refocus()
+  }
+
+  /** Remember the level under the cursor so reopening keeps it. */
+  setEffort(modelValue: string, effortId: string): void {
+    if (!modelValue || !effortId) return
+    if (this.state.effortByModel[modelValue] === effortId) return
+    this.patch({ effortByModel: { ...this.state.effortByModel, [modelValue]: effortId } })
+  }
+
+  /**
+   * Resolve one model's thinking levels on first expand. The adapter reports
+   * them from `resolveModelInfo`, which is too heavy to run for every model in
+   * the list, so it happens lazily and is cached for the rest of the session.
+   */
+  ensureReasoning(option: ModelOption): void {
+    const key = option.value
+    const known = this.state.reasoningByModel[key]
+    // Known results stick; failures are retried on the next expand.
+    if (known !== undefined && known !== 'loading' && !known.error) return
+    if (known === 'loading') return
+    const remember = (result: CatalogReasoningResult | 'loading'): void => {
+      this.patch({ reasoningByModel: { ...this.state.reasoningByModel, [key]: result } })
+    }
+    if (!this.remote || typeof this.remote.reasoning !== 'function') {
+      remember({ efforts: [], error: '思考级别服务未连接' })
+      return
+    }
+    remember('loading')
+    void Promise.resolve(this.remote.reasoning({ provider: option.providerId, model: option.modelId }))
+      .then((raw: unknown) => unwrapRemote<CatalogReasoningResult>(raw))
+      .then((result: CatalogReasoningResult) => {
+        remember({
+          efforts: Array.isArray(result?.efforts) ? result.efforts : [],
+          ...(typeof result?.defaultEffort === 'string' ? { defaultEffort: result.defaultEffort } : {}),
+          ...(typeof result?.error === 'string' ? { error: result.error } : {}),
+        })
+      })
+      .catch((error: unknown) => {
+        remember({
+          efforts: [],
+          error: error instanceof Error ? error.message : '无法读取思考级别',
+        })
+      })
+  }
+
+  private refocus(): void {
+    const preferred = this.lastFocused
+    this.lastFocused = null
+    restoreComposerFocus({ preferred })
   }
 
   async refresh(): Promise<void> {
@@ -249,9 +342,13 @@ function ModelPickerRoot({
       loading={pickerSnap.loading}
       error={pickerSnap.error}
       selectedKey={pickerSnap.selectedKey}
-      onClose={() => picker.close()}
+      effortByModel={pickerSnap.effortByModel}
+      reasoningByModel={pickerSnap.reasoningByModel}
+      onClose={(reason) => picker.close(reason === 'escape')}
       onRefresh={() => void picker.refresh()}
-      onSelect={(option) => picker.select(ctx, option)}
+      onEffortChange={(modelValue, effortId) => picker.setEffort(modelValue, effortId)}
+      onNeedReasoning={(option) => picker.ensureReasoning(option)}
+      onSelect={(option, effortId) => picker.select(ctx, option, effortId)}
     />
   )
 }

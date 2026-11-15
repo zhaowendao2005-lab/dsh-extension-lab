@@ -52,6 +52,27 @@ export function normalizeConfig(raw: unknown): UiEnhancementsConfig {
   }
 }
 
+export interface CatalogReasoningEffort {
+  id: string
+  name: string
+  description?: string
+}
+
+export interface CatalogReasoning {
+  efforts: CatalogReasoningEffort[]
+  defaultEffort?: string
+}
+
+/** Thinking levels for one exact model route; `error` when they cannot be read. */
+export interface CatalogReasoningResult extends Partial<CatalogReasoning> {
+  error?: string
+}
+
+export interface ReasoningRequest {
+  provider: string
+  model: string
+}
+
 export interface CatalogModel {
   id: string
   name: string
@@ -94,6 +115,31 @@ const catalogResultCodec = codec('CatalogResult', () =>
   }),
 )
 
+const reasoningRequestCodec = codec('ReasoningRequest', () =>
+  z.object({ provider: z.string(), model: z.string() }),
+)
+
+const reasoningResultCodec = codec('ReasoningResult', () =>
+  z.object({
+    efforts: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+      }),
+    ),
+    defaultEffort: z.string().optional(),
+    error: z.string().optional(),
+  }),
+)
+
+const requestParam = (name: string, payload: ReturnType<typeof codec>) => ({
+  name,
+  wire: name,
+  source: 'json' as const,
+  codec: payload,
+})
+
 const endpoint = (method: string) => `${PACKAGE_ID}#${WIRE_NAMESPACE}/${method}`
 
 export const DESCRIPTORS: any[] = [
@@ -105,6 +151,15 @@ export const DESCRIPTORS: any[] = [
     invocation: { kind: 'direct' },
     parameters: [],
     result: catalogResultCodec,
+  },
+  {
+    id: endpoint('reasoning'),
+    service: SERVICE_KEY,
+    namespace: WIRE_NAMESPACE,
+    method: 'reasoning',
+    invocation: { kind: 'direct' },
+    parameters: [requestParam('request', reasoningRequestCodec)],
+    result: reasoningResultCodec,
   },
 ]
 

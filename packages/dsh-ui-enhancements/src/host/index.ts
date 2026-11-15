@@ -7,7 +7,10 @@ import {
   PACKAGE_ID,
   SERVICE_KEY,
   type CatalogProvider,
+  type CatalogReasoning,
+  type CatalogReasoningResult,
   type CatalogResult,
+  type ReasoningRequest,
 } from '../shared/contract'
 
 export const name = PACKAGE_ID
@@ -41,6 +44,27 @@ export const Config = Schema.object({
 })
 
 const remoteInitializers: Array<() => void> = []
+
+/**
+ * Normalize the adapter-owned thinking levels of one model. Models without
+ * levels (or with an empty list) return undefined, which the picker renders as
+ * "cannot think" instead of an adjustable row.
+ */
+function mapReasoning(input: any): CatalogReasoning | undefined {
+  const efforts = Array.isArray(input?.efforts) ? input.efforts : []
+  const normalized = efforts
+    .filter((effort: any) => effort && typeof effort.id === 'string' && typeof effort.name === 'string')
+    .map((effort: any) => ({
+      id: effort.id as string,
+      name: effort.name as string,
+      ...(typeof effort.description === 'string' ? { description: effort.description } : {}),
+    }))
+  if (normalized.length === 0) return undefined
+  return {
+    efforts: normalized,
+    ...(typeof input?.defaultEffort === 'string' ? { defaultEffort: input.defaultEffort } : {}),
+  }
+}
 
 function markRemoteMethod(methodName: string, fn: unknown): void {
   ;(Remote as any)(methodName)(fn, {
@@ -105,9 +129,34 @@ export class UiEnhancementsService extends Service {
 
     return { providers: providers.filter((p) => p.id !== '') }
   }
+
+  /**
+   * Thinking levels of one exact model route. Resolved on demand because the
+   * adapter reports them from `resolveModelInfo`, not from the model list.
+   */
+  async reasoning(request: ReasoningRequest): Promise<CatalogReasoningResult> {
+    const provider = typeof request?.provider === 'string' ? request.provider : ''
+    const model = typeof request?.model === 'string' ? request.model : ''
+    if (!provider || !model) return { efforts: [], error: '缺少模型信息' }
+    const llm = this.ctx.get('llm')
+    if (!llm || typeof llm.resolveModelInfo !== 'function') {
+      return { efforts: [], error: '思考级别服务不可用' }
+    }
+    try {
+      const info = await llm.resolveModelInfo(provider, model)
+      const reasoning = mapReasoning(info?.reasoning)
+      return reasoning ? { ...reasoning } : { efforts: [] }
+    } catch (error) {
+      return {
+        efforts: [],
+        error: error instanceof Error ? error.message : '无法读取思考级别',
+      }
+    }
+  }
 }
 
 markRemoteMethod('catalog', UiEnhancementsService.prototype.catalog)
+markRemoteMethod('reasoning', UiEnhancementsService.prototype.reasoning)
 
 export function apply(ctx: any): void {
   // Instantiate host service so `remote.uiEnhancements` can serve model catalogs.

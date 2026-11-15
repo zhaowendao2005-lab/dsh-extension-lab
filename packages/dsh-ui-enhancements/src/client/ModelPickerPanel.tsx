@@ -1,7 +1,12 @@
 import React from './runtime'
 import { fuzzyRank } from './fuzzy'
-import { useDismissablePopover } from './useDismissablePopover'
-import type { CatalogProvider } from '../shared/contract'
+import { useDismissablePopover, type DismissReason } from './useDismissablePopover'
+import { EffortPicker } from './EffortPicker'
+import type {
+  CatalogProvider,
+  CatalogReasoningEffort,
+  CatalogReasoningResult,
+} from '../shared/contract'
 
 export interface ModelOption {
   value: string
@@ -19,9 +24,17 @@ export interface ModelPickerPanelProps {
   loading: boolean
   error?: string
   selectedKey?: string
-  onClose: () => void
+  /** Last level chosen per `provider:model`, persisted across openings. */
+  effortByModel: Record<string, string>
+  /** Thinking levels resolved lazily per `provider:model`. */
+  reasoningByModel: Record<string, CatalogReasoningResult | 'loading'>
+  onClose: (reason: DismissReason) => void
   onRefresh: () => void
-  onSelect: (option: ModelOption) => void
+  onEffortChange: (modelValue: string, effortId: string) => void
+  /** Ask the owner to resolve one model's thinking levels. */
+  onNeedReasoning: (option: ModelOption) => void
+  /** Committing a choice; the owner closes the panel and restores focus. */
+  onSelect: (option: ModelOption, effortId?: string) => void
 }
 
 interface AnchorRect {
@@ -132,8 +145,12 @@ export function ModelPickerPanel({
   loading,
   error,
   selectedKey,
+  effortByModel,
+  reasoningByModel,
   onClose,
   onRefresh,
+  onEffortChange,
+  onNeedReasoning,
   onSelect,
 }: ModelPickerPanelProps): React.ReactElement | null {
   const [query, setQuery] = React.useState('')
@@ -141,17 +158,34 @@ export function ModelPickerPanel({
   const [activeIndex, setActiveIndex] = React.useState(0)
   const [focusPane, setFocusPane] = React.useState<'sidebar' | 'list'>('list')
   const [anchor, setAnchor] = React.useState<AnchorRect>(() => measureAnchor(null))
+  /** `provider:model` whose thinking-level row is open, awaiting the second confirm. */
+  const [expanded, setExpanded] = React.useState<string | null>(null)
 
-  const rootRef = useDismissablePopover(open, onClose)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const sidebarRef = React.useRef<HTMLElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
+
+  const collapse = (refocusSearch = false): void => {
+    setExpanded(null)
+    if (refocusSearch) {
+      // Leaving the sub-mode returns focus to the search box, so left/right
+      // switch panes again instead of changing the level.
+      window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0)
+    }
+  }
+
+  const rootRef = useDismissablePopover(open, onClose, () => {
+    if (expanded === null) return false
+    collapse(true)
+    return true
+  })
 
   React.useEffect(() => {
     if (!open) return
     setQuery('')
     setActiveIndex(0)
     setFocusPane('list')
+    setExpanded(null)
     const target = findComposerContainer()
     const update = () => setAnchor(measureAnchor(target))
     update()
@@ -209,8 +243,68 @@ export function ModelPickerPanel({
     [providers],
   )
 
+  const reasoningEntry = (option: ModelOption): CatalogReasoningResult | 'loading' | undefined =>
+    reasoningByModel[option.value]
+
+  const effortsFor = (option: ModelOption): CatalogReasoningEffort[] => {
+    const entry = reasoningEntry(option)
+    return entry && entry !== 'loading' ? entry.efforts ?? [] : []
+  }
+
+  /**
+   * Effective level for a model: the one last chosen, else the adapter default,
+   * else the lowest level. Empty for models that cannot think.
+   */
+  const effortIdFor = (option: ModelOption): string | undefined => {
+    const efforts = effortsFor(option)
+    if (efforts.length === 0) return undefined
+    const remembered = effortByModel[option.value]
+    if (remembered && efforts.some((effort) => effort.id === remembered)) return remembered
+    const entry = reasoningEntry(option)
+    const preferred = entry && entry !== 'loading' ? entry.defaultEffort : undefined
+    if (preferred && efforts.some((effort) => effort.id === preferred)) return preferred
+    return efforts[0].id
+  }
+
+  const expand = (option: ModelOption, index: number): void => {
+    setExpanded(option.value)
+    setActiveIndex(index)
+    setFocusPane('list')
+    onNeedReasoning(option)
+    // Move focus out of the search box: typing no longer edits the query and
+    // the arrow keys belong to the level rail until Escape.
+    window.setTimeout(() => listRef.current?.focus({ preventScroll: true }), 0)
+  }
+
+  const confirm = (option: ModelOption): void => {
+    onSelect(option, effortIdFor(option))
+  }
+
+  /** One click behaves like one Enter: expand first, then commit. */
+  const advance = (option: ModelOption, index: number): void => {
+    if (expanded === option.value) {
+      confirm(option)
+      return
+    }
+    expand(option, index)
+  }
+
+  const stepEffort = (option: ModelOption | undefined, delta: number): void => {
+    if (!option) return
+    const efforts = effortsFor(option)
+    if (efforts.length === 0) return
+    const currentId = effortIdFor(option)
+    const current = Math.max(
+      0,
+      efforts.findIndex((effort) => effort.id === currentId),
+    )
+    const next = Math.min(efforts.length - 1, Math.max(0, current + delta))
+    if (next !== current) onEffortChange(option.value, efforts[next].id)
+  }
+
   React.useEffect(() => {
     setActiveIndex(0)
+    setExpanded(null)
   }, [query, category, open])
 
   React.useEffect(() => {
@@ -225,12 +319,24 @@ export function ModelPickerPanel({
     itemEl?.scrollIntoView?.({ block: 'nearest' })
   }, [open, focusPane, activeIndex])
 
+  // Keep the open level row on screen.
+  React.useEffect(() => {
+    if (!open || expanded === null) return
+    const row = listRef.current?.querySelector<HTMLElement>('.dsh-enh-mp-effort-slot')
+    row?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, expanded, effortByModel, reasoningByModel])
+
+  // The expanded model can disappear from the filtered list.
+  React.useEffect(() => {
+    if (expanded === null) return
+    if (!visible.some(({ item }) => item.value === expanded)) setExpanded(null)
+  }, [expanded, visible])
+
   if (!open) return null
 
-  const pick = (option: ModelOption) => {
-    onSelect(option)
-    onClose()
-  }
+  const expandedIndex = expanded === null ? -1 : visible.findIndex(({ item }) => item.value === expanded)
+  const expandedOption = expandedIndex >= 0 ? visible[expandedIndex].item : undefined
+  const inEffort = expandedOption !== undefined
 
   const stepCategory = (delta: number) => {
     if (!categories.length) return
@@ -242,6 +348,11 @@ export function ModelPickerPanel({
   const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     const isInput = event.target === inputRef.current
     if (event.key === 'ArrowLeft') {
+      if (inEffort) {
+        event.preventDefault()
+        stepEffort(expandedOption, -1)
+        return
+      }
       if (
         isInput &&
         inputRef.current &&
@@ -257,6 +368,11 @@ export function ModelPickerPanel({
     }
 
     if (event.key === 'ArrowRight') {
+      if (inEffort) {
+        event.preventDefault()
+        stepEffort(expandedOption, 1)
+        return
+      }
       if (
         isInput &&
         inputRef.current &&
@@ -274,7 +390,10 @@ export function ModelPickerPanel({
 
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      if (focusPane === 'sidebar') {
+      if (inEffort) {
+        collapse()
+        setActiveIndex((idx) => (visible.length ? (idx + 1) % visible.length : 0))
+      } else if (focusPane === 'sidebar') {
         stepCategory(1)
       } else {
         setActiveIndex((idx) => (visible.length ? (idx + 1) % visible.length : 0))
@@ -284,7 +403,10 @@ export function ModelPickerPanel({
 
     if (event.key === 'ArrowUp') {
       event.preventDefault()
-      if (focusPane === 'sidebar') {
+      if (inEffort) {
+        collapse()
+        setActiveIndex((idx) => (visible.length ? (idx - 1 + visible.length) % visible.length : 0))
+      } else if (focusPane === 'sidebar') {
         stepCategory(-1)
       } else {
         setActiveIndex((idx) => (visible.length ? (idx - 1 + visible.length) % visible.length : 0))
@@ -296,12 +418,21 @@ export function ModelPickerPanel({
       if (focusPane === 'sidebar') {
         event.preventDefault()
         setFocusPane('list')
+      } else if (inEffort) {
+        event.preventDefault()
+        confirm(expandedOption)
       } else if (visible[activeIndex]) {
         event.preventDefault()
-        pick(visible[activeIndex].item)
+        expand(visible[activeIndex].item, activeIndex)
       }
     }
   }
+
+  const footerHint = inEffort
+    ? (expandedOption && effortsFor(expandedOption).length > 0
+        ? '←→ 调整思考级别 · Enter 确认 · Esc 返回'
+        : 'Enter 确认 · Esc 返回')
+    : '↑↓ 选择 · ←→ 切换栏 · Enter 确认 · Esc 关闭'
 
   return (
     <div
@@ -398,6 +529,7 @@ export function ModelPickerPanel({
           className={`dsh-enh-mp-list ${focusPane === 'list' ? 'is-pane-focused' : ''}`}
           role="listbox"
           aria-label="可用模型"
+          tabIndex={-1}
         >
           {loading && allOptions.length === 0 ? (
             <p className="dsh-enh-mp-empty">正在加载模型目录…</p>
@@ -408,36 +540,61 @@ export function ModelPickerPanel({
           ) : (
             visible.map(({ item, positions }, index) => {
               const active = selectedKey === item.value
+              const pending = expanded === item.value
               const highlighted = index === activeIndex
               return (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={active}
-                  key={item.value}
-                  className={`dsh-enh-mp-option ${active ? 'is-selected' : ''} ${highlighted ? 'is-highlighted' : ''}`}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => pick(item)}
-                >
-                  <span className="dsh-enh-mp-check" aria-hidden="true">
-                    {active && (
-                      <svg
-                        width="10"
-                        height="10"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <polyline points="2.5 6 5 8.5 9.5 3.5" />
-                      </svg>
-                    )}
-                  </span>
-                  <span className="dsh-enh-mp-label">
-                    <Highlight text={item.label} positions={positions} />
-                  </span>
-                  <span className="dsh-enh-mp-hint">{item.hint}</span>
-                </button>
+                <React.Fragment key={item.value}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    aria-expanded={pending}
+                    className={`dsh-enh-mp-option ${active ? 'is-selected' : ''} ${pending ? 'is-pending' : ''} ${highlighted ? 'is-highlighted' : ''}`}
+                    onMouseEnter={() => {
+                      if (expanded === null) setActiveIndex(index)
+                    }}
+                    onClick={() => advance(item, index)}
+                  >
+                    <span className="dsh-enh-mp-check" aria-hidden="true">
+                      {(active || pending) && (
+                        <svg
+                          width="10"
+                          height="10"
+                          viewBox="0 0 12 12"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <polyline points="2.5 6 5 8.5 9.5 3.5" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="dsh-enh-mp-label">
+                      <Highlight text={item.label} positions={positions} />
+                    </span>
+                    <span className="dsh-enh-mp-hint">{item.hint}</span>
+                  </button>
+                  {pending && (
+                    <div
+                      className="dsh-enh-mp-effort-slot"
+                      role="presentation"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <EffortPicker
+                        efforts={effortsFor(item)}
+                        loading={reasoningEntry(item) === 'loading'}
+                        error={
+                          reasoningEntry(item) && reasoningEntry(item) !== 'loading'
+                            ? (reasoningEntry(item) as CatalogReasoningResult).error
+                            : undefined
+                        }
+                        value={effortIdFor(item)}
+                        emptyLabel="无法思考 · 此模型不支持思考级别"
+                        onChange={(effortId) => onEffortChange(item.value, effortId)}
+                      />
+                    </div>
+                  )}
+                </React.Fragment>
               )
             })
           )}
@@ -450,7 +607,7 @@ export function ModelPickerPanel({
       </div>
 
       <div className="dsh-enh-mp-footer">
-        <span>↑↓ 选择 · ←→ 切换栏 · Enter 确认 · Esc 关闭</span>
+        <span>{footerHint}</span>
         <span>{category === 'all' ? '全部提供商' : providers.find((p) => p.id === category)?.name ?? category}</span>
       </div>
     </div>

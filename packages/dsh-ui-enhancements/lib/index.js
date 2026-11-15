@@ -16941,6 +16941,30 @@ var catalogResultCodec = codec(
     )
   })
 );
+var reasoningRequestCodec = codec(
+  "ReasoningRequest",
+  () => import_zod.z.object({ provider: import_zod.z.string(), model: import_zod.z.string() })
+);
+var reasoningResultCodec = codec(
+  "ReasoningResult",
+  () => import_zod.z.object({
+    efforts: import_zod.z.array(
+      import_zod.z.object({
+        id: import_zod.z.string(),
+        name: import_zod.z.string(),
+        description: import_zod.z.string().optional()
+      })
+    ),
+    defaultEffort: import_zod.z.string().optional(),
+    error: import_zod.z.string().optional()
+  })
+);
+var requestParam = (name2, payload) => ({
+  name: name2,
+  wire: name2,
+  source: "json",
+  codec: payload
+});
 var endpoint = (method) => `${PACKAGE_ID}#${WIRE_NAMESPACE}/${method}`;
 var DESCRIPTORS = [
   {
@@ -16951,6 +16975,15 @@ var DESCRIPTORS = [
     invocation: { kind: "direct" },
     parameters: [],
     result: catalogResultCodec
+  },
+  {
+    id: endpoint("reasoning"),
+    service: SERVICE_KEY,
+    namespace: WIRE_NAMESPACE,
+    method: "reasoning",
+    invocation: { kind: "direct" },
+    parameters: [requestParam("request", reasoningRequestCodec)],
+    result: reasoningResultCodec
   }
 ];
 var hostContribution = {
@@ -16973,6 +17006,19 @@ var Config = Schema.object({
   modelPickerShortcut: Schema.string().default(DEFAULT_CONFIG.modelPickerShortcut).description("\u6253\u5F00/\u5173\u95ED\u6A21\u578B\u9009\u62E9\u9762\u677F\u7684\u5FEB\u6377\u952E\uFF08\u5982 Mod+Shift+M\u3001Alt+M\uFF09").volatile()
 });
 var remoteInitializers = [];
+function mapReasoning(input) {
+  const efforts = Array.isArray(input?.efforts) ? input.efforts : [];
+  const normalized = efforts.filter((effort) => effort && typeof effort.id === "string" && typeof effort.name === "string").map((effort) => ({
+    id: effort.id,
+    name: effort.name,
+    ...typeof effort.description === "string" ? { description: effort.description } : {}
+  }));
+  if (normalized.length === 0) return void 0;
+  return {
+    efforts: normalized,
+    ...typeof input?.defaultEffort === "string" ? { defaultEffort: input.defaultEffort } : {}
+  };
+}
 function markRemoteMethod(methodName, fn) {
   ;
   Remote(methodName)(fn, {
@@ -17028,8 +17074,32 @@ var UiEnhancementsService = class extends Service {
     );
     return { providers: providers.filter((p) => p.id !== "") };
   }
+  /**
+   * Thinking levels of one exact model route. Resolved on demand because the
+   * adapter reports them from `resolveModelInfo`, not from the model list.
+   */
+  async reasoning(request) {
+    const provider = typeof request?.provider === "string" ? request.provider : "";
+    const model = typeof request?.model === "string" ? request.model : "";
+    if (!provider || !model) return { efforts: [], error: "\u7F3A\u5C11\u6A21\u578B\u4FE1\u606F" };
+    const llm = this.ctx.get("llm");
+    if (!llm || typeof llm.resolveModelInfo !== "function") {
+      return { efforts: [], error: "\u601D\u8003\u7EA7\u522B\u670D\u52A1\u4E0D\u53EF\u7528" };
+    }
+    try {
+      const info = await llm.resolveModelInfo(provider, model);
+      const reasoning = mapReasoning(info?.reasoning);
+      return reasoning ? { ...reasoning } : { efforts: [] };
+    } catch (error) {
+      return {
+        efforts: [],
+        error: error instanceof Error ? error.message : "\u65E0\u6CD5\u8BFB\u53D6\u601D\u8003\u7EA7\u522B"
+      };
+    }
+  }
 };
 markRemoteMethod("catalog", UiEnhancementsService.prototype.catalog);
+markRemoteMethod("reasoning", UiEnhancementsService.prototype.reasoning);
 function apply(ctx) {
   new UiEnhancementsService(ctx);
   if (typeof ctx?.typert?.register === "function") {

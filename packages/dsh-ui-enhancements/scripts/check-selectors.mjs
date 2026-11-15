@@ -9,6 +9,8 @@
  *     → the shared Modal primitive and the settings dialog shell
  *   [data-shortcut-modal="settings"]
  *     → the settings dialog (the only dialog with a registered shortcut id)
+ *   [data-composer-input]
+ *     → the conversation editor, where focus returns after the model picker
  *   .dsham_modalDialog / .dsham_sidebarCard
  *     → @michengai/dsh-archive-manager
  *   [data-dsh-market-fullscreen="true"]
@@ -39,6 +41,12 @@ const CHECKS = [
     file: ASAR,
     needle: '"presentation"',
     also: ["aria-modal"],
+    required: true,
+  },
+  {
+    hook: "[data-composer-input]",
+    file: ASAR,
+    needle: "data-composer-input",
     required: true,
   },
   {
