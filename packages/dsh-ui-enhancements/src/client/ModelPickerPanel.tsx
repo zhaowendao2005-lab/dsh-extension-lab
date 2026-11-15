@@ -139,15 +139,19 @@ export function ModelPickerPanel({
   const [query, setQuery] = React.useState('')
   const [category, setCategory] = React.useState('all')
   const [activeIndex, setActiveIndex] = React.useState(0)
+  const [focusPane, setFocusPane] = React.useState<'sidebar' | 'list'>('list')
   const [anchor, setAnchor] = React.useState<AnchorRect>(() => measureAnchor(null))
 
   const rootRef = useDismissablePopover(open, onClose)
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const sidebarRef = React.useRef<HTMLElement>(null)
+  const listRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
     if (!open) return
     setQuery('')
     setActiveIndex(0)
+    setFocusPane('list')
     const target = findComposerContainer()
     const update = () => setAnchor(measureAnchor(target))
     update()
@@ -200,9 +204,26 @@ export function ModelPickerPanel({
 
   const visible = React.useMemo(() => ranked.slice(0, LIST_LIMIT), [ranked])
 
+  const categories = React.useMemo(
+    () => ['all', ...providers.map((provider) => provider.id)],
+    [providers],
+  )
+
   React.useEffect(() => {
     setActiveIndex(0)
   }, [query, category, open])
+
+  React.useEffect(() => {
+    if (!open) return
+    const activeEl = sidebarRef.current?.querySelector<HTMLElement>('button.is-active')
+    activeEl?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, category])
+
+  React.useEffect(() => {
+    if (!open || focusPane !== 'list') return
+    const itemEl = listRef.current?.querySelector<HTMLElement>('.dsh-enh-mp-option.is-highlighted')
+    itemEl?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, focusPane, activeIndex])
 
   if (!open) return null
 
@@ -211,12 +232,84 @@ export function ModelPickerPanel({
     onClose()
   }
 
+  const stepCategory = (delta: number) => {
+    if (!categories.length) return
+    const currentIdx = Math.max(0, categories.indexOf(category))
+    const nextIdx = (currentIdx + delta + categories.length) % categories.length
+    setCategory(categories[nextIdx])
+  }
+
+  const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    const isInput = event.target === inputRef.current
+    if (event.key === 'ArrowLeft') {
+      if (
+        isInput &&
+        inputRef.current &&
+        (inputRef.current.selectionStart !== 0 || inputRef.current.selectionEnd !== 0)
+      ) {
+        return
+      }
+      if (focusPane !== 'sidebar') {
+        event.preventDefault()
+        setFocusPane('sidebar')
+      }
+      return
+    }
+
+    if (event.key === 'ArrowRight') {
+      if (
+        isInput &&
+        inputRef.current &&
+        (inputRef.current.selectionStart !== query.length ||
+          inputRef.current.selectionEnd !== query.length)
+      ) {
+        return
+      }
+      if (focusPane !== 'list') {
+        event.preventDefault()
+        setFocusPane('list')
+      }
+      return
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      if (focusPane === 'sidebar') {
+        stepCategory(1)
+      } else {
+        setActiveIndex((idx) => (visible.length ? (idx + 1) % visible.length : 0))
+      }
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (focusPane === 'sidebar') {
+        stepCategory(-1)
+      } else {
+        setActiveIndex((idx) => (visible.length ? (idx - 1 + visible.length) % visible.length : 0))
+      }
+      return
+    }
+
+    if (event.key === 'Enter') {
+      if (focusPane === 'sidebar') {
+        event.preventDefault()
+        setFocusPane('list')
+      } else if (visible[activeIndex]) {
+        event.preventDefault()
+        pick(visible[activeIndex].item)
+      }
+    }
+  }
+
   return (
     <div
       ref={rootRef}
       className="dsh-enh-mp-popover"
       role="dialog"
       aria-label="模型选择面板"
+      onKeyDown={handlePanelKeyDown}
       style={{
         left: `${anchor.left}px`,
         width: `${anchor.width}px`,
@@ -242,20 +335,6 @@ export function ModelPickerPanel({
           placeholder="模糊搜索模型，如 ds v3 / cl sonnet / gm pro"
           aria-label="模型模糊搜索"
           onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault()
-              setActiveIndex((idx) => (visible.length ? (idx + 1) % visible.length : 0))
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault()
-              setActiveIndex((idx) =>
-                visible.length ? (idx - 1 + visible.length) % visible.length : 0,
-              )
-            } else if (event.key === 'Enter' && visible[activeIndex]) {
-              event.preventDefault()
-              pick(visible[activeIndex].item)
-            }
-          }}
         />
         <span className="dsh-enh-mp-total">{ranked.length}</span>
         <button
@@ -281,11 +360,18 @@ export function ModelPickerPanel({
       </label>
 
       <div className="dsh-enh-mp-main">
-        <nav className="dsh-enh-mp-sidebar" aria-label="模型提供商">
+        <nav
+          ref={sidebarRef}
+          className={`dsh-enh-mp-sidebar ${focusPane === 'sidebar' ? 'is-pane-focused' : ''}`}
+          aria-label="模型提供商"
+        >
           <button
             type="button"
             className={category === 'all' ? 'is-active' : ''}
-            onClick={() => setCategory('all')}
+            onClick={() => {
+              setCategory('all')
+              setFocusPane('list')
+            }}
           >
             <span className="dsh-enh-mp-sidebar-label">全部</span>
             <span className="dsh-enh-mp-sidebar-count">{allOptions.length}</span>
@@ -295,7 +381,10 @@ export function ModelPickerPanel({
               type="button"
               key={provider.id}
               className={category === provider.id ? 'is-active' : ''}
-              onClick={() => setCategory(provider.id)}
+              onClick={() => {
+                setCategory(provider.id)
+                setFocusPane('list')
+              }}
               title={provider.error || provider.name}
             >
               <span className="dsh-enh-mp-sidebar-label">{provider.name}</span>
@@ -304,7 +393,12 @@ export function ModelPickerPanel({
           ))}
         </nav>
 
-        <div className="dsh-enh-mp-list" role="listbox" aria-label="可用模型">
+        <div
+          ref={listRef}
+          className={`dsh-enh-mp-list ${focusPane === 'list' ? 'is-pane-focused' : ''}`}
+          role="listbox"
+          aria-label="可用模型"
+        >
           {loading && allOptions.length === 0 ? (
             <p className="dsh-enh-mp-empty">正在加载模型目录…</p>
           ) : error && allOptions.length === 0 ? (
@@ -356,7 +450,7 @@ export function ModelPickerPanel({
       </div>
 
       <div className="dsh-enh-mp-footer">
-        <span>↑↓ 选择 · Enter 确认 · Esc 关闭</span>
+        <span>↑↓ 选择 · ←→ 切换栏 · Enter 确认 · Esc 关闭</span>
         <span>{category === 'all' ? '全部提供商' : providers.find((p) => p.id === category)?.name ?? category}</span>
       </div>
     </div>
