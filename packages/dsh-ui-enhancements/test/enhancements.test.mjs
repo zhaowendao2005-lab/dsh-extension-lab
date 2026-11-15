@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import vm from 'node:vm'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -20,6 +21,30 @@ test('built host and client bundles exist and export expected symbols', async ()
   assert.match(clientCode, /settings\.section/)
   assert.match(clientCode, /dsh-enh-mp-popover/)
   assert.match(clientCode, /dsh-enh-settings/)
+
+  let registered = null
+  const sandbox = {
+    window: {
+      __ModuleLoader__: {
+        load(mod) {
+          registered = mod
+        },
+      },
+    },
+    document: {},
+    console,
+  }
+  sandbox.globalThis = sandbox
+  sandbox.self = sandbox
+  vm.runInNewContext(clientCode, sandbox)
+  assert.equal(registered?.id, 'dsh-ui-enhancements')
+  const plugin = registered.factory(() => ({
+    createElement() {},
+    Fragment: Symbol('Fragment'),
+    createRoot() {},
+  }))
+  assert.equal(plugin.name, 'dsh-ui-enhancements')
+  assert.deepEqual(Array.from(plugin.inject), ['slots'])
 })
 
 test('fuzzyRank supports subsequence matching, aliases, and highlight positions', async () => {

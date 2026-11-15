@@ -62,7 +62,7 @@ const clientResult = await build({
   target: 'es2022',
   minify: !isDev,
   sourcemap: true,
-  external: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'zod'],
+  external: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'],
   loader: { '.css': 'text' },
   define: {
     'process.env.NODE_ENV': isDev ? '"development"' : '"production"',
