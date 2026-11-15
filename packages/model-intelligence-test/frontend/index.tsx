@@ -30,7 +30,7 @@ const ID = 'model-intelligence-test';
 /** Every Host method the client may call; each response is unwrapped from the Typert envelope. */
 const METHODS = [
  'catalog', 'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear', 'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
- 'a6BridgeInfo', 'a6Selections', 'a6Preferences', 'a6PreferencesSave', 'a6Create', 'a6Action',
+ 'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6Action',
 ] as const satisfies readonly (keyof ModelIntelligenceTransport)[];
 function transportOf(remote: Record<string, (request?: unknown) => Promise<unknown>>): ModelIntelligenceTransport {
  const entries = METHODS.map(name => [name, async (request?: unknown) => unwrapRemote(await (request === undefined ? remote[name]() : remote[name](request)))]);

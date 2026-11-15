@@ -97,7 +97,7 @@ export class RecordsService {
     if (!attempt) return;
     let view;
     try { view = this.engine.status(jobId); } catch { return; }
-    const status = settled ? (view.status === 'cancelled' ? 'cancelled' : 'done') : 'running';
+    const status = settled ? (view.status === 'cancelled' ? 'cancelled' : view.status === 'failed' ? 'failed' : 'done') : 'running';
     await table.put(attemptId, { ...attempt, status, view, finishedAt: settled ? view.finishedAt ?? Date.now() : null });
     this.bump();
   }

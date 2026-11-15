@@ -16,7 +16,7 @@ var relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), mode
 var modelRef = z.strictObject({ provider: id(128), id: id(256) });
 var recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional() });
 var a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional() });
-var a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive(), provider: id(128) })).min(1).max(8);
+var a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1).max(8);
 var options = z.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
 var schemas = {
   recordsList: z.strictObject({ revision: z.number().int().min(0).optional() }),
@@ -36,11 +36,10 @@ var schemas = {
   attemptConfigure: z.strictObject({ attemptId: id(), concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() }),
   attemptRetry: z.strictObject({ attemptId: id(), model: modelRef }),
   customSave: z.strictObject({ recordId: id(), snapshot: z.strictObject({ ended: z.boolean(), runs: z.array(z.json()).max(64) }) }),
+  a6ConfigSave: z.strictObject({ accessToken: z.string().max(512).optional(), userId: z.string().max(40).optional() }),
   a6Selections: z.strictObject({ revision: z.number().int().nonnegative().optional() }),
-  a6Preferences: z.strictObject({ selectionId: id() }),
-  a6PreferencesSave: z.strictObject({ selectionId: id(), slots: a6Slots, timeoutMs: timeoutMs.optional() }),
   a6Create: z.strictObject({ selectionId: id(), name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
-  a6Action: z.strictObject({ selectionId: id(), tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive(), operation: z.enum(["pin", "route", "restore"]) })
+  a6Action: z.strictObject({ selectionId: id(), tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive(), operation: z.enum(["pin", "restore"]) })
 };
 var DESCRIPTIONS = {
   catalog: "Read configured provider/model metadata; does not invoke inference or endpoint discovery.",
@@ -54,12 +53,13 @@ var DESCRIPTIONS = {
   attemptConfigure: "Change concurrency / request deadline / channel lane of an attempt (live, non-preemptive) and the record defaults.",
   attemptRetry: "Re-run the failed samples of one model; completed samples are kept.",
   customSave: "Persist a simulated custom-task snapshot; no inference is performed.",
-  a6BridgeInfo: "Read the owner-only loopback pairing configuration and account-bound page connection status.",
-  a6Selections: "Read selections sent by the paired a6api userscript. Does not start inference.",
-  a6Preferences: "Read account-scoped test-token to DSH-provider mappings chosen by the user.",
-  a6PreferencesSave: "Save the user-selected token/provider mappings for this account and runtime profile.",
-  a6Create: "Create an a6api-specific fingerprint attempt using user-selected test token/provider slots (real inference).",
-  a6Action: "Execute one explicit pin, route-add or restore action for a selected test token through the paired page."
+  a6Config: "Read a6api credential state (masked access token, intake token, loopback origin); never returns the access token.",
+  a6ConfigSave: "Verify and store the a6api access token plus user id in Host storage.",
+  a6IntakeRotate: "Rotate the intake token the userscript uses; received selections stay valid.",
+  a6Tokens: "List the account test tokens from a6api (id and name only, no key material).",
+  a6Selections: "Read selections sent by the a6api userscript. Does not start inference.",
+  a6Create: "Create an a6api-specific fingerprint attempt using user-selected test token slots (real inference).",
+  a6Action: "Pin, route or restore one explicit channel for a selected test token, using the stored access token."
 };
 var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z.json() });
 var input = (symbol, schema) => {
@@ -125,6 +125,161 @@ function tokenIdentity(meta, tokenId) {
 
 // backend/fingerprint/engine.js
 import { AssistantStreamAccumulator, BlockAssembler, createUserMessage, isTokenDelta, isVisibleChunk, chunkHasVisibleText, assistantStreamFirstTokenTime } from "@deepseek-ai/dsh-llm";
+
+// backend/a6/transport.js
+var ENDPOINT = "https://api.a6api.vip";
+var ChannelError = class extends Error {
+  constructor(message, facts) {
+    super(message);
+    this.name = "ChannelError";
+    this.failure = facts;
+  }
+};
+function build(api, { key, model, prompt }) {
+  if (api === "messages") {
+    return {
+      url: `${ENDPOINT}/v1/messages`,
+      headers: { "content-type": "application/json", accept: "text/event-stream", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: { model, max_tokens: 32e3, stream: true, messages: [{ role: "user", content: prompt }] }
+    };
+  }
+  return {
+    url: `${ENDPOINT}/v1/chat/completions`,
+    headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${key}` },
+    body: { model, stream: true, stream_options: { include_usage: true }, messages: [{ role: "user", content: prompt }] }
+  };
+}
+async function* frames(body) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for await (const chunk of body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let index;
+    while ((index = buffer.search(/\r?\n\r?\n/)) !== -1) {
+      const block = buffer.slice(0, index);
+      buffer = buffer.slice(index).replace(/^\r?\n\r?\n/, "");
+      const data = [];
+      for (const line of block.split(/\r?\n/)) if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+      if (data.length) yield data.join("\n");
+    }
+  }
+}
+function classify(status, body, response) {
+  let payload = null;
+  try {
+    payload = body ? JSON.parse(body) : null;
+  } catch {
+  }
+  const error = payload?.error ?? payload;
+  const code = typeof error?.code === "string" ? error.code : typeof error?.type === "string" ? error.type : `http-${status}`;
+  const message = typeof error?.message === "string" ? error.message : `HTTP ${status}`;
+  const header = Number(response?.headers?.get?.("retry-after"));
+  const providerRetryAfterMs = Number.isFinite(header) && header > 0 ? Math.min(header, 300) * 1e3 : void 0;
+  const platformQuota = status === 429 && (code === "specific_channel_rate_limited" || /广场自助测试|每个账号每分钟/.test(`${message} ${body ?? ""}`));
+  return {
+    status,
+    code,
+    message,
+    providerRetryAfterMs,
+    kind: status === 429 ? platformQuota ? "platform-quota" : "rate-limited" : status >= 500 ? "upstream-unavailable" : "request-failed"
+  };
+}
+var TEXT = 1;
+var REASONING = 0;
+function stopReason(value) {
+  if (value === "length" || value === "max_tokens") return "max-tokens";
+  if (value === "tool_calls" || value === "tool_use") return "tool-calls";
+  return "stop";
+}
+function usageOf(payload, api) {
+  const raw = api === "messages" ? payload?.usage ?? payload?.message?.usage : payload?.usage;
+  if (!raw) return null;
+  const inputTokens = Number(raw.input_tokens ?? raw.prompt_tokens ?? 0);
+  const outputTokens = Number(raw.output_tokens ?? raw.completion_tokens ?? 0);
+  if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) return null;
+  const cacheReadTokens = Number(raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens ?? 0);
+  const reasoningTokens = Number(raw.output_tokens_details?.reasoning_tokens ?? 0);
+  return {
+    inputTokens,
+    outputTokens,
+    ...cacheReadTokens > 0 ? { cacheReadTokens } : {},
+    ...reasoningTokens > 0 ? { reasoningTokens } : {}
+  };
+}
+async function* openChannelStream({ key, model, prompt, api = "chat", signal }) {
+  const spec = build(api, { key, model, prompt });
+  let response;
+  try {
+    response = await fetch(spec.url, { method: "POST", headers: spec.headers, body: JSON.stringify(spec.body), signal });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new ChannelError("\u65E0\u6CD5\u8FDE\u63A5 a6api", { message: error?.message ?? "network error", code: "network", status: void 0 });
+  }
+  if (!response.ok || !response.body) {
+    let body = "";
+    try {
+      body = (await response.text()).slice(0, 2e3);
+    } catch {
+    }
+    const verdict = classify(response.status, body, response);
+    throw new ChannelError(verdict.message, {
+      message: `${verdict.message}\uFF08HTTP ${verdict.status}\uFF09`,
+      code: verdict.code,
+      status: verdict.status,
+      kind: verdict.kind,
+      detail: body.slice(0, 600),
+      providerRetryAfterMs: verdict.providerRetryAfterMs
+    });
+  }
+  let failure2 = null;
+  let reason = "stop";
+  let usage = null;
+  let sawText = false;
+  for await (const data of frames(response.body)) {
+    if (data === "[DONE]") break;
+    let payload;
+    try {
+      payload = JSON.parse(data);
+    } catch {
+      continue;
+    }
+    if (api === "messages") {
+      if (payload.type === "content_block_delta") {
+        if (payload.delta?.type === "thinking_delta") yield { type: "reasoning-delta", index: REASONING, text: payload.delta.thinking ?? "" };
+        else if (typeof payload.delta?.text === "string" && payload.delta.text) {
+          sawText = true;
+          yield { type: "text-delta", index: TEXT, text: payload.delta.text };
+        }
+      } else if (payload.type === "message_delta") {
+        if (payload.delta?.stop_reason) reason = stopReason(payload.delta.stop_reason);
+      } else if (payload.type === "error") {
+        failure2 = { message: String(payload.error?.message ?? "stream error").slice(0, 300), code: String(payload.error?.type ?? "stream_error") };
+      }
+      usage = usageOf(payload, "messages") ?? usage;
+      continue;
+    }
+    if (payload.error) {
+      failure2 = { message: String(payload.error.message ?? "stream error").slice(0, 300), code: String(payload.error.code ?? payload.error.type ?? "stream_error") };
+      continue;
+    }
+    const choice = payload.choices?.[0];
+    const reasoning = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning;
+    if (typeof reasoning === "string" && reasoning) yield { type: "reasoning-delta", index: REASONING, text: reasoning };
+    if (typeof choice?.delta?.content === "string" && choice.delta.content) {
+      sawText = true;
+      yield { type: "text-delta", index: TEXT, text: choice.delta.content };
+    }
+    if (choice?.finish_reason) reason = stopReason(choice.finish_reason);
+    usage = usageOf(payload, "chat") ?? usage;
+  }
+  if (usage) yield { type: "usage", usage };
+  yield { type: "finish", reason: failure2 ? { kind: "error", failure: failure2 } : { kind: reason } };
+  if (!sawText && !failure2) {
+    throw new ChannelError("\u6E20\u9053\u6CA1\u6709\u8FD4\u56DE\u4EFB\u4F55\u5185\u5BB9", { message: "stream ended without text", code: "empty-stream", status: 200, kind: "empty-stream" });
+  }
+}
+
+// backend/fingerprint/engine.js
 var DEFAULT_CONCURRENCY = 6;
 var MAX_CONCURRENCY = 6;
 var REQUESTS_PER_MODEL = 3;
@@ -167,9 +322,9 @@ function languageOf(prompt) {
 var finite = (value) => Number.isFinite(value) ? value : null;
 var tokens = (value) => Number.isFinite(value) && value >= 0 ? value : null;
 var clampInt = (value, min, max) => Math.min(max, Math.max(min, Math.round(value)));
-function requestFailure(failure) {
-  const status = failure?.status;
-  if (failure?.kind === "platform-quota") return "a6api \u5E7F\u573A\u81EA\u52A9\u6D4B\u8BD5\u914D\u989D\u5DF2\u6EE1\uFF08\u6BCF\u8D26\u53F7 5 \u6B21/\u5206\u949F\u3001\u6BCF\u6E20\u9053 20 \u6B21/\u5206\u949F\uFF09\xB7 \u672C\u6B21\u672A\u53D1\u5F80\u5546\u5BB6\u3001\u672A\u6263\u8D39";
+function requestFailure(failure2) {
+  const status = failure2?.status;
+  if (failure2?.kind === "platform-quota") return "a6api \u5E7F\u573A\u81EA\u52A9\u6D4B\u8BD5\u914D\u989D\u5DF2\u6EE1\uFF08\u6BCF\u8D26\u53F7 5 \u6B21/\u5206\u949F\u3001\u6BCF\u6E20\u9053 20 \u6B21/\u5206\u949F\uFF09\xB7 \u672C\u6B21\u672A\u53D1\u5F80\u5546\u5BB6\u3001\u672A\u6263\u8D39";
   if (status === 401 || status === 403) return "\u4F9B\u5E94\u5546\u8BA4\u8BC1\u6216\u6743\u9650\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u5F53\u524D\u8FD0\u884C\u65F6\u7684\u6A21\u578B\u914D\u7F6E";
   if (status === 429) return "\u4F9B\u5E94\u5546\u9650\u6D41\u6216\u914D\u989D\u4E0D\u8DB3\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
   if (status === 404) return "\u4F9B\u5E94\u5546\u672A\u627E\u5230\u6240\u9009\u6A21\u578B";
@@ -181,12 +336,12 @@ var SECRET_PATTERNS = [
   /\b(?:api[-_]?key|authorization|x-api-key|token)["'\s:=]{1,4}[^\s"',}]+/gi,
   /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi
 ];
-function redact(text2) {
-  if (typeof text2 !== "string" || !text2) return null;
-  return SECRET_PATTERNS.reduce((value, pattern) => value.replace(pattern, (match) => /^bearer/i.test(match) ? "Bearer [redacted]" : match.length > 12 ? `${match.slice(0, 6)}\u2026[redacted]` : "[redacted]"), text2).slice(0, 8e3);
+function redact(text3) {
+  if (typeof text3 !== "string" || !text3) return null;
+  return SECRET_PATTERNS.reduce((value, pattern) => value.replace(pattern, (match) => /^bearer/i.test(match) ? "Bearer [redacted]" : match.length > 12 ? `${match.slice(0, 6)}\u2026[redacted]` : "[redacted]"), text3).slice(0, 8e3);
 }
-function failureDetail(failure, source) {
-  const facts = failure?.failure ?? failure;
+function failureDetail(failure2, source) {
+  const facts = failure2?.failure ?? failure2;
   const message = redact(typeof facts === "string" ? facts : facts?.message);
   return {
     source,
@@ -194,7 +349,7 @@ function failureDetail(failure, source) {
     code: typeof facts?.code === "string" ? facts.code : null,
     status: Number.isInteger(facts?.status) ? facts.status : null,
     text: typeof facts === "string" ? null : redact(facts?.detail ?? facts?.message ?? null),
-    stack: typeof failure?.stack === "string" ? redact(failure.stack) : null
+    stack: typeof failure2?.stack === "string" ? redact(failure2.stack) : null
   };
 }
 function publicAnalysis(a) {
@@ -239,7 +394,7 @@ var FingerprintEngine = class {
   /**
    * @param hooks.onTouch(job)   every revision bump (callers throttle persistence themselves)
    * @param hooks.onSettled(job) the job left `running` (done / cancelled / failed)
-   * @param hooks.bridge paired a6api site-command bridge (no API keys)
+   * @param hooks.a6 pin/unpin/key calls into a6api; the engine never holds credentials
    */
   constructor(ctx, hooks = {}) {
     this.ctx = ctx;
@@ -289,14 +444,12 @@ var FingerprintEngine = class {
     const llm = this.ctx.get("llm");
     if (dshModels.length || a6api) {
       if (!llm) throw new FingerprintError("unavailable", "\u5F53\u524D\u8FD0\u884C\u65F6\u6CA1\u6709\u53EF\u7528\u7684 LLM \u670D\u52A1");
-      if (typeof llm.prepareCall !== "function") throw new FingerprintError("incompatible-runtime", "\u5F53\u524D DSH \u4E0D\u652F\u6301\u5B98\u65B9 LLM \u8BF7\u6C42\u51C6\u5907\u63A5\u53E3\uFF0C\u8BF7\u5347\u7EA7\u8FD0\u884C\u65F6");
+      if (dshModels.length && typeof llm.prepareCall !== "function") throw new FingerprintError("incompatible-runtime", "\u5F53\u524D DSH \u4E0D\u652F\u6301\u5B98\u65B9 LLM \u8BF7\u6C42\u51C6\u5907\u63A5\u53E3\uFF0C\u8BF7\u5347\u7EA7\u8FD0\u884C\u65F6");
     }
     this.starting += 1;
     try {
-      if (a6api) {
-        this.hooks.bridge.assertReady(a6api, a6api.slots);
-        const availableProviders = new Set(llm.listProviders().map((provider) => provider.id));
-        if (a6api.slots.some((slot) => !availableProviders.has(slot.provider))) throw new FingerprintError("unknown-model", "\u6240\u9009 DSH \u63D0\u4F9B\u5546\u5DF2\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
+      if (a6api && a6api.slots.some((slot) => !Number.isSafeInteger(slot.tokenId))) {
+        throw new FingerprintError("invalid-slots", "\u6D4B\u8BD5\u4EE4\u724C\u69FD\u4F4D\u65E0\u6548\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
       }
       const providers = dshModels.length ? new Set(llm.listProviders().map((provider) => provider.id)) : /* @__PURE__ */ new Set();
       for (const provider of new Set(dshModels.map((m) => m.provider))) {
@@ -487,7 +640,7 @@ var FingerprintEngine = class {
   }
   dispose() {
     this.disposed = true;
-    this.hooks = { bridge: this.hooks.bridge };
+    this.hooks = { a6: this.hooks.a6 };
     for (const job of this.jobs.values()) this.cancel(job.id);
     this.jobs.clear();
     this.loaded = void 0;
@@ -600,10 +753,7 @@ var FingerprintEngine = class {
     for (const run of job.runs) this.maybeAnalyze(job, run);
     if (job.status !== "running" || signal.aborted) return;
     if (job.pending.length > 0 || job.active.size > 0) return;
-    job.status = "done";
-    job.finishedAt = Date.now();
-    this.touch(job);
-    this.settle(job);
+    this.complete(job);
   }
   async runModel(job, llm, run) {
     if (job.controller.signal.aborted) return;
@@ -630,32 +780,33 @@ var FingerprintEngine = class {
       const identity = tokenIdentity(job.a6api, slot.tokenId);
       if (!await this.tokenSlots.acquire(identity, signal)) return;
       try {
+        let key;
+        try {
+          key = await this.hooks.a6.key(slot.tokenId);
+        } catch (error) {
+          if (!signal.aborted) this.failJob(job, error);
+          return;
+        }
         while (job.pending.length && !signal.aborted) {
           const run = job.pending.shift();
-          run.callProvider = slot.provider;
           run.slotTokenId = slot.tokenId;
           const queued = run.samples.filter((sample) => sample.state === "queued");
           if (!queued.length) continue;
-          const leaseId = randomUUID();
-          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId, leaseId };
+          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId };
           let attemptedPin = false;
           try {
-            run.routing = "waiting-page";
-            this.touch(job);
-            if (this.hooks.bridge.waitReady) await this.hooks.bridge.waitReady(job.a6api, [slot], signal);
-            else this.hooks.bridge.assertReady(job.a6api, [slot]);
             run.routing = "pinning";
             this.touch(job);
             if (signal.aborted) break;
             attemptedPin = true;
-            const ack = await this.hooks.bridge.execute(job.a6api, { ...target, operation: "pin" });
-            if (!ack.verified) throw new FingerprintError("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u786E\u8BA4\uFF0C\u672A\u53D1\u9001\u91C7\u6837\u8BF7\u6C42");
+            const pinned = await this.hooks.a6.pin(target);
+            if (!pinned?.routeEffective) throw new FingerprintError("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u751F\u6548\uFF0C\u672A\u53D1\u9001\u91C7\u6837\u8BF7\u6C42");
             if (signal.aborted) break;
             run.routing = "sampling";
             this.touch(job);
             if (!await this.acquire(signal, queued.length)) break;
             try {
-              const settled = await Promise.allSettled(queued.map((sample) => this.sample(job, llm, run, sample)));
+              const settled = await Promise.allSettled(queued.map((sample) => this.sample(job, llm, run, sample, key)));
               const rejected = settled.find((item) => item.status === "rejected");
               if (rejected) throw rejected.reason;
             } finally {
@@ -668,12 +819,11 @@ var FingerprintEngine = class {
               run.routing = "restoring";
               this.touch(job);
               try {
-                const restored = await this.hooks.bridge.execute(job.a6api, { ...target, operation: "restore" });
-                if (restored.conflict || !restored.restored && !restored.skipped) throw new FingerprintError("restore-unverified", "\u56FA\u5B9A\u5173\u7CFB\u672A\u6062\u590D\uFF0C\u8BF7\u68C0\u67E5 a6api \u9875\u9762");
+                await this.hooks.a6.unpin(target);
                 run.routing = "restored";
               } catch (error) {
                 run.routing = "restore-failed";
-                run.error = { stage: "finalizing", message: "\u56FA\u5B9A\u5173\u7CFB\u6062\u590D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5 a6api \u9875\u9762\u540E\u91CD\u65B0\u8FDE\u63A5\uFF1B\u672C\u6B21\u6D4B\u8BD5\u5DF2\u505C\u6B62\u9886\u53D6\u4EFB\u52A1", detail: failureDetail(error, "restore") };
+                run.error = { stage: "finalizing", message: "\u56FA\u5B9A\u5173\u7CFB\u6062\u590D\u5931\u8D25\uFF0C\u8BF7\u5230 a6api \u624B\u5DE5\u89E3\u9664\u56FA\u5B9A\uFF1B\u672C\u6B21\u6D4B\u8BD5\u5DF2\u505C\u6B62\u9886\u53D6\u4EFB\u52A1", detail: failureDetail(error, "restore") };
                 this.touch(job);
                 this.failJob(job, error);
               }
@@ -689,7 +839,15 @@ var FingerprintEngine = class {
     await Promise.allSettled(workers);
     if (job.controller.signal.aborted) {
       if (job.status === "running") job.status = "cancelled";
-    } else job.status = "done";
+      job.finishedAt = Date.now();
+      this.touch(job);
+      this.settle(job);
+    } else this.complete(job);
+  }
+  /** Publish the terminal status: a job with no surviving model is a failed job, not a finished one. */
+  complete(job) {
+    if (job.status !== "running") return;
+    job.status = job.runs.length > 0 && job.runs.every((run) => run.stage !== "completed") ? "failed" : "done";
     job.finishedAt = Date.now();
     this.touch(job);
     this.settle(job);
@@ -705,7 +863,7 @@ var FingerprintEngine = class {
     run.error = { stage: "finalizing", message: error?.message ?? "a6api \u7AD9\u70B9\u64CD\u4F5C\u5931\u8D25", detail: failureDetail(error, source) };
     this.touch(job);
   }
-  failJob(job, failure) {
+  failJob(job, failure2) {
     if (job.status !== "running") return;
     job.controller.abort();
     for (const run of job.runs) {
@@ -717,13 +875,13 @@ var FingerprintEngine = class {
         this.finishTiming(sample);
         sample.state = "failed";
         sample.error = "\u6307\u7EB9\u4EFB\u52A1\u6267\u884C\u4E2D\u65AD";
-        sample.errorDetail = { ...failureDetail(failure, "scheduler"), message: sample.error };
+        sample.errorDetail = { ...failureDetail(failure2, "scheduler"), message: sample.error };
       }
       run.stage = "failed";
       run.error = {
         stage: "streaming",
         message: "\u6307\u7EB9\u4EFB\u52A1\u6267\u884C\u4E2D\u65AD\uFF0C\u8BF7\u91CD\u65B0\u521B\u5EFA\u6D4B\u8BD5",
-        detail: failureDetail(failure, "scheduler")
+        detail: failureDetail(failure2, "scheduler")
       };
     }
     job.pending = [];
@@ -769,16 +927,24 @@ var FingerprintEngine = class {
     this.armTimeout(sample);
     this.refreshStage(run);
     this.touch(job);
-    let truncated = false, failure = null, rawFailure = null, failureSource = "prepare";
+    let truncated = false, failure2 = null, rawFailure = null, failureSource = "prepare";
     try {
-      const prepared = await llm.prepareCall({ provider: run.callProvider ?? run.provider, model: run.model }, signal);
-      signal.throwIfAborted();
-      const message = createUserMessage({
-        source: { kind: "user" },
-        content: [{ type: "text", text: job.challenges[sample.index].prompt }]
-      });
+      const prompt = job.challenges[sample.index].prompt;
+      let source;
+      if (run.relay) {
+        if (!key) throw new FingerprintError("key-unavailable", "\u6D4B\u8BD5\u4EE4\u724C\u5BC6\u94A5\u4E0D\u53EF\u7528");
+        source = (this.hooks.openStream ?? openChannelStream)({ key, model: run.model, prompt, api: run.relay.api, signal });
+      } else {
+        const prepared = await llm.prepareCall({ provider: run.callProvider ?? run.provider, model: run.model }, signal);
+        signal.throwIfAborted();
+        source = prepared.stream({
+          ...prepared.config,
+          signal,
+          messages: [createUserMessage({ source: { kind: "user" }, content: [{ type: "text", text: prompt }] })]
+        });
+      }
       failureSource = "stream";
-      for await (const chunk of prepared.stream({ ...prepared.config, messages: [message], signal })) {
+      for await (const chunk of source) {
         if (signal.aborted) break;
         const timed = events.push({ time: Date.now(), chunk });
         assembler.push(timed.chunk);
@@ -812,12 +978,12 @@ var FingerprintEngine = class {
         if (finish.kind === "max-tokens") truncated = true;
         else if (finish.kind === "error" || finish.kind === "aborted") {
           rawFailure = finish.failure;
-          failure = finish.kind === "error" ? requestFailure(rawFailure) : "\u4F9B\u5E94\u5546\u4E2D\u65AD\u4E86\u6A21\u578B\u8BF7\u6C42";
-        } else if (finish.kind === "tool-calls") failure = "\u6A21\u578B\u5C1D\u8BD5\u8C03\u7528\u5DE5\u5177\uFF0C\u56DE\u7B54\u65E0\u6548";
+          failure2 = finish.kind === "error" ? requestFailure(rawFailure) : "\u4F9B\u5E94\u5546\u4E2D\u65AD\u4E86\u6A21\u578B\u8BF7\u6C42";
+        } else if (finish.kind === "tool-calls") failure2 = "\u6A21\u578B\u5C1D\u8BD5\u8C03\u7528\u5DE5\u5177\uFF0C\u56DE\u7B54\u65E0\u6548";
       }
     } catch (error) {
       if (!textLimitController.signal.aborted) {
-        failure = requestFailure(error?.failure ?? error);
+        failure2 = requestFailure(error?.failure ?? error);
         rawFailure = error;
       }
     } finally {
@@ -834,10 +1000,10 @@ var FingerprintEngine = class {
       sample.state = "failed";
       sample.error = `\u8BF7\u6C42\u8D85\u65F6\uFF08${Math.round(sample.timeoutMs / 1e3)} \u79D2\uFF09`;
       sample.errorDetail = { source: "timeout", message: sample.error, code: "timeout", status: null, text: null, stack: null };
-    } else if (failure) {
+    } else if (failure2) {
       sample.state = "failed";
-      sample.error = failure;
-      sample.errorDetail = { ...failureDetail(rawFailure, failureSource), message: failure };
+      sample.error = failure2;
+      sample.errorDetail = { ...failureDetail(rawFailure, failureSource), message: failure2 };
     } else {
       sample.state = truncated ? "truncated" : "complete";
       sample.errorDetail = null;
@@ -931,300 +1097,12 @@ var FingerprintEngine = class {
 import { Service } from "@deepseek-ai/cordis";
 import { bindTypertRemote, Remote, RemoteError, principalOf } from "@deepseek-ai/dsh-typert-protocol";
 
-// backend/a6/bridge.js
-import { randomBytes, randomUUID as randomUUID2, timingSafeEqual } from "node:crypto";
-var PREFIX = "/mit-a6/bridge/";
-var SITE_ORIGINS = /* @__PURE__ */ new Set(["https://a6api.vip", "https://www.a6api.vip"]);
-var MAX_BODY = 256e3;
-var ONLINE_MS = 15e3;
-var COMMAND_MS = 45e3;
-var clone = (value) => JSON.parse(JSON.stringify(value));
-var secret = () => randomBytes(32).toString("base64url");
-var equal = (left, right) => {
-  if (typeof left !== "string" || typeof right !== "string") return false;
-  const a = Buffer.from(left), b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
+// backend/a6/errors.js
 var A6Error = class extends Error {
   constructor(code, message) {
     super(message);
+    this.name = "A6Error";
     this.code = code;
-  }
-};
-function positive(value, label) {
-  if (!Number.isSafeInteger(value) || value <= 0) throw new A6Error("invalid-input", `${label}\u65E0\u6548`);
-  return value;
-}
-function text(value, max = 256) {
-  if (typeof value !== "string" || !value.trim() || value.length > max) throw new A6Error("invalid-input", "\u5B57\u6BB5\u4E3A\u7A7A\u6216\u8D85\u957F");
-  return value.trim();
-}
-function channelOf(item) {
-  return {
-    listingId: Number.isSafeInteger(item?.listingId) && item.listingId >= 0 ? item.listingId : 0,
-    channelId: positive(item?.channelId, "\u6E20\u9053 ID"),
-    supplierId: Number.isSafeInteger(item?.supplierId) && item.supplierId >= 0 ? item.supplierId : 0,
-    model: text(item?.model),
-    ...Object.fromEntries(["supplierName", "channelName", "brand"].map((key) => [key, typeof item?.[key] === "string" ? item[key].slice(0, 256) : ""]))
-  };
-}
-function channelKey(item) {
-  return `${item.listingId}:${item.channelId}:${item.supplierId}:${item.model}`;
-}
-function tokensOf(input2) {
-  if (!Array.isArray(input2) || input2.length > 32) throw new A6Error("invalid-input", "\u6D4B\u8BD5\u4EE4\u724C\u5217\u8868\u65E0\u6548");
-  const seen = /* @__PURE__ */ new Set();
-  return input2.map((item) => ({ id: positive(item?.id, "\u6D4B\u8BD5\u4EE4\u724C ID"), name: String(item?.name ?? "").slice(0, 120) })).filter((item) => {
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
-    return true;
-  });
-}
-var A6Bridge = class {
-  constructor({ origin = "", nativeUrl = "dsh://open", clock = Date.now } = {}) {
-    this.origin = origin.replace(/\/$/, "");
-    this.nativeUrl = nativeUrl;
-    this.now = clock;
-    this.capability = secret();
-    this.connections = /* @__PURE__ */ new Map();
-    this.selections = /* @__PURE__ */ new Map();
-    this.commands = /* @__PURE__ */ new Map();
-    this.revision = 1;
-    this.disposed = false;
-    this.ready = Promise.resolve();
-    this.recovered = /* @__PURE__ */ new Map();
-    this.notApplied = /* @__PURE__ */ new Set();
-  }
-  attachStorage(storage) {
-    this.ready = storage.managed().then((domain) => {
-      if (!domain) throw new A6Error("storage-unavailable", "a6api \u914D\u7F6E\u5B58\u50A8\u4E0D\u53EF\u7528");
-      this.leaseTable = domain.table("auth");
-      for (const [key, value] of this.leaseTable.entries()) if (key.startsWith("lease:") && value.meta && value.command) this.recovered.set(key, value);
-    });
-    this.ready.catch(() => {
-    });
-  }
-  recover(connection) {
-    for (const [key, lease] of this.recovered) {
-      if (lease.meta.accountId !== connection.accountId || lease.meta.siteOrigin !== connection.siteOrigin || lease.recovering) continue;
-      lease.recovering = true;
-      void this.execute({ ...lease.meta, connectionId: connection.id }, lease.command).then((result) => {
-        if (!result.conflict && (result.restored || result.skipped)) this.recovered.delete(key);
-      }).catch(() => {
-      }).finally(() => {
-        lease.recovering = false;
-      });
-    }
-  }
-  info() {
-    return {
-      configuration: { origin: this.origin, capability: this.capability },
-      nativeSupported: Boolean(this.nativeUrl),
-      connected: [...this.connections.values()].some((connection) => this.online(connection)),
-      connections: [...this.connections.values()].map((connection) => ({ id: connection.id, accountId: connection.accountId, siteOrigin: connection.siteOrigin, online: this.online(connection) }))
-    };
-  }
-  online(connection) {
-    return connection && this.now() - connection.lastSeen < ONLINE_MS;
-  }
-  launch(selectionId = "") {
-    const url = new URL(this.origin || "http://127.0.0.1");
-    if (selectionId) url.hash = `mit-a6-selection=${encodeURIComponent(selectionId)}`;
-    return { nativeUrl: this.nativeUrl, webUrl: url.href };
-  }
-  connect(input2) {
-    if (!SITE_ORIGINS.has(input2?.siteOrigin)) throw new A6Error("wrong-origin", "\u4EC5\u652F\u6301 a6api \u5B98\u7F51");
-    const accountId = text(String(input2?.accountId ?? ""), 32);
-    if (!/^\d+$/.test(accountId)) throw new A6Error("invalid-account", "a6api \u8D26\u53F7 ID \u65E0\u6548");
-    const pageId = text(input2?.pageId, 128);
-    for (const old of this.connections.values()) if (old.pageId === pageId) this.dropConnection(old.id);
-    if (this.connections.size >= 32) throw new A6Error("connection-limit", "\u8FDE\u63A5\u9875\u9762\u8FC7\u591A\uFF0C\u8BF7\u5173\u95ED\u4E0D\u7528\u7684\u9875\u9762\u540E\u91CD\u8BD5");
-    const connection = { id: randomUUID2(), accountId, pageId, siteOrigin: input2.siteOrigin, sessionToken: secret(), tokens: tokensOf(input2.tokens ?? []), lastSeen: this.now() };
-    this.connections.set(connection.id, connection);
-    this.revision++;
-    this.recover(connection);
-    return { connectionId: connection.id, sessionToken: connection.sessionToken, launch: this.launch() };
-  }
-  authenticate(input2, sessionToken) {
-    const connection = this.connections.get(input2?.connectionId);
-    if (!connection || !equal(connection.sessionToken, sessionToken) || String(input2?.accountId) !== connection.accountId) throw new A6Error("not-paired", "\u9875\u9762\u672A\u914D\u5BF9\u6216\u8D26\u53F7\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5");
-    connection.lastSeen = this.now();
-    return connection;
-  }
-  submit(connection, input2) {
-    if (!Array.isArray(input2.models) || !input2.models.length || input2.models.length > 64) throw new A6Error("invalid-selection", "\u6BCF\u6B21\u8BF7\u9009\u62E9 1\u201364 \u4E2A\u5F85\u6D4B\u9879");
-    const models = [...new Map(input2.models.map(channelOf).map((item) => [channelKey(item), item])).values()];
-    const tokens2 = tokensOf(input2.tokens ?? connection.tokens);
-    if (!tokens2.length) throw new A6Error("no-test-token", "\u8BF7\u5148\u5230\u4EE4\u724C\u7BA1\u7406\u9875\u9009\u62E9\u7528\u4E8E\u6D4B\u8BD5\u7684\u4EE4\u724C");
-    connection.tokens = tokens2;
-    if (this.selections.size >= 100) this.selections.delete(this.selections.keys().next().value);
-    const selection = { id: randomUUID2(), connectionId: connection.id, accountId: connection.accountId, siteOrigin: connection.siteOrigin, createdAt: this.now(), models, tokens: tokens2 };
-    this.selections.set(selection.id, selection);
-    this.revision++;
-    return { selectionId: selection.id, launch: this.launch(selection.id) };
-  }
-  list(revision) {
-    if (revision === this.revision) return { revision, unchanged: true };
-    return { revision: this.revision, selections: [...this.selections.values()].map(clone) };
-  }
-  selection(id2) {
-    const selection = this.selections.get(id2);
-    if (!selection) throw new A6Error("selection-expired", "\u7F51\u9875\u9009\u62E9\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u56DE a6api \u91CD\u65B0\u70B9\u51FB\u300C\u524D\u5F80 DSH \u6D4B\u8BD5\u300D");
-    return clone(selection);
-  }
-  connectionFor(meta) {
-    const exact = this.connections.get(meta.connectionId);
-    if (this.online(exact) && exact.accountId === meta.accountId && exact.siteOrigin === meta.siteOrigin) return exact;
-    const live = [...this.connections.values()].find((connection) => this.online(connection) && connection.accountId === meta.accountId && connection.siteOrigin === meta.siteOrigin);
-    if (!live) throw new A6Error("page-offline", "a6api \u9875\u9762\u672A\u8FDE\u63A5\u6216\u8D26\u53F7\u5DF2\u5207\u6362\uFF1B\u8BF7\u4FDD\u6301\u539F\u8D26\u53F7\u9875\u9762\u6253\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5");
-    return live;
-  }
-  assertReady(meta, slots) {
-    if ([...this.recovered.values()].some((lease) => lease.meta.accountId === meta.accountId && lease.meta.siteOrigin === meta.siteOrigin)) throw new A6Error("recovering", "\u4E0A\u6B21\u6D4B\u8BD5\u56FA\u5B9A\u5173\u7CFB\u6B63\u5728\u6062\u590D\uFF0C\u8BF7\u7A0D\u540E\u518D\u5F00\u59CB");
-    const connection = this.connectionFor(meta);
-    for (const slot of slots) if (!connection.tokens.some((token) => token.id === slot.tokenId)) throw new A6Error("token-not-selected", "\u6D4B\u8BD5\u4EE4\u724C\u5DF2\u53D6\u6D88\u9009\u62E9\uFF0C\u8BF7\u56DE\u7F51\u9875\u91CD\u65B0\u786E\u8BA4");
-    return connection;
-  }
-  poll(connection, input2 = {}) {
-    if (Array.isArray(input2.tokens)) connection.tokens = tokensOf(input2.tokens);
-    this.recover(connection);
-    return { connected: true, commands: [...this.commands.values()].filter((entry) => entry.connectionId === connection.id).map((entry) => clone(entry.command)) };
-  }
-  async ack(connection, input2) {
-    const entry = this.commands.get(input2.commandId);
-    if (!entry || entry.connectionId !== connection.id) return { ok: true, ignored: true };
-    this.commands.delete(input2.commandId);
-    clearTimeout(entry.timer);
-    if (input2.ok === true) {
-      const result = input2.result && typeof input2.result === "object" ? {
-        verified: input2.result.verified === true,
-        restored: input2.result.restored === true,
-        skipped: input2.result.skipped === true,
-        conflict: input2.result.conflict === true
-      } : {};
-      if (entry.command.operation === "restore" && !result.conflict && (result.restored || result.skipped)) {
-        await this.leaseTable?.delete(`lease:${entry.command.leaseId}`);
-      }
-      entry.resolve(result);
-    } else {
-      if (entry.command.operation === "pin" && input2.result?.notApplied === true) {
-        this.notApplied.add(entry.command.leaseId);
-        await this.leaseTable?.delete(`lease:${entry.command.leaseId}`);
-      }
-      entry.reject(new A6Error("site-operation-failed", typeof input2.error === "string" ? input2.error.slice(0, 400).replace(/\bsk-[\w-]+/g, "[redacted]") : "a6api \u7AD9\u70B9\u64CD\u4F5C\u5931\u8D25"));
-    }
-    return { ok: true };
-  }
-  async waitReady(meta, slots, signal) {
-    while (!signal.aborted && !this.disposed) {
-      try {
-        return this.assertReady(meta, slots);
-      } catch (error) {
-        if (!["page-offline", "recovering"].includes(error.code)) throw error;
-        await new Promise((resolve) => {
-          const done = () => {
-            clearTimeout(timer);
-            signal.removeEventListener("abort", done);
-            resolve();
-          };
-          const timer = setTimeout(done, 1e3);
-          signal.addEventListener("abort", done, { once: true });
-        });
-      }
-    }
-    throw new A6Error("cancelled", "\u5DF2\u53D6\u6D88");
-  }
-  async execute(meta, command, { timeoutMs: timeoutMs2 = COMMAND_MS } = {}) {
-    try {
-      if (this.disposed) throw new A6Error("disposed", "\u63D2\u4EF6\u5DF2\u5378\u8F7D");
-      await this.ready;
-      if (command.operation === "restore" && this.notApplied.delete(command.leaseId)) return { skipped: true, restored: true };
-      const connection = command.operation === "restore" ? this.connectionFor(meta) : this.assertReady(meta, [{ tokenId: command.tokenId }]);
-      if (command.operation === "pin" && this.leaseTable) {
-        const lease = { siteId: `lease:${command.leaseId}`, meta, command: { ...command, operation: "restore" } };
-        await this.leaseTable.put(lease.siteId, lease);
-      }
-      const id2 = randomUUID2();
-      return await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          this.commands.delete(id2);
-          reject(new A6Error("site-timeout", "\u7B49\u5F85\u6CB9\u7334\u6267\u884C\u64CD\u4F5C\u8D85\u65F6\uFF1B\u8BF7\u68C0\u67E5 a6api \u9875\u9762\u8FDE\u63A5\u4E0E\u56FA\u5B9A\u72B6\u6001"));
-        }, timeoutMs2);
-        this.commands.set(id2, { connectionId: connection.id, command: { ...command, id: id2 }, resolve, reject, timer });
-      });
-    } catch (error) {
-      if (command.operation === "restore" && this.leaseTable) {
-        const key = `lease:${command.leaseId}`;
-        const lease = this.leaseTable.get(key);
-        if (lease) this.recovered.set(key, lease);
-      }
-      throw error;
-    }
-  }
-  dropConnection(id2) {
-    this.connections.delete(id2);
-    for (const [commandId, entry] of this.commands) if (entry.connectionId === id2) {
-      clearTimeout(entry.timer);
-      this.commands.delete(commandId);
-      entry.reject(new A6Error("page-offline", "a6api \u9875\u9762\u5DF2\u91CD\u8FDE\u6216\u5207\u6362\u8D26\u53F7"));
-    }
-  }
-  mount(webServer) {
-    this.origin = webServer.getOrigin();
-    const url = new URL(this.origin);
-    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) throw new A6Error("loopback-required", "a6api \u6865\u63A5\u4EC5\u5141\u8BB8\u672C\u673A DSH \u670D\u52A1");
-    return webServer.register({ kind: "prefix", path: PREFIX, handler: (req, res) => this.handle(req, res) });
-  }
-  async handle(req, res) {
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    try {
-      const host = new URL(`http://${req.headers.host ?? ""}`).hostname;
-      if (!["127.0.0.1", "localhost", "[::1]"].includes(host)) throw new A6Error("wrong-host", "\u975E\u6CD5 Host");
-      if (req.headers.origin && !SITE_ORIGINS.has(req.headers.origin) && req.headers.origin !== this.origin) throw new A6Error("wrong-origin", "\u975E\u6CD5\u6765\u6E90");
-      if (req.method !== "POST") {
-        res.statusCode = 405;
-        res.end(JSON.stringify({ error: "\u4EC5\u63A5\u53D7 POST" }));
-        return;
-      }
-      if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) throw new A6Error("invalid-input", "\u9700\u8981 JSON \u8BF7\u6C42");
-      let size = 0;
-      const chunks = [];
-      for await (const chunk of req) {
-        size += chunk.length;
-        if (size > MAX_BODY) throw new A6Error("body-limit", "\u8BF7\u6C42\u8FC7\u5927");
-        chunks.push(chunk);
-      }
-      const input2 = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      const action = new URL(req.url, this.origin).pathname.slice(PREFIX.length);
-      let result;
-      if (action === "connect") {
-        if (!equal(req.headers["x-mit-capability"], this.capability)) throw new A6Error("not-paired", "\u8FDE\u63A5\u53E3\u4EE4\u4E0D\u6B63\u786E\uFF0C\u8BF7\u4ECE DSH \u91CD\u65B0\u590D\u5236\u8FDE\u63A5\u914D\u7F6E");
-        await this.ready;
-        result = this.connect(input2);
-      } else {
-        const connection = this.authenticate(input2, req.headers["x-mit-session"]);
-        if (action === "selection") result = this.submit(connection, input2);
-        else if (action === "poll") result = this.poll(connection, input2);
-        else if (action === "ack") result = await this.ack(connection, input2);
-        else throw new A6Error("not-found", "\u63A5\u53E3\u4E0D\u5B58\u5728");
-      }
-      res.end(JSON.stringify(result));
-    } catch (error) {
-      res.statusCode = error?.code === "not-paired" || error?.code === "wrong-origin" || error?.code === "wrong-host" ? 403 : 400;
-      res.end(JSON.stringify({ error: error instanceof A6Error ? error.message : "\u6865\u63A5\u8BF7\u6C42\u683C\u5F0F\u65E0\u6548", code: error?.code ?? "invalid-input" }));
-    }
-  }
-  dispose() {
-    this.disposed = true;
-    for (const entry of this.commands.values()) {
-      clearTimeout(entry.timer);
-      entry.reject(new A6Error("disposed", "\u63D2\u4EF6\u5DF2\u5378\u8F7D"));
-    }
-    this.commands.clear();
-    this.connections.clear();
-    this.selections.clear();
   }
 };
 
@@ -1247,7 +1125,6 @@ var ModelIntelligenceService = class extends Service {
     this.engine = deps.engine;
     this.records = deps.records;
     this.a6 = deps.a6;
-    this.bridge = deps.bridge;
     this.typertRemote = bindTypertRemote(this, "modelIntelligence");
     for (const initialize of remoteInitializers) initialize.call(this);
   }
@@ -1290,18 +1167,21 @@ var ModelIntelligenceService = class extends Service {
   customSave(request) {
     return this.guard(() => this.records.saveCustom(request.recordId, request.snapshot));
   }
-  // Owner-only control plane; browser pages use the paired, narrowly scoped bridge instead.
-  a6BridgeInfo() {
-    return this.guard(() => this.bridge.info());
+  // Owner-only control plane. The only page-facing surface is the one-way selection intake.
+  a6Config() {
+    return this.guard(() => this.a6.config());
+  }
+  a6ConfigSave(request) {
+    return this.guard(() => this.a6.saveConfig(request ?? {}));
+  }
+  a6IntakeRotate() {
+    return this.guard(() => this.a6.rotateIntake());
+  }
+  a6Tokens() {
+    return this.guard(() => this.a6.tokens());
   }
   a6Selections(request) {
-    return this.guard(() => this.bridge.list(request?.revision));
-  }
-  a6Preferences(request) {
-    return this.guard(() => this.a6.preferences(request));
-  }
-  a6PreferencesSave(request) {
-    return this.guard(() => this.a6.savePreferences(request));
+    return this.guard(() => this.a6.selections(request));
   }
   a6Create(request) {
     return this.guard(() => this.a6.create(request));
@@ -1356,10 +1236,11 @@ var REMOTE_METHODS = [
   "attemptConfigure",
   "attemptRetry",
   "customSave",
-  "a6BridgeInfo",
+  "a6Config",
+  "a6ConfigSave",
+  "a6IntakeRotate",
+  "a6Tokens",
   "a6Selections",
-  "a6Preferences",
-  "a6PreferencesSave",
   "a6Create",
   "a6Action"
 ];
@@ -1431,14 +1312,14 @@ var PluginStorage = class {
 };
 
 // backend/records/service.js
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { randomUUID as randomUUID2 } from "node:crypto";
 var PERSIST_THROTTLE_MS = 1500;
 var MAX_RECORDS = 500;
 var ACTIVE = /* @__PURE__ */ new Set(["queued", "running"]);
 var END_SAMPLE = /* @__PURE__ */ new Set(["complete", "truncated", "failed", "cancelled"]);
 var END_STAGE = /* @__PURE__ */ new Set(["completed", "failed", "timeout", "cancelled"]);
 var clean = (value) => JSON.parse(JSON.stringify(value ?? null));
-var short = (text2, max) => String(text2 ?? "").trim().slice(0, max);
+var short = (text3, max) => String(text3 ?? "").trim().slice(0, max);
 function interrupt(view) {
   if (!view) return view;
   const copy = clean(view);
@@ -1525,7 +1406,7 @@ var RecordsService = class {
     } catch {
       return;
     }
-    const status = settled ? view.status === "cancelled" ? "cancelled" : "done" : "running";
+    const status = settled ? view.status === "cancelled" ? "cancelled" : view.status === "failed" ? "failed" : "done" : "running";
     await table.put(attemptId, { ...attempt, status, view, finishedAt: settled ? view.finishedAt ?? Date.now() : null });
     this.bump();
   }
@@ -1586,7 +1467,7 @@ var RecordsService = class {
     })) : [];
     if (!models.length || models.length > 64) throw new FingerprintError("invalid-models", "\u8BF7\u9009\u62E9 1\u201364 \u4E2A\u6709\u6548\u6A21\u578B");
     const record = {
-      id: `rec-${randomUUID3()}`,
+      id: `rec-${randomUUID2()}`,
       name: short(input2.name, 120) || "\u672A\u547D\u540D\u6D4B\u8BD5",
       kind,
       createdAt: Date.now(),
@@ -1617,7 +1498,7 @@ var RecordsService = class {
     const existing = [...attempts.entries()].map(([, item]) => item).filter((item) => item.recordId === record.id);
     const number = existing.reduce((max, item) => Math.max(max, item.number), 0) + 1;
     const busy = existing.some((item) => ACTIVE.has(item.status));
-    const attempt = { id: `att-${randomUUID3()}`, recordId: record.id, number, status: "queued", createdAt: Date.now(), startedAt: null, finishedAt: null, jobId: null, view: null, error: null };
+    const attempt = { id: `att-${randomUUID2()}`, recordId: record.id, number, status: "queued", createdAt: Date.now(), startedAt: null, finishedAt: null, jobId: null, view: null, error: null };
     await attempts.put(attempt.id, attempt);
     this.bump();
     if (!busy) await this.begin(attempt.id);
@@ -1705,7 +1586,7 @@ var RecordsService = class {
     if (!record || record.kind !== "custom") throw new FingerprintError("not-found", "\u81EA\u5B9A\u4E49\u6D4B\u8BD5\u8BB0\u5F55\u4E0D\u5B58\u5728");
     const attempts = domain.table("attempts");
     const existing = [...attempts.entries()].map(([, item]) => item).find((item) => item.recordId === recordId);
-    const attempt = existing ?? { id: `att-${randomUUID3()}`, recordId, number: 1, createdAt: Date.now(), startedAt: Date.now(), jobId: null, view: null, error: null };
+    const attempt = existing ?? { id: `att-${randomUUID2()}`, recordId, number: 1, createdAt: Date.now(), startedAt: Date.now(), jobId: null, view: null, error: null };
     const runs = Array.isArray(snapshot?.runs) ? clean(snapshot.runs).slice(0, 64) : [];
     await attempts.put(attempt.id, { ...attempt, status: snapshot?.ended ? "done" : "running", finishedAt: snapshot?.ended ? Date.now() : null, custom: { runs } });
     this.bump();
@@ -1718,72 +1599,376 @@ var RecordsService = class {
   }
 };
 
+// backend/a6/site.js
+var SITE_ORIGIN = "https://a6api.vip";
+var TIMEOUT_MS = 25e3;
+var text = (value, max = 300) => typeof value === "string" ? value.slice(0, max) : "";
+function failure(status, payload) {
+  const code = text(payload?.code ?? payload?.error?.code, 80);
+  const message = text(payload?.message ?? payload?.error?.message, 300);
+  if (status === 401 || status === 403) {
+    if (code === "dashboard_auth_user_id_missing") return new A6Error("auth-user-id-missing", "\u8BBF\u95EE\u4EE4\u724C\u7F3A\u5C11\u7528\u6237 ID\uFF1A\u8BF7\u540C\u65F6\u586B\u5199\u8BBF\u95EE\u4EE4\u724C\u4E0E\u7528\u6237 ID\u3002");
+    return new A6Error("auth-invalid", "\u8BBF\u95EE\u4EE4\u724C\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u5728 a6api \u8BBE\u7F6E\u9875\u91CD\u65B0\u751F\u6210\u3002");
+  }
+  if (status === 429) return new A6Error("rate-limited", "a6api \u63A5\u53E3\u9650\u6D41\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002");
+  return new A6Error(`http-${status}`, message || `a6api \u8FD4\u56DE HTTP ${status}`);
+}
+var A6Site = class {
+  constructor({ fetchImpl = globalThis.fetch } = {}) {
+    this.fetchImpl = fetchImpl;
+    this.accessToken = "";
+    this.userId = "";
+  }
+  /** Tokens are account-wide, so only the tail is ever echoed back to the UI. */
+  configure({ accessToken, userId }) {
+    this.accessToken = typeof accessToken === "string" ? accessToken.trim() : "";
+    this.userId = userId === void 0 || userId === null ? "" : String(userId).trim();
+    if (this.accessToken && !this.userId) throw new A6Error("auth-user-id-missing", "\u8BF7\u540C\u65F6\u586B\u5199\u8BBF\u95EE\u4EE4\u724C\u4E0E\u7528\u6237 ID\u3002");
+  }
+  get configured() {
+    return Boolean(this.accessToken && this.userId);
+  }
+  get mask() {
+    if (!this.accessToken) return "";
+    return this.accessToken.length <= 8 ? "\u2022\u2022\u2022\u2022" : `${this.accessToken.slice(0, 3)}\u2022\u2022\u2022\u2022${this.accessToken.slice(-4)}`;
+  }
+  headers() {
+    if (!this.configured) throw new A6Error("auth-missing", "\u5C1A\u672A\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C\u3002");
+    return { authorization: this.accessToken, "new-api-user": this.userId, accept: "application/json" };
+  }
+  async request(path, { method = "GET", query, body } = {}) {
+    const url = new URL(path, SITE_ORIGIN);
+    for (const [key, value] of Object.entries(query ?? {})) {
+      if (value !== void 0 && value !== null) url.searchParams.set(key, String(value));
+    }
+    const headers = this.headers();
+    if (body !== void 0) headers["content-type"] = "application/json";
+    let response;
+    try {
+      response = await this.fetchImpl(url, {
+        method,
+        headers,
+        body: body === void 0 ? void 0 : JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS)
+      });
+    } catch (error) {
+      throw new A6Error("network", `\u65E0\u6CD5\u8FDE\u63A5 a6api\uFF1A${text(error?.message, 160) || "\u7F51\u7EDC\u9519\u8BEF"}`);
+    }
+    const raw = await response.text();
+    let payload = null;
+    try {
+      payload = raw ? JSON.parse(raw) : null;
+    } catch {
+    }
+    if (!response.ok) throw failure(response.status, payload);
+    if (payload && payload.success === false) throw failure(response.status, payload);
+    return payload;
+  }
+  async self() {
+    const payload = await this.request("/api/user/self");
+    const data = payload?.data ?? payload;
+    return { id: data?.id ?? Number(this.userId), name: text(data?.display_name ?? data?.username, 120), quota: Number(data?.quota ?? 0) };
+  }
+  /** Probe the credential pair and report what it can see. */
+  async verify() {
+    const account = await this.self();
+    const pins = await this.pins();
+    return { account, pins: pins.length };
+  }
+  async tokens() {
+    const payload = await this.request("/api/token/search", { query: { p: 1, page_size: 100 } });
+    const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.data?.items) ? payload.data.items : [];
+    return rows.map((row) => ({
+      id: Number(row.id),
+      name: text(row.name, 120) || `\u4EE4\u724C ${row.id}`,
+      maskedKey: text(row.key, 80),
+      unlimited: Boolean(row.unlimited_quota),
+      remainQuota: Number(row.remain_quota ?? 0)
+    })).filter((token) => Number.isInteger(token.id) && token.id > 0);
+  }
+  /** Plaintext test key. Host-only; never persisted and never sent to the client. */
+  async tokenKey(tokenId) {
+    const payload = await this.request(`/api/token/${Number(tokenId)}/key`, { method: "POST", body: {} });
+    const key = payload?.data?.key ?? payload?.key;
+    if (typeof key !== "string" || !key) throw new A6Error("key-unavailable", `\u4EE4\u724C ${tokenId} \u6CA1\u6709\u53EF\u7528\u7684\u5BC6\u94A5`);
+    return key;
+  }
+  async pins() {
+    const payload = await this.request("/api/marketplace/pins");
+    const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+    return rows.filter((row) => row && Number(row.token_id) > 0).map((row) => ({
+      tokenId: Number(row.token_id),
+      channelId: Number(row.channel_id),
+      supplierId: Number(row.supplier_id ?? 0),
+      model: text(row.model_name, 256),
+      status: text(row.status, 40)
+    }));
+  }
+  /** Pin (token, model) to one channel. Returns false when the site refuses to route there. */
+  async pin({ tokenId, model, channelId, fallback = false }) {
+    const payload = await this.request("/api/marketplace/pin", {
+      method: "POST",
+      body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId), fallback_to_smart_routing: Boolean(fallback) }
+    });
+    const data = payload?.data ?? payload;
+    return { routeEffective: data?.route_effective !== false, supplierId: Number(data?.supplier_id ?? 0) };
+  }
+  async unpin({ tokenId, model, channelId }) {
+    await this.request("/api/marketplace/unpin", {
+      method: "POST",
+      body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId) }
+    });
+    return { ok: true };
+  }
+};
+
+// backend/a6/intake.js
+import { randomBytes, timingSafeEqual } from "node:crypto";
+var PATH = "/mit-a6/select";
+var SITE_ORIGINS = /* @__PURE__ */ new Set(["https://a6api.vip", "https://www.a6api.vip"]);
+var MAX_BODY = 256e3;
+var MAX_MODELS = 64;
+var MAX_TOKENS = 32;
+var MAX_SELECTIONS = 20;
+var KEY = "a6-intake";
+var equal = (left, right) => {
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const a = Buffer.from(left), b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+var text2 = (value, max = 256) => typeof value === "string" ? value.trim().slice(0, max) : "";
+var positive = (value, label) => {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new A6Error("invalid-input", `${label}\u65E0\u6548`);
+  return value;
+};
+function channelOf(item) {
+  return {
+    listingId: Number.isSafeInteger(item?.listingId) && item.listingId >= 0 ? item.listingId : 0,
+    channelId: positive(item?.channelId, "\u6E20\u9053 ID"),
+    supplierId: Number.isSafeInteger(item?.supplierId) && item.supplierId >= 0 ? item.supplierId : 0,
+    model: text2(item?.model) || (() => {
+      throw new A6Error("invalid-input", "\u7F3A\u5C11\u6A21\u578B\u540D\u79F0");
+    })(),
+    supplierName: text2(item?.supplierName),
+    channelName: text2(item?.channelName),
+    brand: text2(item?.brand)
+  };
+}
+function channelKey(item) {
+  return `${item.listingId}:${item.channelId}:${item.supplierId}:${item.model}`;
+}
+function modelsOf(input2) {
+  if (!Array.isArray(input2) || !input2.length || input2.length > MAX_MODELS) throw new A6Error("invalid-input", "\u5F85\u6D4B\u6E05\u5355\u4E3A\u7A7A\u6216\u6570\u91CF\u65E0\u6548");
+  const seen = /* @__PURE__ */ new Set();
+  return input2.map(channelOf).filter((item) => {
+    const key = channelKey(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function tokensOf(input2) {
+  if (!Array.isArray(input2) || !input2.length || input2.length > MAX_TOKENS) throw new A6Error("invalid-input", "\u6D4B\u8BD5\u4EE4\u724C\u5217\u8868\u4E3A\u7A7A\u6216\u6570\u91CF\u65E0\u6548");
+  const seen = /* @__PURE__ */ new Set();
+  return input2.map((item) => ({ id: positive(item?.id, "\u6D4B\u8BD5\u4EE4\u724C ID"), name: text2(item?.name, 120) || `\u4EE4\u724C ${item.id}` })).filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+var A6Intake = class {
+  constructor() {
+    this.token = "";
+    this.selections = /* @__PURE__ */ new Map();
+    this.revision = 0;
+    this.storage = null;
+    this.ready = Promise.resolve();
+  }
+  attachStorage(storage) {
+    this.storage = storage;
+    this.ready = this.load();
+  }
+  async load() {
+    if (!this.storage) return;
+    const domain = await this.storage.managed();
+    if (!domain) return;
+    const table = domain.table("auth");
+    const row = table.get(KEY);
+    if (row?.token) {
+      this.token = row.token;
+      return;
+    }
+    this.token = randomBytes(24).toString("base64url");
+    await table.put(KEY, { siteId: KEY, token: this.token });
+  }
+  /** Regenerate the intake token; already-received selections stay usable. */
+  async rotate() {
+    await this.ready;
+    this.token = randomBytes(24).toString("base64url");
+    const domain = await this.storage?.managed();
+    await domain?.table("auth").put(KEY, { siteId: KEY, token: this.token });
+    return this.token;
+  }
+  list(revision) {
+    if (Number.isInteger(revision) && revision === this.revision) return { unchanged: true, revision: this.revision };
+    return { revision: this.revision, selections: [...this.selections.values()].slice(-MAX_SELECTIONS).reverse() };
+  }
+  selection(id2) {
+    const found = this.selections.get(id2);
+    if (!found) throw new A6Error("selection-missing", "\u9009\u62E9\u5DF2\u5931\u6548\uFF0C\u8BF7\u5728\u7F51\u9875\u91CD\u65B0\u52FE\u9009\u540E\u53D1\u9001");
+    return found;
+  }
+  submit(input2) {
+    const siteOrigin = text2(input2?.siteOrigin, 120);
+    if (!SITE_ORIGINS.has(siteOrigin)) throw new A6Error("wrong-site", "\u53EA\u63A5\u53D7 a6api \u7AD9\u70B9\u53D1\u6765\u7684\u9009\u62E9");
+    const accountId = text2(input2?.accountId, 40);
+    if (!accountId) throw new A6Error("invalid-input", "\u7F3A\u5C11\u8D26\u53F7\u6807\u8BC6");
+    const selection = {
+      id: randomBytes(9).toString("base64url"),
+      siteOrigin,
+      accountId,
+      pageId: text2(input2?.pageId, 120),
+      createdAt: Date.now(),
+      models: modelsOf(input2?.models),
+      tokens: tokensOf(input2?.tokens)
+    };
+    this.selections.set(selection.id, selection);
+    while (this.selections.size > MAX_SELECTIONS) this.selections.delete(this.selections.keys().next().value);
+    this.revision += 1;
+    return { ok: true, selectionId: selection.id, revision: this.revision, models: selection.models.length, tokens: selection.tokens.length };
+  }
+  mount(webServer) {
+    this.origin = webServer.getOrigin();
+    const url = new URL(this.origin);
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) throw new A6Error("loopback-required", "\u9009\u62E9\u5BFC\u5165\u53E3\u4EC5\u5141\u8BB8\u672C\u673A DSH \u670D\u52A1");
+    return webServer.register({ kind: "prefix", path: PATH, handler: (req, res) => this.handle(req, res) });
+  }
+  async handle(req, res) {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "content-type, x-mit-intake");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    try {
+      const host = new URL(`http://${req.headers.host ?? ""}`).hostname;
+      if (!["127.0.0.1", "localhost", "[::1]"].includes(host)) throw new A6Error("wrong-host", "\u975E\u6CD5 Host");
+      if (req.method !== "POST") throw new A6Error("method", "\u4EC5\u63A5\u53D7 POST");
+      if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) throw new A6Error("invalid-input", "\u9700\u8981 JSON \u8BF7\u6C42");
+      await this.ready;
+      if (!equal(req.headers["x-mit-intake"], this.token)) throw new A6Error("not-paired", "\u5BFC\u5165\u53E3\u4EE4\u4E0D\u6B63\u786E\uFF0C\u8BF7\u4ECE DSH \u9762\u677F\u91CD\u65B0\u590D\u5236");
+      let size = 0;
+      const chunks = [];
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > MAX_BODY) throw new A6Error("body-limit", "\u8BF7\u6C42\u8FC7\u5927");
+        chunks.push(chunk);
+      }
+      const input2 = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      res.end(JSON.stringify(this.submit(input2)));
+    } catch (error) {
+      res.statusCode = error?.code === "not-paired" || error?.code === "wrong-host" || error?.code === "wrong-site" ? 403 : 400;
+      res.end(JSON.stringify({ error: error instanceof A6Error ? error.message : "\u8BF7\u6C42\u683C\u5F0F\u65E0\u6548", code: error?.code ?? "invalid-input" }));
+    }
+  }
+};
+
 // backend/a6/service.js
-import { randomUUID as randomUUID4 } from "node:crypto";
+var CONFIG_KEY = "a6-site";
+var KEY_TTL_MS = 10 * 6e4;
 var A6Service = class {
-  constructor({ ctx, storage, records, bridge, engine }) {
-    Object.assign(this, { ctx, storage, records, bridge, engine });
+  constructor({ ctx, storage, records, intake, site, engine }) {
+    Object.assign(this, { ctx, storage, records, intake, site, engine });
     this.manualLeases = /* @__PURE__ */ new Map();
+    this.keyCache = /* @__PURE__ */ new Map();
   }
   async table() {
     const domain = await this.storage.managed();
     if (!domain) throw new A6Error("storage-unavailable", "\u4E13\u9879\u914D\u7F6E\u5B58\u50A8\u4E0D\u53EF\u7528");
     return domain.table("auth");
   }
-  preferenceKey(selection) {
-    return `prefs:${selection.siteOrigin}:${selection.accountId}`;
+  // ---- access token --------------------------------------------------------------------------
+  async config() {
+    await this.intake.ready;
+    const row = (await this.table()).get(CONFIG_KEY);
+    if (row?.accessToken && !this.site.configured) this.site.configure({ accessToken: row.accessToken, userId: row.userId });
+    return {
+      configured: this.site.configured,
+      mask: this.site.mask,
+      userId: this.site.userId,
+      intakeToken: this.intake.token,
+      origin: this.intake.origin ?? ""
+    };
+  }
+  async saveConfig({ accessToken, userId }) {
+    const next = {
+      accessToken: typeof accessToken === "string" && accessToken.trim() ? accessToken.trim() : this.site.accessToken,
+      userId: userId === void 0 ? this.site.userId : String(userId ?? "").trim()
+    };
+    if (!next.accessToken) throw new A6Error("auth-missing", "\u8BF7\u586B\u5199 a6api \u8BBF\u95EE\u4EE4\u724C");
+    if (!next.userId) throw new A6Error("auth-user-id-missing", "\u8BF7\u586B\u5199 a6api \u7528\u6237 ID");
+    this.site.configure(next);
+    let verified;
+    try {
+      verified = await this.site.verify();
+    } catch (error) {
+      this.site.configure({ accessToken: "", userId: "" });
+      throw error;
+    }
+    await (await this.table()).put(CONFIG_KEY, { siteId: CONFIG_KEY, ...next });
+    return { ok: true, ...await this.config(), account: verified.account, pins: verified.pins };
+  }
+  async rotateIntake() {
+    await this.intake.rotate();
+    return this.config();
+  }
+  // ---- test keys -----------------------------------------------------------------------------
+  /** Plaintext key for one token, cached briefly so a whole run reuses one lookup. */
+  async key(tokenId) {
+    const cached = this.keyCache.get(tokenId);
+    if (cached && cached.until > Date.now()) return cached.key;
+    const key = await this.site.tokenKey(tokenId);
+    this.keyCache.set(tokenId, { key, until: Date.now() + KEY_TTL_MS });
+    return key;
+  }
+  async tokens() {
+    if (!this.site.configured) await this.config();
+    if (!this.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
+    return { tokens: await this.site.tokens() };
+  }
+  // ---- selections ----------------------------------------------------------------------------
+  selections(request) {
+    return this.intake.list(request?.revision);
+  }
+  selection(id2) {
+    return this.intake.selection(id2);
   }
   slots(selection, input2) {
     if (!Array.isArray(input2) || !input2.length || input2.length > 8) throw new A6Error("invalid-slots", "\u8BF7\u9009\u62E9 1\u20138 \u4E2A\u6D4B\u8BD5\u69FD\u4F4D");
     const seen = /* @__PURE__ */ new Set();
     return input2.map((slot) => {
-      if (!selection.tokens.some((token) => token.id === slot.tokenId) || seen.has(slot.tokenId)) throw new A6Error("invalid-slots", "\u6D4B\u8BD5\u4EE4\u724C\u672A\u9009\u62E9\u6216\u91CD\u590D");
+      const token = selection.tokens.find((item) => item.id === slot.tokenId);
+      if (!token || seen.has(slot.tokenId)) throw new A6Error("invalid-slots", "\u6D4B\u8BD5\u4EE4\u724C\u672A\u9009\u62E9\u6216\u91CD\u590D");
       seen.add(slot.tokenId);
-      if (typeof slot.provider !== "string" || !slot.provider.trim() || slot.provider.length > 128) throw new A6Error("invalid-slots", "\u8BF7\u4E3A\u6BCF\u4E2A\u6D4B\u8BD5\u4EE4\u724C\u9009\u62E9 DSH \u63D0\u4F9B\u5546");
-      return { tokenId: slot.tokenId, provider: slot.provider };
+      return { tokenId: token.id, name: token.name };
     });
   }
-  async preferences({ selectionId }) {
-    const selection = this.bridge.selection(selectionId);
-    const row = (await this.table()).get(this.preferenceKey(selection));
-    return { slots: (row?.slots ?? []).filter((slot) => selection.tokens.some((token) => token.id === slot.tokenId)), timeoutMs: row?.timeoutMs ?? 18e4 };
-  }
-  async savePreferences(input2) {
-    const selection = this.bridge.selection(input2.selectionId);
-    const slots = this.slots(selection, input2.slots);
-    const key = this.preferenceKey(selection);
-    await (await this.table()).put(key, { siteId: key, slots, timeoutMs: input2.timeoutMs ?? 18e4 });
-    return { ok: true };
-  }
   async create(input2) {
-    const selection = this.bridge.selection(input2.selectionId);
+    const selection = this.selection(input2.selectionId);
     const slots = this.slots(selection, input2.slots);
-    this.bridge.assertReady(selection, slots);
-    const llm = this.ctx.get("llm");
-    const providers = new Set(llm?.listProviders().map((provider) => provider.id) ?? []);
-    if (slots.some((slot) => !providers.has(slot.provider))) throw new A6Error("unknown-provider", "\u9009\u62E9\u7684 DSH \u63D0\u4F9B\u5546\u5DF2\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
     const allowed = new Set(selection.models.map(channelKey));
     const channels = input2.models ? input2.models.map(channelOf) : selection.models;
-    if (!channels.length || channels.length > 64 || channels.some((model) => !allowed.has(channelKey(model)))) throw new A6Error("invalid-selection", "\u5F85\u6D4B\u9879\u4E0D\u5C5E\u4E8E\u7F51\u9875\u9009\u62E9\u6216\u6570\u91CF\u65E0\u6548");
-    if (new Set(channels.map(channelKey)).size !== channels.length) throw new A6Error("invalid-selection", "\u5F85\u6D4B\u6E05\u5355\u91CD\u590D");
-    for (const slot of slots) {
-      const identity = tokenIdentity(selection, slot.tokenId);
-      const leases = [...this.manualLeases.entries()].filter(([key]) => key.startsWith(`${identity}:`));
-      if (!leases.length) continue;
-      if (this.engine.tokenSlots.busy.has(identity)) throw new A6Error("slot-busy", "\u6B64\u6D4B\u8BD5\u4EE4\u724C\u6B63\u5728\u6267\u884C\u4EFB\u52A1");
-      await this.engine.tokenSlots.acquire(identity, new AbortController().signal);
-      try {
-        for (const [key, lease] of leases) {
-          const restored = await this.bridge.execute(selection, { operation: "restore", tokenId: slot.tokenId, model: lease.model, channelId: lease.channelId, leaseId: lease.leaseId });
-          if (restored.conflict || !restored.restored && !restored.skipped) throw new A6Error("restore-unverified", "\u8BF7\u5148\u6062\u590D\u5FEB\u6377\u56FA\u5B9A\uFF0C\u518D\u5F00\u59CB\u4E13\u9879\u6D4B\u8BD5");
-          this.manualLeases.delete(key);
-        }
-      } finally {
-        this.engine.tokenSlots.release(identity);
-      }
+    if (!channels.length || channels.length > 64 || channels.some((model) => !allowed.has(channelKey(model)))) {
+      throw new A6Error("invalid-selection", "\u5F85\u6D4B\u9879\u4E0D\u5C5E\u4E8E\u7F51\u9875\u9009\u62E9\u6216\u6570\u91CF\u65E0\u6548");
     }
-    await this.savePreferences(input2);
-    const a6api = { selectionId: selection.id, accountId: selection.accountId, siteOrigin: selection.siteOrigin, connectionId: selection.connectionId, slots };
+    if (new Set(channels.map(channelKey)).size !== channels.length) throw new A6Error("invalid-selection", "\u5F85\u6D4B\u6E05\u5355\u91CD\u590D");
+    await this.releaseManual(selection, slots);
+    const a6api = { selectionId: selection.id, accountId: selection.accountId, siteOrigin: selection.siteOrigin, slots };
     return this.records.create({
       kind: "fingerprint",
       name: input2.name || "a6api \u4E13\u9879\u6307\u7EB9",
@@ -1795,35 +1980,54 @@ var A6Service = class {
         id: channel.model,
         name: channel.model,
         a6api: channel,
-        relay: { siteId: "a6api", channelId: channel.channelId, supplierId: channel.supplierId, listingId: channel.listingId, model: channel.model, api: "chat" }
+        relay: { siteId: "a6api", channelId: channel.channelId, supplierId: channel.supplierId, listingId: channel.listingId, model: channel.model, api: channel.model && /claude|anthropic/i.test(`${channel.brand} ${channel.model}`) ? "messages" : "chat" }
       }))
     });
   }
+  async releaseManual(selection, slots) {
+    for (const slot of slots) {
+      const identity = tokenIdentity(selection, slot.tokenId);
+      const held = [...this.manualLeases.entries()].filter(([key]) => key.startsWith(`${identity}:`));
+      if (!held.length) continue;
+      if (this.engine.tokenSlots.busy.has(identity)) throw new A6Error("slot-busy", "\u6B64\u6D4B\u8BD5\u4EE4\u724C\u6B63\u5728\u6267\u884C\u4EFB\u52A1");
+      await this.engine.tokenSlots.acquire(identity, new AbortController().signal);
+      try {
+        for (const [key, lease] of held) {
+          await this.site.unpin({ tokenId: slot.tokenId, model: lease.model, channelId: lease.channelId });
+          this.manualLeases.delete(key);
+        }
+      } finally {
+        this.engine.tokenSlots.release(identity);
+      }
+    }
+  }
   async action(input2) {
-    const selection = this.bridge.selection(input2.selectionId);
+    const selection = this.selection(input2.selectionId);
     if (!selection.tokens.some((token) => token.id === input2.tokenId)) throw new A6Error("token-not-selected", "\u53EA\u80FD\u64CD\u4F5C\u4F60\u9009\u62E9\u7684\u6D4B\u8BD5\u4EE4\u724C");
-    if (!selection.models.some((channel) => channel.model === input2.model && channel.channelId === input2.channelId)) throw new A6Error("invalid-selection", "\u76EE\u6807\u4E0D\u5C5E\u4E8E\u5F53\u524D\u5F85\u6D4B\u6E05\u5355");
+    if (!selection.models.some((channel) => channel.model === input2.model && channel.channelId === input2.channelId)) {
+      throw new A6Error("invalid-selection", "\u76EE\u6807\u4E0D\u5C5E\u4E8E\u5F53\u524D\u5F85\u6D4B\u6E05\u5355");
+    }
     const identity = tokenIdentity(selection, input2.tokenId);
     if (this.engine.tokenSlots.busy.has(identity)) throw new A6Error("slot-busy", "\u8BE5\u6D4B\u8BD5\u4EE4\u724C\u6B63\u5728\u6267\u884C\u4EFB\u52A1\uFF0C\u8BF7\u7B49\u69FD\u4F4D\u7A7A\u95F2\u540E\u518D\u64CD\u4F5C");
-    const controller = new AbortController();
-    if (!await this.engine.tokenSlots.acquire(identity, controller.signal)) throw new A6Error("slot-busy", "\u69FD\u4F4D\u7E41\u5FD9");
+    await this.engine.tokenSlots.acquire(identity, new AbortController().signal);
     const key = `${identity}:${input2.model}`;
     try {
-      const savedLease = this.manualLeases.get(key);
-      let leaseId = savedLease?.leaseId;
-      if (input2.operation === "restore" && !leaseId) return { ok: true, result: { skipped: true } };
-      if (input2.operation === "pin") {
-        if (leaseId) throw new A6Error("already-pinned", "\u8BF7\u5148\u6062\u590D\u672C\u6B21\u624B\u52A8\u56FA\u5B9A\uFF0C\u518D\u9009\u62E9\u5176\u4ED6\u76EE\u6807");
-        leaseId = randomUUID4();
-        this.manualLeases.set(key, { leaseId, model: input2.model, channelId: input2.channelId });
-      }
-      const result = await this.bridge.execute(selection, { operation: input2.operation, tokenId: input2.tokenId, model: savedLease?.model ?? input2.model, channelId: input2.operation === "restore" ? savedLease.channelId : input2.channelId, leaseId: leaseId ?? randomUUID4() });
-      if (input2.operation === "pin" && !result.verified) throw new A6Error("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u786E\u8BA4");
+      const lease = this.manualLeases.get(key);
       if (input2.operation === "restore") {
-        if (result.conflict) throw new A6Error("restore-conflict", "\u56FA\u5B9A\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539\uFF0C\u6CA1\u6709\u8986\u76D6");
+        if (!lease) return { ok: true, result: { skipped: true } };
+        await this.site.unpin({ tokenId: input2.tokenId, model: lease.model, channelId: lease.channelId });
         this.manualLeases.delete(key);
+        return { ok: true, result: { restored: true, target: lease } };
       }
-      return { ok: true, result: { ...result, target: { tokenId: input2.tokenId, model: savedLease?.model ?? input2.model, channelId: input2.operation === "restore" ? savedLease.channelId : input2.channelId } } };
+      if (lease) throw new A6Error("already-pinned", "\u8BF7\u5148\u6062\u590D\u672C\u6B21\u624B\u52A8\u56FA\u5B9A\uFF0C\u518D\u9009\u62E9\u5176\u4ED6\u76EE\u6807");
+      if (input2.operation === "pin") {
+        const outcome = await this.site.pin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
+        if (!outcome.routeEffective) throw new A6Error("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u751F\u6548\uFF0C\u8BF7\u68C0\u67E5\u8BE5\u6E20\u9053\u662F\u5426\u53EF\u7528");
+        const target = { tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, supplierId: outcome.supplierId };
+        this.manualLeases.set(key, target);
+        return { ok: true, result: { verified: true, target } };
+      }
+      throw new A6Error("invalid-operation", "\u53EA\u652F\u6301\u56FA\u5B9A\u4E0E\u6062\u590D");
     } finally {
       this.engine.tokenSlots.release(identity);
     }
@@ -1835,24 +2039,30 @@ var name = "model-intelligence-test";
 var inject = ["typert", "storageDomain", "webServer"];
 function apply(ctx) {
   const storage = new PluginStorage(ctx);
-  const bridge = new A6Bridge();
-  bridge.attachStorage(storage);
-  ctx.effect(() => bridge.mount(ctx.webServer), "model-intelligence.a6-bridge");
+  const site = new A6Site();
+  const intake = new A6Intake();
+  intake.attachStorage(storage);
+  ctx.effect(() => intake.mount(ctx.webServer), "model-intelligence.a6-intake");
   let records;
+  let a6;
   const engine = new FingerprintEngine(ctx, {
     onTouch: (job) => records?.onTouch(job),
     onSettled: (job) => records?.onSettled(job),
-    bridge
+    // The engine talks to a6api through these three calls only; it never sees credential storage.
+    a6: {
+      pin: (target) => a6.site.pin(target),
+      unpin: (target) => a6.site.unpin(target),
+      key: (tokenId) => a6.key(tokenId)
+    }
   });
   records = new RecordsService(ctx, storage, engine);
-  const a6 = new A6Service({ ctx, storage, bridge, records, engine });
+  a6 = new A6Service({ ctx, storage, intake, site, records, engine });
   ctx.effect(() => () => {
     records.dispose();
     engine.dispose();
-    bridge.dispose();
     void storage.close();
   }, "model-intelligence.lifecycle");
-  new ModelIntelligenceService(ctx, { engine, records, a6, bridge });
+  new ModelIntelligenceService(ctx, { engine, records, a6 });
   ctx.effect(() => ctx.typert.register(hostContribution), "model-intelligence.remote-contract");
 }
 export {

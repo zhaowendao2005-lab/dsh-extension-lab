@@ -1,7 +1,7 @@
 import { Service } from '@deepseek-ai/cordis';
 import { bindTypertRemote, Remote, RemoteError, principalOf } from '@deepseek-ai/dsh-typert-protocol';
 import { FingerprintError } from '../fingerprint/engine.js';
-import { A6Error } from '../a6/bridge.js';
+import { A6Error } from '../a6/errors.js';
 
 function assertOwner(invocation) {
   if (!invocation || invocation.peer?.principal?.kind !== 'owner' || principalOf(invocation)) {
@@ -26,7 +26,6 @@ export class ModelIntelligenceService extends Service {
     this.engine = deps.engine;
     this.records = deps.records;
     this.a6 = deps.a6;
-    this.bridge = deps.bridge;
     this.typertRemote = bindTypertRemote(this, 'modelIntelligence');
     for (const initialize of remoteInitializers) initialize.call(this);
   }
@@ -47,11 +46,12 @@ export class ModelIntelligenceService extends Service {
   attemptRetry(request) { return this.guard(() => this.records.retry(request.attemptId, request.model)); }
   customSave(request) { return this.guard(() => this.records.saveCustom(request.recordId, request.snapshot)); }
 
-  // Owner-only control plane; browser pages use the paired, narrowly scoped bridge instead.
-  a6BridgeInfo() { return this.guard(() => this.bridge.info()); }
-  a6Selections(request) { return this.guard(() => this.bridge.list(request?.revision)); }
-  a6Preferences(request) { return this.guard(() => this.a6.preferences(request)); }
-  a6PreferencesSave(request) { return this.guard(() => this.a6.savePreferences(request)); }
+  // Owner-only control plane. The only page-facing surface is the one-way selection intake.
+  a6Config() { return this.guard(() => this.a6.config()); }
+  a6ConfigSave(request) { return this.guard(() => this.a6.saveConfig(request ?? {})); }
+  a6IntakeRotate() { return this.guard(() => this.a6.rotateIntake()); }
+  a6Tokens() { return this.guard(() => this.a6.tokens()); }
+  a6Selections(request) { return this.guard(() => this.a6.selections(request)); }
   a6Create(request) { return this.guard(() => this.a6.create(request)); }
   a6Action(request) { return this.guard(() => this.a6.action(request)); }
 
@@ -93,7 +93,7 @@ export const REMOTE_METHODS = [
   'catalog',
   'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear',
   'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
-  'a6BridgeInfo', 'a6Selections', 'a6Preferences', 'a6PreferencesSave', 'a6Create', 'a6Action',
+  'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6Action',
 ];
 const remoteInitializers = [];
 for (const name of REMOTE_METHODS) {

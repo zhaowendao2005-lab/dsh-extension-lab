@@ -18,7 +18,7 @@ const message = (error: unknown, fallback: string): string => error instanceof E
  * The single global workbench: records are Host-persisted and shared by every session, so one
  * instance serves all mounted panels. The plugin lifecycle owns dispose.
  */
-export function createWorkbench(sessionId: string, transport: ModelIntelligenceTransport, activateA6: (selectionId: string) => void = () => {}): Workbench {
+export function createWorkbench(sessionId: string, transport: ModelIntelligenceTransport, openPane: (selectionId: string) => void = () => {}): Workbench {
   const draft = createDraftStore();
   const modelsDomain = createModelsDomain(transport, keys => draft.setState(state => ({ selected: state.selected.filter(key => keys.has(key)) })));
   const presetsDomain = createPresetsDomain();
@@ -28,8 +28,8 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     open(selectionId) {
       const id = `a6:${selectionId}`;
       workbench.setState(state => ({ tabs: state.tabs.some(tab => tab.id === id) ? state.tabs : [...state.tabs, { id, title: 'a6api 专项', type: 'a6' as const, selectionId }], activeTab: id }));
+      openPane(selectionId);
     },
-    activate: activateA6,
     created(record, attemptId) { evaluationsDomain.acceptCreated(record, attemptId); openRecord(record.id); },
   });
   const stores = {
@@ -37,6 +37,8 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     draft, models: modelsDomain.store, presets: presetsDomain.store, evaluations: evaluationsDomain.store, presentation: presentationDomain.store, a6: a6Domain.store, notice: createNoticeStore(),
   };
   const { workbench, models, presets, evaluations, notice } = stores;
+  // Selections pushed by the userscript arrive without any DSH page action, so polling starts here.
+  a6Domain.start();
   let disposed = false;
   let noticeAnswer: ((choice: string, input: string) => void) | undefined;
 
@@ -188,14 +190,14 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     openA6: a6Domain.open,
     patchA6: a6Domain.patch,
     removeA6Model: a6Domain.removeModel,
-    toggleA6Slot: a6Domain.toggleSlot,
-    setA6Provider: a6Domain.setProvider,
-    loadA6Preferences(id) { void a6Domain.loadPreferences(id); },
-    saveA6Preferences(id) { void a6Domain.savePreferences(id); },
+    toggleA6Token: a6Domain.toggleToken,
     submitA6(id) { void a6Domain.submit(id); },
     a6Action(id, operation) { void a6Domain.action(id, operation); },
-    loadA6Bridge() { void a6Domain.loadBridge(); },
-    copyA6Bridge() { void a6Domain.copyBridge(); },
+    loadA6Config() { void a6Domain.loadConfig(); },
+    patchA6Form: a6Domain.patchForm,
+    saveA6Config() { void a6Domain.saveConfig(); },
+    rotateA6Intake() { void a6Domain.rotateIntake(); },
+    copyA6Intake() { void a6Domain.copyIntake(); },
     rerunRecord(id) { attempt('再次请求失败', evaluationsDomain.rerun(id)); },
     selectAttempt(recordId, attemptId) {
       evaluationsDomain.selectAttempt(recordId, attemptId);

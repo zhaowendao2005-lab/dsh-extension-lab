@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { generateChallenges, loadDetector, parseNumbers } from 'lmfpd-sdk';
 import { TokenSlots, tokenIdentity } from '../a6/slots.js';
 import { AssistantStreamAccumulator, BlockAssembler, createUserMessage, isTokenDelta, isVisibleChunk, chunkHasVisibleText, assistantStreamFirstTokenTime } from '@deepseek-ai/dsh-llm';
+import { openChannelStream } from '../a6/transport.js';
 
 // The SDK owns challenges/scoring; DSH owns request preparation, transport and stream assembly.
 const DEFAULT_CONCURRENCY = 6;
@@ -110,7 +111,7 @@ export class FingerprintEngine {
   /**
    * @param hooks.onTouch(job)   every revision bump (callers throttle persistence themselves)
    * @param hooks.onSettled(job) the job left `running` (done / cancelled / failed)
-   * @param hooks.bridge paired a6api site-command bridge (no API keys)
+   * @param hooks.a6 pin/unpin/key calls into a6api; the engine never holds credentials
    */
   constructor(ctx, hooks = {}) {
     this.ctx = ctx;
@@ -161,14 +162,14 @@ export class FingerprintEngine {
     const llm = this.ctx.get('llm');
     if (dshModels.length || a6api) {
       if (!llm) throw new FingerprintError('unavailable', '当前运行时没有可用的 LLM 服务');
-      if (typeof llm.prepareCall !== 'function') throw new FingerprintError('incompatible-runtime', '当前 DSH 不支持官方 LLM 请求准备接口，请升级运行时');
+      // a6api runs call the channel over HTTP directly, so they never need the official call-preparation API.
+      if (dshModels.length && typeof llm.prepareCall !== 'function') throw new FingerprintError('incompatible-runtime', '当前 DSH 不支持官方 LLM 请求准备接口，请升级运行时');
     }
     this.starting += 1;
     try {
-      if (a6api) {
-        this.hooks.bridge.assertReady(a6api, a6api.slots);
-        const availableProviders = new Set(llm.listProviders().map(provider => provider.id));
-        if (a6api.slots.some(slot => !availableProviders.has(slot.provider))) throw new FingerprintError('unknown-model', '所选 DSH 提供商已不可用，请重新选择');
+      // a6api runs need no DSH provider: the channel is pinned on the site and called directly.
+      if (a6api && a6api.slots.some(slot => !Number.isSafeInteger(slot.tokenId))) {
+        throw new FingerprintError('invalid-slots', '测试令牌槽位无效，请重新选择');
       }
       const providers = dshModels.length ? new Set(llm.listProviders().map(provider => provider.id)) : new Set();
       for (const provider of new Set(dshModels.map(m => m.provider))) {
@@ -301,8 +302,8 @@ export class FingerprintEngine {
 
   dispose() {
     this.disposed = true;
-    // Keep only the bridge for in-flight finally cleanup; record hooks must not schedule IO after disposal.
-    this.hooks = { bridge: this.hooks.bridge };
+    // Keep only the site calls for in-flight finally cleanup; record hooks must not schedule IO after disposal.
+    this.hooks = { a6: this.hooks.a6 };
     for (const job of this.jobs.values()) this.cancel(job.id);
     this.jobs.clear(); this.loaded = undefined;
   }
@@ -399,8 +400,7 @@ export class FingerprintEngine {
     // A retry may have queued a model between the loop exit and here: keep the job running and let
     // the scheduler restart it instead of publishing a finished job with queued samples.
     if (job.pending.length > 0 || job.active.size > 0) return;
-    job.status = 'done'; job.finishedAt = Date.now(); this.touch(job);
-    this.settle(job);
+    this.complete(job);
   }
 
   async runModel(job, llm, run) {
@@ -426,29 +426,29 @@ export class FingerprintEngine {
       const identity = tokenIdentity(job.a6api, slot.tokenId);
       if (!await this.tokenSlots.acquire(identity, signal)) return;
       try {
+        // One key lookup per token: a run reuses the same credential for every channel it tests.
+        let key;
+        try { key = await this.hooks.a6.key(slot.tokenId); }
+        catch (error) { if (!signal.aborted) this.failJob(job, error); return; }
         while (job.pending.length && !signal.aborted) {
           const run = job.pending.shift();
-          run.callProvider = slot.provider; run.slotTokenId = slot.tokenId;
+          run.slotTokenId = slot.tokenId;
           const queued = run.samples.filter(sample => sample.state === 'queued');
           if (!queued.length) continue;
-          const leaseId = randomUUID();
-          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId, leaseId };
+          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId };
           let attemptedPin = false;
           try {
-            run.routing = 'waiting-page'; this.touch(job);
-            if (this.hooks.bridge.waitReady) await this.hooks.bridge.waitReady(job.a6api, [slot], signal);
-            else this.hooks.bridge.assertReady(job.a6api, [slot]);
             run.routing = 'pinning'; this.touch(job);
             if (signal.aborted) break;
             attemptedPin = true;
-            const ack = await this.hooks.bridge.execute(job.a6api, { ...target, operation: 'pin' });
-            if (!ack.verified) throw new FingerprintError('pin-unverified', '固定渠道未确认，未发送采样请求');
+            const pinned = await this.hooks.a6.pin(target);
+            if (!pinned?.routeEffective) throw new FingerprintError('pin-unverified', '固定渠道未生效，未发送采样请求');
             if (signal.aborted) break;
             run.routing = 'sampling'; this.touch(job);
             // allSettled is intentional: a sibling error must never make this token move early.
             if (!await this.acquire(signal, queued.length)) break;
             try {
-              const settled = await Promise.allSettled(queued.map(sample => this.sample(job, llm, run, sample)));
+              const settled = await Promise.allSettled(queued.map(sample => this.sample(job, llm, run, sample, key)));
               const rejected = settled.find(item => item.status === 'rejected');
               if (rejected) throw rejected.reason;
             } finally { this.release(queued.length); }
@@ -458,14 +458,13 @@ export class FingerprintEngine {
             if (attemptedPin) {
               run.routing = 'restoring'; this.touch(job);
               try {
-                const restored = await this.hooks.bridge.execute(job.a6api, { ...target, operation: 'restore' });
-                if (restored.conflict || !restored.restored && !restored.skipped) throw new FingerprintError('restore-unverified', '固定关系未恢复，请检查 a6api 页面');
+                await this.hooks.a6.unpin(target);
                 run.routing = 'restored';
               } catch (error) {
                 run.routing = 'restore-failed';
-                run.error = { stage: 'finalizing', message: '固定关系恢复失败，请检查 a6api 页面后重新连接；本次测试已停止领取任务', detail: failureDetail(error, 'restore') };
+                run.error = { stage: 'finalizing', message: '固定关系恢复失败，请到 a6api 手工解除固定；本次测试已停止领取任务', detail: failureDetail(error, 'restore') };
                 this.touch(job);
-                // Do not reuse a token whose pin/restore command may still be in flight.
+                // Do not reuse a token whose pin state is unknown: the next three calls would bill the wrong channel.
                 this.failJob(job, error);
               }
             }
@@ -478,9 +477,16 @@ export class FingerprintEngine {
     await Promise.allSettled(workers);
     if (job.controller.signal.aborted) {
       if (job.status === 'running') job.status = 'cancelled';
-    } else job.status = 'done';
+      job.finishedAt = Date.now(); this.touch(job); this.settle(job);
+    } else this.complete(job);
+  }
+  /** Publish the terminal status: a job with no surviving model is a failed job, not a finished one. */
+  complete(job) {
+    if (job.status !== 'running') return;
+    job.status = job.runs.length > 0 && job.runs.every(run => run.stage !== 'completed') ? 'failed' : 'done';
     job.finishedAt = Date.now(); this.touch(job); this.settle(job);
   }
+
   failRun(job, run, error, source) {
     for (const sample of run.samples) if (!END_STATES.has(sample.state)) {
       sample.state = 'failed'; sample.error = error?.message ?? 'a6api 站点操作失败';
@@ -550,14 +556,23 @@ export class FingerprintEngine {
     this.refreshStage(run); this.touch(job);
     let truncated = false, failure = null, rawFailure = null, failureSource = 'prepare';
     try {
-      const prepared = await llm.prepareCall({ provider: run.callProvider ?? run.provider, model: run.model }, signal);
-      signal.throwIfAborted();
-      const message = createUserMessage({
-        source: { kind: 'user' },
-        content: [{ type: 'text', text: job.challenges[sample.index].prompt }],
-      });
+      const prompt = job.challenges[sample.index].prompt;
+      let source;
+      if (run.relay) {
+        // a6api lane: the channel is already pinned for this token, so no provider routing applies.
+        if (!key) throw new FingerprintError('key-unavailable', '测试令牌密钥不可用');
+        // The seam exists so tests can prove scheduling without spending real requests.
+        source = (this.hooks.openStream ?? openChannelStream)({ key, model: run.model, prompt, api: run.relay.api, signal });
+      } else {
+        const prepared = await llm.prepareCall({ provider: run.callProvider ?? run.provider, model: run.model }, signal);
+        signal.throwIfAborted();
+        source = prepared.stream({
+          ...prepared.config, signal,
+          messages: [createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: prompt }] })],
+        });
+      }
       failureSource = 'stream';
-      for await (const chunk of prepared.stream({ ...prepared.config, messages: [message], signal })) {
+      for await (const chunk of source) {
         // Cancellation already publishes a terminal snapshot; do not consume late responses.
         if (signal.aborted) break;
         const timed = events.push({ time: Date.now(), chunk });

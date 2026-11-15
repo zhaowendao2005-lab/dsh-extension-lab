@@ -1,42 +1,25 @@
-import type { A6ActionInput, A6CreateInput, A6Preferences, ModelIntelligenceTransport } from '../types';
+import type { A6ActionInput, A6CreateInput, ModelIntelligenceTransport } from '../types';
 
-// No third-party HTTP or credential access: the owner-only Host Remote owns the bridge.
-export const readA6Bridge = (transport: ModelIntelligenceTransport) => transport.a6BridgeInfo();
+// The Host Remote is the only path to a6api; the client never holds the account access token.
+export const readA6Config = (transport: ModelIntelligenceTransport) => transport.a6Config();
+
+/**
+ * One-click connect payload: the userscript reads `#mit-a6=`, stores it, and erases the hash so the
+ * intake token never lands in browser history or a shared URL.
+ */
+export function oneClickLink(config: { origin: string; intakeToken: string }): string {
+  if (!config.origin || !config.intakeToken) return '';
+  return `https://a6api.vip/#mit-a6=${btoa(JSON.stringify({ origin: config.origin, intake: config.intakeToken }))}`;
+}
+export const writeA6Config = (transport: ModelIntelligenceTransport, accessToken: string, userId: string) => transport.a6ConfigSave({ ...(accessToken.trim() ? { accessToken: accessToken.trim() } : {}), ...(userId.trim() ? { userId: userId.trim() } : {}) });
+export const rotateA6Intake = (transport: ModelIntelligenceTransport) => transport.a6IntakeRotate();
+export const readA6Tokens = (transport: ModelIntelligenceTransport) => transport.a6Tokens();
 export const readA6Selections = (transport: ModelIntelligenceTransport, revision: number) => transport.a6Selections(revision >= 0 ? { revision } : {});
-export const readA6Preferences = (transport: ModelIntelligenceTransport, selectionId: string) => transport.a6Preferences({ selectionId });
-export const writeA6Preferences = (transport: ModelIntelligenceTransport, selectionId: string, preferences: A6Preferences) => transport.a6PreferencesSave({ selectionId, ...preferences });
 export const createA6Record = (transport: ModelIntelligenceTransport, input: A6CreateInput) => transport.a6Create(input);
 export const performA6Action = (transport: ModelIntelligenceTransport, input: A6ActionInput) => transport.a6Action(input);
-export async function copyA6Configuration(configuration: {origin: string; capability: string}): Promise<void> {
-  if (!globalThis.navigator?.clipboard?.writeText) throw new Error('当前浏览器不支持剪贴板，请手动复制下方连接配置。');
-  await navigator.clipboard.writeText(JSON.stringify(configuration, null, 2));
-}
-/** Consume only this plugin's hash parameter; preserve other route/hash parameters. */
-export function consumeA6SelectionLink(): string | undefined {
-  if (typeof window === 'undefined') return undefined;
-  const hash = window.location.hash.slice(1);
-  const match = /(?:^|[?&])mit-a6-selection=([^&]*)/.exec(hash);
-  if (!match) return undefined;
-  let id: string;
-  try { id = decodeURIComponent(match[1]); } catch { return undefined; }
-  const remaining = hash.replace(/(^|[?&])mit-a6-selection=[^&]*&?/, (value, prefix: string) => value.endsWith('&') ? prefix : '').replace(/[?&]$/, '');
-  window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${remaining ? `#${remaining}` : ''}`);
-  return id || undefined;
-}
-const CONSUMED_KEY = 'model-intelligence-test.a6-consumed.v1';
-export function readConsumedA6Selections(): string[] {
-  try {
-    const parsed: unknown = globalThis.sessionStorage?.getItem(CONSUMED_KEY);
-    const ids: unknown = typeof parsed === 'string' ? JSON.parse(parsed) : [];
-    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string').slice(-512) : [];
-  } catch { return []; }
-}
-export function rememberConsumedA6Selection(id: string): void {
-  try { globalThis.sessionStorage?.setItem(CONSUMED_KEY, JSON.stringify([...new Set([...readConsumedA6Selections(), id])].slice(-512))); } catch { /* In-memory seen IDs still prevent repeated focus in this lifecycle. */ }
-}
-export function watchA6SelectionLinks(onLink: (id: string) => void): () => void {
-  if (typeof window === 'undefined') return () => {};
-  const listener = () => { const id = consumeA6SelectionLink(); if (id) onLink(id); };
-  window.addEventListener('hashchange', listener);
-  return () => window.removeEventListener('hashchange', listener);
+
+export async function copyIntakeToken(token: string): Promise<void> {
+  if (!token) throw new Error('导入口令尚未生成');
+  if (!globalThis.navigator?.clipboard?.writeText) throw new Error('当前浏览器不支持剪贴板，请手动复制导入口令。');
+  await navigator.clipboard.writeText(token);
 }

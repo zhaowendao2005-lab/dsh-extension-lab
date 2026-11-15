@@ -14,9 +14,9 @@
 - 模型列表只读真实配置，无 Mock 回退。指纹使用官方 lmfpd-sdk 生成挑战与分析，通过 Host llm.stream 采样，不把凭据传给浏览器，不自行重写检测算法。
 - 指纹概率仅指参考库内的闭集校准概率，不是身份鉴定、真实性能或质量排名；无校准时只显示原始排序分数。自定义任务尚为 Mock，所有相关指标与成果须显式标识。
 - 并发槽位与单请求时长是 Host 运行参数：同一模型的 3 条挑战始终同时发出，槽位/全局请求池上限只在 Host 定义，客户端只读快照并发送增量配置。调整必须非抢占（降低并发或时长不得打断已开始的请求），失败样本重试只能按模型重发失败项并保留已完成样本。
-- a6api 专项仅从油猴提交的网页选择创建；普通创建页不提供渠道查询、密钥输入或 JSON 导入。网页的测试令牌选择按站点 origin + a6api 账号 ID 存入 localStorage，只存 ID/name。Host 通过已配对、账号隔离的 loopback bridge 下发站点操作，不持有网页 cookie 或测试 API key。
-- 槽位由用户手动选择的 `{tokenId,provider}` 决定，不核验 key 与 provider 是否相同，不修改 DSH 提供商配置。每令牌一 worker、跨作业共享身份锁；固定成功并读回后用 DSH 官方准备接口同时采样三题，全部请求/流清理结束并恢复后才领取下一项。专项与普通任务共用全局请求池。取消不得提前复用令牌，恢复失败必须可见。
-- pin 写前持久化补偿，关闭智能兜底；仅同站点同账号可恢复，外部修改不覆盖。`dsh://open` 只唤起安装版；选择数据走 Host feed，常驻 Client 用 sidebarRight.openTab 导航，不能编造原生插件路径或宣称能切 Host/profile。
+- a6api 专项仅从油猴提交的网页选择创建；普通创建页不提供渠道查询、密钥输入或 JSON 导入。网页的测试令牌选择按站点 origin + a6api 账号 ID 存入 localStorage，只存 ID/name。网页只是发令器：一次 POST 到 `/mit-a6/select`（口令鉴权），不回传、不轮询、不持有 cookie。固定/取 key/解除固定全部由 Host 用账户访问令牌直连站点完成。
+- 槽位就是用户勾选的测试令牌（1–8 个），不核验 key、不修改 DSH 提供商配置。每令牌一 worker、跨作业共享身份锁；固定读回 `route_effective` 后用该令牌的 key 经 `backend/a6/transport.js` 同时采样三题，全部请求/流清理结束并恢复后才领取下一项。固定未生效必须零采样请求；专项与普通任务共用全局请求池；取消不得提前复用令牌，恢复失败必须可见。
+- pin 关闭智能兜底；Host 侧手动固定留租约，任务侧固定由 worker 自行解除，外部修改不覆盖。`dsh://open` 只唤起安装版（不解析任何 path/query/hash）；选择数据走 Host intake，常驻 Client 用 `sidebarRight.openTab` 导航，不能编造原生插件路径或宣称能切 Host/profile。
 - 用户预设只在当前浏览器持久化；读取验证，失败可见。运行保存 prompt/footer/preset 快照，指纹另保存共享挑战和参考库版本。
 - 不启动成果服务、不创建自定义 Agent 沙箱。真实模型推理仅用于已授权的指纹采样。绘图成果限定 Canvas + HTML 或 SVG；内置 Mock 成果预览在无同源权限 iframe 中。
 - CSS 限定 `.mit-workbench`，Tailwind 禁用 preflight，继承 Host 字体及主题令牌。

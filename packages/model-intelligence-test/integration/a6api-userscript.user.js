@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         a6api · 模型智能测试 v2
+// @name         a6api · 模型智能测试 v3
 // @namespace    dsh.model-intelligence-test
-// @version      2.0.0
-// @description  独立选择渠道和测试令牌，通过已配对的本机 DSH bridge 安全执行站点路由命令；不读取或导出 API 密钥。
+// @version      3.0.0
+// @description  在市场与令牌表格中提供勾选列，把所选渠道与测试令牌一次性发送给本机 DSH；不执行站点写操作，不读取或导出 API 密钥。
 // @match        https://a6api.vip/*
 // @match        https://www.a6api.vip/*
 // @run-at       document-start
@@ -10,15 +10,20 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
-// @grant        GM_openInTab
 // @connect      localhost
 // @connect      127.0.0.1
 // ==/UserScript==
 
+// 本脚本只负责选择与发送，不执行任何站点写操作：
+// 既不修改站点固定(pin)/路由，也不把登录凭据交给 DSH。固定与恢复由 DSH 侧用
+// 「系统访问令牌 + 用户 ID」直接调用站点 /api/* 完成。脚本只有三项职责：
+// 1) 在表格里插入勾选列；2) 缓存列出 {id,name} 以便选择测试令牌；3) 把选择一次性 POST 给 DSH。
+// 发送路径只有一次 HTTP 往返：没有轮询、没有重试、没有后台定时器；失败请用户再点一次。
+
 (async function boot() {
   'use strict';
 
-  if (document.getElementById('mit-a6-v2-card')) return;
+  if (document.getElementById('mit-a6-v3-card')) return;
   const lifecycle = new AbortController();
   const cleanupHooks = [];
   let disposed = false;
@@ -27,32 +32,25 @@
   // Only these response fields enter the cache. Never observe key/reveal/copy endpoints,
   // React internals, authorization headers, or complete token objects.
   const SESSION_KEY = 'a6api_session_user_id';
-  const PREFIX = 'mit-a6-v2:';
-  const CONFIG_KEY = 'mit-a6-bridge-config-v2';
+  const PREFIX = 'mit-a6-v3:';
+  const CONFIG_KEY = 'mit-a6-config-v3';
+  const SEND_TIMEOUT_MS = 12000;
   const siteOrigin = location.origin;
-  const pageId = crypto.randomUUID();
+  const pageId = crypto.randomUUID(); // 本页稳定 id：同一页面内多次发送保持一致。
   const selectedModels = new Map(); // model + listing + channel + supplier, across pagination.
   const modelCache = new Map();
   const tokenCache = new Map();
+  const siteRequests = new Set();
   let selectedTokens = new Map();
   let visibleCounts = { models: 0, tokens: 0 };
   let accountId = sessionId();
   let epoch = 0;
-  let connection = null;
   let config = null;
-  let launch = null;
-  let status = '先在设置中粘贴 DSH bridge 配置';
+  let status = '先在连接设置中填写 DSH 地址与导入口令';
   let busy = false;
-  let pollTimer;
   let scanTimer;
   let lastFallbackCheck = 0;
-  const siteRequests = new Set();
-  const bridgeRequests = new Set();
-  const commandResults = new Map();
-  const commandInFlight = new Map();
-  const locks = new Set();
   let observedSession = sessionId();
-  const MAX_COMMAND_MS = 25000;
   const originalFetch = window.fetch.bind(window);
 
   function positiveId(value) {
@@ -76,7 +74,7 @@
     } catch { status = '本地记录读取失败，请检查浏览器存储权限'; return fallback; }
   }
   function saveStored(key, value) {
-    // A failed lease write MUST stop a pin before the network write.
+    // Callers roll back the in-memory selection when this throws.
     localStorage.setItem(key, JSON.stringify(value));
   }
   function tokenOf(value) {
@@ -110,7 +108,7 @@
   function listOf(body) {
     const data = body?.data ?? body;
     if (Array.isArray(data)) return data;
-    for (const name of ['items', 'models', 'channels', 'pins', 'tokens']) {
+    for (const name of ['items', 'models', 'channels', 'tokens']) {
       if (Array.isArray(data?.[name])) return data[name];
     }
     throw new Error('站点返回的列表格式无法确认');
@@ -122,19 +120,13 @@
     epoch += 1;
     for (const controller of siteRequests) controller.abort();
     siteRequests.clear();
-    for (const request of bridgeRequests) request?.abort?.();
-    bridgeRequests.clear();
-    clearTimeout(pollTimer);
-    connection = null;
-    launch = null;
-    commandResults.clear();
     selectedModels.clear();
     modelCache.clear();
     tokenCache.clear();
     accountId = id;
     selectedTokens.clear();
     if (accountId) loadTokens();
-    status = accountId ? `当前账号 #${accountId}，请连接 DSH` : '请先登录 a6api';
+    status = accountId ? `当前账号 #${accountId}，勾选后发送` : '请先登录 a6api';
     scheduleScan();
     render();
   }
@@ -151,7 +143,7 @@
     const fromSession = sessionId();
     if (fromSession !== observedSession) {
       observedSession = fromSession;
-      acceptAccount(fromSession); // Removal/logout invalidates old commands immediately too.
+      acceptAccount(fromSession); // Removal/logout invalidates the previous page's caches immediately.
     }
     if (fromSession) { acceptAccount(fromSession); return true; }
     if (accountId && !force && Date.now() - lastFallbackCheck < 15000) return true;
@@ -170,42 +162,8 @@
       acceptAccount(sessionId() || body?.data?.id || body?.id);
       return !!accountId;
     } catch {
-      if (!disposed) { status = '无法确认登录账号，请登录后重试；本次命令将拒绝执行'; render(); }
+      if (!disposed) { status = '无法确认登录账号，请登录后重试'; render(); }
       return false;
-    } finally { clearTimeout(timer); siteRequests.delete(controller); }
-  }
-  function assertContext(ctx) {
-    if (disposed) throw new Error('页面已关闭，命令已拒绝');
-    const current = sessionId();
-    if (current !== observedSession) { observedSession = current; acceptAccount(current); }
-    else if (current && current !== accountId) acceptAccount(current);
-    if (!accountId || ctx.accountId !== accountId || ctx.epoch !== epoch) throw new Error('账号已切换，命令已拒绝');
-    if (ctx.connection && ctx.connection !== connection) throw new Error('配对连接已变更，命令已拒绝');
-    if (Date.now() >= ctx.deadline) throw new Error('命令已超时，停止后续写入；请核对站点状态');
-  }
-  async function siteApi(path, ctx, method = 'GET', body) {
-    assertContext(ctx);
-    if (method !== 'GET' && (!ctx.command || !ctx.connection)) throw new Error('站点写入必须来自配对 bridge 命令');
-    if (method !== 'GET' && ctx.command.operation !== 'restore' && !selectedTokens.has(ctx.command.tokenId)) throw new Error('测试令牌已取消选择，拒绝写入');
-    if (!path.startsWith('/api/')) throw new Error('拒绝非站点 API');
-    const controller = new AbortController();
-    siteRequests.add(controller);
-    const timer = setTimeout(() => controller.abort(), Math.max(1, Math.min(8000, ctx.deadline - Date.now())));
-    try {
-      if (method !== 'GET') ctx.writeStarted = true;
-      const response = await originalFetch(path, {
-        method, credentials: 'same-origin', signal: controller.signal, cache: 'no-store',
-        headers: { accept: 'application/json', 'New-Api-User': ctx.accountId, ...(body ? { 'content-type': 'application/json' } : {}) },
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      });
-      const data = await response.json();
-      assertContext(ctx);
-      // Deliberately do not relay server messages: a message could contain private data.
-      if (!response.ok || data?.success === false) throw new Error(`站点 ${method} 请求失败 (HTTP ${response.status})`);
-      return data?.data ?? data;
-    } catch (error) {
-      if (error?.name === 'AbortError') throw new Error('站点请求超时或账号已切换；写入结果可能待确认');
-      throw error;
     } finally { clearTimeout(timer); siteRequests.delete(controller); }
   }
 
@@ -274,7 +232,7 @@
           if (proto.send === sendHook) proto.send = sendBefore;
         });
       }
-    } catch { status = '响应缓存不可用，将使用可确认的表格信息'; }
+    } catch { status = '响应缓存不可用，将只使用表格中可确认的行身份'; }
   }
 
   function nativeCells(tr) {
@@ -453,324 +411,67 @@
     if (records.some(record => !host.contains(record.target))) scheduleScan();
   });
 
-  function localBridgeConfig(value) {
-    if (!value || typeof value !== 'object') throw new Error('配置必须是包含 origin、capability 的 JSON');
-    const url = new URL(value.origin);
+  // 连接设置只有两项：DSH 源地址与导入口令。二者仅保存在油猴存储，发送时一次性提交。
+  function readConfig(value) {
+    if (!value || typeof value !== 'object') throw new Error('连接设置必须是包含 DSH 地址与导入口令的对象');
+    let url;
+    try { url = new URL(label(value.origin, 2048)); } catch { throw new Error('DSH 地址无效，示例 http://127.0.0.1:51853'); }
     if (!['http:', 'https:'].includes(url.protocol) || !['localhost', '127.0.0.1'].includes(url.hostname)
-      || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('bridge origin 必须是 localhost 或 127.0.0.1 的完整源地址');
-    const capability = label(value.capability, 2048);
-    if (!capability || /[\r\n]/.test(capability)) throw new Error('capability 无效');
-    return { origin: url.origin, capability };
+      || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+      throw new Error('DSH 地址只填本机源地址（协议 + 主机 + 端口），不要带路径、查询或账号信息');
+    }
+    const intake = label(value.intake, 2048);
+    // Sent verbatim as a request header: keep it to visible ASCII so XHR cannot reject it.
+    if (!intake || /[^\x21-\x7e]/.test(intake)) throw new Error('导入口令为空或包含空格/非 ASCII 字符');
+    return { origin: url.origin, intake };
   }
-  function bridgePost(path, body, auth, bridgeConfig = config) {
-    if (disposed || !bridgeConfig) return Promise.reject(new Error('页面已关闭或尚未设置 DSH bridge 配置'));
+  function postSelection(body, target) {
+    // Exactly one HTTP round trip. No retry and no polling: the user sends again on failure.
     return new Promise((resolve, reject) => {
-      let request;
-      const finish = (fn, value) => { bridgeRequests.delete(request); fn(value); };
-      request = GM_xmlhttpRequest({
-        method: 'POST', url: `${bridgeConfig.origin}/mit-a6/bridge/${path}`, timeout: 12000, anonymous: true,
-        headers: { 'Content-Type': 'application/json', ...auth }, data: JSON.stringify(body),
+      const fail = (text, data) => reject(new Error(data?.code ? `${text}（${label(data.code, 80)}）` : text));
+      GM_xmlhttpRequest({
+        method: 'POST', url: `${target.origin}/mit-a6/select`, timeout: SEND_TIMEOUT_MS, anonymous: true,
+        headers: { 'content-type': 'application/json', 'x-mit-intake': target.intake },
+        data: JSON.stringify(body),
         onload(response) {
-          if (response.status < 200 || response.status >= 300) { finish(reject, new Error(`DSH bridge 请求失败 (HTTP ${response.status})`)); return; }
-          try {
-            const data = JSON.parse(response.responseText);
-            if (data?.error || data?.ok === false) throw new Error('DSH bridge 拒绝请求，请检查配对状态');
-            finish(resolve, data);
-          } catch { finish(reject, new Error('DSH bridge 返回无效响应或拒绝请求')); }
+          let data = null;
+          try { data = JSON.parse(response.responseText); } catch { data = null; }
+          const detail = data?.error ? `：${label(data.error, 300)}` : '';
+          if (response.status < 200 || response.status >= 300) { fail(`DSH 返回 HTTP ${response.status}${detail}`, data); return; }
+          const selectionId = label(data?.selectionId, 200);
+          if (data?.ok !== true || !selectionId) { fail(`DSH 未接受这次选择${detail || '：响应缺少 selectionId'}`, data); return; }
+          resolve({ selectionId });
         },
-        onerror: () => finish(reject, new Error('DSH bridge 无法连接，请启动 Host 并检查配置')),
-        ontimeout: () => finish(reject, new Error('DSH bridge 请求超时')),
-        onabort: () => finish(reject, new Error('DSH bridge 请求取消')),
+        onerror: () => reject(new Error(`无法连接 DSH，请确认 ${target.origin} 可访问且 Host 已启动`)),
+        ontimeout: () => reject(new Error(`DSH 请求超时（${SEND_TIMEOUT_MS / 1000} 秒），未自动重试，请再点一次发送`)),
+        onabort: () => reject(new Error('DSH 请求已取消')),
       });
-      bridgeRequests.add(request);
     });
   }
-  async function connect() {
+  async function send() {
     if (busy) return;
+    if (!config) { status = '先在连接设置中填写 DSH 地址与导入口令'; render(); return; }
+    if (!accountId) { status = '请先登录 a6api'; render(); return; }
+    if (!selectedModels.size || !selectedTokens.size) { status = '请分别选择至少一个渠道和测试令牌'; render(); return; }
     busy = true;
-    try {
-      if (!await checkAccount(true)) throw new Error('无法确认登录账号，命令已拒绝');
-      if (!accountId) throw new Error('请先登录 a6api');
-      if (!config) throw new Error('先粘贴 Host 面板复制的 bridge JSON');
-      const ctx = { accountId, epoch, deadline: Date.now() + MAX_COMMAND_MS };
-      const requestedConfig = config;
-      const data = await bridgePost('connect', { accountId, siteOrigin, pageId, tokens: payloadTokens() }, { 'X-MIT-Capability': config.capability });
-      assertContext(ctx);
-      if (requestedConfig !== config) throw new Error('bridge 配置已变更，请重连');
-      if (!label(data.connectionId) || !label(data.sessionToken, 4096)) throw new Error('bridge 缺少连接凭据');
-      connection = { id: data.connectionId, session: data.sessionToken, accountId, epoch };
-      launch = data.launch;
-      commandResults.clear();
-      status = 'DSH 已连接；勾选后点击「送到 DSH 测试」';
-      clearTimeout(pollTimer);
-      pollTimer = setTimeout(poll, 2000);
-    } catch (error) { status = error.message; }
-    finally { busy = false; render(); }
-  }
-  function openLaunch(value, webOnly = false) {
-    if (!value) throw new Error('尚无 DSH 打开地址，请先连接');
-    if (!webOnly && value.nativeUrl) {
-      if (value.nativeUrl !== 'dsh://open') throw new Error('DSH 原生打开地址无效');
-      location.assign(value.nativeUrl);
-      return;
-    }
-    const url = new URL(value.webUrl);
-    if (!['http:', 'https:'].includes(url.protocol) || !['localhost', '127.0.0.1'].includes(url.hostname) || url.username || url.password) throw new Error('DSH Web 地址必须在本机');
-    GM_openInTab(url.href, { active: true, insert: true, setParent: true });
-  }
-  async function sendSelection() {
-    if (busy) return;
-    if (!connection) { status = '请先连接 DSH'; render(); return; }
-    if (!selectedModels.size || !selectedTokens.size) { status = '请分别选择至少一个模型渠道和测试令牌'; render(); return; }
-    busy = true;
-    const paired = connection;
-    const ctx = { accountId, epoch, connection: paired, deadline: Date.now() + MAX_COMMAND_MS };
-    try {
-      assertContext(ctx);
-      const data = await bridgePost('selection', {
-        connectionId: paired.id, accountId, models: [...selectedModels.values()], tokens: payloadTokens(),
-      }, { 'X-MIT-Session': paired.session });
-      assertContext(ctx);
-      if (!label(data.selectionId)) throw new Error('DSH 未返回选择记录 ID');
-      launch = data.launch;
-      openLaunch(launch);
-      status = '选择已发送并唤起 DSH，请在 DSH 确认测试；此按钮不启动付费推理';
-    } catch (error) { status = error.message; }
-    finally { busy = false; render(); }
-  }
-
-  function leaseRecords(id) {
-    // Unlike UI preferences, a corrupt compensation log must never become an empty log.
-    const raw = localStorage.getItem(storageKey('leases', id));
-    if (!raw) return {};
-    const data = JSON.parse(raw);
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('补偿记录格式损坏');
-    return data;
-  }
-  async function writeLease(id, leaseId, value) {
-    // Different tokens can run in different tabs. Serialize journal writes separately
-    // from token/model locks so read-modify-write cannot lose another token's lease.
-    await navigator.locks.request(`mit-a6:journal:${siteOrigin}:${id}`, { mode: 'exclusive' }, () => {
-      const all = leaseRecords(id);
-      if (value) all[leaseId] = value; else delete all[leaseId];
-      saveStored(storageKey('leases', id), all);
-    });
-  }
-  function pinOf(value) {
-    const token_id = positiveId(value?.token_id);
-    const model_name = label(value?.model_name);
-    const channel_id = positiveId(value?.channel_id ?? value?.pin_channel_id);
-    if (!token_id || !model_name || !channel_id) return null;
-    return { token_id, model_name, channel_id, fallback_to_smart_routing: value.fallback_to_smart_routing !== false };
-  }
-  async function currentPin(ctx, command) {
-    const pins = listOf(await siteApi('/api/marketplace/pins', ctx)).map(pinOf).filter(Boolean)
-      .filter(pin => pin.token_id === command.tokenId && pin.model_name === command.model);
-    if (pins.length > 1) throw new Error('同一令牌模型存在多条固定记录，拒绝覆盖');
-    return pins[0] || null;
-  }
-  function samePin(a, b) {
-    return (!a && !b) || (!!a && !!b && a.token_id === b.token_id && a.model_name === b.model_name
-      && a.channel_id === b.channel_id && a.fallback_to_smart_routing === b.fallback_to_smart_routing);
-  }
-  function targetPin(command) {
-    return { token_id: command.tokenId, model_name: command.model, channel_id: command.channelId, fallback_to_smart_routing: false };
-  }
-  function readLease(value, command, id) {
-    if (!value || value.leaseId !== command.leaseId || value.accountId !== id
-      || value.tokenId !== command.tokenId || value.model !== command.model
-      || !samePin(value.target, targetPin(command))) throw new Error('本地 lease 身份或目标不匹配');
-    const previous = value.previous === null ? null : pinOf(value.previous);
-    if (value.previous !== null && (!previous || previous.token_id !== command.tokenId
-      || previous.model_name !== command.model || !samePin(previous, value.previous))) throw new Error('原固定补偿数据损坏，拒绝更改');
-    return { ...value, target: targetPin(command), previous };
-  }
-  async function pinCommand(ctx, command) {
-    const target = targetPin(command);
-    const before = await currentPin(ctx, command);
-    const all = leaseRecords(ctx.accountId);
-    let lease = all[command.leaseId];
-    if (Object.values(all).some(item => item.state !== 'restored' && item.leaseId !== command.leaseId && item.tokenId === command.tokenId && item.model === command.model)) {
-      throw new Error('该令牌模型仍有未恢复 lease，拒绝覆盖');
-    }
-    if (lease) {
-      lease = readLease(lease, command, ctx.accountId);
-      if (lease.state === 'restored') throw new Error('此 lease 已恢复，拒绝重新固定');
-      if (!samePin(lease.target, target) || lease.accountId !== ctx.accountId) throw new Error('lease 目标不匹配');
-      if (samePin(before, target)) return { verified: true };
-      if (!samePin(before, lease.previous)) throw new Error('固定配置已被外部修改，拒绝重试覆盖');
-    } else {
-      lease = {
-        leaseId: command.leaseId, accountId: ctx.accountId, tokenId: command.tokenId, model: command.model,
-        target, previous: before, state: 'prepared', savedAt: new Date().toISOString(),
-      };
-      await writeLease(ctx.accountId, command.leaseId, lease);
-    }
-    // Any ambiguous timeout retains the lease for a subsequent authenticated restore.
-    await siteApi('/api/marketplace/pin', ctx, 'POST', target);
-    const after = await currentPin(ctx, command);
-    if (!samePin(after, target)) throw new Error('固定写入已返回，但回读与目标不一致；补偿记录已保留');
-    await writeLease(ctx.accountId, command.leaseId, { ...lease, state: 'verified' });
-    return { verified: true };
-  }
-  async function restoreCommand(ctx, command) {
-    const stored = leaseRecords(ctx.accountId)[command.leaseId];
-    if (!stored) throw new Error('未找到此 lease 补偿记录，不能确认已恢复');
-    const lease = readLease(stored, command, ctx.accountId);
-    const before = await currentPin(ctx, command);
-    if (samePin(before, lease.previous)) {
-      // Keep a small public tombstone: if ACK is lost, reconnect/reissued restore
-      // can still prove its previous state without treating a missing log as success.
-      await writeLease(ctx.accountId, command.leaseId, { ...lease, state: 'restored', restoredAt: Date.now() });
-      return { restored: true, verified: true, skipped: true };
-    }
-    if (lease.state === 'restored' || !samePin(before, lease.target)) {
-      // Preserve compensation data, and explicitly fail: never overwrite user changes.
-      const error = new Error('用户或其他页面已修改固定配置，未覆盖；请人工核对补偿记录');
-      error.result = { conflict: true, skipped: true };
-      throw error;
-    }
-    if (lease.previous) await siteApi('/api/marketplace/pin', ctx, 'POST', lease.previous);
-    else await siteApi('/api/marketplace/unpin', ctx, 'POST', {
-      token_id: command.tokenId, model_name: command.model, channel_id: command.channelId,
-    });
-    const after = await currentPin(ctx, command);
-    if (!samePin(after, lease.previous)) throw new Error('恢复请求已提交，但回读未确认；补偿记录保留');
-    await writeLease(ctx.accountId, command.leaseId, { ...lease, state: 'restored', restoredAt: Date.now() });
-    return { restored: true, verified: true };
-  }
-  async function subscription(ctx, command) {
-    const query = new URLSearchParams({ p: '1', page_size: '100', token_id: String(command.tokenId), model_names: command.model });
-    const body = await siteApi(`/api/subscriptions?${query}`, ctx);
-    const rows = listOf(body).filter(row => Number(row.token_id) === command.tokenId && row.model_name === command.model && !row.deleted);
-    if (rows.length > 1) throw new Error('同一令牌模型存在多条订阅，拒绝更改');
-    if (Number(body?.total) > 100) throw new Error('订阅查询结果不完整，拒绝更改');
-    return rows[0] || null;
-  }
-  function hasRoute(row, channelId) {
-    return Array.isArray(row?.channels) && row.channels.some(item => !item.removed_at && Number(item.channel_id) === channelId);
-  }
-  async function routeCommand(ctx, command) {
-    const before = await subscription(ctx, command);
-    if (hasRoute(before, command.channelId)) return { verified: true, skipped: true };
-    if (before) {
-      const id = positiveId(before.id);
-      if (!id) throw new Error('订阅 ID 无法确认');
-      await siteApi(`/api/subscriptions/${id}/channels`, ctx, 'PATCH', { channel_id: command.channelId });
-    } else {
-      // Mirrors the site's manual "加入路由" helper; route never uses the pin API.
-      await siteApi('/api/subscriptions', ctx, 'POST', {
-        token_id: command.tokenId, model_name: command.model, channels: [{ channel_id: command.channelId }],
-        caps: { input_price_micros: 0, output_price_micros: 0, cache_read_price_micros: 0, cache_write_price_micros: 0, per_request_price_micros: 0 },
-        sort_strategy: 'price_asc',
-      });
-    }
-    if (!hasRoute(await subscription(ctx, command), command.channelId)) throw new Error('路由写入已返回，但目标渠道回读未确认');
-    return { verified: true };
-  }
-  function validateCommand(value) {
-    if (!value || !['pin', 'restore', 'route'].includes(value.operation)) throw new Error('未知操作');
-    const command = {
-      id: label(value.id, 240), operation: value.operation, tokenId: positiveId(value.tokenId),
-      model: label(value.model), channelId: positiveId(value.channelId), leaseId: label(value.leaseId, 240),
+    render();
+    const target = config;
+    const generation = epoch;
+    const body = {
+      siteOrigin, accountId, pageId,
+      models: [...selectedModels.values()].map(row => ({
+        listingId: row.listingId, channelId: row.channelId, supplierId: row.supplierId, model: row.model,
+        supplierName: row.supplierName, channelName: row.channelName, brand: row.brand,
+      })),
+      tokens: payloadTokens(),
     };
-    if (!command.id || !command.tokenId || !command.model || !command.channelId
-      || (command.operation !== 'route' && (!command.leaseId || ['__proto__', 'constructor', 'prototype'].includes(command.leaseId)))) throw new Error('命令字段无效');
-    if (command.operation !== 'restore' && !selectedTokens.has(command.tokenId)) throw new Error('此测试令牌已取消选择或不属于当前账号选择');
-    return command;
-  }
-  async function executeCommand(paired, value) {
-    const id = label(value?.id, 240);
-    const cacheKey = `${paired.id}:${id}`;
-    if (commandResults.has(cacheKey)) return commandResults.get(cacheKey);
-    const identity = JSON.stringify([paired.id, paired.accountId, value?.operation, value?.leaseId,
-      value?.tokenId, value?.model, value?.channelId]);
-    let pending = commandInFlight.get(identity);
-    if (!pending) {
-      pending = performCommand(paired, value);
-      commandInFlight.set(identity, pending);
-      pending.finally(() => { if (commandInFlight.get(identity) === pending) commandInFlight.delete(identity); });
-    }
-    const ack = { ...await pending, commandId: id };
-    if (id) commandResults.set(cacheKey, ack);
-    return ack;
-  }
-  async function performCommand(paired, value) {
-    const ctx = { accountId: paired.accountId, epoch: paired.epoch, connection: paired, deadline: Date.now() + MAX_COMMAND_MS };
-    const id = label(value?.id, 240);
-    const cacheKey = `${paired.id}:${id}`;
-    if (commandResults.has(cacheKey)) return commandResults.get(cacheKey);
-    let ack;
-    let lockKey;
-    let acquired = false;
     try {
-      if (!await checkAccount(true)) throw new Error('无法确认登录账号，命令已拒绝');
-      assertContext(ctx);
-      const command = validateCommand(value);
-      ctx.command = command;
-      lockKey = JSON.stringify([ctx.accountId, command.tokenId, command.model]);
-      if (locks.has(lockKey)) throw new Error('同一令牌模型正在操作，拒绝并发');
-      locks.add(lockKey);
-      acquired = true;
-      const execute = () => command.operation === 'pin' ? pinCommand(ctx, command)
-        : command.operation === 'restore' ? restoreCommand(ctx, command) : routeCommand(ctx, command);
-      // Web Locks serializes same-token/model changes across tabs too. Fail closed where unavailable.
-      if (!navigator.locks?.request) throw new Error('浏览器缺少跨页操作锁，无法安全执行站点写入');
-      const result = await navigator.locks.request(`mit-a6:${siteOrigin}:${lockKey}`, { mode: 'exclusive', ifAvailable: true }, async lock => {
-        if (!lock) throw new Error('其他页面正在操作同一令牌模型');
-        assertContext(ctx);
-        return execute();
-      });
-      ack = { commandId: id, ok: true, result };
-    } catch (error) {
-      let notApplied = false;
-      if (value?.operation === 'pin' && !ctx.writeStarted && ctx.accountId === accountId && label(value?.leaseId)) {
-        try { notApplied = !leaseRecords(ctx.accountId)[value.leaseId]; } catch { /* An unreadable journal cannot prove absence. */ }
-      }
-      ack = { commandId: id, ok: false, error: label(error.message, 400),
-        ...(notApplied ? { result: { notApplied: true } } : error.result ? { result: error.result } : {}) };
-    } finally { if (acquired) locks.delete(lockKey); }
-    if (id) {
-      commandResults.set(cacheKey, ack);
-      if (commandResults.size > 500) commandResults.delete(commandResults.keys().next().value);
-    }
-    return ack;
-  }
-  async function poll() {
-    const paired = connection;
-    if (!paired) return;
-    try {
-      const ctx = { accountId: paired.accountId, epoch: paired.epoch, connection: paired, deadline: Date.now() + MAX_COMMAND_MS };
-      assertContext(ctx);
-      const data = await bridgePost('poll', { connectionId: paired.id, accountId: paired.accountId, tokens: payloadTokens() }, { 'X-MIT-Session': paired.session });
-      assertContext(ctx);
-      if (data.connected !== true) throw new Error('DSH 配对已断开，请重新连接');
-      if (!Array.isArray(data.commands)) throw new Error('DSH 命令响应格式无效');
-      // Serialize each token, but execute independent tokens concurrently so a
-      // slow slot cannot consume another slot's Host command timeout.
-      const groups = new Map();
-      for (const value of data.commands.slice(0, 32)) {
-        const key = positiveId(value?.tokenId);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(value);
-      }
-      const outcomes = await Promise.allSettled([...groups.values()].map(async values => {
-        for (const value of values) {
-          assertContext({ ...ctx, deadline: Date.now() + MAX_COMMAND_MS });
-          const ack = await executeCommand(paired, value);
-          if (connection !== paired || epoch !== paired.epoch) return;
-          await bridgePost('ack', { connectionId: paired.id, accountId: paired.accountId, ...ack }, { 'X-MIT-Session': paired.session });
-          if (connection !== paired) return;
-          status = ack.ok ? `DSH 命令 ${value.operation} 已读回确认` : `DSH 命令未完成：${ack.error}`;
-        }
-      }));
-      const failed = outcomes.find(outcome => outcome.status === 'rejected');
-      if (failed) throw failed.reason;
-    } catch (error) { if (connection === paired) status = error.message; }
-    finally {
-      render();
-      if (connection === paired) pollTimer = setTimeout(poll, 2000);
-    }
+      const data = await postSelection(body, target);
+      if (disposed) return;
+      if (generation !== epoch) { status = '发送期间账号已切换，DSH 结果未经本页确认，请核对'; return; }
+      status = `已发送 ${body.models.length + body.tokens.length} 项，等待 DSH 开始测试（渠道 ${body.models.length} / 令牌 ${body.tokens.length}）· selectionId ${data.selectionId.slice(0, 8)}`;
+    } catch (error) { if (!disposed) status = error.message; }
+    finally { busy = false; render(); }
   }
 
   // Install before the SPA captures fetch in its API client. A document-idle hook can never
@@ -778,11 +479,11 @@
   observeSiteRequests();
   if (accountId) loadTokens();
   if (!document.body) await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
-  if (document.getElementById('mit-a6-v2-card')) return;
+  if (document.getElementById('mit-a6-v3-card')) return;
 
   // Independent UI styling, including all inputs/buttons, lives inside this shadow root.
   const host = document.createElement('div');
-  host.id = 'mit-a6-v2-card';
+  host.id = 'mit-a6-v3-card';
   host.style.cssText = 'all:initial;position:fixed;top:16px;right:16px;z-index:2147483000;display:block;';
   const shadow = host.attachShadow({ mode: 'closed' });
   shadow.innerHTML = `<style>
@@ -790,22 +491,25 @@
     *{box-sizing:border-box} .card{font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;width:min(330px,calc(100vw - 16px));background:#f9fbff;color:#172238;border:1px solid #d3dced;border-radius:12px;box-shadow:0 8px 32px #19345326;overflow:hidden}
     .title{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#edf2fc;color:#172238;cursor:grab;touch-action:none;user-select:none;font-weight:650}
     .title:active{cursor:grabbing}.title span{flex:1}.body{padding:12px;max-height:calc(100vh - 100px);overflow:auto}
-    p{margin:0 0 8px}small{color:#53627b;font-size:12px}button,textarea{font:inherit;color:#172238}button{border:1px solid #bdcbe2;border-radius:7px;background:#fff;padding:5px 9px;cursor:pointer}
-    button:hover{background:#e9effc}button:focus-visible,textarea:focus-visible{outline:2px solid #345dcc;outline-offset:2px}button:disabled{opacity:.55;cursor:wait}
+    p{margin:0 0 8px}small{color:#53627b;font-size:12px}button,input{font:inherit;color:#172238}
+    button{border:1px solid #bdcbe2;border-radius:7px;background:#fff;padding:5px 9px;cursor:pointer}
+    button:hover{background:#e9effc}button:focus-visible,input:focus-visible{outline:2px solid #345dcc;outline-offset:2px}button:disabled{opacity:.55;cursor:wait}
     .primary{background:#345dcc;border-color:#345dcc;color:white}.primary:hover{background:#294cac}.row{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.mini{padding:0;width:26px;height:24px;font-size:16px}
-    textarea{display:block;resize:vertical;width:100%;min-height:92px;border:1px solid #bdcbe2;background:#fff;border-radius:7px;padding:7px;margin:8px 0}summary{cursor:pointer;color:#294cac}details{margin-top:10px}
-    [hidden]{display:none!important}.status{white-space:pre-wrap;overflow-wrap:anywhere;color:#43536f;font-size:12px}.count{font-weight:600;white-space:pre-line}.hint{font-size:12px;color:#53627b}.leases{font-size:12px;color:#8b4e0e}
+    input{display:block;width:100%;border:1px solid #bdcbe2;background:#fff;border-radius:7px;padding:6px 8px;margin:6px 0}summary{cursor:pointer;color:#294cac}details{margin-top:10px}
+    [hidden]{display:none!important}.status{white-space:pre-wrap;overflow-wrap:anywhere;color:#43536f;font-size:12px}.count{font-weight:600;white-space:pre-line}.hint{font-size:12px;color:#53627b}
   </style><section class="card" aria-label="模型智能测试">
     <div class="title"><span>模型智能测试 · a6api</span><button class="mini" data-collapse type="button" aria-label="收起卡片">−</button></div>
     <div class="body">
-      <p class="count" data-count></p><p class="hint">先到令牌页选择测试令牌，再到市场选渠道。若行被禁选，请通过站点翻页或刷新列表建立响应缓存；只保存令牌 ID 与名称。</p>
-      <p class="hint">dsh://open 只唤起安装版；需连接同一 Host，否则用网页备用。测试需在 DSH 确认。</p>
-      <div class="row"><button data-connect type="button">连接 DSH</button><button data-send class="primary" type="button">送到 DSH 测试</button></div>
-      <div class="row"><button data-clear type="button">清空渠道选择</button><button data-web type="button" hidden>打开 DSH Web</button></div>
-      <p class="status" data-status role="status" aria-live="polite"></p><p class="leases" data-leases hidden></p>
-      <details><summary>连接设置</summary><small>粘贴 Host 面板复制的 JSON：{origin,capability}。连接凭据仅保存在油猴存储。</small>
-        <textarea data-config spellcheck="false" aria-label="DSH bridge 配置 JSON" placeholder='{"origin":"http://127.0.0.1:端口","capability":"…"}'></textarea>
-        <div class="row"><button data-save type="button">保存配置</button><button data-disconnect type="button">断开连接</button></div>
+      <p class="count" data-count></p>
+      <p class="hint">先到令牌页选择测试令牌，再到市场选渠道。若行被禁选，请通过站点翻页或刷新列表建立响应缓存；只保存令牌 ID 与名称。</p>
+      <div class="row"><button data-send class="primary" type="button">发送到 DSH 测试</button><button data-clear type="button">清空渠道选择</button></div>
+      <p class="status" data-status role="status" aria-live="polite"></p>
+      <details><summary>连接设置</summary>
+        <small>DSH 地址填本机源地址；导入口令由 DSH 生成。两项仅保存在油猴存储，发送时一次性提交，不做轮询或重试。</small>
+        <input data-origin type="text" spellcheck="false" autocomplete="off" aria-label="DSH 地址" placeholder="http://127.0.0.1:51853">
+        <input data-intake type="password" spellcheck="false" autocomplete="off" aria-label="导入口令" placeholder="导入口令">
+        <div class="row"><button data-save type="button">保存连接设置</button></div>
+        <p class="hint" data-target></p>
       </details>
     </div>
   </section>`;
@@ -834,43 +538,29 @@
     clampPosition(Number.isFinite(layout.x) ? layout.x : innerWidth - rect.width - 16, Number.isFinite(layout.y) ? layout.y : 16);
   }
   function render() {
+    if (!uiReady) return;
     const count = `账号 ${accountId ? `#${accountId}` : '未登录'}\n渠道：本页可选 ${visibleCounts.models}，累计已选 ${selectedModels.size}\n令牌：本页可选 ${visibleCounts.tokens}，累计已选 ${selectedTokens.size}`;
     if (ui('[data-count]').textContent !== count) ui('[data-count]').textContent = count;
     if (ui('[data-status]').textContent !== status) ui('[data-status]').textContent = status;
-    ui('[data-connect]').disabled = busy;
-    ui('[data-send]').disabled = busy || !connection;
-    ui('[data-web]').hidden = !launch?.webUrl;
-    let leaseCount = 0;
-    let leaseWarning = '';
-    try { leaseCount = accountId ? Object.values(leaseRecords(accountId)).filter(lease => lease.state !== 'restored').length : 0; }
-    catch { leaseWarning = '固定补偿记录损坏或不可读，请先人工核对；脚本将拒绝覆盖配置。'; }
-    const message = leaseWarning || (leaseCount ? `${leaseCount} 条未清理的固定补偿记录；等待已配对 DSH 发出恢复命令。请勿清除此站点存储。` : '');
-    ui('[data-leases]').hidden = !message;
-    if (ui('[data-leases]').textContent !== message) ui('[data-leases]').textContent = message;
+    ui('[data-send]').disabled = busy;
+    ui('[data-clear]').disabled = busy;
+    ui('[data-save]').disabled = busy;
+    const target = config ? `将发送到 ${config.origin}/mit-a6/select` : '尚未保存连接设置，发送按钮不会发出请求';
+    if (ui('[data-target]').textContent !== target) ui('[data-target]').textContent = target;
     if (host.isConnected) { const rect = host.getBoundingClientRect(); clampPosition(rect.left, rect.top); }
   }
   ui('[data-collapse]').addEventListener('click', () => { layout.collapsed = !layout.collapsed; applyLayout(); saveLayout(); });
-  ui('[data-connect]').addEventListener('click', connect);
-  ui('[data-send]').addEventListener('click', sendSelection);
-  ui('[data-web]').addEventListener('click', () => { try { openLaunch(launch, true); } catch (error) { status = error.message; render(); } });
+  ui('[data-send]').addEventListener('click', send);
   ui('[data-clear]').addEventListener('click', () => { selectedModels.clear(); scheduleScan(); render(); });
-  ui('[data-disconnect]').addEventListener('click', () => {
-    connection = null;
-    clearTimeout(pollTimer);
-    status = '已断开 DSH；尚未恢复的 lease 保留在当前账号补偿记录中';
-    render();
-  });
   ui('[data-save]').addEventListener('click', () => {
     try {
-      const next = localBridgeConfig(JSON.parse(ui('[data-config]').value));
+      const next = readConfig({ origin: ui('[data-origin]').value, intake: ui('[data-intake]').value });
       GM_setValue(CONFIG_KEY, next);
       config = next;
-      connection = null;
-      launch = null;
-      clearTimeout(pollTimer);
-      ui('[data-config]').value = '';
-      status = '配置已保存，请连接 DSH';
-    } catch (error) { status = `配置保存失败：${error.message}`; }
+      ui('[data-origin]').value = next.origin;
+      ui('[data-intake]').value = next.intake;
+      status = `连接设置已保存：${next.origin}`;
+    } catch (error) { status = `连接设置保存失败：${error.message}`; }
     render();
   });
   let drag = null;
@@ -889,7 +579,7 @@
   const endDrag = event => {
     if (!drag || drag.pointerId !== event.pointerId) return;
     drag = null;
-    if (titleBar.hasPointerCapture(event.pointerId)) titleBar.releasePointerCapture(event.pointerId);
+    // The browser implicitly drops pointer capture on pointerup/pointercancel.
     saveLayout();
   };
   titleBar.addEventListener('pointerup', endDrag);
@@ -903,7 +593,6 @@
   listen(window, 'storage', event => {
     if (event.key === SESSION_KEY) { checkAccount(true); return; }
     if (event.storageArea === localStorage && event.key === storageKey('tokens')) { loadTokens(); scheduleScan(); render(); }
-    if (event.storageArea === localStorage && event.key === storageKey('leases')) render();
     if (event.key === layoutKey) {
       const next = readStored(layoutKey, {});
       layout = next && typeof next === 'object' ? next : {};
@@ -916,29 +605,44 @@
   listen(window, 'hashchange', scheduleScan);
   listen(document, 'visibilitychange', () => { if (!document.hidden) { checkAccount(true); scheduleScan(); } });
 
+  // 一次性连接：DSH 面板给出 https://a6api.vip/#mit-a6=<base64>，读一次即存并立刻从地址栏抹掉，
+  // 免得导入口令留在历史记录或被复制分享出去。
+  try {
+    const linked = /[#&]mit-a6=([^&]+)/.exec(location.hash);
+    if (linked) {
+      const payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(linked[1].replace(/-/g, '+').replace(/_/g, '/')), char => char.charCodeAt(0))));
+      const next = readConfig({ origin: payload.origin, intake: payload.intake });
+      GM_setValue(CONFIG_KEY, next);
+      config = next;
+      history.replaceState(history.state, '', `${location.pathname}${location.search}#/market`);
+      status = `已通过 DSH 一键连接：${next.origin}`;
+    }
+  } catch { status = '连接链接无效或已过期，请手动填写 DSH 地址与导入口令'; }
   try {
     const saved = GM_getValue(CONFIG_KEY, null);
-    if (saved) config = localBridgeConfig(saved);
-  } catch { status = '已保存的 bridge 配置无效，请重新粘贴'; }
+    if (saved) config = readConfig(saved);
+  } catch { status = '已保存的连接设置无效，请重新填写'; }
+  if (config) {
+    ui('[data-origin]').value = config.origin;
+    ui('[data-intake]').value = config.intake;
+    status = `连接设置就绪：${config.origin}；勾选后点击「发送到 DSH 测试」`;
+  }
   uiReady = true;
   applyLayout();
   render();
   checkAccount(true);
   scheduleScan();
-  // SessionStorage changes in this tab do not fire "storage". This bounded watchdog
-  // detects account switches without running an observer busy loop.
+  // SessionStorage changes in this tab do not fire "storage". This bounded watchdog detects
+  // account switches; it never talks to DSH, and sending stays a single user-initiated request.
   const watchdog = setInterval(() => { checkAccount(); }, 1000);
   listen(window, 'pagehide', event => {
     disposed = true;
     epoch += 1;
-    connection = null;
-    clearTimeout(pollTimer);
     clearTimeout(scanTimer);
     clearInterval(watchdog);
     observer.disconnect();
     lifecycle.abort();
     for (const controller of siteRequests) controller.abort();
-    for (const request of bridgeRequests) request?.abort?.();
     for (const cleanup of cleanupHooks.reverse()) { try { cleanup(); } catch { /* Page is unloading. */ } }
     for (const cell of document.querySelectorAll('[data-mit-a6-cell]')) cell.remove();
     host.remove();

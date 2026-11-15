@@ -2,32 +2,42 @@ import React,{ useStore } from '../../runtime';
 import type { Workbench } from '../../types';
 import { Icon } from '../../components/common';
 
+/** Credential setup for a6api. Everything here runs on the Host; the browser only sends selections. */
 export function FeatureHub({ store }: { store: Workbench }) {
   const records=useStore(store.evaluations,state => state.records);
   const a6=useStore(store.a6,state => state);
+  const config=a6.config;
+  const { accessToken, userId }=a6.form;
   return <div className="mit-feature-hub">
-    <div className="mit-feature-head"><p className="mit-kicker">FEATURES</p><h1>功能中心</h1><p className="mit-muted">真实模型指纹、自定义任务评测与网页连接工具。</p></div>
+    <div className="mit-feature-head"><p className="mit-kicker">FEATURES</p><h1>功能中心</h1><p className="mit-muted">真实模型指纹、自定义任务评测与 a6api 渠道测试。</p></div>
     <div className="mit-feature-grid">
       <button type="button" className="mit-feature-card" onClick={store.actions.openDraft}><span className="mit-feature-index">01</span><strong>模型智能测试</strong><span className="mit-muted">lm-detector 真实数字指纹，或自定义 Agent 任务评测。全局 {records.length} 条记录。</span><span className="mit-feature-action">打开工作台 <Icon name="chevron" size={12} /></span></button>
-      <section className="mit-feature-card mit-a6-pairing" aria-label="连接 a6api 油猴">
-        <span className="mit-feature-index">02</span><strong>连接 a6api 油猴</strong><p className="mit-muted">首次使用时复制连接配置到油猴脚本。完成配对后，在 a6api 网页选择渠道与 token，点击网页的创建操作；专项配置页会自动出现。</p>
-        <button type="button" className="mit-button" disabled={a6.bridgeLoading} onClick={store.actions.loadA6Bridge}>{a6.bridgeLoading? '读取连接配置…':a6.bridge? '刷新连接状态':'显示连接配置'}</button>
-        {a6.bridge&&<>
-          <p className="mit-muted">{a6.bridge.connected? '网页桥已连接':'等待网页连接'} · {a6.bridge.nativeSupported? '支持客户端唤起':'使用网页连接'}</p>
-          <textarea className="mit-a6-configuration" aria-label="a6api 油猴连接配置" readOnly rows={5} spellCheck={false} value={JSON.stringify(a6.bridge.configuration,null,2)} onFocus={event => event.currentTarget.select()} />
-          <button type="button" className="mit-button" disabled={a6.copying} onClick={store.actions.copyA6Bridge}>{a6.copying? '复制中…':'复制连接配置'}</button>
-          {a6.bridge.connections.length>0&&<ul className="mit-a6-connections">{a6.bridge.connections.map(connection => <li key={connection.id}><strong>{connection.online? '在线':'离线'}</strong><span>{connection.siteOrigin} · 账号 {connection.accountId}</span></li>)}</ul>}
-        </>}
-        {a6.bridgeError&&<p className="mit-error" role="alert">{a6.bridgeError}</p>}
-        {a6.bridgeFeedback&&<p className="mit-muted" role="status">{a6.bridgeFeedback}</p>}
+      <section className="mit-feature-card mit-a6-credentials" aria-label="a6api 接入">
+        <span className="mit-feature-index">02</span><strong>a6api 接入</strong>
+        <p className="mit-muted">填一次账户访问令牌：之后固定渠道、解除固定、换取测试令牌密钥全部由 DSH 直接完成，网页只负责把渠道清单发过来。</p>
+        <label className="mit-field">账户访问令牌<input type="password" autoComplete="off" spellCheck={false} value={accessToken} placeholder={config?.configured? `已配置 ${config.mask}（留空则沿用）`:'在 a6api 设置里生成后粘贴'} onChange={event => store.actions.patchA6Form({accessToken: event.currentTarget.value})} /></label>
+        <label className="mit-field">用户 ID<input inputMode="numeric" value={userId} placeholder={config?.userId? `当前 ${config.userId}`:'a6api 个人设置里的数字 ID'} onChange={event => store.actions.patchA6Form({userId: event.currentTarget.value})} /></label>
+        <button type="button" className="mit-button" disabled={a6.saving} onClick={store.actions.saveA6Config}>{a6.saving? '正在验证…':'保存并验证'}</button>
+        {config?.configured&&<p className="mit-muted" role="status">已连接：账号 {config.userId} · 访问令牌 {config.mask}</p>}
+        {a6.configError&&<p className="mit-error" role="alert">{a6.configError}</p>}
+        {a6.configFeedback&&<p className="mit-muted" role="status">{a6.configFeedback}</p>}
+        <div className="mit-a6-intake">
+          <div className="mit-label-row"><strong>油猴接入</strong><button type="button" className="mit-text-button" disabled={a6.rotating} onClick={store.actions.rotateA6Intake}>{a6.rotating? '更换中…':'更换导入口令'}</button></div>
+          <p className="mit-muted">点下面的链接，油猴会自己记住接入点并从地址栏抹掉口令；之后在 a6api 页面勾选渠道直接发送即可。</p>
+          {config?.link? <a className="mit-button" href={config.link} target="_blank" rel="noreferrer">一键连接 a6api 页面</a> : <span className="mit-muted">等待 Host 报告接入点</span>}
+          <details className="mit-a6-manual"><summary className="mit-muted">手动填写（可选）</summary>
+            <code className="mit-a6-origin">{config?.origin? `${config.origin}/mit-a6/select`:'等待 Host 报告接入点'}</code>
+            <div className="mit-a6-token-row"><code className="mit-a6-token-value">{config?.intakeToken||'——'}</code><button type="button" className="mit-button" disabled={a6.copying||!config?.intakeToken} onClick={store.actions.copyA6Intake}>{a6.copying? '复制中…':'复制导入口令'}</button></div>
+          </details>
+        </div>
       </section>
       <section className="mit-feature-card" aria-label="网页选择收件箱">
         <strong>已从 a6api 收到的选择</strong>
-        <p className="mit-muted">如果自动打开时尚未选择 DSH 会话，请先选一个会话，再打开已收到的清单。原生链接只唤起安装版；桌面端须连接相同 Host。</p>
+        <p className="mit-muted">网页发送后会自动打开专项页；若当时未开面板，也可以从这里重新打开。</p>
         {a6.error&&<p role="alert" className="mit-error">{a6.error}</p>}
         {a6.selections.length? a6.selections.slice(-10).reverse().map(selection => <button type="button" className="mit-text-button" key={selection.id} onClick={() => store.actions.openA6(selection.id)}>
-          账号 {selection.accountId} · {selection.models.length} 项 · {new Date(selection.createdAt).toLocaleString('zh-CN')}
-        </button>):<span className="mit-muted">暂无网页提交的选择，请从油猴卡片点击「前往 DSH 测试」。</span>}
+          账号 {selection.accountId} · {selection.models.length} 项 · {selection.tokens.length} 令牌 · {new Date(selection.createdAt).toLocaleString('zh-CN')}
+        </button>):<span className="mit-muted">暂无网页提交的选择，请在 a6api 页面用油猴卡片发送。</span>}
       </section>
     </div>
   </div>;

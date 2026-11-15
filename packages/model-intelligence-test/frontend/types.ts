@@ -19,17 +19,18 @@ export type FingerprintStatusView = FingerprintJobView | {id: string; revision: 
 export interface FingerprintOptions { concurrency?: number; timeoutMs?: number }
 
 export interface A6Channel { listingId: number; channelId: number; supplierId: number; model: string; supplierName?: string; channelName?: string; brand?: string }
-export interface A6Slot { tokenId: number; provider: string }
-export interface A6Selection { id: string; connectionId: string; accountId: string; siteOrigin: string; createdAt: number; models: A6Channel[]; tokens: {id: number; name: string}[] }
-export interface A6BridgeInfo { configuration: {origin: string; capability: string}; connected: boolean; connections: {id: string; accountId: string; siteOrigin: string; online: boolean}[]; nativeSupported: boolean }
+export interface A6Token { id: number; name: string }
+export interface A6Slot { tokenId: number; name?: string }
+export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; models: A6Channel[]; tokens: A6Token[] }
+/** Credential state as the panel sees it: the access token itself never leaves Host storage. */
+export interface A6Config { configured: boolean; mask: string; userId: string; intakeToken: string; origin: string; link?: string }
 export type A6SelectionsView = {revision: number; selections: A6Selection[]} | {revision: number; unchanged: true};
-export interface A6Preferences { slots: A6Slot[]; timeoutMs?: number }
-export interface A6CreateInput extends A6Preferences { selectionId: string; name: string; models?: A6Channel[] }
-export type A6Operation = 'pin' | 'route' | 'restore';
+export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[] }
+export type A6Operation = 'pin' | 'restore';
 export interface A6ActionInput { selectionId: string; tokenId: number; model: string; channelId: number; operation: A6Operation }
-export interface A6Record { accountId: string; connectionId: string; siteOrigin: string; selectionId: string; slots: A6Slot[] }
-export interface A6Draft extends A6Preferences { name: string; models: A6Channel[]; loading: boolean; dirty: boolean; saving: boolean; creating: boolean; activationError?: string; error?: string; feedback?: string; targetTokenId?: number; targetChannel?: string; pending?: A6Operation; result?: string }
-export interface A6State { selections: A6Selection[]; drafts: Record<string, A6Draft>; loaded: boolean; error?: string; bridge: A6BridgeInfo | null; bridgeLoading: boolean; bridgeError?: string; bridgeFeedback?: string; copying: boolean }
+export interface A6Record { accountId: string; siteOrigin: string; selectionId: string; slots: A6Slot[] }
+export interface A6Draft { name: string; models: A6Channel[]; tokens: number[]; timeoutMs?: number; creating: boolean; error?: string; feedback?: string; targetTokenId?: number; targetChannel?: string; pending?: A6Operation; result?: string }
+export interface A6State { selections: A6Selection[]; drafts: Record<string, A6Draft>; loaded: boolean; error?: string; config: A6Config | null; configLoading: boolean; configError?: string; configFeedback?: string; form: {accessToken: string; userId: string}; saving: boolean; rotating: boolean; copying: boolean }
 export type RelayApi = 'chat' | 'responses' | 'messages';
 export interface RelayRef { siteId: string; channelId: number; model: string; api: RelayApi; listingId?: number; supplierId?: number }
 export type AttemptStatus = 'queued' | 'running' | 'done' | 'cancelled' | 'failed' | 'interrupted';
@@ -49,10 +50,11 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  attemptConfigure(request: {attemptId: string} & FingerprintOptions): Promise<AttemptViewResult>;
  attemptRetry(request: {attemptId: string; model: {provider: string; id: string}}): Promise<AttemptViewResult>;
  customSave(request: {recordId: string; snapshot: {ended: boolean; runs: unknown[]}}): Promise<{attemptId: string}>;
- a6BridgeInfo(): Promise<A6BridgeInfo>;
+ a6Config(): Promise<A6Config>;
+ a6ConfigSave(request: {accessToken?: string; userId?: string}): Promise<A6Config & {ok: true; account: {id: number; name: string}; pins: number}>;
+ a6IntakeRotate(): Promise<A6Config>;
+ a6Tokens(): Promise<{tokens: A6Token[]}>;
  a6Selections(request: {revision?: number}): Promise<A6SelectionsView>;
- a6Preferences(request: {selectionId: string}): Promise<A6Preferences>;
- a6PreferencesSave(request: {selectionId: string} & A6Preferences): Promise<{ok: true}>;
  a6Create(request: A6CreateInput): Promise<{record: StoredRecord; attemptId: string}>;
  a6Action(request: A6ActionInput): Promise<{ok: true; result?: object}>;
 }
@@ -85,9 +87,9 @@ export interface Workbench {
   selectPreset(id: string): void; addPreset(): void; renamePreset(id: string): void; deletePreset(id: string): void; savePreset(): void; togglePresets(): void;
   cancelRecord(id: string): void; deleteRecord(id: string): void; resetMocks(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs' | 'targetTokenId' | 'targetChannel'>>): void;
-  removeA6Model(selectionId: string, key: string): void; toggleA6Slot(selectionId: string, tokenId: number): void; setA6Provider(selectionId: string, tokenId: number, provider: string): void;
-  loadA6Preferences(selectionId: string): void; saveA6Preferences(selectionId: string): void; submitA6(selectionId: string): void; a6Action(selectionId: string, operation: A6Operation): void;
-  loadA6Bridge(): void; copyA6Bridge(): void;
+  removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
+  submitA6(selectionId: string): void; a6Action(selectionId: string, operation: A6Operation): void;
+  loadA6Config(): void; patchA6Form(value: Partial<{accessToken: string; userId: string}>): void; saveA6Config(): void; rotateA6Intake(): void; copyA6Intake(): void;
   setFingerprintConfig(id: string, options: FingerprintOptions): void;
   retryFailedSample(id: string, runId: string): void;
   toggleColumn(id: string): void; resizeColumn(id: string, width: number): void; toggleColumns(): void; toggleView(): void; toggleConfig(): void; toggleRound(id: string, defaultExpanded: boolean): void; toggleFollow(): void; setFilter(value: string): void;
