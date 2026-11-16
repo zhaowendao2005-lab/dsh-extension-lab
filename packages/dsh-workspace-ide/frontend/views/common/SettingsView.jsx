@@ -1,10 +1,33 @@
 import { useStore } from '../../runtime.js';
 
+/** Rows shown in the shortcut section; the host panel owns the actual bindings. */
+const SHORTCUT_COMMANDS = [
+  { id: 'workspace-ide.explorer', label: '文件栏' },
+  { id: 'workspace-ide.search', label: '工作区搜索' },
+  { id: 'workspace-ide.scm', label: '打开改动' },
+  { id: 'workspace-ide.graph', label: '提交图谱' },
+  { id: 'workspace-ide.panel', label: '显示/隐藏终端' },
+  { id: 'workspace-ide.quickOpen', label: '快速打开文件' },
+  { id: 'workspace-ide.save', label: '保存当前文件' },
+  { id: 'workspace-ide.saveAll', label: '保存全部文件' },
+  { id: 'workspace-ide.nav', label: '收起/展开文件栏' },
+  { id: 'workspace-ide.closeTab', label: '关闭当前标签' },
+  { id: 'workspace-ide.fullview', label: '打开/关闭全视图' },
+];
+
+const EMPTY_CATALOG = { getSnapshot: () => [], subscribe: () => () => {} };
+
+function keysOf(catalog, id) {
+  const keys = catalog.find((row) => row.id === id)?.keys ?? [];
+  return keys.length ? keys.join(' + ') : '未绑定';
+}
+
 /** Settings page: workspace root, trust gate, recents and the effective limits. */
 export function SettingsView({ stores }) {
   const workspace = useStore(stores.workspace);
   const ui = useStore(stores.ui);
   const files = useStore(stores.files);
+  const catalog = useStore(stores.host?.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
   const limits = workspace.limits ?? {};
 
   return (
@@ -103,6 +126,22 @@ export function SettingsView({ stores }) {
           <span className="wid-settings__label">自动换行</span>
         </label>
         <p className="wid-hint">这些偏好只存在本机浏览器，不写入工作区。</p>
+      </section>
+
+      <section className="wid-settings__section">
+        <h3 className="wid-settings__title">快捷键</h3>
+        <p className="wid-hint">
+          工作台不绑定默认按键，也不提供自己的录制器。全部命令都出现在 DSH 官方设置面板里，
+          在「设置 → 通用 → 编辑快捷键」（<span className="wid-mono">Mod + /</span>）中为它们分配组合键。
+        </p>
+        <ul className="wid-settings__list">
+          {SHORTCUT_COMMANDS.map((item) => (
+            <li key={item.id} className="wid-settings__row">
+              <span className="wid-settings__label">{item.label}</span>
+              <span className="wid-mono wid-settings__value wid-settings__keys">{keysOf(catalog, item.id)}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="wid-settings__section">

@@ -46,7 +46,7 @@
 
 | 区域 | grid-area | 默认 | 最小 | 最大 | 可变性 |
 | --- | --- | --- | --- | --- | --- |
-| 工具栏 | `toolbar` | 30px | 30px | 30px | 固定；根 chip、分支、快速打开、图谱、改动、终端、全视图、快捷键、设置、⋯ |
+| 工具栏 | `toolbar` | 30px | 30px | 30px | 固定；根 chip、分支、快速打开、图谱、改动、终端、全视图、设置、⋯ |
 | 左栏 | `nav` | `clamp(180px, 30cqi, 260px)` | 160px | 360px | 内部不提供拖拽；收起 = 0；窄屏变抽屉 |
 | 工作区 | `work` | flex | 0 | — | 吃剩余空间；内部可再分栏 |
 | 面板分隔条 | `split` | 4px | 4px | 4px | 仅在终端面板展开时存在 |
@@ -329,27 +329,45 @@ ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
 上一节的表是设计意图；宿主 `dsh-client-shortcuts` 的实际规则更严，实现按下面这套走（`frontend/index.js`）：
 
 1. **注册时机**：`ctx.inject(['shortcuts'], cb)` 里注册，`ctx.get('shortcuts')` 在 apply 时可能还是 `undefined`（激活顺序不是 load barrier）。
-2. **`register` 是原子的、并且会伤人**：默认键位与已注册命令重叠时抛错，而且**被抢的一方（宿主包）也注册失败**——宿主会报「required entries did not activate」，整个 Web 启动不了。所以必须在注册前用 `shortcuts.describeBinding(binding)` 查 `issue`/`conflicts`，冲突就不抢；注册再在 `0 / 400 / 1200 / 2500 ms` 重试几轮，让后激活的宿主包先占位。抢不到的命令必须仍有面板内入口。
+2. **`register` 是原子的、并且会伤人**：默认键位与已注册命令重叠时抛错，而且**被抢的一方（宿主包）也注册失败**——宿主会报「required entries did not activate」，整个 Web 启动不了。旧实现靠 `describeBinding` 预检 + `0/400/1200/2500ms` 重试抢位，现已整体删除：本插件不再声明任何默认键位（见 §13.2），冲突面归零。
 3. **Web 端白名单**（`isWebBindingAllowed`）：`secondCode` 双键组合一律不行；`web:macos`/`web:windows` 只允许「≥3 个修饰键」或「primary + alt/shift」；**`web:linux` 只允许 `Ctrl+/`、`Cmd+Shift+,`、`Cmd+Shift+.`**，所以 `web:linux` 一条都不声明，也不必为它编键位。
 4. **保留键**（`bindingIssue`）：带 primary 的 `C/V/X/Z/Y/Q/H`、不带 shift 的 `A`、以及 `Escape/Tab/Space/Backspace/Delete/方向键/裸 Enter` 属保留；macOS 的 `Cmd+H` 即「隐藏应用」，连 `Cmd+Shift+H` 一起被拒。
-5. **最终采用的键位**（桌面与 Web 同键，都是三修饰键，避免与宿主/浏览器抢位）：
+### 13.2 不绑默认键（现行策略）
 
-| 命令 id | 键 | 说明 |
+**本插件不为任何命令声明默认键位**——`defaults: {}`。理由：11 条三修饰键组合占满 `⌥⌘⇧` 字母区，与宿主/浏览器/其他插件的冲突面只增不减，而"一次装好就再也不会改"的默认值对用户是负债。注册仍然完整（id/label/aliases/regions/modals/resolve），只是没有 key，因此：
+
+- 宿主注册阶段对 `['desktop','web'] × ['macos','windows','linux']` 逐个 `resolveShortcutDefault` 拿到 `undefined` 就跳过，不产生 `Conflicting shortcut defaults`，也不需要预检与重试。
+- 未绑定命令在宿主面板里显示 `No shortcut` 并可编辑（`dsh-client-ui-shortcuts`），所以"注册但不绑键"是官方支持的形态，不是残缺态。
+
+| 命令 id | 默认键 | 面板内等价入口 |
 | --- | --- | --- |
-| `workspace-ide.explorer` | `⌥⌘⇧E` | 打开/聚焦工作台，左栏切「文件」 |
-| `workspace-ide.search` | `⌥⌘⇧F` | 打开工作台，左栏切「搜索」 |
-| `workspace-ide.scm` | `⌥⌘⇧G` | 打开/聚焦「改动」标签 |
-| `workspace-ide.graph` | `⌥⌘⇧R` | 打开/聚焦「提交图谱」标签（`⌘⇧H` 为宿主保留） |
-| `workspace-ide.panel` | `⌥⌘⇧J` | 终端面板显隐 |
-| `workspace-ide.quickOpen` | `⌥⌘⇧O` | 快速打开（另有工具栏按钮） |
-| `workspace-ide.save` | `⌥⌘⇧S` | 保存当前文件 |
-| `workspace-ide.saveAll` | `⌥⌘⇧A` | 保存全部（`A` 带 shift 才可注册） |
-| `workspace-ide.nav`（新） | `⌥⌘⇧B` | 收起/展开左栏 |
-| `workspace-ide.closeTab`（新） | `⌥⌘⇧W` | 关闭当前内部标签（`⌘W` 仍归宿主，关整个工作台） |
-| `workspace-ide.fullview`（新） | `⌥⌘⇧V` | 打开/关闭全视图；可在工作台「快捷键」标签里录制改键 |
+| `workspace-ide.explorer` | 无 | 导航面「文件」页签 / 工具栏 ⋯ |
+| `workspace-ide.search` | 无 | 导航面「搜索」页签 |
+| `workspace-ide.scm` | 无 | 工具栏 `±` 徽标按钮 / 欢迎页 |
+| `workspace-ide.graph` | 无 | 工具栏 `⑂` 按钮 / 分支 chip / 欢迎页 |
+| `workspace-ide.panel` | 无 | 工具栏 `>_` 按钮 / 状态栏终端区 |
+| `workspace-ide.quickOpen` | 无 | 工具栏 🔍 按钮 |
+| `workspace-ide.save` | 无 | 标签脏点、`⋯` 菜单、编辑器右键 |
+| `workspace-ide.saveAll` | 无 | `⋯` 菜单 |
+| `workspace-ide.nav` | 无 | 导航面右上「‹」按钮 / `⋯` 菜单 |
+| `workspace-ide.closeTab` | 无 | 标签 `×`、中键、标签右键菜单 |
+| `workspace-ide.fullview` | 无 | 工具栏「全视图」按钮 |
 
-6. **不注册的键**：`⌘W`（桌面属宿主 `page.close`、Web 属浏览器）、`⌘P`/`⌘⇧F`/`⌘⇧O`/`⌘⇧G`/`⌘⇧H` 均已被宿主占用；这些功能全部有面板内入口（活动栏、标题栏「快速打开」按钮、标签栏关闭按钮与中键）。
-7. **终端面板的键盘冲突**：`regions` 只声明 `page`；xterm 焦点在 `terminal` 区，宿主不会把我们的命令派进来，`Ctrl+C` 等保持 xterm 原生语义（未注册 `KeyC`）。
+### 13.3 改键一律走官方设置面板
+
+插件**不再自带录制器**（原 `view:shortcuts` 标签已删除）。改键入口是宿主自己的面板：
+
+- 「设置 → 通用 → 编辑快捷键」，或 `Mod + /`；标题「快捷键」，480×600。
+- 面板列出所有已注册命令，含本插件 11 条未绑定命令；选中行按组合键即写入。
+- 存储位置由宿主决定：Web 端 `localStorage['dsh.keybindings.v1']`，桌面端 `userData/keybindings.json`。
+- 工作台「设置」页只做**只读映射**：列出 11 条命令与其当前有效键（未绑定显示「未绑定」）并给出上面这条路径说明；工具栏/右键菜单里的按键提示也从 `shortcuts.catalog` 动态取，绑定为空时不渲染提示。
+- 插件侧不调用 `shortcuts.edit`：`Shortcuts` 接口没有 `invoke`/`openSettings`，唯一合法路径是用户自己在面板里改。
+
+### 13.4 其它约束
+
+- `regions` 只声明 `page`：xterm 焦点位于 `terminal` 区，宿主不会把命令派进来，`Ctrl+C` 等保持 xterm 原生语义（未注册 `KeyC`）。
+- `resolve` 返回 `{status:'blocked', reason:'请先选择一个会话'}` 当没有挂载会话时——消费但不执行，绝不"点了没反应"。
+- 旧 §13 的键位表（`⌥⌘⇧E/F/G/R/J/O/S/A/B/W/V`）已作废，仅作历史记录保留在 §13.1 的正文里。
 
 ## 14 文案与本地化
 
@@ -526,7 +544,7 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ### 19.2 全视图
 
-- 入口：工具栏「全视图」或快捷键（默认 `⌥⌘⇧V`，可在「快捷键」标签录制）。
+- 入口：工具栏「全视图」按钮（主入口）；命令 `workspace-ide.fullview` 默认不绑键，需要键位请在宿主「设置 → 通用 → 编辑快捷键」里自行分配。
 - 打开时关闭右栏的宿主「工作台」tab，把同一份会话工作台显示为 frame 级 `shell.overlay` 对话框。
 - 对话框宽高各 80%，位于 `shell.overlay` 内（绝对定位，不用 `fixed`）；点击外部、Esc、关闭按钮或再按快捷键关闭。
 - 右栏与全视图共享同一 runtime 与内部标签/分栏；切换展示位置不重建编辑器、不丢未保存内容。
@@ -534,5 +552,6 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ### 19.3 设置与快捷键入口
 
-- 工具栏新增「设置」「快捷键」「全视图」三个入口；窄栏（<520px）隐藏前两个，保留全视图与「⋯」。
-- 「快捷键」标签列出 `workspace-ide.*` 命令的有效键位；全视图支持录制新键、恢复默认，保存走宿主 `shortcuts.edit` 的 revision 校验。
+- 工具栏有「设置」与「全视图」两个入口；窄栏（<520px）隐藏「设置」，保留全视图与「⋯」。
+- 「设置」是内部标签 `view:settings`：工作区根、信任、最近打开、编辑器偏好、生效上限，以及**只读的快捷键映射表**（11 条命令 ↔ 当前绑定，未绑定显示「未绑定」）并注明改键位置是宿主面板（设置 → 通用 → 编辑快捷键 / `Mod + /`）。
+- 插件不自带录制 UI：宿主 `Shortcuts` 接口没有 `invoke`/`openSettings`，无法用代码打开该对话框，因此在设置页只给文字路径。

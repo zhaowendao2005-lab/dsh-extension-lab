@@ -94,6 +94,8 @@
 | 构建参数/依赖/体积预算 | `docs/build.md` |
 | 里程碑任务状态 | `docs/milestones.md` |
 
+**快捷键**：不要给命令加默认键位。11 条命令一律 `defaults: {}` 注册，键位由用户在宿主「设置 → 通用 → 编辑快捷键」（`Mod + /`）里分配；插件不得自带录制 UI，也不得调用 `shortcuts.edit`。详见 `docs/ui-spec.md` §13.2–§13.4。
+
 ## 纪律
 
 - **不注册模型工具**、不写 session event、不读 session log、不碰会话历史。这个插件只服务人的操作。

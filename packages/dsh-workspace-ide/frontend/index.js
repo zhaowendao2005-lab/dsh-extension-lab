@@ -223,92 +223,58 @@ window.__ModuleLoader__.load({
           runtimes.clear();
         }, 'workspace-ide.stores');
 
-        // Shortcut commands: same ids/keys as before, now "reveal the workbench and open this
-        // view" instead of "select a main panel". Registration stays deferred and defencive:
-        // a conflicting default would strip the *other* package's command and break boot.
+        // Shortcut commands stay unbound by default: the host's own "Keyboard shortcuts" panel
+        // (Settings → General → Edit shortcuts, or Mod+/) lists every registered command, so the
+        // user assigns keys there instead of in a plugin-owned recorder.
         const shortcutDisposers = [];
-        const shortcutTimers = [];
         ctx.inject(['shortcuts'], (shortcutCtx) => {
           const shortcuts = shortcutCtx.get('shortcuts');
           if (!shortcuts?.register) return;
           host.shortcuts = shortcuts;
-          const claim = (binding) => {
-            if (!binding) return false;
-            try {
-              const info = shortcuts.describeBinding(binding);
-              return info.issue === null && info.conflicts.length === 0;
-            } catch {
-              return false;
-            }
-          };
-          const bind = (id, label, run, desktop, web) => {
-            const defaults = {};
-            if (claim(desktop)) for (const platform of ['macos', 'windows', 'linux']) defaults['desktop:' + platform] = desktop;
-            if (claim(web)) for (const platform of ['macos', 'windows']) defaults['web:' + platform] = web;
-            // A command with no usable default still registers: the user can bind it in the
-            // host shortcut editor, and an unregistered command would be invisible there.
+          const commands = [
+            ['workspace-ide.explorer', '工作台：文件栏', () => withSession((stores) => stores.actions.setActivity('files'))],
+            ['workspace-ide.search', '工作台：工作区搜索', () => withSession((stores) => stores.actions.setActivity('search'))],
+            ['workspace-ide.scm', '工作台：打开改动', () => withSession((stores) => stores.actions.openChanges())],
+            ['workspace-ide.graph', '工作台：提交图谱', () => withSession((stores) => stores.actions.openGraph())],
+            ['workspace-ide.panel', '工作台：显示/隐藏终端', () => withSession((stores) => stores.actions.togglePanel())],
+            ['workspace-ide.quickOpen', '工作台：快速打开文件', () => withSession((stores) => void stores.actions.openQuick())],
+            ['workspace-ide.save', '工作台：保存当前文件', () => withSession((stores) => {
+              const path = activeFilePath(stores);
+              if (path) void stores.actions.save(path);
+            })],
+            ['workspace-ide.saveAll', '工作台：保存全部文件', () => withSession((stores) => {
+              for (const tab of stores.editor.getSnapshot().tabs) {
+                if (tab.dirty) void stores.actions.save(tab.path);
+              }
+            })],
+            ['workspace-ide.nav', '工作台：收起/展开文件栏', () => withSession((stores) => stores.actions.toggleSidebar())],
+            ['workspace-ide.closeTab', '工作台：关闭当前标签', () => withSession((stores) => {
+              const layout = stores.layout.getSnapshot();
+              const group = layout.groups[layout.activeGroup];
+              if (group && group.active) void stores.actions.closeTabById(group.active);
+            })],
+            ['workspace-ide.fullview', '工作台：打开/关闭全视图', () => toggleFullView()],
+          ];
+          for (const [id, label, run] of commands) {
             try {
               shortcutDisposers.push(shortcuts.register({
                 id,
                 label: () => label,
                 aliases: [],
-                defaults,
+                defaults: {},
                 regions: ['page'],
                 modals: [],
                 resolve: () => (mountedSession()
                   ? { status: 'handled', run }
                   : { status: 'blocked', reason: '请先选择一个会话' }),
               }));
-              return true;
-            } catch {
-              return false;
+            } catch (error) {
+              console.error('[workspace-ide] shortcut register failed', id, error);
             }
-          };
-
-          const shortcutsTable = [
-            ['workspace-ide.explorer', '工作台：文件栏', () => withSession((stores) => stores.actions.setActivity('files')),
-              { code: 'KeyE', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyE', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.search', '工作台：工作区搜索', () => withSession((stores) => stores.actions.setActivity('search')),
-              { code: 'KeyF', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyF', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.scm', '工作台：打开改动', () => withSession((stores) => stores.actions.openChanges()),
-              { code: 'KeyG', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyG', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.graph', '工作台：提交图谱', () => withSession((stores) => stores.actions.openGraph()),
-              { code: 'KeyR', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyR', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.panel', '工作台：显示/隐藏终端', () => withSession((stores) => stores.actions.togglePanel()),
-              { code: 'KeyJ', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyJ', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.quickOpen', '工作台：快速打开文件', () => withSession((stores) => void stores.actions.openQuick()),
-              { code: 'KeyO', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyO', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.save', '工作台：保存当前文件', () => withSession((stores) => {
-              const path = activeFilePath(stores);
-              if (path) void stores.actions.save(path);
-            }), { code: 'KeyS', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyS', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.saveAll', '工作台：保存全部文件', () => withSession((stores) => {
-              for (const tab of stores.editor.getSnapshot().tabs) {
-                if (tab.dirty) void stores.actions.save(tab.path);
-              }
-            }), { code: 'KeyA', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyA', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.nav', '工作台：收起/展开文件栏', () => withSession((stores) => stores.actions.toggleSidebar()),
-              { code: 'KeyB', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyB', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.closeTab', '工作台：关闭当前标签', () => withSession((stores) => {
-              const layout = stores.layout.getSnapshot();
-              const group = layout.groups[layout.activeGroup];
-              if (group && group.active) void stores.actions.closeTabById(group.active);
-            }), { code: 'KeyW', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyW', modifiers: ['primary', 'alt', 'shift'] }],
-            ['workspace-ide.fullview', '工作台：打开/关闭全视图', () => toggleFullView(),
-              { code: 'KeyV', modifiers: ['primary', 'alt', 'shift'] }, { code: 'KeyV', modifiers: ['primary', 'alt', 'shift'] }],
-          ];
-
-          let pending = shortcutsTable.slice();
-          const attempt = () => {
-            if (!pending.length) return;
-            pending = pending.filter(([id, label, run, desktop, web]) => !bind(id, label, run, desktop, web));
-          };
-          attempt();
-          for (const delay of [400, 1200, 2500]) shortcutTimers.push(setTimeout(attempt, delay));
+          }
         });
 
         ctx.effect(() => () => {
-          for (const timer of shortcutTimers.splice(0)) clearTimeout(timer);
           for (const dispose of shortcutDisposers.splice(0)) dispose();
         }, 'workspace-ide.shortcuts');
       });

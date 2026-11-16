@@ -3,14 +3,13 @@
  * exist once in a workspace are singletons. Ids never encode display text.
  */
 
-export const TAB_KINDS = ['file', 'diff', 'conflict', 'graph', 'changes', 'settings', 'shortcuts'];
+export const TAB_KINDS = ['file', 'diff', 'conflict', 'graph', 'changes', 'settings'];
 
 export const DIFF_TAB = 'view:diff';
 export const CONFLICT_TAB = 'view:conflict';
 export const GRAPH_TAB = 'view:graph';
 export const CHANGES_TAB = 'view:changes';
 export const SETTINGS_TAB = 'view:settings';
-export const SHORTCUTS_TAB = 'view:shortcuts';
 
 /** File tab id: path-keyed so two opens are one tab. */
 export function fileTabId(path) {
@@ -43,7 +42,6 @@ export function tabTitle(tab, editorTab) {
   if (tab.kind === 'graph') return '提交图谱';
   if (tab.kind === 'changes') return '改动';
   if (tab.kind === 'settings') return '设置';
-  if (tab.kind === 'shortcuts') return '快捷键';
   return tab.title || tab.id || '未命名';
 }
 
@@ -52,7 +50,6 @@ export function tabIcon(kind) {
   if (kind === 'graph') return 'graph';
   if (kind === 'changes') return 'scm';
   if (kind === 'settings') return 'settings';
-  if (kind === 'shortcuts') return 'keyboard';
   if (kind === 'diff') return 'diff';
   if (kind === 'conflict') return 'warning';
   return 'file';
@@ -63,7 +60,6 @@ export function kindOfViewId(id) {
   if (id === GRAPH_TAB) return 'graph';
   if (id === CHANGES_TAB) return 'changes';
   if (id === SETTINGS_TAB) return 'settings';
-  if (id === SHORTCUTS_TAB) return 'shortcuts';
   if (id === DIFF_TAB) return 'diff';
   if (id === CONFLICT_TAB) return 'conflict';
   return null;

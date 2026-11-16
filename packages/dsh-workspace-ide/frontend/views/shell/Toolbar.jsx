@@ -19,7 +19,12 @@ export function Toolbar({ stores }) {
   const fullView = useStore(stores.host.fullView);
   const catalog = useStore(stores.host.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
   const changes = changesOf(scm.status);
-  const fullViewKeys = catalog.find((row) => row.id === FULL_VIEW_ID)?.keys ?? [];
+  const keysOf = (id) => catalog.find((row) => row.id === id)?.keys ?? [];
+  const hintOf = (id) => {
+    const keys = keysOf(id);
+    return keys.length ? '（' + keys.join(' + ') + '）' : '';
+  };
+  const fullViewKeys = keysOf(FULL_VIEW_ID);
   const branch = workspace.git?.isRepo
     ? (workspace.git.detached ? 'HEAD@' + String(workspace.git.sha ?? '').slice(0, 7) : workspace.git.branch || 'HEAD')
     : null;
@@ -41,7 +46,7 @@ export function Toolbar({ stores }) {
   const moreItems = [
     { label: '设置', run: () => stores.actions.openSettings() },
     { label: '关闭所有分栏', run: () => void stores.actions.closeAllTabs() },
-    { label: ui.sidebarCollapsed ? '展开文件栏' : '收起文件栏', hint: '⌥⌘⇧B', run: () => stores.actions.toggleSidebar() },
+    { label: ui.sidebarCollapsed ? '展开文件栏' : '收起文件栏', hint: hintOf('workspace-ide.nav'), run: () => stores.actions.toggleSidebar() },
     { separator: true },
     { label: '刷新工作区', run: () => void stores.actions.refreshWorkspace() },
   ];
@@ -80,7 +85,7 @@ export function Toolbar({ stores }) {
         </button>
       )}
       <span className="wid-toolbar__spacer" />
-      <button type="button" className="wid-icon-button" title="快速打开（⌥⌘⇧O）" aria-label="快速打开" onClick={() => void stores.actions.openQuick()}>
+      <button type="button" className="wid-icon-button" title={'快速打开' + hintOf('workspace-ide.quickOpen')} aria-label="快速打开" onClick={() => void stores.actions.openQuick()}>
         <Icon name="search" size={14} />
       </button>
       <button type="button" className="wid-icon-button" title="打开改动" aria-label="打开改动" onClick={() => stores.actions.openChanges()}>
@@ -90,7 +95,7 @@ export function Toolbar({ stores }) {
       <button type="button" className="wid-icon-button" title="打开提交图谱" aria-label="打开提交图谱" onClick={() => stores.actions.openGraph()}>
         <Icon name="graph" size={14} />
       </button>
-      <button type="button" className="wid-icon-button" title="终端（⌥⌘⇧J）" aria-label="终端" onClick={() => stores.actions.togglePanel()}>
+      <button type="button" className="wid-icon-button" title={'终端' + hintOf('workspace-ide.panel')} aria-label="终端" onClick={() => stores.actions.togglePanel()}>
         <Icon name="terminal" size={14} />
       </button>
       <button
@@ -102,9 +107,6 @@ export function Toolbar({ stores }) {
         onClick={() => stores.actions.toggleFullView()}
       >
         <Icon name={fullView.open ? 'collapseFull' : 'expand'} size={14} />
-      </button>
-      <button type="button" className="wid-icon-button wid-toolbar__optional" title="快捷键" aria-label="快捷键" onClick={() => stores.actions.openShortcuts()}>
-        <Icon name="keyboard" size={14} />
       </button>
       <button type="button" className="wid-icon-button wid-toolbar__optional" title="设置" aria-label="设置" onClick={() => stores.actions.openSettings()}>
         <Icon name="settings" size={14} />

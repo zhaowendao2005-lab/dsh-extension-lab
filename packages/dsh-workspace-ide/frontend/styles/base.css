@@ -619,6 +619,9 @@
 
 .wid-settings__actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* 快捷键映射表的值列：右对齐；未绑定时显示弱化的「未绑定」 */
+.wid-settings__keys { text-align: right; }
+
 .wid-settings__list {
   margin: 0;
   padding: 0;
@@ -1283,46 +1286,6 @@ body[data-wid-dragging='true'] { cursor: grabbing; user-select: none; }
 }
 
 .wid-fullview .wid-frame { width: 100%; height: 100%; }
-
-/* ---------- shortcut settings ---------- */
-.wid-shortcuts__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-height: 24px;
-}
-
-.wid-shortcuts__keys {
-  min-width: 88px;
-  padding: 0 6px;
-  height: 20px;
-  line-height: 20px;
-  border-radius: var(--dsw-radius-xs);
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  text-align: center;
-}
-
-.wid-shortcuts__list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.wid-shortcuts__list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 22px;
-  padding: 0 2px;
-  font-size: 12px;
-}
 
 @container widframe (max-width: 519px) {
   .wid-toolbar__optional { display: none; }

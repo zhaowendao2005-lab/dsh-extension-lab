@@ -1,11 +1,16 @@
 import { useStore, useEffect, useRef } from '../../runtime.js';
 
+const EMPTY_ROWS = [];
+const EMPTY_CATALOG = { getSnapshot: () => EMPTY_ROWS, subscribe: () => () => {} };
+
 /**
  * Tab / tab-strip context menu. Rendered inside .wid-root (absolute), never a native menu:
  * the host never sees our confirmations, and the menu must not leave the right column.
  */
 export function TabContextMenu({ stores, menu }) {
   const layout = useStore(stores.layout);
+  const catalog = useStore(stores.host?.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
+  const closeKeys = catalog.find((row) => row.id === 'workspace-ide.closeTab')?.keys ?? [];
   const node = useRef(null);
   const tab = menu.tabId ? layout.tabs[menu.tabId] : null;
   const zoneAvailable = (zone) => Boolean(menu.tabId)
@@ -55,7 +60,7 @@ export function TabContextMenu({ stores, menu }) {
         <>
           <button type="button" role="menuitem" className="wid-contextmenu__item" onClick={() => run(() => stores.actions.closeTabById(menu.tabId))}>
             <span>关闭当前</span>
-            <span className="wid-contextmenu__hint">⌥⌘⇧W</span>
+            {closeKeys.length > 0 && <span className="wid-contextmenu__hint">{closeKeys.join(' + ')}</span>}
           </button>
           <button type="button" role="menuitem" className="wid-contextmenu__item" onClick={() => run(() => stores.actions.closeOthers(menu.groupId, menu.tabId))}>
             关闭其他

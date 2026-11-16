@@ -11,7 +11,7 @@ import {
 } from '../service/layout.js';
 import { createLayoutStore } from './layout.stores.js';
 import {
-  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, SHORTCUTS_TAB, fileTabId,
+  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, fileTabId,
 } from '../service/tabs.js';
 import { createTerminalController } from './terminal.stores.js';
 import { createEditorDomain } from './editor.stores.js';
@@ -33,7 +33,6 @@ export function createStores({ client, sessionId, host }) {
     panelCollapsed: false,
     menu: null,
     tabMenu: null,
-    shortcutRecording: false,
     diffRatio: 0.5,
     editor: { ...DEFAULT_EDITOR_PREFS },
     modal: null,
@@ -749,14 +748,6 @@ export function createStores({ client, sessionId, host }) {
 
     openSettings() {
       return layoutModel.actions.open({ id: SETTINGS_TAB, kind: 'settings' });
-    },
-
-    openShortcuts() {
-      return layoutModel.actions.open({ id: SHORTCUTS_TAB, kind: 'shortcuts' });
-    },
-
-    setShortcutRecording(active) {
-      ui.patch({ shortcutRecording: Boolean(active) });
     },
 
     toggleFullView() {

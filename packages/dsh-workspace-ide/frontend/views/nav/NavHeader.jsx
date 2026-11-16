@@ -1,10 +1,15 @@
 import { useStore } from '../../runtime.js';
 import { Icon } from '../common/Icon.jsx';
 
+const EMPTY_ROWS = [];
+const EMPTY_CATALOG = { getSnapshot: () => EMPTY_ROWS, subscribe: () => () => {} };
+
 /** Left column header: files/search switch, file actions and the collapse control. */
 export function NavHeader({ stores }) {
   const ui = useStore(stores.ui);
   const files = useStore(stores.files);
+  const catalog = useStore(stores.host?.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
+  const navKeys = catalog.find((row) => row.id === 'workspace-ide.nav')?.keys ?? [];
   const view = ui.activityView === 'search' ? 'search' : 'files';
 
   return (
@@ -69,7 +74,7 @@ export function NavHeader({ stores }) {
       <button
         type="button"
         className="wid-icon-button"
-        title="收起文件栏（⌥⌘⇧B）"
+        title={'收起文件栏' + (navKeys.length ? '（' + navKeys.join(' + ') + '）' : '')}
         aria-label="收起文件栏"
         onClick={() => stores.actions.toggleSidebar()}
       >
