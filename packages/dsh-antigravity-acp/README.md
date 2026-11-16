@@ -6,6 +6,12 @@
 
 CLI 子进程默认使用当前操作系统用户的主目录复用已有登录，不继承 DSH 调试沙箱的独立 `HOME`。可在插件配置 `loginHome` 指定绝对目录；该设置只影响 CLI 子进程，独立 gemini 配置、空工作区和临时目录仍由插件管理。CLI 未认证时显示 `ACP_AUTH_REQUIRED`。
 
+## 安装与启用
+
+1. 在插件市场安装本包。安装与启用是两步：安装后若列表显示 `enabled: false`，把该 bundle 设为启用。
+2. **重启 DeepSeek Harness 应用**。插件 Host 侧代码在进程启动时加载，覆盖安装新版本后必须重启才会生效；只刷新页面仍会跑旧代码。
+3. 打开模型选择器，`Antigravity ACP · 开发预览` 下的模型应带「经本地网关净化 · 原生工具不外发」。若仍显示「纯净性未核验 · 已阻断」，说明跑的还是旧版本。
+
 ## 当前结论
 
 - 用 mitm 与 `--cloud_code_endpoint` 两种方式截获过真实 CLI 请求：自定义 agent 加 `excludeDefaultComponents` 之后，线上仍声明 `manage_task`、`list_resources`、`read_resource`，`systemInstruction` 仍是完整 Antigravity 身份提示。因此**配置层面无法达标**，改为在网关上做机械净化。

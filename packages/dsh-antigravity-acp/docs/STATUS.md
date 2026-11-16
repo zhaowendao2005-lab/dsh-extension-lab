@@ -39,6 +39,8 @@ CLI 看不到网关之外的出口：请求体不落盘、不记录 body/token�
 
 同一次运行里还可能看到 `FAILED_PRECONDITION (code 400): User location is not supported for the API use`：这是 CLI 自动生成会话标题的 checkpoint 请求，走 `requestType: "checkpoint"`，网关按设计不重写、不阻断，失败只影响标题。**该错误不是本插件产生的**：用官方 CLI 自己的 `agy -p` 打印模式对 Gemini 模型同样报这个错误，而 Claude 模型正常返回。因此本轮验收用的是 `claude-sonnet-5-5`。
 
+发布后又用**安装到 profile 的 0.1.1 构建产物**（`lib/`，不是工作区源码）跑了一次同样的端到端：模型徽章为「经本地网关净化 · 原生工具不外发」，两轮工具往返得到 `DONE`，`sanitizedAgentRequests: 2`、`strippedDeclarations: 6`、`systemRewritten: 2`。**该验证发生在 DSH 进程之外**：插件 Host 代码在应用启动时加载，覆盖安装后必须重启 DeepSeek Harness 才会换成新版本，只刷新页面仍跑旧代码。
+
 ## 调试沙箱登录目录修复
 
 沙箱故障诊断使用安装中的真实 DSH subprocess provider、官方 agy 1.5.9 和同一套 ACP 代码，仅改变子进程 HOME：沙箱目录与系统用户目录均通过版本检查和 initialize；前者在 session/new 返回认证错误 -32000，后者返回 7 个模型。该对照定位了登录目录差异。
