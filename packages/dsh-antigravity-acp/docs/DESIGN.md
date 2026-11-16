@@ -1,6 +1,6 @@
 # 整体设计
 
-日期：2026-11-15，时区 Asia/Shanghai。设计已进入私有开发预览；离线实现、构建与未完成门槛以[实现状态](STATUS.md)为准，真实生成仍阻断。
+日期：2026-11-15，2026-11-16 修订（纯净性改由出口网关机械执行），时区 Asia/Shanghai。实际进度、验证边界与剩余门槛以[实现状态](STATUS.md)为准。
 
 ## 1. 产品目标与当前门槛
 
@@ -8,7 +8,7 @@
 
 用户明确不接受“原生工具仍对模型可见，只在执行时拒绝”。因此首要验收是**模型可见声明的纯净性**，其次才是工具能否执行。不得退回仅靠 strict 审批的方案并宣称目标达成。
 
-目前存在可继续研究的配置组合，但尚未达到可生成正式版的验收条件：成功行为探针仍有模型报告的三个原生工具，完整上游声明与提示未取得权威证据。当前仅分发生成门禁关闭的开发预览。详见[研究结论](RESEARCH.md)。
+配置层无法达标：自定义 agent 加 `excludeDefaultComponents` 之后，线上仍有 `manage_task` 等原生声明，系统提示仍是完整 Antigravity 身份提示（见[研究记录](RESEARCH.md) §10）。因此纯净性改为**机械保证**：CLI 的所有模型请求被 `--cloud_code_endpoint` 强制指向本进程的 loopback 净化网关，网关逐条改写出站请求体，无法解析即拒绝转发。产品声明相应收窄为“出口请求被净化”，不再声称“CLI 内部无原生能力”。
 
 ## 2. 范围
 
@@ -40,6 +40,8 @@ flowchart LR
     A --> F[DSH 工具校验 / 审批 / 执行]
     F -->|下一步工具结果| B
     B -->|按调用 ID 回填| E
+    D -->|--cloud_code_endpoint| G[本地净化网关]
+    G -->|只含 DSH 声明的请求| H[Cloud Code 上游]
 ```
 
 接入 DSH 的 LLM adapter 扩展点，保留 DSH agent-loop。ACP server 在这里是外部执行引擎；把它投影为模型提供方是适配，不代表 ACP 已变为原生模型 API。
@@ -58,6 +60,7 @@ flowchart LR
 | `bridge/server` | MCP transport、会话授权、工具清单和挂起调用 |
 | `bridge/schema` | 名称映射、schema 可表达性验证，不静默放宽约束 |
 | `catalog` | 当前账号公布的模型、档位与能力，不猜 entitlement |
+| `runtime/gateway` | loopback 净化网关：删非桥接声明、重写系统提示、fail-closed 不转发 |
 | `diagnostics` | 仅 allowlist 元数据、受限日志、证据摘要 |
 | `client`（后置） | 配置与连接状态；不提供登录按钮或原生模式开关 |
 
@@ -85,9 +88,20 @@ flowchart LR
 - 当前活跃登录定义为“启动官方进程时取得的 CLI 身份”。运行时切号的传播未验证，不自动重绑在途会话。
 - 第一版一进程一会话、全局有界串行排队；后续再引入多 worker。`--process-per-session` 不是独立配置目录的替代品。
 
-## 6. 候选纯净配置
+## 6. 净化网关与候选配置
 
-下面是历史成功探针的候选基线，不是已认证生产配置。必须先过[配置消歧测试](TEST-PLAN.md)。
+纯净性由网关保证（见 §1）。下面的候选配置仍要使用，但它的作用是**减少原生能力与提示注入面**，不是达标手段：即使配置退化，网关也会删掉多出来的声明。
+
+```text
+请求体改写规则（每次 streamGenerateContent）：
+- request.tools[].functionDeclarations 只保留 mcp_dsh-bridge_ 前缀且名字属于本单元已公布集合的项
+- 删空的分组删除；没有剩余声明时整个 tools 字段移除
+- requestType !== "checkpoint" 时 systemInstruction = 本轮 DSH 系统提示
+- 解析失败 / 结构异常 / 无 DSH 系统提示 / 网关异常 → 4xx 且不连接上游
+- 不落盘 body 与 token，只累计声明名数量；令牌藏在 127.0.0.1 随机路径里
+```
+
+下面是历史成功探针的候选基线，不是已认证生产配置。
 
 ```yaml
 ---

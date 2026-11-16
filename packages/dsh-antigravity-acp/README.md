@@ -2,16 +2,16 @@
 
 通过本机官方 `agy acp` 复用当前 Antigravity CLI 登录，在 DSH 中使用订阅模型。DSH 负责上下文、工具、MCP、skill、审批与界面；目标是从模型可见声明中移除 Antigravity 的原生工具和默认指导。
 
-**这是 0.1 系列开发预览，已有 Host adapter、隔离 runtime、正式 MCP 桥和离线验证。真实生成因工具纯净性尚未核验而阻断。** 包通过 Git 市场分发，不代表已满足“只保留 DSH 工具”的最终要求；完整进度、限制与验证边界见[实现状态](docs/STATUS.md)。
+**这是 0.1 系列开发预览。** 0.1.1 起，纯净性不再靠人工白名单放行，而是由**本地净化网关**机械执行：CLI 的所有模型请求被 `--cloud_code_endpoint` 强制指向本进程的 loopback 网关，网关逐条请求删除非 DSH 工具声明并重写系统提示，解析失败即拒绝转发。真实 CLI 全链路已跑通（工具调用 → 回填 → `DONE`）。完整进度、限制与验证边界见[实现状态](docs/STATUS.md)。
 
 CLI 子进程默认使用当前操作系统用户的主目录复用已有登录，不继承 DSH 调试沙箱的独立 `HOME`。可在插件配置 `loginHome` 指定绝对目录；该设置只影响 CLI 子进程，独立 gemini 配置、空工作区和临时目录仍由插件管理。CLI 未认证时显示 `ACP_AUTH_REQUIRED`。
 
 ## 当前结论
 
-- 本机 agy 1.5.9 的登录复用、ACP 生成、提示追加和 MCP 测试桥有正向实测。
-- `excludeDefaultComponents: true` 加 `inheritMcp: true`、隔离 gemini 根目录中的 MCP 配置及 eager 工具，取得了“模型报告的原生工具减少，测试桥仍能调用”的行为证据。
-- 尚未证明“与直连 Google Cloud 等价”。仍有模型报告的 `manage_task`、`list_resources`、`read_resource`，其真实能力边界和完整上游声明未核验。**这三项残留未解决前，不满足用户对工具纯净性的完整要求。**
-- 目前记录来自 macOS arm64、agy 1.5.9、DSH 0.2.2-rc.3；不等于其他版本或平台兼容。
+- 用 mitm 与 `--cloud_code_endpoint` 两种方式截获过真实 CLI 请求：自定义 agent 加 `excludeDefaultComponents` 之后，线上仍声明 `manage_task`、`list_resources`、`read_resource`，`systemInstruction` 仍是完整 Antigravity 身份提示。因此**配置层面无法达标**，改为在网关上做机械净化。
+- 网关实证（真实生成）：两次 agent 请求全部被改写为只含桥接工具，`strippedDeclarations: 6`、`systemRewritten: 2`；模型成功调用 `dsh_echo` 并在回填后回复 `DONE`。
+- 仍未证明“CLI 内部没有其它出口”，所以只声明“出口请求被净化”，不声明“与直连 Google Cloud 等价”。
+- 目前记录来自 macOS arm64、agy 1.5.9、DSH 0.2.2-rc.3；不等于其他版本或平台兼容。Gemini 模型当前被上游按地区拒绝（官方 CLI 同样复现），Claude 模型可用。
 
 ## 文档导航
 
@@ -43,4 +43,4 @@ CLI 子进程默认使用当前操作系统用户的主目录复用已有登录�
 
 包名为 `dsh-antigravity-acp`，provider ID 为 `antigravity-acp`；旧研究中的 `dsh-agy-acp` 只是早期暂名。
 
-本包内 `pnpm build` 生成 `lib/`；`pnpm probe` 仅报告离线状态；离线测试命令及已验证范围见[实现状态](docs/STATUS.md)。生成门禁尚未通过，当前版本用于开发和模型目录诊断，不能作为可用的生成模型提供方。
+本包内 `pnpm build` 生成 `lib/`；`pnpm probe` 仅报告离线状态；离线测试命令及已验证范围见[实现状态](docs/STATUS.md)。生成已可通过净化的出口运行；图片、`maxTokens` 等控制项仍显式拒绝而不是假装生效。

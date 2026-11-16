@@ -20,6 +20,7 @@ export async function startAgyRuntime({
   cli,
   loginHome,
   bridge,
+  gateway,
   bridgeTimeoutMs = 600_000,
   systemPrompt = '',
   onUpdate,
@@ -29,6 +30,10 @@ export async function startAgyRuntime({
   timeoutMs = 15_000,
 } = {}) {
   if (!subprocess?.spawn) throw new TypeError('A DSH subprocess service is required');
+  let gatewayUrl;
+  try { gatewayUrl = new URL(gateway?.endpoint); }
+  catch { throw new TypeError('A sanitizing gateway endpoint is required'); }
+  if (gatewayUrl.protocol !== 'http:' || gatewayUrl.hostname !== '127.0.0.1' || !gatewayUrl.port || gatewayUrl.pathname.length < 2 || gatewayUrl.search || gatewayUrl.hash) throw new TypeError('The sanitizing gateway must use a loopback HTTP URL with a path token');
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new TypeError('timeoutMs must be a positive integer');
   if (onUpdate !== undefined && typeof onUpdate !== 'function') throw new TypeError('onUpdate must be a function');
   if (onPermission !== undefined && typeof onPermission !== 'function') throw new TypeError('onPermission must be a function');
@@ -71,7 +76,7 @@ export async function startAgyRuntime({
   try {
     if (signal?.aborted) throw abortError();
     handle = subprocess.spawn({
-      argv: [cli.path, 'acp', '--stdio', '--gemini-dir', isolation.geminiDir, '--app-data-dir', isolation.appDataDir, '--include-default-customizations=false', '--disable-telemetry', '--agent', isolation.agentName],
+      argv: [cli.path, 'acp', '--stdio', '--gemini-dir', isolation.geminiDir, '--app-data-dir', isolation.appDataDir, '--include-default-customizations=false', '--disable-telemetry', '--agent', isolation.agentName, '--cloud_code_endpoint', gateway.endpoint],
       cwd: isolation.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: 1000,

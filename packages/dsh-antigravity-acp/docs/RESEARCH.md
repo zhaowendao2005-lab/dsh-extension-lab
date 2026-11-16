@@ -130,12 +130,65 @@ ACP session/update 是执行与展示流，不是上游每次请求的完整 fun
 
 SDK 的 `_to_harness_side_tools_proto()` 仅在 `RUN_COMMAND` **或** `SCHEDULE` 仍激活时设置 `manage_task.enabled=true`。因此在该 SDK 路径中仅禁用命令并不足以关闭任务管理。该结论来自公开 Python 配置构造代码与测试，尚不是 CLI ACP 的实际模型声明证据。
 
-SDK 经 `HarnessConfig.harness_side_tools` 启动 localharness；CLI 则经 `agy acp` 使用 stdio JSON-RPC 和当前缓存登录。公开 CLI 文档没有给出对应 capabilities 入口，两个资源工具也没有找到可用关闭开关或完整声明观测契约。保持门禁，不映射未知 `_meta` 字段。固定提交、逐层链接与限制见[SDK 与 CLI ACP 边界](SDK-CLI-BOUNDARY.md)。
+SDK 经 `HarnessConfig.harness_side_tools` 启动 localharness；CLI 则经 `agy acp` 使用 stdio JSON-RPC 和当前缓存登录。公开 CLI 文档没有给出对应 capabilities 入口，两个资源工具也没有找到可用关闭开关或完整声明观测契约。不映射未知 `_meta` 字段；取而代之的出口净化方案见 §10。固定提交、逐层链接与限制见[SDK 与 CLI ACP 边界](SDK-CLI-BOUNDARY.md)。
 
 ## 9. 下一步必须补的证据
 
 1. tools 三态、配置写入顺序、agent 选中证明的精确复现。
 2. 完整模型可见工具与提示的可靠观测机制；先找官方可用诊断，不默认抓取带凭据和正文的 HTTP。
-3. 三个残留工具的去除方式与真实边界；若无法去除，继续阻断，不自行降低用户标准。
+3. 三个残留工具的去除方式与真实边界（已由 §10 的网关方案在出口层解决，CLI 内部仍待权威说明）。
 4. excludeDefaultComponents 与 DSH system 注入、动态 skill、工具快照更新的组合。
 5. 完整 agent-loop 与官方 CLI 组合的挂起续轮、拒绝、取消、不确定副作用测试。假 ACP、真实 MCP 桥和真实 DSH Runtime 的离线层已经验证；这没有替代完整 agent-loop 或在线验收。
+
+## 10. 2026-11-16 出口观测与净化网关（结论修订）
+
+### 10.1 观测手段
+
+- **TLS 中间人**：`mitmdump` 监听 loopback，CLI 子进程只带 `HTTPS_PROXY` 与 `SSL_CERT_FILE`；代理在未放行时对 `streamGenerateContent` 直接返回 400，因此纯采样不消耗额度。用于取得 7 组配置的声明矩阵。
+- **CLI 自带的出口重定向**：`agy acp --cloud_code_endpoint http://127.0.0.1:<port>` 被接受，CLI 会把**真实 Authorization 头**发到这个地址，路径前缀原样保留。这条路径不需要 TLS 拦截，也不需要证书，因此成为产品机制的基础。
+
+### 10.2 声明矩阵（纯采样，零额度）
+
+| 配置 | 线上 functionDeclarations |
+|---|---|
+| 无桥 | `manage_task` |
+| 桥 + `tools: null` + `excludeDefaultComponents: true` | 桥工具、`list_resources`、`read_resource`、`manage_task` |
+| 同上但 `tools: []` | 完全相同四项 |
+| 显式把 MCP 名写进 agent `tools` | 没有产生带工具的请求（该名称不是合法组件） |
+| 默认 agent（不用定制 agent） | 17 组：read_file、run_command、write_file、edit_file、search_web、run_workflow、swarm、ask_question、schedule、invoke_subagent、define_subagent、manage_subagents、send_message、manage_task、桥、`list_resources`、`read_resource` |
+| 默认 agent 且无桥 | 14 组，含 `manage_task`，不含两个资源工具 |
+| `--sandbox` 或 deny-all 权限（含 `mcp(*)`） | 与基线完全相同四项 |
+
+结论：`excludeDefaultComponents` 去掉了 14 个原生声明中的 13 个；`manage_task` 在 CLI ACP 中**无条件注入**；两个资源工具只在配置了 MCP 服务器时出现；操作系统沙箱和权限规则只改执行、不改可见性。
+
+### 10.3 提示层残留
+
+即使 `excludeDefaultComponents: true`，agent 请求的 `systemInstruction` 仍是完整 Antigravity 身份提示（`<identity> … designed by the Google Deepmind team` 以及 `<artifacts>` 段落）。CLI 还会注入 `requestType: "checkpoint"` 的会话标题请求（内容以 ` You are a conversation title generator.` 开头、无工具）。所以只删工具声明仍然不够，必须同时重写系统提示。
+
+### 10.4 已核验的 `_meta` 与配置键（修订 E03/E04）
+
+二进制诊断字符串显示 ACP 的 `_meta.antigravity` **只支持 `systemPrompt`**：
+
+- `Ignoring invalid systemPrompt in _meta.antigravity: missing 'append' key`
+- `'append' key must be a string, got %T`
+- `Ignoring unsupported systemPrompt format in _meta.antigravity (expected object, got %T)`
+
+`eagerMcpServers`、`enabledTools`、`harnessSideTools` 在我们的请求里**没有对应解析**，属于被静默忽略的字段；早期把效果归因给它们是错的。桥工具之所以 eager，是因为 `mcp_config.json` 里写了 `tools.<name>.eager`。`settings.json` schema（`https://antigravity.google/schemas/v1/settings.json`）没有任何控制 `manage_task` 的键，`hideActiveItems` 只是 UI。
+
+### 10.5 净化网关的实测结果
+
+生产代码路径（`AcpEngine` → `startAgyRuntime` → 真实 `agy 1.5.9` → 网关 → 真实上游）：
+
+- 轮 1 触发工具调用，轮 2 回填后模型回复 `DONE`；网关记录 `sanitizedAgentRequests: 2`、`strippedDeclarations: 6`、`systemRewritten: 2`、`upstreamDeclarationsForwarded: false`。
+- 早期的原型网关（只删工具、不改提示）也单独跑通过 `OK` 与 `ping → DONE`，说明桥接与流式协议不受改写影响。
+- **失败即关闭**：请求体不是 JSON、工具结构异常、没有 DSH 系统提示、网关内部异常，四种情况都返回 4xx 且不连接上游。实测把这类错误做成 5xx 时，CLI 会把同一条请求重试 8 次（全程被网关拒绝，未消耗上游额度），所以改成 4xx 让它快速失败。
+- **权限**：CLI 会对桥工具发起 `session/request_permission`（`toolCall.name = mcp_dsh-bridge_dsh_0_dsh_echo`，选项含 `allow_once`/`reject_once`）。适配器只批准“名字以 `mcp_dsh-bridge_` 开头且属于本单元已公布工具”的请求，其它一律取消并报 `ACP_PERMISSION_UNVERIFIED`。
+
+### 10.6 环境侧观测（与插件无关）
+
+2026-11-16 当天，Gemini 模型经官方 CLI 直接调用也返回 `FAILED_PRECONDITION (code 400): User location is not supported for the API use`，而同一账号的 Claude 模型正常；`agy models` 仍能列出全部模型。因此该错误属于上游/地区策略，不能归因到本插件，也不能拿它做纯净性结论。验收因此使用 `claude-sonnet-5-5`。
+
+### 10.7 修正后的产品声明
+
+- 声明：**模型收到的 system 与 tools 由本地网关在出口处重写，非 DSH 声明不会离开本机。**
+- 不声明：CLI 内部不存在其它出口、与直连 Google Cloud 行为等价、或“零原生能力”。后者需要官方权威说明才能升级。

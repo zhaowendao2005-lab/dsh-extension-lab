@@ -1,5 +1,20 @@
 {
-  "title": {"en": "Antigravity ACP · Development Preview", "zh": "Antigravity ACP · 开发预览"},
-  "description": {"en": "Local official agy ACP adapter using the existing CLI login. Model discovery is available; generation remains blocked pending native-tool purity verification.", "zh": "复用本机官方 agy 登录的 ACP 模型适配器。支持模型目录发现；原生工具纯净性未核验，真实生成仍阻断。"},
-  "metadata": {"keywords": ["antigravity", "acp", "model", "preview"], "labels": [], "sortKeys": {}}
+  "title": {
+    "en": "Antigravity ACP · Development Preview",
+    "zh": "Antigravity ACP · 开发预览"
+  },
+  "description": {
+    "en": "Local official agy ACP adapter reusing the existing CLI login. Every model request is rerouted through a loopback sanitizing gateway that strips non-DSH tool declarations and rewrites the system prompt; malformed requests are never forwarded.",
+    "zh": "复用本机官方 agy 登录的 ACP 模型适配器。所有模型请求改道本机净化网关：删除非 DSH 工具声明、重写系统提示，解析失败即拒绝转发。"
+  },
+  "metadata": {
+    "keywords": [
+      "antigravity",
+      "acp",
+      "model",
+      "preview"
+    ],
+    "labels": [],
+    "sortKeys": {}
+  }
 }

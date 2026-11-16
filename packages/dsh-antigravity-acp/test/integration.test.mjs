@@ -9,7 +9,8 @@ import { user,request,echo,result,assistant,collect,deferred } from './helpers/e
 test('engine and real MCP SDK resume parallel parked tools in one ACP prompt',async t=>{
   const workers=[];const bridges=[];let prompts=0,responses;
   const engine=new AcpEngine({
-    subprocess:{},inspect:async()=>({path:'/fake/agy',version:'1.5.9',sha256:'offline'}),verifyProfile:()=>{},isConversation:()=>true,
+    subprocess:{},inspect:async()=>({path:'/fake/agy',version:'1.5.9',sha256:'offline'}),isConversation:()=>true,
+    createGateway:async({systemInstruction})=>({endpoint:'http://127.0.0.1:9/gateway-token',systemInstruction,attested:()=>({sanitizedAgentRequests:1,strippedDeclarations:0,systemRewritten:1,generationRequests:1}),close:async()=>{}}),
     bridge:async options=>{const bridge=await createToolBridge(options);bridges.push(bridge);return bridge;},
     start:async({bridge,onUpdate})=>{
       const client=new Client({name:'offline-cli',version:'1.0.0'});const closed=deferred();

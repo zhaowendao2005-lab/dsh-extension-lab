@@ -3,7 +3,8 @@ import path from 'node:path';
 import { createToolBridge } from '../bridge/server.js';
 import { inspectCli, startAgyRuntime } from '../runtime/index.js';
 import { parseCatalog, selectModel, PROVIDER } from '../catalog.js';
-import { assertVerifiedProfile, PURITY_STATUS } from '../purity.js';
+import { requireGatewayPurity, PURITY_STATUS, BRIDGE_TOOL_PREFIX } from '../purity.js';
+import { createSanitizingGateway } from '../runtime/gateway.js';
 import { AcpError, aborted, failure } from './errors.js';
 import { projectRequest, toolResultContent, semanticMessage, assistantMessage, samePrefix, stable } from './context.js';
 import { EventQueue, SerialGate } from './queue.js';
@@ -15,8 +16,8 @@ async function closeLate(resource) {
 
 
 export class AcpEngine {
-  constructor({subprocess,config={},readImage,fileRequestText,inspect=inspectCli,start=startAgyRuntime,bridge=createToolBridge,verifyProfile=assertVerifiedProfile,isConversation=()=>false}) {
-    Object.assign(this,{subprocess,readImage,fileRequestText,inspect,start,bridge,verifyProfile,isConversation});
+  constructor({subprocess,config={},readImage,fileRequestText,inspect=inspectCli,start=startAgyRuntime,bridge=createToolBridge,createGateway=createSanitizingGateway,isConversation=()=>false}) {
+    Object.assign(this,{subprocess,readImage,fileRequestText,inspect,start,bridge,createGateway,isConversation});
     this.config = {executable:'agy',loginHome:'',maxSessions:4,promptTimeoutMs:600000,...config};
     this.units = new Map(); this.ownedUnits = new Set(); this.building = new Set(); this.gate = new SerialGate(); this.disposed = false;
     this.lifecycle = new AbortController();
@@ -52,7 +53,11 @@ export class AcpEngine {
       }});
       if (unit.closed || signal.aborted) { await closeLate(bridge); aborted(signal); throw new AcpError('ACP_DISPOSED','ACP 会话已关闭。'); }
       unit.bridge = bridge;
-      const runtime = await this.start({subprocess:this.subprocess,cli:await this.cli(signal),loginHome:this.loginHome,bridge:unit.bridge,bridgeTimeoutMs:this.config.promptTimeoutMs,systemPrompt:system,signal,
+      const gateway = await this.createGateway({systemInstruction:system,signal});
+      if (!gateway || typeof gateway.endpoint !== 'string' || typeof gateway.attested !== 'function' || typeof gateway.close !== 'function') { await gateway?.close?.(); throw new AcpError('ACP_GATEWAY_INVALID','净化网关未能建立。'); }
+      unit.gateway = gateway;
+      if (unit.closed || signal.aborted) { await closeLate(gateway); aborted(signal); throw new AcpError('ACP_DISPOSED','ACP 会话已关闭。'); }
+      const runtime = await this.start({subprocess:this.subprocess,cli:await this.cli(signal),loginHome:this.loginHome,bridge:unit.bridge,gateway:unit.gateway,bridgeTimeoutMs:this.config.promptTimeoutMs,systemPrompt:system,signal,
         onUpdate:params => {
           if (params?.sessionId !== unit.sessionId || unit.closed) return;
           const update = params.update;
@@ -63,7 +68,17 @@ export class AcpEngine {
           // Tool progress is not authority to execute; only authenticated MCP calls enter pending.
           // usage_update describes context occupancy, not billable generation usage.
         },
-        onPermission:() => { unit.queue.close(new AcpError('ACP_PERMISSION_UNVERIFIED','CLI 权限请求缺乏已核验的规范工具身份；已拒绝请求。')); return {outcome:{outcome:'cancelled'}}; }
+        // Only a tool this unit actually published may prompt for permission. The
+        // gateway already stripped every declaration except the bridge tools, so
+        // an unknown name here means the CLI asked for something we never offered.
+        onPermission: params => {
+          const name = params?.toolCall?.name;
+          const declared = Array.isArray(unit.bridge?.toolNames) ? unit.bridge.toolNames : [];
+          const offered = typeof name === 'string' && name.startsWith(BRIDGE_TOOL_PREFIX) && declared.includes(name.slice(BRIDGE_TOOL_PREFIX.length));
+          const allow = Array.isArray(params?.options) ? params.options.find(option => option?.kind === 'allow_once') : undefined;
+          if (!offered || !allow) { unit.queue.close(new AcpError('ACP_PERMISSION_UNVERIFIED','CLI 权限请求缺乏已核验的规范工具身份；已拒绝请求。')); return {outcome:{outcome:'cancelled'}}; }
+          return {outcome:{outcome:'selected', optionId: allow.optionId}};
+        }
       });
       if (unit.closed || signal.aborted) { await closeLate(runtime); aborted(signal); throw new AcpError('ACP_DISPOSED','ACP 会话已关闭。'); }
       unit.runtime = runtime;
@@ -81,8 +96,8 @@ export class AcpEngine {
       let unit;
       try {
         unit = await this.newUnit();
-        this.catalog = unit.catalog.models.map(model => ({...model,inputModalities:['text'],badge:{text:'纯净性未核验 · 已阻断',tone:'warning'}}));
-        this.status.modelCount = this.catalog.length; this.status.phase = 'blocked';
+        this.catalog = unit.catalog.models.map(model => ({...model,inputModalities:['text'],badge:{text:'经本地网关净化 · 原生工具不外发',tone:'info'}}));
+        this.status.modelCount = this.catalog.length; this.status.phase = 'idle';
         return this.catalog;
       } catch(error) { const safe=failure(error); this.status.phase='error'; this.status.error=safe; this.catalogTask=undefined; throw new AcpError(safe.code,safe.message); }
       finally { if (unit) await this.closeUnit(unit); }
@@ -112,6 +127,7 @@ export class AcpEngine {
         } catch {} finally {clearTimeout(timer);}
       }
       try { await unit.bridge?.close(); } catch(error) { errors.push(error); }
+      try { await unit.gateway?.close(); } catch(error) { errors.push(error); }
       if (unit.sessionId) { try { await unit.runtime?.connection.request('session/close',{sessionId:unit.sessionId},{timeoutMs:1000}); } catch {} }
       const results = await Promise.allSettled([unit.runtime?.close()]);
       for (const result of results) if (result.status === 'rejected') errors.push(result.reason);
@@ -119,6 +135,12 @@ export class AcpEngine {
       if (errors.length) throw new AcpError('ACP_CLEANUP_UNCONFIRMED','ACP 退出状态未确认；保留其私有目录，未复用。',{cause:errors[0]});
     })();
     return unit.closeTask;
+  }
+  /** A completed turn must have passed the local gateway; otherwise fail closed. */
+  attest(unit) {
+    const attestation = unit.gateway?.attested?.();
+    requireGatewayPurity(attestation);
+    this.status.purity = {...PURITY_STATUS,sanitizedAgentRequests:attestation.sanitizedAgentRequests,strippedDeclarations:attestation.strippedDeclarations,systemRewritten:attestation.systemRewritten};
   }
   async *stream(options) {
     let release,unit,key,keep=false,completed=false,continuable=false;
@@ -135,7 +157,6 @@ export class AcpEngine {
       if (options.reasoningEffort !== undefined) throw new AcpError('ACP_CONTROL_UNSUPPORTED','当前 ACP 尚未核验独立思考档位。');
       release = await this.gate.acquire(options.signal);
       const cli = await this.cli(options.signal);
-      this.verifyProfile(cli); // Production has no bypass; tests inject a fake verifier.
       const projection = await projectRequest(options,this);
       key = continuable ? stable([options.sessionId,options.purpose ?? 'default']) : Symbol('ephemeral');
       unit = this.units.get(key);
@@ -195,6 +216,7 @@ export class AcpEngine {
           yield {type:event.type === 'text' ? 'text-delta' : 'reasoning-delta',index:open.index,text:event.text};
         } else if (event.type === 'tool') {
           if (!continuable) throw new AcpError('ACP_AUXILIARY_TOOL','非 DSH Agent Loop 请求不能等待工具续轮。');
+          this.attest(unit);
           yield* flush(); const block={type:'tool-call',...event.call};
           yield {type:'block-start',index,blockType:'tool-call'};
           yield {type:'tool-call-delta',index,id:block.id,name:block.name,argumentsDelta:block.arguments};
@@ -207,6 +229,7 @@ export class AcpEngine {
           yield* flush(); unit.active=false;
           const stop = event.result?.stopReason;
           if (!['end_turn','max_tokens'].includes(stop)) throw new AcpError(stop === 'cancelled' ? 'ACP_ABORTED' : 'ACP_STOP_UNSUPPORTED','ACP 生成未正常完成；未自动重试。');
+          this.attest(unit);
           unit.expected=[...projection.messages,semanticMessage(assistantMessage(blocks,options.provider,options.model))];
           keep=continuable; completed=true; this.status.phase='idle';
           yield {type:'finish',reason:{kind:stop === 'max_tokens' ? 'max-tokens' : 'stop'}}; return;

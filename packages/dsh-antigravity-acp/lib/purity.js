@@ -1,11 +1,17 @@
 import { AcpError } from './adapter/errors.js';
 
-// Deliberately empty: behavioral probes and model self-reports are not authoritative
-// evidence of the complete upstream tools/system declaration. No config bypass.
-export const VERIFIED_PROFILES = Object.freeze([]);
-export const PURITY_STATUS = Object.freeze({verified:false,code:'ACP_PURITY_UNVERIFIED',nativeResiduals:['manage_task','list_resources','read_resource']});
-export function assertVerifiedProfile(cli) {
-  if (!VERIFIED_PROFILES.some(profile => profile.sha256 === cli.sha256 && profile.version === cli.version)) {
-    throw new AcpError('ACP_PURITY_UNVERIFIED','原生工具可见性尚未通过权威核验；ACP 生成已阻断。可执行离线测试和不生成内容的协议检查。');
+// Generation is allowed only through the local sanitizing gateway. The CLI child
+// is pointed at a loopback endpoint, and every agent turn is parsed before it
+// leaves this process: native tool declarations are removed and the vendor system
+// prompt is replaced with the DSH one. The guarantee is structural rather than an
+// empirical profile allowance, and it is re-checked after each completed turn.
+export const BRIDGE_TOOL_PREFIX = 'mcp_dsh-bridge_';
+export const PURITY_STATUS = Object.freeze({ mechanism: 'sanitizing-gateway', requiresGateway: true, upstreamDeclarationsForwarded: false });
+
+/** Refuses to continue when a completed turn left no gateway attestation. */
+export function requireGatewayPurity(attestation) {
+  if (!attestation || !Number.isSafeInteger(attestation.sanitizedAgentRequests) || attestation.sanitizedAgentRequests < 1) {
+    throw new AcpError('ACP_PURITY_UNVERIFIED', '本轮生成没有经过本地净化网关；已停止，未按纯净通道继续。');
   }
+  return attestation;
 }

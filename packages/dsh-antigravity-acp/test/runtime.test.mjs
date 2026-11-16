@@ -8,6 +8,8 @@ import { PassThrough, Writable } from 'node:stream';
 import { inspectCli, startAgyRuntime, runtimeEnvironment } from '../src/runtime/index.js';
 import { createIsolation, removeIsolation } from '../src/runtime/isolation.js';
 
+const gateway = { endpoint: 'http://127.0.0.1:9/gateway-token' };
+
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const bridge = { url: 'http://127.0.0.1:54321/mcp', token: 'x'.repeat(43), toolNames: ['dsh_echo'] };
 const encode = (message) => `${JSON.stringify(message)}\n`;
@@ -175,11 +177,12 @@ test('profile files are private and complete before spawn; initialization sends 
     assert.equal(settings.toolPermission, 'strict');
     for (const dir of [observedRoot, spec.cwd, gemini, path.join(gemini, 'config'), path.join(gemini, 'config/agents/dsh-model'), path.join(gemini, 'dsh-acp')]) assert.equal(statSync(dir).mode & 0o777, 0o700);
     for (const file of [path.join(observedRoot, 'owner.json'), path.join(gemini, 'config/mcp_config.json'), path.join(gemini, 'config/agents/dsh-model/agent.md'), path.join(gemini, 'dsh-acp/settings.json')]) assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.equal(spec.argv[spec.argv.indexOf('--cloud_code_endpoint') + 1], gateway.endpoint);
     assert.ok(!spec.argv.includes('--log-file'));
     assert.ok(!spec.argv.includes('authenticate'));
     assert.equal(spec.argv[spec.argv.indexOf('--app-data-dir') + 1], 'dsh-acp');
   } });
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge, systemPrompt: 'DSH system fixture' });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge, systemPrompt: 'DSH system fixture' });
   assert.equal(runtime.isolation.certificate, false);
   assert.equal(runtime.isolation.root, observedRoot);
   assert.deepEqual(await fs.readdir(runtime.isolation.cwd), []);
@@ -190,6 +193,15 @@ test('profile files are private and complete before spawn; initialization sends 
   await assert.rejects(fs.stat(observedRoot), { code: 'ENOENT' });
 });
 
+test('a missing or non-loopback sanitizing gateway is refused before spawn', async (t) => {
+  const cli = await fakeExecutable(t);
+  const subprocess = fakeSubprocess(cli);
+  await assert.rejects(startAgyRuntime({ subprocess, cli, bridge }), /sanitizing gateway/);
+  await assert.rejects(startAgyRuntime({ gateway: { endpoint: 'https://example.com/gateway-token' }, subprocess, cli, bridge }), /sanitizing gateway/);
+  await assert.rejects(startAgyRuntime({ gateway: { endpoint: 'http://127.0.0.1:9' }, subprocess, cli, bridge }), /sanitizing gateway/);
+  assert.equal(subprocess.calls.filter((call) => call.kind === 'spawn').length, 0);
+});
+
 for (const [bridgeTimeoutMs, timeoutSeconds] of [[60_001, 61], [1_800_000, 1800]]) {
   test(`MCP bridge deadline ${bridgeTimeoutMs}ms is written before spawn without shortening it`, async (t) => {
     const cli = await fakeExecutable(t);
@@ -198,7 +210,7 @@ for (const [bridgeTimeoutMs, timeoutSeconds] of [[60_001, 61], [1_800_000, 1800]
       const mcp = JSON.parse(readFileSync(path.join(gemini, 'config/mcp_config.json'), 'utf8'));
       assert.equal(mcp.mcpServers['dsh-bridge'].timeoutSeconds, timeoutSeconds);
     } });
-    const runtime = await startAgyRuntime({ subprocess, cli, bridge, bridgeTimeoutMs });
+    const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge, bridgeTimeoutMs });
     await runtime.close();
   });
 }
@@ -207,7 +219,7 @@ for (const bridgeTimeoutMs of [0, -1, 1.5, Number.NaN, 1_800_001, '600000']) {
   test(`invalid MCP bridge deadline ${String(bridgeTimeoutMs)} is rejected without a runtime spawn`, async (t) => {
     const cli = await fakeExecutable(t);
     const subprocess = fakeSubprocess(cli);
-    await assert.rejects(startAgyRuntime({ subprocess, cli, bridge, bridgeTimeoutMs }), /bridgeTimeoutMs/);
+    await assert.rejects(startAgyRuntime({ gateway, subprocess, cli, bridge, bridgeTimeoutMs }), /bridgeTimeoutMs/);
     assert.equal(subprocess.calls.filter((call) => call.kind === 'spawn').length, 0);
   });
 }
@@ -215,7 +227,7 @@ for (const bridgeTimeoutMs of [0, -1, 1.5, Number.NaN, 1_800_001, '600000']) {
 test('permission defaults to cancelled and native callbacks are never exposed', async (t) => {
   const cli = await fakeExecutable(t);
   const subprocess = fakeSubprocess(cli);
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge });
   const options = [{ kind: 'allow_once', optionId: 'yes' }, { kind: 'reject_once', optionId: 'no' }];
   const denied = await subprocess.handle.serverRequest('session/request_permission', { options, toolCall: { title: 'read_file' } });
   assert.deepEqual(denied.result, { outcome: { outcome: 'cancelled' } });
@@ -230,7 +242,7 @@ test('permission callback may choose only a present once option; updates retain 
   const subprocess = fakeSubprocess(cli);
   const updates = [];
   let choice = 'yes';
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge, onUpdate: (params) => updates.push(params), onPermission: () => ({ outcome: { outcome: 'selected', optionId: choice } }) });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge, onUpdate: (params) => updates.push(params), onPermission: () => ({ outcome: { outcome: 'selected', optionId: choice } }) });
   const params = { options: [{ kind: 'allow_once', optionId: 'yes' }, { kind: 'allow_always', optionId: 'always' }], toolCall: { toolCallId: 't1' } };
   assert.deepEqual((await subprocess.handle.serverRequest('session/request_permission', params)).result, { outcome: { outcome: 'selected', optionId: 'yes' } });
   choice = 'always';
@@ -246,7 +258,7 @@ test('permission callback may choose only a present once option; updates retain 
 test('default-agent fallback closes an active connection and rejects its pending prompt', async (t) => {
   const cli = await fakeExecutable(t);
   const subprocess = fakeSubprocess(cli);
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge });
   const pending = runtime.connection.request('session/prompt', {}, { timeoutMs: 1000 });
   const rejected = assert.rejects(pending, { code: 'ACP_DEFAULT_AGENT_FALLBACK' });
   subprocess.handle.stderr.write('Agent "dsh-model" not found, falling ');
@@ -261,7 +273,7 @@ test('CLI fingerprint replacement prevents spawning any ACP process', async (t) 
   const cli = await fakeExecutable(t);
   await fs.writeFile(cli.path, 'replacement fixture');
   const subprocess = fakeSubprocess(cli);
-  await assert.rejects(startAgyRuntime({ subprocess, cli, bridge }), { code: 'ACP_CLI_CHANGED' });
+  await assert.rejects(startAgyRuntime({ gateway, subprocess, cli, bridge }), { code: 'ACP_CLI_CHANGED' });
   assert.equal(subprocess.calls.length, 0);
 });
 
@@ -269,14 +281,14 @@ test('unsupported ACP initialization is closed and its isolation removed', async
   const cli = await fakeExecutable(t);
   let root;
   const subprocess = fakeSubprocess(cli, { protocolVersion: 2, onRuntimeSpawn: (spec) => { root = path.dirname(spec.cwd); } });
-  await assert.rejects(startAgyRuntime({ subprocess, cli, bridge }), { code: 'ACP_PROTOCOL_VERSION_UNSUPPORTED' });
+  await assert.rejects(startAgyRuntime({ gateway, subprocess, cli, bridge }), { code: 'ACP_PROTOCOL_VERSION_UNSUPPORTED' });
   await assert.rejects(fs.stat(root), { code: 'ENOENT' });
 });
 
 test('a direct command exit is insufficient for deleting its managed profile', async (t) => {
   const cli = await fakeExecutable(t);
   const subprocess = fakeSubprocess(cli, { directExitOnEnd: true, exitOnEnd: false });
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge });
   const closing = runtime.close();
   await tick();
   assert.ok((await fs.stat(runtime.isolation.root)).isDirectory());
@@ -289,7 +301,7 @@ test('a direct command exit is insufficient for deleting its managed profile', a
 test('managed termination is used when the graceful exit tier reports a live range', async (t) => {
   const cli = await fakeExecutable(t);
   const subprocess = fakeSubprocess(cli, { exitOnEnd: false, firstWaitFalse: true });
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge });
   await runtime.close();
   assert.ok(subprocess.calls.some((call) => call.kind === 'runtime-terminate'));
   assert.equal(subprocess.calls.filter((call) => call.kind === 'runtime-wait').length, 2);
@@ -298,7 +310,7 @@ test('managed termination is used when the graceful exit tier reports a live ran
 test('unprovable managed exit retains the owned profile and makes close reject', async (t) => {
   const cli = await fakeExecutable(t);
   const subprocess = fakeSubprocess(cli, { exitUnverified: true });
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge });
   await assert.rejects(runtime.close(), { code: 'ACP_EXIT_UNVERIFIED' });
   assert.ok((await fs.stat(runtime.isolation.root)).isDirectory());
   // The fake handle is genuinely empty after terminate; the production API retained it.
@@ -309,7 +321,7 @@ test('cancellation closes the connection and cleans only after managed exit', as
   const cli = await fakeExecutable(t);
   const subprocess = fakeSubprocess(cli);
   const controller = new AbortController();
-  const runtime = await startAgyRuntime({ subprocess, cli, bridge, signal: controller.signal });
+  const runtime = await startAgyRuntime({ gateway, subprocess, cli, bridge, signal: controller.signal });
   const pending = runtime.connection.request('session/prompt', {});
   const rejected = assert.rejects(pending, { name: 'AbortError' });
   controller.abort();

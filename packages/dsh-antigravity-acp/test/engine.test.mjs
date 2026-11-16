@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture,user,system,result,assistant,collect,request,echo,deferred } from './helpers/engine.mjs';
-import { assertVerifiedProfile } from '../src/purity.js';
 
 const last=chunks=>chunks.at(-1);
 
-test('production purity gate prevents runtime and all session/prompt calls',async () => {
-  const {engine,events,workers}=fixture({verifyProfile:assertVerifiedProfile});
+test('a turn without gateway attestation fails closed instead of being reported clean',async () => {
+  const {engine,events,gateways}=fixture({attestation:{sanitizedAgentRequests:0,strippedDeclarations:0,systemRewritten:0,generationRequests:0}});
   const chunks=await collect(engine.stream(request([user('hello')])));
   assert.equal(last(chunks).reason.failure.code,'ACP_PURITY_UNVERIFIED');
-  assert.equal(workers.length,0); assert.equal(events.length,0); await engine.dispose();
+  assert.equal(gateways.length,1); assert.equal(gateways[0].closed,true);
+  assert.equal(gateways[0].endpoint,'http://127.0.0.1:1/gateway-token');
+  assert.equal(events.filter(event=>event[0]==='session/prompt').length,1);
+  await engine.dispose();
 });
 
 test('catalog is lazy, shared, authoritative and creates zero prompts',async () => {
@@ -25,7 +27,8 @@ test('text and reasoning chunks have valid block framing without invented usage'
   const {engine}=fixture({behavior:async worker=>{worker.update('think','agent_thought_chunk');worker.update('Hel');worker.update('lo');return {stopReason:'end_turn'};}});
   const chunks=await collect(engine.stream(request([system('DSH'),user('hello')])));
   assert.deepEqual(chunks.filter(chunk=>chunk.type==='block-end').map(chunk=>chunk.block),[{type:'reasoning',text:'think'},{type:'text',text:'Hello'}]);
-  assert.equal(last(chunks).reason.kind,'stop'); assert.equal(chunks.some(chunk=>chunk.type==='usage'),false); await engine.dispose();
+  assert.equal(last(chunks).reason.kind,'stop'); assert.equal(chunks.some(chunk=>chunk.type==='usage'),false);
+  assert.equal(engine.getStatus().purity.sanitizedAgentRequests,1); await engine.dispose();
 });
 
 test('parked MCP call resumes in same ACP prompt and duplicate user input remains distinct',async () => {
@@ -74,6 +77,32 @@ test('idle history compaction rebuilds generation without executing past calls',
   await collect(engine.stream(request([user('compacted summary'),user('new')])));
   assert.equal(workers.length,2);assert.equal(workers[0].closed,true);
   assert.equal(events.filter(event=>event[0]==='session/prompt').length,2);assert.equal(events.some(event=>event[0]==='resolve'),false);await engine.dispose();
+});
+
+test('a permission prompt is approved only for a tool this unit published',async t=>{
+  await t.test('unknown tool is refused',async()=>{
+    const running=deferred();
+    const {engine}=fixture({behavior:async worker=>{running.resolve(worker);worker.update('partial');return deferred().promise;}});
+    const stream=engine.stream(request([user('go')],{tools:[echo]}));
+    await stream.next();
+    const worker=await running.promise;
+    const answer=worker.permission({toolCall:{name:'manage_task'},options:[{optionId:'allow',kind:'allow_once'}]});
+    assert.deepEqual(answer,{outcome:{outcome:'cancelled'}});
+    const chunks=await collect(stream);
+    assert.equal(last(chunks).reason.failure.code,'ACP_PERMISSION_UNVERIFIED');
+    await engine.dispose();
+  });
+  await t.test('the published bridge tool is approved once',async()=>{
+    const running=deferred();
+    const {engine}=fixture({behavior:async worker=>{running.resolve(worker);worker.update('partial');return deferred().promise;}});
+    const stream=engine.stream(request([user('go')],{tools:[echo]}));
+    await stream.next();
+    const worker=await running.promise;
+    const answer=worker.permission({toolCall:{name:'mcp_dsh-bridge_dsh_echo'},options:[{optionId:'allow-once',kind:'allow_once'},{optionId:'deny',kind:'reject_once'}]});
+    assert.deepEqual(answer,{outcome:{outcome:'selected',optionId:'allow-once'}});
+    await stream.return();
+    await engine.dispose();
+  });
 });
 
 test('cancel, disconnect, denied permission and consumer return terminate owned worker',async t => {

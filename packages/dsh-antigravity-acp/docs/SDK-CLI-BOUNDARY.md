@@ -75,7 +75,7 @@ MCP `tools/list` 只能证明桥声明了什么；模型自述、权限请求、
 
 ## 对当前实现的影响
 
-1. 保持 `ACP_PURITY_UNVERIFIED`，不添加未经核验的 CLI 配置键或用户放行开关。
+1. 不添加未经核验的 CLI 配置键或用户放行开关；纯净性由 [出口净化网关](RESEARCH.md) 机械执行，`ACP_PURITY_UNVERIFIED` 仅表示该轮没有经过网关。
 2. 后续定位 `manage_task` 时同时检查命令与调度组件，不能只关闭 `run_command`。
 3. 保留 `list_resources` / `read_resource` 作为独立阻断项。
 4. 只有找到明确 CLI 配置链和可靠声明证据，才能进行精确 profile 认证；SDK 单元测试不能替代它。

@@ -8,8 +8,8 @@ import { fixture,request,user,system,result,collect,echo } from './helpers/engin
 
 // The real Cordis/DSH boundary runs here. Only the external CLI dependencies are
 // replaced; no executable discovery, credentials, model calls or profile writes.
-function host(t,{behavior,verified=true}={}) {
-  const fake=fixture({behavior});
+function host(t,{behavior,attestation}={}) {
+  const fake=fixture({behavior,...(attestation?{attestation}:{})});
   let adapter;
   class CapturingRuntime extends LlmRuntime {
     registerAdapter(providers,next) { adapter=next;return super.registerAdapter(providers,next); }
@@ -20,8 +20,7 @@ function host(t,{behavior,verified=true}={}) {
   apply(ctx,Config({}));
   assert.ok(adapter);
   const engine=adapter.engine;
-  for(const key of ['inspect','start','bridge'])engine[key]=fake.engine[key];
-  if(verified)engine.verifyProfile=()=>{}; // test-only injection; production has no switch.
+  for(const key of ['inspect','start','bridge','createGateway'])engine[key]=fake.engine[key];
   const observed=[];
   const stream=engine.stream.bind(engine);
   engine.stream=options=>{
@@ -135,12 +134,14 @@ test('actual Runtime passes file handles with provenance and never reads the fil
   assert.match(projected.content[0].text,/\/execution\/report.txt/);
 });
 
-test('actual Host generation gate stays active with the real Runtime error boundary',async t=>{
-  const h=host(t,{verified:false});
+test('actual Host refuses to report a turn clean when the gateway attests nothing',async t=>{
+  const h=host(t,{attestation:{sanitizedAgentRequests:0,strippedDeclarations:0,systemRewritten:0,generationRequests:0}});
   const chunks=await collect(h.llm.stream(markAgentLoopRequest(request([user('hello')]))));
   assert.equal(chunks.at(-1).reason.failure.code,'ACP_PURITY_UNVERIFIED');
-  assert.equal(h.events.filter(([name])=>name==='session/prompt').length,0);
-  assert.equal(h.workers.length,1); // catalog lookup is allowed, prompt is not.
+  assert.equal(h.events.filter(([name])=>name==='session/prompt').length,1);
+  assert.equal(h.workers.length,2); // one catalog lookup plus the refused turn
+  assert.ok(h.workers.every(worker=>worker.closed),'a refused turn must not be kept for continuation');
+  assert.ok(h.gateways.every(gateway=>gateway.closed));
 });
 
 test('Host middleware leaves an unrelated provider on its actual Runtime route',async t=>{
