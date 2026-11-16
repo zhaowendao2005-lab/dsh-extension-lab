@@ -1,6 +1,6 @@
 {
   "name": "model-intelligence-test",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "private": true,
   "description": "a6api 专项指纹测试：令牌槽位采样、请求账单与全局操作 Key 固定/路由管理。",
   "type": "module",

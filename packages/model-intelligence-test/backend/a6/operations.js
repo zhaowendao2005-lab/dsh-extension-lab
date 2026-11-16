@@ -20,6 +20,8 @@ export function assertUsableToken(token) {
 
 const idOf = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 const messageOf = (error, fallback) => error instanceof A6Error ? error.message : fallback;
+// Per-record storage keys must match /^[a-zA-Z0-9_-]+$/; raw origins contain ':' and '/'.
+const storageKey = identity => `a6-operations-${Buffer.from(identity, 'utf8').toString('base64url')}`;
 
 export class A6Operations {
   constructor(service) {
@@ -59,7 +61,8 @@ export class A6Operations {
       const epoch = this.epoch;
       const generation = this.service.generation;
       const task = (async () => {
-        const stored = (await this.service.table()).get(`a6-operations:${identity}`);
+        const table = await this.service.table();
+        const stored = table.get(storageKey(identity)) ?? table.get(`a6-operations:${identity}`);
         if (this.disposed || epoch !== this.epoch || generation !== this.service.generation || identity !== this.service.accountIdentity()) {
           throw new A6Error('account-changed', '账号已切换，请刷新');
         }
@@ -82,7 +85,11 @@ export class A6Operations {
       this.assert(account);
       const table = await this.service.table();
       this.assert(account);
-      await table.put(`a6-operations:${account.identity}`, { siteId: 'a6-operations', tokenId: account.tokenId });
+      try {
+        await table.put(storageKey(account.identity), { siteId: 'a6-operations', tokenId: account.tokenId });
+      } catch {
+        throw new A6Error('operation-storage-failed', '操作 Key 选择保存失败，请检查本地存储后重试');
+      }
     });
     this.writeTail = task;
     await task;

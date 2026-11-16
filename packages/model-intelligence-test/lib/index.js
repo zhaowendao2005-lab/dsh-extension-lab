@@ -2202,6 +2202,7 @@ function assertUsableToken(token) {
 }
 var idOf = (value) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 var messageOf = (error, fallback) => error instanceof A6Error ? error.message : fallback;
+var storageKey = (identity2) => `a6-operations-${Buffer.from(identity2, "utf8").toString("base64url")}`;
 var A6Operations = class {
   constructor(service) {
     this.service = service;
@@ -2235,7 +2236,8 @@ var A6Operations = class {
       const epoch = this.epoch;
       const generation = this.service.generation;
       const task = (async () => {
-        const stored = (await this.service.table()).get(`a6-operations:${identity2}`);
+        const table = await this.service.table();
+        const stored = table.get(storageKey(identity2)) ?? table.get(`a6-operations:${identity2}`);
         if (this.disposed || epoch !== this.epoch || generation !== this.service.generation || identity2 !== this.service.accountIdentity()) {
           throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0");
         }
@@ -2269,7 +2271,11 @@ var A6Operations = class {
       this.assert(account);
       const table = await this.service.table();
       this.assert(account);
-      await table.put(`a6-operations:${account.identity}`, { siteId: "a6-operations", tokenId: account.tokenId });
+      try {
+        await table.put(storageKey(account.identity), { siteId: "a6-operations", tokenId: account.tokenId });
+      } catch {
+        throw new A6Error("operation-storage-failed", "\u64CD\u4F5C Key \u9009\u62E9\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u672C\u5730\u5B58\u50A8\u540E\u91CD\u8BD5");
+      }
     });
     this.writeTail = task;
     await task;
