@@ -477,8 +477,8 @@
         "zh": "Antigravity ACP · 开发预览"
       },
       "description": {
-        "en": "Local official agy ACP adapter reusing the existing CLI login. Every model request is rerouted through a loopback sanitizing gateway that strips non-DSH tool declarations and rewrites the system prompt; malformed requests are never forwarded.",
-        "zh": "复用本机官方 agy 登录的 ACP 模型适配器。所有模型请求改道本机净化网关：删除非 DSH 工具声明、重写系统提示，解析失败即拒绝转发。"
+        "en": "Local official agy ACP adapter reusing the existing CLI login. Every model request is rerouted through a loopback sanitizing gateway that strips non-DSH tool declarations and rewrites the system prompt; malformed requests are never forwarded. Text and image input both pass through, and an upstream refusal is reported as an explicit error instead of a fake answer.",
+        "zh": "复用本机官方 agy 登录的 ACP 模型适配器。所有模型请求改道本机净化网关：删除非 DSH 工具声明、重写系统提示，解析失败即拒绝转发。文本与图片均可直传，上游拒绝（如 429）会明确报错而不是变成假回答。"
       },
       "metadata": {
         "keywords": [
@@ -491,6 +491,19 @@
         "sortKeys": {}
       },
       "versions": [
+        {
+          "version": "0.1.3",
+          "publishTimestamp": 1794804719,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "7fbd0dcd3acf9ab7c939f6ee99a69157497f22b6",
+            "path": "packages/dsh-antigravity-acp"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.3 <0.3.0-0"
+          }
+        },
         {
           "version": "0.1.2",
           "publishTimestamp": 1794800375,
