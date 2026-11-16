@@ -9,9 +9,14 @@
 | M3 提交图谱 | 多字符哨兵取数、行带布局（Host 侧）、28px 虚拟滚动、泳道 SVG、引用徽章、过滤/分页、双击看提交差异 | 完成 | `backend/git/{log,layout}.js`、`frontend/stores/graph.stores.js`、`frontend/views/graph` |
 | M4 打磨 | 文件监听（fs.watch + 800ms 合并 + 2s 轮询兜底）、快捷键、编辑器偏好持久化、目录分页、错误提示与降级、文档同步 | 完成 | `backend/git/watch.js`、`frontend/index.js`（shortcuts）、`frontend/service/layout.js`、`docs/*` |
 | M4-2 冲突三方视图 | `git.conflict` 取 `:1:/:2:/:3:`、三栏只读对照、采用我方/对方/两者都保留/删除/标记已解决（`git.resolveConflict`） | 完成 | `backend/git/conflict.js`、`backend/git/write.js`（`resolveConflict`）、`frontend/stores/conflict.stores.js`、`frontend/views/editor/ConflictView.jsx`、`frontend/styles/conflict.css` |
-| M4-5 快速打开 | `files.index`（`git ls-files` 快路径 + 遍历兜底，Host 5 s 缓存）+ 文件名/路径模糊打分 + 键盘选择，`Shift+Cmd+O` | 完成 | `backend/files.js`（`index`）、`frontend/service/fuzzy.js`、`frontend/views/common/QuickOpen.jsx`、`frontend/styles/quickopen.css` |
+| M4-5 统一快速访问 | 文件 / 内容 / 斜杠命令共用面板与 store；文件模糊排序、内容片段定位、中文 / 英文 / 拼音首字母命令、MRU 50、键盘选择，无默认绑定 | 实现完成；本轮仅源码核对 | `frontend/stores/quick-access.stores.js`、`frontend/service/quick-access.js`、`frontend/views/common/QuickOpen.jsx` |
+| 搜索扫描链路 | files.index / files.search 共用 Node Worker、ignore / 包含 / 排除 glob、真实路径边界、有界扫描与超时截断反馈 | 实现完成；本轮仅源码核对 | `backend/search.js`、`backend/search-worker.js`、`backend/search-globs.js` |
+| Explorer 多选与批量操作 | 可见范围选择、焦点 / 锚点独立、顶部批量工具栏、右键目标一致；父子路径合并、未保存后代保护、删除结果汇总 | 实现完成；本轮仅源码核对 | `frontend/service/explorer-selection.js`、`frontend/stores/explorer-selection.stores.js`、`frontend/views/explorer` |
+| 展示隔离与反馈 | 92% frame ShadowRoot 全视图、真实 Seti SVG 与 MIT 归属、保存成功去重、文件栏收起保留展开宽度 | 实现完成；本轮仅源码核对 | `frontend/views/FullViewHost.jsx`、`frontend/views/common/FileIcon.jsx`、`frontend/stores/workbench.stores.js`、`THIRD_PARTY_NOTICES.md` |
 
-### 运行期冒烟记录（隔离实例，2026-11-14）
+### 历史运行期冒烟记录（隔离实例，2026-11-14）
+
+以下保留当时版本的结果，不代表当前版本已重新验证。main 面板、信任状态 / 门禁、默认快捷键与旧快速索引已由后续实现替代；本轮文档同步未执行构建、测试或 UI 验证。
 
 `plugin_dev` 起隔离 DSH（`dsh web --patch overlay`，Web profile），Playwright 驱动，逐条实测：
 
@@ -54,8 +59,8 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | M0-1 | 包骨架与构建 | 单文件 IIFE 产出两个入口 | `package.json`、`build.mjs`、`tsconfig.json`、`icon.svg` | — | `pnpm --dir packages/dsh-workspace-ide run build` 出 `lib/index.js` + `lib/client.js`；client 含 `window.__ModuleLoader__.load` 与 `export function apply`；`react` 在 external 列表 | 0.5 |
 | M0-2 | 静态检查脚本 | 6 条规则可判、可失败 | `scripts/check.mjs` | M0-1 | 每条规则有正/反例夹具；反例必须让 build 非零退出；`pnpm build` 末尾必跑 | 0.5 |
-| M0-3 | Host Remote 接线 | 一个 direct 动作走通全链路 | `backend/index.js`、`backend/service.js`、`backend/contract.js`、`shared/contract.js`、`shared/errors.js` | M0-1 | `workspace.resolve` 返回 `{root,name,trust,recents,limits}`；非法 payload 被 zod 拒（`E_UNSUPPORTED`）；无 sessionId 时取最近活跃会话 cwd；`bindTypertRemote` 生效 | 0.5 |
-| M0-4 | 面板与侧栏注册 | 图标 → keyed 面板 | `frontend/index.js`、`frontend/runtime/mount.ts` | M0-3 | `main` key=`workspace-ide`；`sidebar.panellist` 同 id 同 label；重复点不重复挂载；dispose 后图标与 DOM 都消失 | 0.5 |
+| M0-3 | Host Remote 接线 | 一个 direct 动作走通全链路 | `backend/index.js`、`backend/service.js`、`backend/contract.js`、`shared/contract.js`、`shared/errors.js` | M0-1 | `workspace.resolve` 返回根目录 / 名称 / 最近工作区 / 限制等（无 trust 字段）；非法 payload 被 zod 拒（`E_UNSUPPORTED`）；无 sessionId 时取最近活跃会话 cwd；`bindTypertRemote` 生效 | 0.5 |
+| M0-4 | 面板与侧栏注册 | 图标 → keyed 面板 | `frontend/index.js`、`frontend/runtime/mount.ts` | M0-3 | `sidebar.right.pane.tab` 的 session keyed slot 与 `shell.overlay` 共用 runtime；不注册 main；重复点不重复建 stores；dispose 后图标 / 样式 / DOM 都移除 | 0.5 |
 | M0-5 | 三分区壳与分隔条 | 树/编辑/终端可拖 | `frontend/views/Workbench.tsx`、`views/panel/Splitter.tsx` | M0-4 | 拖拽跟手（≤16 ms 一帧）；比例持久化；最小尺寸生效；折叠不塌成 0 | 0.5 |
 | M0-6 | 三视图切换 + 状态栏 | 单面板内切视图 | `views/common/ActivityBar.tsx`、`views/common/StatusBar.tsx`、`stores/workbench.stores.ts` | M0-5 | 切换不重建终端；状态栏显示 根/分支位/变更数/Ln,Col/编码；无数据时显示占位而非假值 | 0.5 |
 | M0-7 | 主题与 token | 明暗跟随宿主 | `frontend/styles/tokens.ts`、`runtime/theme.ts` | M0-4 | 只用 `--dsw-alias-*`；切主题 ≤1 帧生效；`check.mjs` 无硬编码色；字号吃三个 `--dsh-*-font-size` | 0.5 |
@@ -79,13 +84,13 @@
 | M1-1 | `files.list`/`stat` | 目录懒加载与元数据 | `backend/files.js`、`backend/contract.js` | M0-8 | 2000 项 ≤80 ms；500 ms 缓存命中率可观测；越界 `E_OUTSIDE_ROOT`；`truncated` 正确 | 0.75 |
 | M1-2 | `files.read` 分页 | 按行读 + 版本 | `backend/files.js`、`shared/contract.js` | M1-1 | `offset/limit/eof` 正确；>20 MB `E_TOO_LARGE`；二进制 `E_BINARY`；`totalLines` 仅 ≤2 MB | 0.5 |
 | M1-3 | `files.write` 原子写 | 乐观版本保存 | `backend/files.js` | M1-2 | 临时文件 + `rename`；保留 mode；还原 eol/bom；冲突返回 `currentVersion`；同 path 串行 | 1.0 |
-| M1-4 | 虚拟化文件树 | 大目录不卡 | `views/explorer/FileTree.tsx`、`stores/files.stores.ts` | M1-1 | 1 万条目滚动不掉帧；展开态保持；方向键可用；选中 ≠ 打开 | 1.0 |
+| M1-4 | 分页文件树与多选 | 有界目录 DOM | `frontend/views/explorer/FileTree.jsx`、`frontend/stores/files.stores.js`、`frontend/stores/explorer-selection.stores.js` | M1-1 | 每目录先显示 300 项再追加；展开态保持；可见范围多选与键盘操作；选中 ≠ 打开 | 1.0 |
 | M1-5 | CM6 挂载与主题 | 编辑器进面板 | `views/editor/EditorPane.tsx`、`frontend/editor/extensions.ts` | M0-7 | StrictMode 双调用不泄漏；主题/字号跟随；1 MB 首屏 ≤120 ms | 0.75 |
 | M1-6 | 语言探测与白名单 | 扩展名 → 语言 → 按需 | `scripts/gen-languages.mjs`、`shared/languages.generated.js`、`service/language.ts` | M1-5 | 13 语言白名单；未知回落 plaintext；生成幂等（同输入同字节） | 0.5 |
 | M1-7 | 键位与搜索 | 常用编辑操作 | `service/keys.ts`、`editor/extensions.ts` | M1-5 | `Cmd+F`/`Cmd+G`/`Cmd+/`/多光标可用；与 `docs/ui-spec.md` 的键位表逐条一致 | 0.5 |
-| M1-8 | 标签页与脏标记 | 多标签 + 保存 | `views/editor/TabBar.tsx`、`stores/editor.stores.ts`、`stores/workbench.stores.ts` | M1-3、M1-5 | 脏点只在标签与状态栏；`Cmd+S` 生效；关未保存拦截；标签顺序稳定 | 0.75 |
+| M1-8 | 标签页与脏标记 | 多标签 + 保存 | `views/editor/TabBar.tsx`、`stores/editor.stores.ts`、`stores/workbench.stores.ts` | M1-3、M1-5 | 脏点只在标签与状态栏；用户绑定的保存命令生效；成功通知去重、错误独立；关未保存拦截；标签顺序稳定 | 0.75 |
 | M1-9 | 冲突对话框 | 三种处置 | `views/common/ConflictDialog.tsx`、`stores/editor.stores.ts` | M1-3、M1-8 | 重新加载/另存/强制覆盖三分支可用；显示两个版本号；覆盖有二次提示 | 0.5 |
-| M1-10 | 大文件分级 | L0–L4 降级 | `editor/extensions.ts`、`service/large-file.ts` | M1-5 | 30 MB 不建 EditorState；8 MB 落 L2 只读；单行 1 万字符关软换行；入口 >300 ms 自动降级 | 0.75 |
+| M1-10 | 大文件分级 | L0–L4 降级 | `editor/extensions.ts`、`service/large-file.ts` | M1-5 | 30 MB 不建 EditorState；8 MB 落 L2 只读；超过 2000 行或最长行超过 500 字符关软换行并显示原因；入口 >300 ms 自动降级 | 0.75 |
 | M1-11 | 目录操作 | 新建/重命名/删除 | `backend/files.js`、`views/explorer/ContextMenu.tsx` | M1-3 | 新建后自动打开；大小写改名走中转；删除确认含数量；重名报错不覆盖 | 0.5 |
 | M1-12 | 标签恢复与状态栏 | 关面板再开 | `stores/editor.stores.ts`、`views/common/StatusBar.tsx` | M1-8 | 标签/滚动/折叠恢复；`Ln,Col` 实时；语言与 EOL 显示正确 | 0.5 |
 
@@ -159,8 +164,8 @@
 | M4-1 | 行级暂存 | `hash-object` + `update-index` | `backend/git/write.js`、`views/scm/HunkActions.tsx` | M2-4、M2-8 | 整 hunk 与行区间两种；写后回读 `--cached` 校验；失败回滚；CRLF/末尾换行夹具通过；**禁** `--3way` | 1.5 |
 | M4-2 | 冲突三方视图 | ours/base/theirs | `views/editor/ConflictPane.tsx`、`backend/git/diff.js` | M4-1 | 取 `:1:/:2:/:3:`；接受单侧/双侧；标记 resolved 走 `git add` | 1.0 |
 | M4-3 | stash 面板 | list/push/pop/apply/drop | `backend/git/stash.js`、`views/scm/StashList.tsx` | M2-7 | 四动作可用；`includeUntracked`；drop 有确认；pop 冲突有提示 | 0.75 |
-| M4-4 | 搜索面板 | ripgrep 三级降级 | `backend/search.js`、`views/common/SearchPanel.tsx` | M1-1 | `engine` 字段正确（ripgrep/system-rg/js）；2000 条上限；点结果跳转并定位；regex/大小写/整词开关 | 1.0 |
-| M4-5 | `Cmd+P` 快速打开 | 文件名模糊匹配 | `views/common/QuickOpen.tsx`、`service/fuzzy.ts` | M1-1 | 数据来自已加载目录缓存（不全盘扫）；键盘选择；` .git` 不出现 | 0.5 |
+| M4-4 | 统一搜索链路 | Node Worker 与一致过滤 | `backend/search.js`、`backend/search-worker.js`、`backend/search-globs.js`、`frontend/stores/quick-access.stores.js` | M1-1 | engine 为 node；索引 / 全文共用 ignore 和 glob；越界不读取，超时终止并提示截断；内容结果携片段 / 行列；旧请求不回写 | 1.0 |
+| M4-5 | 统一快速访问 | 文件 / 内容 / 命令 | `frontend/views/common/QuickOpen.jsx`、`frontend/stores/quick-access.stores.js`、`frontend/service/quick-access.js` | M1-1 | 文件来自 Host 有界索引；独立模式过滤，键盘选择 / 焦点恢复；命令支持中文 / 英文 / 拼音首字母、MRU 50；不声明默认键位 | 0.5 |
 | M4-6 | Markdown 预览 | 只读渲染 | `views/editor/MarkdownPreview.tsx` | M1-6 | `react-markdown` + `remark-gfm`；代码块不引 Shiki；明暗可读；链接不在面板内导航 | 0.5 |
 | M4-7 | watcher P1 | `watch.start/poll` | `backend/git/watch.js`、`stores/scm.stores.ts` | M2-10 | debounce 1000 ms；`.git` 只监听第一层；`dropped`→全量刷新；`stopped`→退回轮询并提示 | 1.0 |
 | M4-8 | 性能治理 | 预算全达标 | `build.mjs`、`ARCHITECTURE.md` 预算表 | M2-9、M3-3 | 首屏/status/graph/1 MB/8 MB/目录/回显全部达标；bundle 断言生效；长时运行内存无线性增长 | 0.75 |

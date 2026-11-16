@@ -1,163 +1,116 @@
-import { useStore, useEffect, useMemo, useRef } from '../../runtime.js';
-import { rankPaths } from '../../service/fuzzy.js';
+import { useStore, useEffect, useRef } from '../../runtime.js';
+import { matchPieces } from '../../service/quick-access.js';
+import { FileIcon } from './FileIcon.jsx';
+import { Icon } from './Icon.jsx';
 
-const MAX_ROWS = 40;
-
-/**
- * Quick open (docs/milestones.md M4-5). One input, one ranked list, keyboard only:
- * ↑/↓ move, Enter opens, Esc closes. The path index comes from the Host (`files.index`,
- * `git ls-files` fast path) so this stays instant on a 50k-file repository.
- */
+/** One shared panel. Query, result ranking, active selection and IO belong to the domain. */
 export function QuickOpen({ stores }) {
-  const ui = useStore(stores.ui);
-  const quick = useStore(stores.quick);
+  const quick = useStore(stores.quickAccess);
+  const actions = stores.quickAccessActions;
   const inputRef = useRef(null);
+  const panelRef = useRef(null);
   const listRef = useRef(null);
-  const activeRef = useRef(0);
-  const closeRef = useRef(() => {});
-
-  const query = ui.quickQuery ?? '';
-  const results = useMemo(() => rankPaths(quick.paths, query, MAX_ROWS), [quick.paths, query]);
-  activeRef.current = Math.min(activeRef.current, Math.max(0, results.length - 1));
-  closeRef.current = () => {
-    activeRef.current = 0;
-    stores.actions.setQuickQuery('');
-    stores.actions.closeQuick();
-  };
+  const previousFocus = useRef(null);
 
   useEffect(() => {
-    if (!ui.quickOpen) return undefined;
-    activeRef.current = 0;
-    const node = inputRef.current;
-    if (node) {
-      node.value = query;
-      node.focus();
-    }
-    return undefined;
-  }, [ui.quickOpen]);
-
-  useEffect(() => {
-    if (!ui.quickOpen) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        closeRef.current();
-        return;
-      }
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        const delta = event.key === 'ArrowDown' ? 1 : -1;
-        const next = Math.min(Math.max(0, activeRef.current + delta), Math.max(0, results.length - 1));
-        activeRef.current = next;
-        // The active row is view state, so nudge a re-render through the shared ui store.
-        stores.actions.setQuickActive(next);
-        return;
-      }
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        const chosen = results[activeRef.current];
-        if (chosen) {
-          closeRef.current();
-          void stores.actions.openFile(chosen.path);
-        }
-      }
+    if (!quick.open) return undefined;
+    previousFocus.current = inputRef.current?.getRootNode()?.activeElement ?? document.activeElement;
+    inputRef.current?.focus();
+    return () => {
+      const target = previousFocus.current;
+      if (target?.isConnected && typeof target.focus === 'function') target.focus();
     };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [ui.quickOpen, results]);
-
+  }, [quick.open]);
   useEffect(() => {
-    const node = listRef.current;
-    const active = node?.querySelector('[data-active="true"]');
-    if (active && typeof active.scrollIntoView === 'function') active.scrollIntoView({ block: 'nearest' });
-  }, [ui.quickActive, results.length]);
+    if (quick.open) listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [quick.open, quick.active, quick.results]);
+  useEffect(() => {
+    if (quick.open) inputRef.current?.focus();
+  }, [quick.mode]);
 
-  if (!ui.quickOpen) return null;
-
-  const activeIndex = Math.min(ui.quickActive ?? 0, Math.max(0, results.length - 1));
-
+  if (!quick.open) return null;
+  const commands = quick.mode === 'commands';
+  const content = quick.mode === 'content';
+  const placeholder = commands ? '/ 输入命令名称、英文或拼音首字母' : content ? '搜索文件内容…' : '按文件名或路径模糊搜索…';
+  const optionId = (index) => 'wid-quick-option-' + index;
+  const onKeyDown = (event) => {
+    if (event.isComposing || event.nativeEvent?.isComposing) return;
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); actions.close(); return; }
+    if (event.key === 'Tab') {
+      const root = inputRef.current?.getRootNode();
+      const nodes = [...(panelRef.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex="0"]') ?? [])];
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = root?.activeElement ?? document.activeElement;
+      if (event.shiftKey && active === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && active === last) { event.preventDefault(); first?.focus(); }
+      return;
+    }
+    if (!event.composedPath?.().includes(inputRef.current) && event.target !== inputRef.current) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); event.stopPropagation(); actions.move(event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); void actions.choose(); }
+  };
   return (
-    <div className="wid-quickwrap" role="dialog" aria-label="快速打开文件" aria-modal="true">
-      <div className="wid-quick" onMouseDown={(event) => event.stopPropagation()}>
-        <input
-          ref={inputRef}
-          className="wid-quick__input"
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="按文件名搜索（支持路径片段，如 fe/src/ap）"
-          value={query}
-          onChange={(event) => {
-            stores.actions.setQuickQuery(event.target.value);
-            stores.actions.setQuickActive(0);
-            activeRef.current = 0;
-          }}
-        />
-        <ul className="wid-quick__list" ref={listRef} role="listbox">
-          {quick.phase === 'loading' && <li className="wid-quick__hint">正在建立文件索引…</li>}
-          {quick.phase === 'error' && <li className="wid-quick__hint">{quick.error}</li>}
-          {quick.phase === 'ready' && !results.length && <li className="wid-quick__hint">没有匹配的文件</li>}
-          {results.map((result, index) => (
-            <li
-              key={result.path}
-              role="option"
-              aria-selected={index === activeIndex}
-              data-active={index === activeIndex ? 'true' : undefined}
-              className="wid-quick__item"
-              onMouseMove={() => stores.actions.setQuickActive(index)}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                closeRef.current();
-                void stores.actions.openFile(result.path);
-              }}
-            >
-              <Highlighted path={result.path} query={query} />
+    <div className="wid-quickwrap" role="dialog" aria-label="快速访问工作台" aria-modal="true" onKeyDown={onKeyDown}
+      onMouseDown={(event) => { if (event.target === event.currentTarget) actions.close(); }}>
+      <div className="wid-quick" ref={panelRef}>
+        <div className="wid-quick__header">
+          <div className="wid-quick__modes" role="group" aria-label="搜索类型">
+            <button type="button" aria-pressed={!commands && !content} onClick={() => actions.setMode('files')}>文件</button>
+            <button type="button" aria-pressed={content} onClick={() => actions.setMode('content')}>内容</button>
+            <button type="button" aria-pressed={commands} onClick={() => actions.setMode('commands')}>/ 命令</button>
+          </div>
+          <button type="button" className="wid-quick__close" aria-label="关闭快速访问" title="关闭（Esc）" onClick={actions.close}><Icon name="close" size={14} /></button>
+        </div>
+        <input ref={inputRef} className="wid-quick__input" type="text" autoComplete="off" spellCheck={false}
+          aria-label={commands ? '搜索命令' : content ? '搜索文件内容' : '搜索文件'}
+          role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="wid-quick-results"
+          aria-activedescendant={quick.results.length ? optionId(quick.active) : undefined}
+          placeholder={placeholder} value={quick.query} onChange={(event) => actions.setQuery(event.target.value)} />
+        {!commands && <div className="wid-quick__filters">
+          <label><span>包含文件</span><input aria-label="包含文件 glob" placeholder="例如 src/**, **/*.{ts,tsx}" value={quick.include} onChange={(event) => actions.setFilter('include', event.target.value)} /></label>
+          <label><span>排除文件</span><input aria-label="排除文件 glob" placeholder="例如 dist, **/*.min.js" value={quick.exclude} onChange={(event) => actions.setFilter('exclude', event.target.value)} /></label>
+          <label className="wid-quick__ignore"><input type="checkbox" checked={quick.useIgnoreFiles} onChange={(event) => actions.setFilter('useIgnoreFiles', event.target.checked)} />遵循 .gitignore / .ignore</label>
+        </div>}
+        <div className="wid-quick__status" role="status" aria-live="polite">
+          {quick.phase === 'loading' ? (content ? '正在搜索内容…' : '正在读取文件索引…')
+            : quick.error || (!quick.results.length ? (content && !quick.query.trim() ? '输入内容开始搜索' : commands ? '没有匹配的命令' : content ? '没有匹配的内容' : '没有匹配的文件')
+              : commands ? quick.results.length + ' 个命令' : quick.results.length + (content ? ' 处匹配' : ' 个文件') + (quick.truncated ? ' · 已达到搜索上限' : ''))}
+        </div>
+        <ul className="wid-quick__list" id="wid-quick-results" ref={listRef} role="listbox" aria-label="快速访问结果" aria-busy={quick.phase === 'loading'}>
+          {quick.results.map((result, index) => (
+            <li key={result.id} role="presentation">
+              {commands && (index === 0 || quick.results[index - 1].group !== result.group) && <div className="wid-quick__group">{result.group}</div>}
+              <div id={optionId(index)} role="option" aria-selected={index === quick.active} aria-disabled={result.disabled || undefined}
+                data-active={index === quick.active ? 'true' : undefined} className="wid-quick__item" title={result.reason || result.detail || result.path}
+                onMouseEnter={() => actions.setActive(index)} onMouseDown={(event) => event.preventDefault()} onClick={() => { void actions.choose(index); }}>
+                {commands ? <Icon name={result.icon} size={14} /> : <FileIcon name={result.path} size={14} />}
+                <div className="wid-quick__rowtext">
+                  <div className="wid-quick__path"><Highlighted text={result.label} query={commands ? quick.query.replace(/^\s*\//, '') : content ? '' : quick.query} />{content && <span className="wid-quick__location">:{result.line}:{result.column}</span>}</div>
+                  {content ? <div className="wid-quick__snippet"><Snippet hit={result} /></div>
+                    : commands && <div className="wid-quick__detail">{result.reason || result.detail}</div>}
+                </div>
+              </div>
             </li>
           ))}
         </ul>
-        <div className="wid-quick__footer">
-          <span className="wid-hint">
-            {quick.phase === 'ready'
-              ? `${results.length} / ${quick.total} 个文件${quick.engine ? ` · ${quick.engine}` : ''}${quick.truncated ? ' · 已达到索引上限' : ''}`
-              : '↑↓ 选择 · Enter 打开 · Esc 关闭'}
-          </span>
+        {quick.warnings.length > 0 && <div className="wid-quick__warnings" role="status">{quick.warnings.join(' · ')}</div>}
+        <div className="wid-quick__footer"><span>↑↓ 选择 · Enter {commands ? '执行' : '打开'} · Esc 关闭 · / 命令</span>
+          {!commands && <button type="button" onClick={() => { void actions.refresh(); }} disabled={quick.phase === 'loading'}>刷新</button>}
         </div>
       </div>
     </div>
   );
 }
 
-/** Marks the matched characters so the eye can jump straight to them. */
-function Highlighted({ path, query }) {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return <span className="wid-quick__path">{path}</span>;
-  const lower = path.toLowerCase();
-  const marks = new Set();
-  let at = -1;
-  for (const char of needle) {
-    at = lower.indexOf(char, at + 1);
-    if (at === -1) break;
-    marks.add(at);
-  }
-  const pieces = [];
-  let buffer = '';
-  let bufferMarked = false;
-  for (let i = 0; i < path.length; i += 1) {
-    const marked = marks.has(i);
-    if (marked !== bufferMarked && buffer) {
-      pieces.push({ text: buffer, marked: bufferMarked });
-      buffer = '';
-    }
-    bufferMarked = marked;
-    buffer += path[i];
-  }
-  if (buffer) pieces.push({ text: buffer, marked: bufferMarked });
-  return (
-    <span className="wid-quick__path">
-      {pieces.map((piece, index) => (piece.marked
-        ? <mark key={index} className="wid-quick__match">{piece.text}</mark>
-        : <span key={index}>{piece.text}</span>))}
-    </span>
-  );
+function Highlighted({ text, query }) {
+  return matchPieces(text, query).map((piece, index) => piece.marked
+    ? <mark key={index} className="wid-quick__match">{piece.text}</mark> : <span key={index}>{piece.text}</span>);
+}
+function Snippet({ hit }) {
+  const text = String(hit.text ?? '');
+  const start = Math.max(0, Number(hit.matchStart) || 0);
+  const end = Math.max(start, Number(hit.matchEnd) || start);
+  return <span>{hit.snippetStart > 0 ? '…' : ''}{text.slice(0, start)}{end > start && <mark className="wid-quick__match">{text.slice(start, end)}</mark>}{text.slice(end)}</span>;
 }

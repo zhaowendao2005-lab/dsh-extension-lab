@@ -45,6 +45,8 @@ export function Toolbar({ stores }) {
   ];
 
   const moreItems = [
+    { label: '命令面板…', run: () => stores.actions.openCommandPalette() },
+    { label: '全文搜索…', run: () => stores.actions.openContentSearch() },
     { label: '仓库', run: () => stores.actions.openRepositories() },
     { label: '命令', run: () => stores.actions.openCommands() },
     {
@@ -59,17 +61,18 @@ export function Toolbar({ stores }) {
 
   return (
     <header className="wid-toolbar">
-      {ui.sidebarCollapsed && (
+      {
         <button
           type="button"
           className="wid-icon-button"
-          title="展开文件栏"
-          aria-label="展开文件栏"
+          title={(ui.sidebarCollapsed ? '展开文件栏' : '收起文件栏') + hintOf('workspace-ide.nav')}
+          aria-label={ui.sidebarCollapsed ? '展开文件栏' : '收起文件栏'}
+          aria-expanded={!ui.sidebarCollapsed}
           onClick={() => stores.actions.toggleSidebar()}
         >
           <Icon name="explorer" size={14} />
         </button>
-      )}
+      }
       <button
         type="button"
         className="wid-toolbar__root"
@@ -97,10 +100,10 @@ export function Toolbar({ stores }) {
       <button type="button" className="wid-icon-button" title="仓库：选择要跟踪的 Git 仓库" aria-label="打开仓库" onClick={() => stores.actions.openRepositories()}>
         <Icon name="branch" size={14} />
       </button>
-      <button type="button" className="wid-icon-button" title="命令：查看并运行 package 脚本" aria-label="打开命令" onClick={() => stores.actions.openCommands()}>
-        <Icon name="terminal" size={14} />
+      <button type="button" className="wid-icon-button" title={'命令面板 · 工作台命令' + hintOf('workspace-ide.commandPalette')} aria-label="命令面板" onClick={() => stores.actions.openCommandPalette()}>
+        <Icon name="commandPalette" size={14} />
       </button>
-      <button type="button" className="wid-icon-button" title={'快速打开' + hintOf('workspace-ide.quickOpen')} aria-label="快速打开" onClick={() => void stores.actions.openQuick()}>
+      <button type="button" className="wid-icon-button" title={'搜索文件' + hintOf('workspace-ide.quickOpen')} aria-label="搜索文件" onClick={() => void stores.actions.openQuick()}>
         <Icon name="search" size={14} />
       </button>
       <button type="button" className="wid-icon-button" title="打开改动" aria-label="打开改动" onClick={() => stores.actions.openChanges()}>
@@ -123,7 +126,7 @@ export function Toolbar({ stores }) {
       >
         <Icon name={fullView.open ? 'collapseFull' : 'expand'} size={14} />
       </button>
-      <button type="button" className="wid-icon-button" title="更多" aria-label="更多" onClick={() => stores.actions.toggleMenu('more')}>
+      <button type="button" className="wid-icon-button" title="更多工作台操作" aria-label="更多" onClick={() => stores.actions.toggleMenu('more')}>
         <Icon name="collapse" size={14} />
       </button>
       {ui.menu === 'workspace' && (
@@ -140,7 +143,7 @@ function ToolbarMenu({ items, align, onClose }) {
   const node = useRef(null);
   useEffect(() => {
     function onPointerDown(event) {
-      if (node.current && !node.current.contains(event.target)) onClose();
+      if (node.current && !event.composedPath().includes(node.current)) onClose();
     }
     function onKeyDown(event) {
       if (event.key !== 'Escape') return;

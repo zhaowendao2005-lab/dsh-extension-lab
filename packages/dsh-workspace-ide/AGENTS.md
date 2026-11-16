@@ -43,7 +43,9 @@
 
 - 读按行分页（`readLinesDefault`），写必须带 `expectedVersion`；冲突返回 `E_VERSION_CONFLICT`，不静默覆盖。
 - 写盘原子：同目录临时文件 + `rename`；保留原文件 mode；按原 `eol`/`bom` 还原后再写。
-- 目录懒加载，不递归遍历；缓存 500 ms；不做 `.gitignore` 过滤（P0）。
+- Explorer 目录按需懒加载、缓存 500 ms、每目录先渲染 300 项；树本身不套搜索的 ignore 规则。多选真相只在 `explorer-selection.stores.js`，可见行与范围选择由纯函数计算；切根重置，刷新 / 折叠后 reconcile。
+- 批量删除先折叠所选父子路径，一次确认；有未保存后代的路径跳过并说明，完成 / 失败分别汇总。重命名只允许单选，菜单与顶部批量工具栏走同一 workbench 动作。
+- `files.index` / `files.search` 共用 Host Node Worker 的有界扫描与 glob / ignore 规则；不使用 git / rg 子进程快路径。Worker 校验真实路径并跳过越界，内容搜索跳过二进制 / 非 UTF-8，超时终止并返回截断 / 警告；dispose 必须释放 Worker。
 - 二进制与非 UTF-8 不硬开：`E_BINARY` / 只读提示。
 
 ## 终端
@@ -56,8 +58,8 @@
 
 ## 右栏与内部布局
 
-- 渲染面只有 `sidebar.right.pane.tab`（session 作用域），不注册 `main`、不调用 `ctx.layout.selectPanel`；右栏显隐由宿主占用者决定，本插件不调 `openRightbar/closeRightbar`。
-- 所有浮层（右键菜单、拖影、确认框、通知、快速打开）相对 `.wid-root` 定位；**构建期禁止 `position: fixed`**，不允许覆盖右栏以外的区域。
+- 渲染面为 `sidebar.right.pane.tab`（session 作用域）与 `shell.overlay` 全视图，不注册 `main`、不调用 `ctx.layout.selectPanel`；右栏显隐由宿主占用者决定，本插件不调 `openRightbar/closeRightbar`。
+- 所有工作台内部浮层（右键菜单、拖影、确认框、通知、快速打开）相对各自 `.wid-root` 定位，**禁止 `position: fixed`**；只允许全视图容器占 frame 内宽高各 92%，其开放 ShadowRoot 内注入隔离样式和主题 token。
 - 每个会话一个 runtime（client + stores）；右栏 tab 与 frame 级全视图共享它。可见性用 surface 集合聚合（`sidebar`/`overlay`），全部不可见才停 watch/轮询；关闭宿主 tab 不得暂停仍打开的全视图。
 - Host 的根目录上下文按请求绑定（Service 入口 + `AsyncLocalStorage`）：files/git/terminal/watch 只能读活动上下文，任何新资源都不得重新引入共享可变 `current`。
 - 分栏最多 4 组、最小新组 180×140；树/组合并在 `service/split.js` 的纯函数里做，视图只调 layout 动作。
@@ -77,10 +79,11 @@
 
 ## 打包与体积
 
-- 单文件 IIFE：**不能**拆 chunk、不能用 `new Worker`、不能加载 `.wasm` 或字体、不能依赖图片资源路由。
+- 客户端单文件 IIFE：**不能**拆 chunk、不能用浏览器 `new Worker`、不能加载 `.wasm` 或字体、不能依赖图片资源路由。Host 的 Node 搜索 Worker 独立打包，不属于客户端限制。
 - 语言包**显式白名单**（IIFE 下动态 import 不省体积）。
 - bundle ≤ **1.2 MB gzip**，构建期断言；超限先查是否误引入了整包。
 - CSS 内联进 JS，运行时注入 `<style id="dsh-workspace-ide/css">`，卸载时移除。
+- 右栏全局样式与全视图 ShadowRoot 样式分别注入、分别释放；全视图内部不依赖宿主全局选择器或字体资源。Seti 真实图标轮廓以内联 SVG 使用，颜色映射主题 token，并保留 `THIRD_PARTY_NOTICES.md` 的来源 / MIT 许可。
 - 样式只用 `--dsw-alias-*` / `--dsw-*` token；**禁止硬编码色值**（构建期扫描，`// check-ignore: color` 可豁免并注明原因）。
 
 ## 文档同步

@@ -103,8 +103,9 @@ eachMatch('R8', (file) => file !== '' && !file.endsWith('.md') && !file.startsWi
   return 'colour literal; use a --dsw-alias-* token';
 });
 
-// R9 — no worker/wasm: there is nowhere to serve them from.
+// R9 — browser workers/wasm cannot be served from the frontend bundle.
 for (const [file, text] of contents) {
+  if (!inFrontend(file)) continue;
   for (const [pattern, why] of [[/new\s+Worker\s*\(/, 'new Worker'], [/importScripts\s*\(/, 'importScripts'], [/\.wasm['"`]/, '.wasm asset']]) {
     const index = text.search(pattern);
     if (index >= 0) report('R9', file, lineOf(text, index), `${why} cannot be served from the plugin bundle`);

@@ -47,7 +47,7 @@ export function ConfirmModal({ stores }) {
               defaultValue={modal.input.value ?? ''}
               placeholder={modal.input.placeholder ?? ''}
               ref={(node) => {
-                if (node && document.activeElement !== node) setTimeout(() => node.focus(), 0);
+                if (node && node.getRootNode().activeElement !== node) setTimeout(() => { if (node.isConnected) node.focus(); }, 0);
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
@@ -66,12 +66,12 @@ export function ConfirmModal({ stores }) {
           <button
             type="button"
             className={modal.danger ? 'wid-button wid-button--danger' : 'wid-button wid-button--primary'}
-            onClick={() => {
+            onClick={(event) => {
               if (!modal.input) {
                 stores.actions.resolveModal(true);
                 return;
               }
-              const node = document.querySelector('.wid-modal__input');
+              const node = event.currentTarget.closest('.wid-modal')?.querySelector('.wid-modal__input');
               stores.actions.resolveModal(node?.value ?? '');
             }}
           >

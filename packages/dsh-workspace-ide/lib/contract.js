@@ -49,11 +49,18 @@ export const payloadSchemas = {
     regex: z.boolean().optional(),
     wholeWord: z.boolean().optional(),
     queryId: z.string().max(64).optional(),
+    useIgnoreFiles: z.boolean().optional(),
+    excludeGlobs: z.array(z.string().min(1).max(512)).max(128).optional(),
   }),
 
   'files.index': z.strictObject({
     maxAgeMs: z.number().int().min(0).max(600000).optional(),
-    limit: z.number().int().min(1).max(200000).optional(),
+    limit: z.number().int().min(1).max(50000).optional(),
+    include: z.string().max(512).optional(),
+    exclude: z.string().max(512).optional(),
+    useIgnoreFiles: z.boolean().optional(),
+    excludeGlobs: z.array(z.string().min(1).max(512)).max(128).optional(),
+    queryId: z.string().max(64).optional(),
   }),
 
   'git.conflict': z.strictObject({ path: z.string().min(1).max(4096) }),

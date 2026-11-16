@@ -16,7 +16,7 @@ export function TabContextMenu({ stores, menu }) {
 
   useEffect(() => {
     function onPointerDown(event) {
-      if (node.current && !node.current.contains(event.target)) stores.actions.closeTabMenu();
+      if (node.current && !event.composedPath().includes(node.current)) stores.actions.closeTabMenu();
     }
     function onKeyDown(event) {
       if (event.key === 'Escape') {

@@ -1,5 +1,6 @@
-/* Explorer tree: 22px rows, indentation guides, kind dots (docs/ui-spec.md §4). */
+/* Explorer tree: paginated rows and visible-range multiselection (docs/ui-spec.md §4). */
 .wid-tree {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -11,6 +12,7 @@
 }
 
 .wid-tree__row {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -104,3 +106,49 @@
 }
 
 .wid-tree__more:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.wid-explorer-selection {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 11px;
+}
+
+.wid-explorer-selection__count { flex: 1 0 auto; color: var(--dsw-alias-label-secondary); }
+.wid-explorer-selection button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 5px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 3px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.wid-explorer-selection button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.wid-explorer-selection button:disabled { opacity: 0.4; cursor: not-allowed; }
+.wid-explorer-selection button:focus-visible,
+.wid-explorer-menu button:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: -1px; }
+.wid-explorer-menu-host { display: contents; }
+.wid-explorer-menu > * { flex-shrink: 0; }
+.wid-explorer-menu {
+  box-sizing: border-box;
+  width: min(224px, calc(100% - 8px));
+  min-width: 0;
+  max-height: calc(100% - 8px);
+  overflow-y: auto;
+}
+.wid-explorer-menu__summary { padding: 4px 8px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.wid-explorer-menu__delete { color: var(--dsw-alias-state-error-primary); }
+@media (hover: none), (pointer: coarse) {
+  .wid-tree__actions { display: flex; }
+  .wid-tree__actions .wid-icon-button { min-width: 28px; min-height: 28px; }
+  .wid-tree__row { min-height: 30px; }
+}

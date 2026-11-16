@@ -4,6 +4,22 @@
  * Views import the live bindings below instead of receiving React as a prop.
  */
 let React = null;
+let ReactDom = null;
+
+/** The host owns ReactDOM too; never bundle a second renderer for an overlay. */
+export function setReactDom(renderer) {
+  ReactDom = renderer;
+}
+
+export function canCreatePortal() {
+  return typeof ReactDom?.createPortal === 'function' && typeof Element !== 'undefined'
+    && typeof Element.prototype.attachShadow === 'function';
+}
+
+export function createPortal(children, target) {
+  if (!canCreatePortal()) throw new Error('workspace-ide: isolated full view is unavailable');
+  return ReactDom.createPortal(children, target);
+}
 
 export let Fragment = null;
 

@@ -1,4 +1,4 @@
-/* Quick-open overlay: floats above the workbench grid, never inside a scroll container. */
+/* Quick panel is positioned within its workbench root. */
 .wid-quickwrap {
   position: absolute;
   inset: 0;
@@ -6,83 +6,183 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 44px;
+  padding: 44px 12px 12px;
   background: color-mix(in oklab, var(--dsw-alias-bg-base) 42%, transparent);
 }
-
 .wid-quick {
   display: flex;
   flex-direction: column;
-  width: min(560px, calc(100% - 32px));
-  max-height: min(420px, calc(100% - 96px));
+  width: min(640px, 100%);
+  max-height: min(560px, 100%);
+  min-height: 0;
   overflow: hidden;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-m);
   box-shadow: var(--dsw-shadow-l1);
 }
-
+.wid-quick__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 3px 8px 0;
+}
+.wid-quick__modes { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.wid-quick__modes button,
+.wid-quick__close,
+.wid-quick__footer button {
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--dsw-radius-s);
+  font: inherit;
+  cursor: pointer;
+}
+.wid-quick__modes button { min-height: 27px; padding: 0 10px; font-size: 12px; }
+.wid-quick__modes button[aria-pressed="true"] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-multi-select);
+}
+.wid-quick__close { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; }
+.wid-quick__modes button:hover,
+.wid-quick__close:hover,
+.wid-quick__footer button:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-hover);
+}
 .wid-quick__input {
   flex: 0 0 auto;
-  height: 34px;
-  padding: 0 10px;
-  font: inherit;
-  font-size: 13px;
+  height: 36px;
+  margin: 0 8px;
+  padding: 0 9px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
-  border: 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-s);
+  font: inherit;
+  font-size: 13px;
   outline: none;
 }
-
-.wid-quick__input:focus-visible { border-bottom-color: var(--dsw-alias-brand-primary); }
-
+.wid-quick__input:focus-visible { border-color: var(--dsw-alias-brand-primary); }
+.wid-quick__filters {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 8px;
+  padding: 7px 8px 5px;
+}
+.wid-quick__filters label:not(.wid-quick__ignore) {
+  display: grid;
+  grid-template-columns: 45px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+.wid-quick__filters input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  height: 25px;
+  padding: 0 6px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-s);
+  font: inherit;
+  font-size: 11px;
+}
+.wid-quick__ignore {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+.wid-quick__ignore input { accent-color: var(--dsw-alias-brand-primary); }
+.wid-quick__status {
+  flex: 0 0 auto;
+  min-height: 25px;
+  padding: 6px 10px 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
 .wid-quick__list {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 32px;
   margin: 0;
-  padding: 4px 0;
+  padding: 2px 0 5px;
   overflow-y: auto;
   list-style: none;
   scrollbar-width: thin;
 }
-
 .wid-quick__item {
   display: flex;
   align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  font-size: 12px;
+  gap: 9px;
+  min-height: 39px;
+  padding: 4px 10px;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
-  white-space: nowrap;
 }
-
+.wid-quick__item[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 .wid-quick__item[data-active="true"] { background: var(--dsw-alias-bg-multi-select); }
-
+.wid-quick__rowtext { flex: 1 1 auto; min-width: 0; }
 .wid-quick__path {
-  flex: 1 1 auto;
-  min-width: 0;
   overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 17px;
   text-overflow: ellipsis;
+  white-space: nowrap;
   direction: ltr;
 }
-
+.wid-quick__location,
+.wid-quick__detail { color: var(--dsw-alias-label-tertiary); font-size: 10px; }
+.wid-quick__snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 15px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .wid-quick__match {
+  padding: 0;
   color: var(--dsw-alias-brand-primary);
-  background: none;
-  font-weight: 600;
+  background: transparent;
+  font-weight: 650;
 }
-
-.wid-quick__hint {
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.wid-quick__footer {
+.wid-quick__group { padding: 5px 10px 2px; color: var(--dsw-alias-label-tertiary); font-size: 10px; }
+.wid-quick__warnings {
   flex: 0 0 auto;
-  padding: 3px 10px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  font-size: 11px;
+  max-height: 44px;
+  overflow: auto;
+  padding: 5px 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
 }
+.wid-quick__footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 8px 3px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+}
+.wid-quick__footer button { flex: 0 0 auto; padding: 4px 8px; }
+.wid-root[data-width="compact"] .wid-quickwrap { padding: 8px; }
+.wid-root[data-width="compact"] .wid-quick { width: 100%; max-height: 100%; }
+.wid-root[data-width="compact"] .wid-quick__header,
+.wid-root[data-width="compact"] .wid-quick__modes { flex-wrap: wrap; }
+.wid-root[data-width="compact"] .wid-quick__filters { grid-template-columns: minmax(0, 1fr); }
+.wid-root[data-width="compact"] .wid-quick__filters label:not(.wid-quick__ignore) { grid-template-columns: 50px minmax(0, 1fr); }
+.wid-root[data-width="compact"] .wid-quick__footer { flex-wrap: wrap; }

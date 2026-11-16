@@ -2,13 +2,13 @@
 
 布局基准：`MINI-VSCODE-PLAN.md` §2 与 `README.md` 的 ASCII 图；状态所有权见 `ARCHITECTURE.md`；动作名与字段见 `docs/remote-contract.md`；禁色规则见 `docs/build.md` §3。约定：颜色只能取 `--dsw-alias-*`；尺寸用本包自有 `--wid-*`（纯长度）；类名 `.wid-` 前缀；CSS 内联进 `lib/client.js` 后注入 `<style id="dsh-workspace-ide/css">`。
 
-当前实现新增仓库 / 命令内部标签和整体缩放，详见本文末尾「仓库、命令与缩放」。工作台没有内部设置页，缩放、编辑器与快捷键配置在 DSH 设置页的「工作台」分区。工作区无信任状态、信任提示条或信任入口。
+当前实现包含仓库 / 命令内部标签、整体缩放、Explorer 多选、统一快速访问与隔离全视图，详见 §19–§21。工作台没有内部设置页，缩放、编辑器与快捷键配置在 DSH 设置页的「工作台」分区。工作区无信任状态、信任提示条或信任入口。
 
 ## 1 设计原则
 
 | # | 原则 | 可 review 的判定 |
 | --- | --- | --- |
-| 1 | **VS Code 的肌肉记忆** | 区域位置、行高（22/26/28px）、缩进 12px、单击选中·双击打开、分隔条拖拽、右键菜单、状态栏信息顺序全部对得上 |
+| 1 | **VS Code 的肌肉记忆** | 区域位置、行高（22/26/28px）、缩进 12px、单击打开、Ctrl/Cmd 多选、分隔条拖拽、右键菜单、状态栏信息顺序全部对得上 |
 | 2 | **DSH 的皮** | 颜色 100% 来自 `--dsw-alias-*`；字号取 `--dsh-content-font-size` / `--dsh-code-font-size` / `--dsh-terminal-font-size`；圆角 `--dsw-radius-xs/sm`；阴影 `--dsw-shadow-lv1/2` |
 | 3 | **不假装** | 未实现按钮 `disabled` + `title`；失败必落错误条；宁可空态也不给假数据 |
 | 4 | **密度优先** | 行间距即行高；块间距只取 8/12/16 三档；面板内不出现 ≥24px 留白 |
@@ -48,7 +48,7 @@
 
 | 区域 | grid-area | 默认 | 最小 | 最大 | 可变性 |
 | --- | --- | --- | --- | --- | --- |
-| 工具栏 | `toolbar` | 30px | 30px | 30px | 固定；根 chip、分支、快速打开、图谱、改动、终端、全视图、设置、⋯ |
+| 工具栏 | `toolbar` | 30px | 30px | 30px | 固定；文件栏、根 chip、分支、仓库、命令面板、文件搜索、改动、图谱、终端、全视图、⋯ |
 | 左栏 | `nav` | `clamp(180px, 30cqi, 260px)` | 160px | 360px | 内部不提供拖拽；收起 = 0；窄屏变抽屉 |
 | 工作区 | `work` | flex | 0 | — | 吃剩余空间；内部可再分栏 |
 | 面板分隔条 | `split` | 4px | 4px | 4px | 仅在终端面板展开时存在 |
@@ -57,7 +57,7 @@
 
 **内部标签与分栏**（细节见新增 §16）：
 
-- 每个编辑组 = 一条 28px 标签行 + 内容区；文件、diff、提交图谱、当前改动、设置都是标签。
+- 每个编辑组 = 一条 28px 标签行 + 内容区；文件、diff、提交图谱、当前改动、仓库、命令都是标签。
 - 分栏树最多 4 个组，左右/上下可嵌套；新组最小 180×140px；分隔条 4px 热区、比例 0.2–0.8、双击复位。
 - 拖标签到组边缘分栏、到中心移动；拖拽期间只在目标变化时更新高亮，松手一次提交。
 
@@ -72,7 +72,7 @@
 持久化（`frontend/service/layout.js`，浏览器 localStorage）：
 
 ```json
-{ "workspace_ide/ui.layout": { "sidebarWidth": 240, "panelHeight": 220, "sidebarCollapsed": false, "panelCollapsed": true, "activityView": "files", "editor": { "fontSize": 13, "wrap": true, "tabSize": 2 } },
+{ "workspace_ide/ui.layout": { "uiScale": 100, "sidebarWidth": 240, "panelHeight": 220, "sidebarCollapsed": false, "panelCollapsed": true, "activityView": "files", "editor": { "fontSize": 13, "wrap": true, "tabSize": 2, "indentSize": 2 } },
   "workspace_ide/ui.workbench.v1.<sessionId>": { "version": 1, "tree": {}, "groups": {}, "tabs": {}, "activeGroup": "g1" } }
 ```
 
@@ -80,12 +80,12 @@
 
 ## 3 左栏（文件 / 搜索）
 
-顶部 28px 头部：`[文件][搜索]` 分段（`role="tablist"`，选中项底 `--dsw-alias-bg-layer-2` + 字 `--dsw-alias-label-primary`）、刷新/新建/新建文件夹、收起箭头（`⌥⌘⇧B`）。没有竖直活动栏。
+顶部 28px 头部：`[文件][搜索]` 分段（`role="tablist"`，选中项底 `--dsw-alias-bg-layer-2` + 字 `--dsw-alias-label-primary`）、刷新/新建/新建文件夹、收起箭头（默认不绑键，按 §13.3 自行设置）。没有竖直活动栏。
 
 | 项 | 值 |
 | --- | --- |
 | 容器 | `var(--wid-nav-w)` 宽，底 `--dsw-alias-bg-base`，右侧 1px `--dsw-alias-border-l1` |
-| 收起 | 宽 0，工具栏出现「展开文件栏」按钮；窄屏 <520px 默认收起，展开为 280px 抽屉 + 35% 遮罩 |
+| 收起 | 渲染列宽为 0，工具栏保留「展开文件栏」入口；只写收起标志，不把宽度偏好写成 0。重新展开按当前容器宽度恢复，窄屏 <520px 为抽屉 + 遮罩 |
 | 视图 | `files`（文件树）/ `search`（工作区搜索）；切换不改宽度 |
 
 图标为内联 SVG 组件（`frontend/views/common/Icon.jsx`），**不引图标库、不复用宿主 `sidebar.panel.icon` factory**（`ARCHITECTURE.md`）。
@@ -94,19 +94,23 @@
 
 | 项 | 值 |
 | --- | --- |
-| 行高 | 22px；虚拟滚动按 22px 定量，overscan 8 行 |
+| 行高 | 22px；每目录先显示 300 项，「显示更多」逐批增加；只展开已加载目录，不宣称文件树已做窗口化 |
 | 缩进 | `padding-inline-start: calc(8px + 12px * depth)`；展开箭头占 16px |
 | 展开箭头 | 12×12 chevron，`stroke-width: 1.5`，`--dsw-alias-label-tertiary`；hover → `--dsw-alias-label-primary` |
 | 文件名 / 目录名 | 12px、字重 400、单行省略；目录展开后不加粗（保密度） |
-| 文件图标 | 文件树与 SCM 复用内联 `FileIcon`，代码 / 配置 / 文档 / 样式 / 图片等按文件名或扩展名区分；未知类型用通用文件图标，Git 状态另列 |
+| 文件图标 | 文件树、SCM、快速结果与命令包节点复用内联 `FileIcon`；真实 VS Code Seti 字形轮廓转换 SVG，完整文件名优先于扩展名；未知类型用通用文件图标，Git 状态另列 |
 | hover 行 | 底 `--dsw-alias-interactive-bg-hover`，行内操作浮现（`opacity` 过渡 120ms） |
 | 选中行 | 底 `--dsw-alias-bg-multi-select`，字 `--dsw-alias-label-primary` |
 | 焦点行 | 内描边 `box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary)`，可与选中并存 |
-| 行内操作 | 右侧 3 个 18×18 图标：新建文件 / 刷新 / 折叠全部；hover 或键盘聚焦行时出现 |
+| 选择条 | Ctrl / Cmd 切换单项，Shift 选择可见行区间，Ctrl / Cmd + Shift 合并区间；顶部只显示选择数量与清除入口，批量打开 / 复制路径 / 删除均从右键菜单执行；重命名限单选 |
 
-文件图标使用静态 SVG 形状与 `currentColor`，不再以单一圆点表示类型；完整名称、特殊配置变体优先于通用扩展名，具体类别见 §20.3。Git 增删 / 冲突状态保留自己的状态列。
+文件图标取自 Seti UI / VS Code Seti，保留原始轮廓与居中 viewBox，以 `currentColor` 和主题 token 显示，不在运行时加载字体。特殊配置变体优先于通用扩展名，类别与 MIT 归属见 §20.3 及 `THIRD_PARTY_NOTICES.md`。Git 增删 / 冲突状态保留自己的状态列。
 
-右键菜单（`onContextMenu`，交互见 §12）：打开 / 重命名（`files.rename`）/ 删除（`files.delete` + 确认框）/ 复制相对路径（纯客户端 `navigator.clipboard`）/ 刷新（`files.list`）/ 在文件管理器中显示（**无动作 → `disabled` + tooltip**）。写类项按忙碌、选中范围和实际能力禁用并说明原因。
+右键菜单（`onContextMenu`，交互见 §12）：右击已选行保留多选，右击未选行先切成该行；菜单目标与顶部批量工具栏一致。支持打开所选文件、重命名（仅单选）、复制相对路径（每行一条）、删除与刷新；写类项按忙碌、选中范围和实际能力禁用并说明原因。
+
+树内方向键 / Home / End 移动焦点；Shift 扩展区间，Ctrl / Cmd + 方向键仅移焦点，Space 切换选择，Ctrl / Cmd + A 选当前可见行，Esc 清空；Enter 打开所选文件或切换单个目录，F2 仅单选重命名，Delete 进入批量删除确认。这些只在树获得焦点时处理，不注册新的全局默认快捷键。
+
+范围按当前展开、已加载并已显示的可见行计算；目录刷新、折叠与分页变化后清理不可见 / 已消失选择，切换工作区重置选择、焦点与锚点。批量删除先去掉已选父目录下重复子路径，一次确认；遇到含未保存后代的路径跳过并提示，成功 / 失败汇总，避免静默丢稿。
 
 拖拽移动文件：**P2 不做**；`draggable={false}`，不出拖影，避免与分隔条拖拽混淆。
 
@@ -286,7 +290,7 @@
 
 | 场景 | 规则 |
 | --- | --- |
-| 单击 / 双击 | 单击：树节点、graph 行、SCM 行**选中**（SCM 行单击即出该文件 diff）；双击：树文件打开到编辑器、目录展开/折叠、graph 行开详情 |
+| 单击 | Explorer 文件普通单击即选中并打开；Ctrl / Cmd 点击切换多选，Shift 点击扩展可见区间且不打开。目录单击展开 / 折叠；graph 与 SCM 行按各自规则处理 |
 | 焦点环 | 只用 `:focus-visible`：`outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px`；鼠标点击不出环 |
 | 右键菜单 | `onContextMenu`（`preventDefault` + 记坐标）；`pointerdown` 捕获阶段关外部；`Esc` 关闭；↑/↓ 移动、`Enter` 执行、`Tab` 关闭；容器 `role="menu"`、项 `role="menuitem"`；渲染为根容器内 `position: absolute` 浮层 + `--dsw-shadow-lv3`（**不允许 fixed**，不能越出右栏） |
 | 分隔条 | `pointerdown` + 窗口级 move/up；拖动中同步 `document.body.style.cursor`；`pointerup` 解绑并写 storage；双击恢复默认；热区用负 margin 扩到 8px |
@@ -297,7 +301,9 @@
 
 ## 13 快捷键
 
-注册形状（宿主 `dsh-client-shortcuts` 实测）：
+### 13.0 历史设计记录（已被 §13.2 的无默认键策略替代）
+
+下面的注册示例与键位表保留为早期设计记录，不代表当前默认绑定。现行命令一律 `defaults: {}`，通过 §13.3 的工作台设置分区录制。
 
 ```js
 ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
@@ -316,8 +322,9 @@ ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
 | 保存当前文件 | `Cmd/Ctrl+S` | 否 | `page`,`editable` | 注册；无脏标签 → `blocked`（无改动） |
 | 全部保存 | `Shift+Cmd/Ctrl+S` | 否 | `page`,`editable` | 注册；逐文件 `files.write`，失败逐个进错误条 |
 | 关闭当前标签 | `Cmd/Ctrl+W` | 否 | `page`,`editable` | 桌面端注册；**Web 端浏览器保留、拦不到** → 另注册 `Cmd/Ctrl+Alt+W` 并在关闭按钮 tooltip 标注可用键 |
-| 快速打开（P1） | `Cmd/Ctrl+P` | **是**（`workspace.files`） | — | **不注册**；改 `Shift+Cmd/Ctrl+P`，另提供面板内 `/` 聚焦搜索框 |
-| 全局搜索（P1） | `Shift+Cmd/Ctrl+F` | 否 | `page`,`editable` | 注册 → `files.search` |
+| 搜索文件 | 建议 `Ctrl+P`（macOS 可在工作台设置中自选） | 由用户在 DSH 设置绑定 | `page` | `workspace-ide.quickOpen` 打开文件模式；默认不占键位 |
+| 命令面板 | 建议 `Ctrl+Shift+P`（macOS 可在工作台设置中自选） | 由用户在 DSH 设置绑定 | `page` | `workspace-ide.commandPalette` 打开命令模式；默认不占键位 |
+| 全文搜索 | 用户在 DSH「工作台」设置页绑定 | 不注册默认键 | `page` | 命令面板中进入全文搜索；搜索条件与排除规则保留 |
 | 折叠侧栏 | `Cmd/Ctrl+B` | **是**（`sidebar.left.toggle` 折叠宿主左栏） | — | **不注册**；改 `Shift+Cmd/Ctrl+E`（VS Code 里即资源管理器），活动栏 tooltip 标注 |
 | 切换终端面板 | `Cmd/Ctrl+J` | 否 | `page`,`editable`,`terminal` | 注册；只切显隐不 kill |
 | 切视图 1/2/3 | `Cmd/Ctrl+1` `+2` `+3` | 否（`Shift+2` 被占） | `page`,`editable`,`terminal` | 注册；焦点在终端时先切侧栏视图 |
@@ -328,7 +335,7 @@ ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
 
 ### 13.1 落地与偏差（M4 实测的宿主规则）
 
-上一节的表是设计意图；宿主 `dsh-client-shortcuts` 的实际规则更严，实现按下面这套走（`frontend/index.js`）：
+上一节的表是历史设计意图；当前默认键全部取消。宿主 `dsh-client-shortcuts` 的冲突与平台边界如下，当前注册策略以 §13.2–§13.3 为准（`frontend/index.js`）：
 
 1. **注册时机**：`ctx.inject(['shortcuts'], cb)` 里注册，`ctx.get('shortcuts')` 在 apply 时可能还是 `undefined`（激活顺序不是 load barrier）。
 2. **`register` 是原子的、并且会伤人**：默认键位与已注册命令重叠时抛错，而且**被抢的一方（宿主包）也注册失败**——宿主会报「required entries did not activate」，整个 Web 启动不了。旧实现靠 `describeBinding` 预检 + `0/400/1200/2500ms` 重试抢位，现已整体删除：本插件不再声明任何默认键位（见 §13.2），冲突面归零。
@@ -344,11 +351,12 @@ ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
 | 命令 id | 默认键 | 面板内等价入口 |
 | --- | --- | --- |
 | `workspace-ide.explorer` | 无 | 导航面「文件」页签 / 工具栏 ⋯ |
-| `workspace-ide.search` | 无 | 导航面「搜索」页签 |
+| `workspace-ide.search` | 无 | 导航面「搜索」页签 / 统一快速面板「内容」 |
 | `workspace-ide.scm` | 无 | 工具栏 `±` 徽标按钮 / 欢迎页 |
 | `workspace-ide.graph` | 无 | 工具栏 `⑂` 按钮 / 分支 chip / 欢迎页 |
 | `workspace-ide.panel` | 无 | 工具栏 `>_` 按钮 / 状态栏终端区 |
-| `workspace-ide.quickOpen` | 无 | 工具栏 🔍 按钮 |
+| `workspace-ide.quickOpen` | 无 | 工具栏搜索文件 / 欢迎页；设置页建议 Ctrl+P |
+| `workspace-ide.commandPalette` | 无 | 工具栏命令面板；设置页建议 Ctrl+Shift+P |
 | `workspace-ide.save` | 无 | 标签脏点、`⋯` 菜单、编辑器右键 |
 | `workspace-ide.saveAll` | 无 | `⋯` 菜单 |
 | `workspace-ide.nav` | 无 | 导航面右上「‹」按钮 / `⋯` 菜单 |
@@ -487,9 +495,9 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ## 实现补充（代码为准）
 
-- 活动栏在四视图之外新增 **搜索**（`ui.activityView === 'search'`，快捷键 `Shift+Cmd+F`）：输入框 220ms 防抖后调用 `files.search`，命中列表点击走 `actions.openAt(path, line, column)`，由编辑器 `reveal{path,line,column,seq}` 消费并 `scrollIntoView`。
-- 侧栏标题由 `SidebarHeader` 按视图给出；搜索视图的标题区只保留刷新/折叠，不提供「新建」。
-- 所有色值仍只来自 `--dsw-alias-*` 与派生变量；搜索样式集中在 `frontend/styles/search.css`。
+- 导航面「搜索」、工具栏内容搜索与统一快速面板共用搜索用例；不注册默认键位。内容命中携带 path / line / column 与片段，选择后走工作台定位动作，由编辑器消费 reveal 并滚动到目标；旧请求不能覆盖新查询。
+- 文件 / 内容 / 命令统一快速面板的模式、查询、活动项与 IO 都属于 quickAccess 域；组件只订阅 store、派发动作与维护 DOM 焦点，不再另建一份快速索引或选择真相。
+- 所有色值仍只来自 `--dsw-alias-*` 与派生变量；统一快速面板样式在 `frontend/styles/quickopen.css`，导航搜索的独立样式在 `frontend/styles/search.css`。
 - 差异视图支持「并排 / 统一」两种布局（并排用 `MergeView`，统一用 `unifiedMergeView`，只读、无 revert 控件）；Markdown 文件在标签栏提供预览开关，图标为自绘 `preview`。
 - 终端标签双击可重命名（走 `terminal.rename`，只改显示名，不重启 shell）。
 
@@ -547,8 +555,8 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 - 入口：工具栏「全视图」按钮（主入口）；命令 `workspace-ide.fullview` 默认不绑键，需要键位请在 DSH 设置页「工作台」分区里就地设置。
 - 打开时关闭右栏的宿主「工作台」tab，把同一份会话工作台显示为 frame 级 `shell.overlay` 对话框。
-- 对话框宽高各 80%，位于 `shell.overlay` 内（绝对定位，不用 `fixed`）；点击外部、Esc、关闭按钮或再按快捷键关闭。
-- 右栏与全视图共享同一 runtime 与内部标签/分栏；切换展示位置不重建编辑器、不丢未保存内容。
+- 对话框宽高各 92%，位于 `shell.overlay` 内（绝对定位，不用 `fixed`），以开放 ShadowRoot 注入独立工作台样式和主题 token，隔离宿主按钮等全局规则。点击外部、Esc、关闭按钮或用户已绑定的命令关闭；Tab 在对话框内循环，Esc 优先关闭内部菜单 / 确认框 / 快速面板。
+- 右栏与全视图共享同一 runtime、内部标签 / 分栏与 store 中的未保存内容；展示面可以重挂载，不以保留同一个编辑器实例作为保证。
 - 可见性按 surface 聚合：`sidebar` 与 `overlay` 都不可见时才停止轮询/watch。
 
 ### 19.3 设置与快捷键入口
@@ -582,4 +590,23 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 整体缩放由 DSH 设置页「工作台」分区的输入框提供，取值 50–200 的整数百分比，默认 100。`uiScale` 保存在工作台布局偏好中，只缩放工作台根，不改变宿主界面；编辑器 10–20px 字号是独立值。菜单、快速打开、拖拽与分隔条使用 `.wid-root` 的缩放比换算逻辑坐标，限制浮层在工作台内，终端尺寸随容器重新适配。
 
-文件树、SCM 与命令包节点共用 `FileIcon`：完整文件名和工具配置变体优先于扩展名。包清单、npm / pnpm / yarn / bun 锁文件、Git 点文件、tsconfig / jsconfig、Vite / webpack / Rollup、ESLint / Prettier、Docker / Compose、环境文件、README / LICENSE 等有专用内联 SVG；未知文件使用通用图标。SVG 形状来自静态代码，颜色取 currentColor，Git 状态不混入文件图标。
+文件树、SCM、快速结果与命令包节点共用 `FileIcon`：完整文件名和工具配置变体优先于扩展名。包清单、npm / pnpm / yarn / bun 锁文件、Git 点文件、tsconfig / jsconfig、Vite / webpack / Rollup、ESLint / Prettier、Docker / Compose、环境文件、README / LICENSE 等有专用内联 SVG；未知文件使用通用图标。真实字形轮廓由 Seti UI / VS Code Seti 源字库转换成 SVG，并保留居中 viewBox；颜色取 currentColor 与 DSH token，Git 状态不混入文件图标。来源文件、转换说明以及 Jesse Weed / Microsoft 的 MIT 版权与许可见 `THIRD_PARTY_NOTICES.md`，客户端不加载 `.woff`。
+
+## 21 统一快速访问与反馈
+
+### 21.1 文件、内容与斜杠命令
+
+- 工具栏「搜索文件」/ 欢迎页先进入文件模式；「命令面板」入口先进入命令模式；同一面板提供文件、内容、命令切换，输入 / 进入命令。普通查询按文件名 / 路径模糊排序，内容模式返回路径、行列与命中片段；两种文件结果均使用 Seti SVG。
+- 命令支持中文名称、英文、别名与拼音首字母，按动作分组；空查询优先展示最近成功执行的命令，MRU 去重后最多 50 条。不可用项保留并说明原因，不能执行；查询文本不作为任意 shell 命令。
+- 输入框支持输入法组合态；上下键移动活动项、Enter 打开 / 定位 / 执行、Esc 关闭，选中项滚入可见区。面板内 Tab / Shift+Tab 循环焦点，关闭后恢复原焦点；有加载、无结果、错误、截断与警告反馈。
+
+### 21.2 过滤与 Host 搜索
+
+- 文件 / 内容模式各自记住包含、排除 glob，例如 `src/**` 与 `**/*.{ts,tsx}`；模式共用遵循 `.gitignore` / `.ignore` 开关。文件排除配置始终应用，内容模式再叠加内容排除配置。命令模式不展示文件过滤器。完整规则见 `docs/files.md` 与 `docs/remote-contract.md`。
+- `files.index` 与 `files.search` 使用同一 Host Node Worker 扫描与 glob / ignore 语义，返回 `engine: node`；不走 `git ls-files` 或 ripgrep 分支。真实路径必须留在工作区内，内容搜索跳过二进制和非 UTF-8；索引 / 扫描 / 单文件 / 结果 / 时间都有上限，超时终止线程并附不完整提示。
+- 查询、模式、过滤器、工作区变化或关闭面板均使旧请求失效；旧结果不覆盖新查询。刷新可主动重读索引 / 内容，加载中按钮禁用；缓存按根目录和过滤参数隔离。
+
+### 21.3 保存通知与文件栏恢复
+
+- 重复保存成功只替换同一条已保存 info，避免成功通知堆积；失败仍保留独立错误消息，不因成功去重而被吞。
+- 文件栏收起只保存收起标志，渲染时列宽归 0；恢复时使用当前 surface 的逻辑宽度和原有宽度偏好，不能将收起态的 0 覆盖展开宽度。

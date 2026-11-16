@@ -213,15 +213,18 @@ payload: { path: string, recursive?: boolean }
 
 ### `files.search`
 ```js
-payload: { queryId?: number, query: string, include?: string, exclude?: string,
-           maxResults?: number, caseSensitive?: boolean, regex?: boolean, wholeWord?: boolean }
-→ { queryId?: number,   // 原样回显：客户端据此丢弃乱序到达的旧查询结果
-    hits: [{ path, line, column, text, matchStart, matchEnd }],
-    truncated: boolean, engine: 'ripgrep'|'system-rg'|'js', elapsedMs }
+payload: { queryId?: string, query: string, include?: string, exclude?: string,
+           maxResults?: number, caseSensitive?: boolean, regex?: boolean, wholeWord?: boolean,
+           useIgnoreFiles?: boolean, excludeGlobs?: string[] }
+→ { queryId: string|null, hits: [{ path, line, column, text, matchStart, matchEnd, snippetStart }],
+    truncated: boolean, engine: 'node', elapsedMs, scanned, warnings: string[] }
 ```
-- 引擎顺序：`@vscode/ripgrep` 自带二进制 → `PATH` 里的 `rg` → 纯 JS（限 2000 文件/5 MB 后放弃）。
-- 默认排除 `.git/`、`node_modules/`、`.DS_Store`；`include/exclude` 为 glob 字符串。
-- 结果路径为工作区相对路径。
+- `queryId` 最长 64 字符、原样回显；仅用于客户端请求代次校验，不创建取消动作。空查询拒绝；`maxResults` 默认 200、最多 2000。
+- Host 原生 Node worker 执行，不依赖系统 rg 或 git；正则执行不阻塞 Host 事件循环。默认 literal，`regex` 使用 Unicode JavaScript 正则；忽略零宽命中，`wholeWord` 以 Unicode 字母/数字/下划线判定边界。每行返回全部非重叠命中。
+- `include` / `exclude` 是逗号分隔的 glob（不是正则），支持 `*`、`**`、`?`、字符类、花括号；花括号内逗号不拆分。搜索框模式自动补 `**/`，`./` 前缀锚定根。`excludeGlobs` 是设置层传入的工作区相对 glob 数组、不补前缀。禁止绝对路径、NUL、`..` 路径段；非法 glob/正则为 `E_INVALID_ARG`。
+- `.git` 永远排除；符号链接和特殊文件均跳过。设置排除与搜索框排除取并集；include 不能覆盖 exclude。`useIgnoreFiles` 默认 true，逐目录继承 `.gitignore` / `.ignore`（后者同层优先），支持否定规则；父目录已排除时不遍历。非 Git 目录也生效；false 时仍应用显式 glob 排除。
+- 路径为工作区相对路径；`line` / `column` 为 1-based，column 按 UTF-16。`text` 最长 400 码元，始于命中前至多 120 码元处；`snippetStart` 为原行起点，`matchStart/matchEnd` 是片段内 UTF-16 偏移（长命中末端裁至 400）。
+- 默认最多 20000 文件、200000 目录项、单文件 2 MiB、总读取 64 MiB、深度 64；跳过二进制/非 UTF-8。8 秒硬期限返回最近部分结果，`truncated:true` 并附 warnings；达到任何扫描/结果上限同样标记不完整。worker 受 128 MiB old-generation 限制，插件 dispose 终止 worker 和计时器。
 
 ## 4. git
 
@@ -554,4 +557,4 @@ async function call(action, payload) {
 |---|---|---|---|
 | `git.conflict` | `{path}` | `{path, base, ours, theirs, binary, truncated, elapsedMs, seq}` | 三类索引阶段 `:1:`/`:2:`/`:3:`，缺失的一侧为 `null`（add/add、delete/modify 天然如此）；只读 |
 | `git.resolveConflict` | `{path, side:'ours'\|'theirs'\|'both'\|'delete'}` | `{path, side, resolved, seq}` | `ours/theirs` 走 `git checkout --ours/--theirs` + `git add`；`both` 由 Host 拼 `:2:`+`:3:` 写盘后 `add`；`delete` 走 `git rm -f`。**写动作**：每仓库串行队列 + 路径边界校验 |
-| `files.index` | `{maxAgeMs?, limit?}` | `{paths, total, truncated, engine:'git'\|'walk', elapsedMs}` | 快速打开的扁平文件表。有仓库时走 `git ls-files -z --cached --others --exclude-standard`（自带 `.gitignore`、一次子进程），否则退回目录遍历；Host 侧 5 s 缓存，上限 50000 条 |
+| `files.index` | `{maxAgeMs?, limit?, include?, exclude?, useIgnoreFiles?, excludeGlobs?, queryId?}` | `{paths, total, truncated, engine:'node', elapsedMs, queryId:string\|null, warnings}` | 与 `files.search` 共用安全遍历、glob 与 ignore 语义；上限 50000 条；total 为已返回条数，truncated 时不代表全库数量。完整索引按工作区 + 排除设置缓存 5 s（至多 8 组）；maxAgeMs:0 强制重建，写入/创建/删除/改名清缓存 |

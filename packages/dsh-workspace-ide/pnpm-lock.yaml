@@ -20,6 +20,12 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: '>=0.2.2-rc.1 <0.3.0-0'
         version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
+      ignore:
+        specifier: 7.0.5
+        version: 7.0.5
+      picomatch:
+        specifier: 4.0.3
+        version: 4.0.3
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -519,6 +525,14 @@ packages:
     resolution: {integrity: sha512-bbPBYYrtZbkt6Os6FiTLCTFxvq4tt3JKall1vRwshA3fdVztsLAatFaZobhkBC8/BrPetoa0oksYoKXoG4ryJg==}
     engines: {node: '>=18'}
     hasBin: true
+
+  ignore@7.0.5:
+    resolution: {integrity: sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg==}
+    engines: {node: '>= 4'}
+
+  picomatch@4.0.3:
+    resolution: {integrity: sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q==}
+    engines: {node: '>=12'}
 
   react@19.3.1:
     resolution: {integrity: sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw==}
@@ -1052,6 +1066,10 @@ snapshots:
       '@esbuild/win32-arm64': 0.25.12
       '@esbuild/win32-ia32': 0.25.12
       '@esbuild/win32-x64': 0.25.12
+
+  ignore@7.0.5: {}
+
+  picomatch@4.0.3: {}
 
   react@19.3.1:
     optional: true

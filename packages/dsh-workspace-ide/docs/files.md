@@ -260,27 +260,31 @@ if (extname(from) !== extname(to)) view.dispatch({ effects: compartments.languag
 
 ### 6.1 面板与查询模型
 
-| 控件 | 字段（`files.search` payload） | 说明 |
-| --- | --- | --- |
-| 查询框 | `query` | 每条 ≥2 字符才发请求（1 字符命中太多、且 `E_LIMIT` 概率高） |
-| 包含 | `include` | glob，逗号分隔，如 `src/**/*.ts` |
-| 排除 | `exclude` | 同上；Host 默认再排除 `.git/`、`node_modules/`、`.DS_Store` |
-| 大小写 / 正则 / 整词 | `caseSensitive` / `regex` / `wholeWord` | 三个开关，默认全关 |
-| 结果上限 | `maxResults` | 默认取 `limits.searchMaxResults`（2000），UI 不再暴露输入框 |
+`files.search` 与快速打开的 `files.index` 共用 `backend/search*.js` 安全遍历与排除语义，Explorer 的目录懒加载不改为递归扫描。
 
-请求节流 300 ms（输入防抖）+ 单飞（新查询取消旧请求，旧响应按 `elapsedMs`/请求序号丢弃，**不**按 `seq`——搜索响应无 `seq`，差异 #6）。空查询不发请求、直接清空结果（不是「搜全库」）。
+| 控件 / 设置 | 字段 | 说明 |
+| --- | --- | --- |
+| 查询框 | `query` | 非空字符串；literal 默认，正则开关后为 Unicode JavaScript 正则 |
+| 包含 / 排除 | `include` / `exclude` | 逗号分隔 glob，如 `src/**,**/*.{ts,tsx}`；花括号内逗号不拆分；自动补 `**/`，`./` 锚定工作区根 |
+| 大小写 / 正则 / 整词 | `caseSensitive` / `regex` / `wholeWord` | 默认全关；整词边界按 Unicode 字母/数字/下划线 |
+| 忽略文件 | `useIgnoreFiles` | 默认 true，继承各层 `.gitignore` / `.ignore`，后者同层优先；非仓库也生效 |
+| 配置排除 | `excludeGlobs` | 工作区相对 glob 数组，与搜索框排除取并集；include 不覆盖排除 |
+| 结果上限 | `maxResults` | 默认 200，最多 2000 |
+| 请求代次 | `queryId` | 最长 64 字符，Host 原样回显；客户端丢弃旧代次响应 |
+
+`.git` 始终排除，符号链接与特殊文件跳过。显式 glob 不接受绝对路径、NUL、`..` 路径段；非法 glob/正则返回 `E_INVALID_ARG`。ignore 否定规则可恢复尚可遍历目录中的文件，不能重新进入已排除的父目录。禁用 ignore 文件不禁用显式 glob 排除。
+
+输入防抖后发起查询；新查询通过代次使旧响应失效，不按 `elapsedMs` 或 `seq` 比较。空查询清空结果。Host worker 8 秒期限并在插件 dispose 时终止；不提供持久取消动作。
 
 ### 6.2 结果模型 → UI
 
-`data = { hits: [{ path, line, column, text, matchStart, matchEnd }], truncated, engine, elapsedMs }`
+`data = { hits: [{ path, line, column, text, matchStart, matchEnd, snippetStart }], truncated, engine:'node', elapsedMs, scanned, warnings, queryId }`
 
-| UI | 数据来源 |
-| --- | --- |
-| 按文件分组（文件头 + 命中行） | `groupBy(hits, h => h.path)`；组内按 `line` 升序 |
-| 文件头 | 相对路径 + 命中数徽标；`matchStart/matchEnd` 是**该行内**的偏移（0-based，按 UTF-16 码元） |
-| 命中行 | 前后各裁 40 字符上下文，`matchStart/matchEnd` 段用 `<mark>` 高亮（注意：裁剪后要相应平移偏移） |
-| 「仅显示前 N 条」 | `truncated === true` 时列表底部固定条「结果已达上限 2000 条，仅显示前 2000 条；请缩小查询范围」 |
-| 空结果 | 「没有匹配 `{query}` 的结果」+ 「在已打开文件中查找」（转编辑器内查找） |
+每行返回所有非重叠、非零宽命中。`line` / `column` 为 1-based，列按 UTF-16 码元。`text` 是至多 400 码元的上下文片段，起点 `snippetStart` 在原行内至多位于命中前 120 码元；高亮 `matchStart/matchEnd` 已相对片段，长命中末端夹至 400。点击定位仍使用原始 `line/column`。
+
+搜索最多扫描 20000 文件 / 200000 目录项，单文件 2 MiB、累计 64 MiB、深度 64；二进制与非 UTF-8 跳过。达到结果、扫描或时间上限时 `truncated:true`；UI 显示结果不完整与 warnings，不能把部分结果描述成全量无命中。权限失败以相对路径 warnings 呈现，worker 故障映射标准错误码。
+
+`files.index` 最多 50000 文件，只缓存完整结果（工作区 + include/exclude + 配置排除 + ignore 开关 + limit 为 key；最多 8 组，默认 5 秒）。返回的 total 是已收集条数；`truncated:true` 时总库量未知。`maxAgeMs:0` 强制刷新；文件增删改名/写入失效索引，进行中的旧代次索引不回写缓存。
 
 ### 6.3 点击跳转到指定行
 
@@ -294,7 +298,7 @@ export async function openSearchHit(hit) {
   while (need > rt.loadedLines && !rt.eof) await loadNextPage(rt)   // 目标行未加载：先分页补取
   const view = rt.view
   const line = view.state.doc.line(Math.min(need, view.state.doc.lines))
-  const anchor = Math.min(line.from + hit.column, line.to)
+  const anchor = Math.min(line.from + Math.max(0, hit.column - 1), line.to)
   view.dispatch({
     selection: { anchor, head: anchor },
     effects: EditorView.scrollIntoView(anchor, { y: 'center', yMargin: 80 }),
@@ -305,15 +309,15 @@ export async function openSearchHit(hit) {
 }
 ```
 
-要点：`hit.column` 是该行内 0-based 偏移，**必须 `Math.min(..., line.to)`** 夹住（非 UTF-8/超长行裁剪会让偏移越界）；`userEvent` 让撤销历史与 selection 更新可区分；跳转后不选中整行（避免下一次 `Cmd+F` 把整行当初始查询）。
+要点：`hit.column` 是该行内 1-based 列号，定位时减 1，**必须 `Math.min(..., line.to)`** 夹住（非 UTF-8/超长行裁剪会让偏移越界）；`userEvent` 让撤销历史与 selection 更新可区分；跳转后不选中整行（避免下一次 `Cmd+F` 把整行当初始查询）。
 
 ### 6.4 搜索与其他面板的分工
 
 | 场景 | 用哪个 | 理由 |
 | --- | --- | --- |
-| 想知道「改了这个符号影响哪些文件」 | `files.search`（全局） | 走 Host 的 ripgrep，不受已打开文件限制 |
+| 想知道「改了这个符号影响哪些文件」 | `files.search`（全局） | 走 Host 的有界 Node worker，不受已打开文件限制 |
 | 当前文件内 | CM6 `@codemirror/search`（`Cmd+F`） | 不跨进程，实时 |
-| 文件名定位 | 快速打开（`Mod-e`，见 editor.md §10） | 只查 `TreeNode` 的 name，无需 IO |
+| 文件名定位 | 快速打开（`Mod-e`，见 editor.md §10） | 基于 `files.index` 扁平文件索引，按路径模糊匹配 |
 
 ## 7. 路径与权限
 

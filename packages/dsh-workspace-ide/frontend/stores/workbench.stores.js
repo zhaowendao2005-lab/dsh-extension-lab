@@ -22,6 +22,8 @@ import { createGraphDomain } from './graph.stores.js';
 import { createDiffDomain } from './diff.stores.js';
 import { createRepositoriesDomain } from './repositories.stores.js';
 import { createCommandsDomain } from './commands.stores.js';
+import { createExplorerSelectionDomain } from './explorer-selection.stores.js';
+import { createQuickAccessDomain } from './quick-access.stores.js';
 
 const EMPTY_LIMITS = LIMITS;
 
@@ -111,6 +113,13 @@ export function createStores({ client, sessionId, host, preferences = null }) {
     visible: {},
   });
 
+  const explorerSelectionDomain = createExplorerSelectionDomain({
+    files, workspace,
+    onSelectionChange: ({ focused }) => {
+      if (files.getSnapshot().selected !== focused) files.patch({ selected: focused });
+    },
+  });
+
   const editor = createStore({
     tabs: [],
     activePath: null,
@@ -123,29 +132,6 @@ export function createStores({ client, sessionId, host, preferences = null }) {
 
   /** Conflict resolution (M4-2): three index stages of one path, one at a time. */
   const conflict = createConflictStore();
-
-  /** Quick-open (M4-5): the path index is cached on the Host, so opening it twice is free. */
-  const quick = createStore({
-    phase: 'idle',
-    error: null,
-    paths: [],
-    engine: null,
-    total: 0,
-    truncated: false,
-    loadedAt: 0,
-  });
-
-  const search = createStore({
-    query: '',
-    phase: 'idle',
-    hits: [],
-    truncated: false,
-    engine: null,
-    elapsedMs: 0,
-    error: null,
-  });
-  let searchTimer = null;
-  let searchEpoch = 0;
 
   const scm = createStore({
     status: null,
@@ -204,7 +190,13 @@ export function createStores({ client, sessionId, host, preferences = null }) {
   function notify(level, message, detail, code) {
     noticeId += 1;
     const item = { id: noticeId, level, message, detail: detail ?? null, code: code ?? null, at: Date.now() };
-    notices.set((current) => ({ items: [...current.items, item].slice(-6) }));
+    // Repeated saves update one success notice; errors retain their own entries.
+    notices.set((current) => {
+      const items = level === 'info' && message === '已保存'
+        ? current.items.filter((entry) => !(entry.level === 'info' && entry.message === '已保存'))
+        : current.items;
+      return { items: [...items, item].slice(-6) };
+    });
     return item.id;
   }
 
@@ -228,7 +220,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       panelHeight: clamp(persisted.panelHeight ?? state.panelHeight, 120, 600),
       sidebarCollapsed: Boolean(persisted.sidebarCollapsed),
       panelCollapsed: Boolean(persisted.panelCollapsed),
-      activityView: persisted.activityView === 'search' ? 'search' : 'files',
+      activityView: 'files',
     };
     // With a preferences store the editor settings and the scale were restored when it was
     // created; re-applying them here would race a settings-page edit made before mount.
@@ -316,6 +308,8 @@ export function createStores({ client, sessionId, host, preferences = null }) {
   function resetRootScopedState() {
     repositoriesDomain.reset();
     commandsDomain.reset();
+    explorerSelectionDomain.reset();
+    quickAccessDomain.reset();
     refsLoadedAt = 0;
     diffDomain.close();
     conflictDomain.close();
@@ -324,7 +318,6 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       if (tab.kind === 'file') layoutModel.actions.close(tab.id);
     }
     ui.patch({ menu: null, tabMenu: null });
-    quick.patch({ phase: 'idle', paths: [], total: 0, truncated: false, loadedAt: 0, error: null });
     files.patch({ entries: {}, expanded: [], selected: null, loading: [], error: null, visible: {} });
     editor.patch({ tabs: [], activePath: null, conflicts: [], reveal: null });
     graph.patch({
@@ -337,6 +330,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
     restoreLayout,
 
     setActivity(view) {
+      if (view === 'search') return actions.openContentSearch();
       ui.patch({
         activityView: view === 'search' ? 'search' : 'files',
         sidebarCollapsed: false,
@@ -430,6 +424,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
     setSurfaceVisible(name, visible) {
       if (visible) surfaces.add(name);
       else surfaces.delete(name);
+      if (name === 'overlay') ui.patch({ overlayVisible: visible });
       if (surfaces.size > 0) void actions.activate();
       else actions.deactivate();
     },
@@ -486,6 +481,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
 
     /** `workspace.state` + first listing; used on boot and on panel reopen. */
     async refreshWorkspace() {
+      quickAccessDomain.actions.invalidate();
       const state = workspace.getSnapshot();
       if (!state.root) return;
       try {
@@ -719,7 +715,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
           kind,
           ...(kind === 'file' ? { text: '' } : {}),
         });
-        quick.patch({ loadedAt: 0 });
+        quickAccessDomain.actions.invalidate();
         await actions.listDir(dirPath, { refresh: true });
         return result;
       } catch (error) {
@@ -740,13 +736,61 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
       try {
         const result = await client.call('files.rename', { from: path, to: joinPath(parent, name) });
-        quick.patch({ loadedAt: 0 });
+        quickAccessDomain.actions.invalidate();
         await actions.listDir(parent, { refresh: true });
         return result;
       } catch (error) {
         fail(files, error, '重命名失败');
         return null;
       }
+    },
+
+    async openExplorerEntries(paths) {
+      const root = workspace.getSnapshot().root;
+      for (const path of paths) {
+        if (workspace.getSnapshot().root !== root) break;
+        await actions.openFile(path);
+      }
+    },
+
+    async deleteExplorerEntries(paths) {
+      if (files.getSnapshot().batchBusy) { notify('info', '正在删除所选项，请稍候'); return; }
+      const root = workspace.getSnapshot().root;
+      const wanted = new Set(paths);
+      const targets = explorerSelectionDomain.deletionPaths().filter((path) => wanted.has(path));
+      if (!root || !targets.length) return;
+      const accepted = await actions.confirm({
+        title: '删除 ' + targets.length + ' 个项目？',
+        body: '将永久删除所选项目（目录包含全部子项），不会进入回收站。',
+        detail: targets.join('；'), confirmLabel: '删除', danger: true, irreversible: true,
+      });
+      if (!accepted || workspace.getSnapshot().root !== root) return;
+      const removed = [], failed = [];
+      files.patch({ batchBusy: true });
+      try {
+        for (const path of targets) {
+          if (workspace.getSnapshot().root !== root) { failed.push({ path, message: '工作区已切换' }); continue; }
+          const dirty = editor.getSnapshot().tabs.some((tab) => tab.dirty && (tab.path === path || tab.path.startsWith(path + '/')));
+          if (dirty) { failed.push({ path, message: '包含未保存的文件，请先保存或关闭' }); continue; }
+          try {
+            await client.call('files.delete', { path, recursive: true });
+            removed.push(path);
+            if (workspace.getSnapshot().root !== root) break;
+            for (const tab of [...editor.getSnapshot().tabs]) {
+              if (tab.path === path || tab.path.startsWith(path + '/')) await actions.closeTabById(fileTabId(tab.path));
+            }
+          } catch (error) { failed.push({ path, message: error?.message ?? '删除失败' }); }
+        }
+        if (workspace.getSnapshot().root === root) {
+          const parents = [...new Set(targets.map((path) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''))];
+          for (const parent of parents) await actions.listDir(parent, { refresh: true });
+          quickAccessDomain.actions.invalidate();
+          notify(failed.length ? 'warn' : 'info', failed.length
+            ? '已删除 ' + removed.length + ' 项，' + failed.length + ' 项未删除：' + failed.map((item) => item.path + '（' + item.message + '）').join('；')
+            : '已删除 ' + removed.length + ' 个项目', { removed, failed });
+        }
+      } finally { files.patch({ batchBusy: false }); }
+      return { removed, failed };
     },
 
     async deleteEntry(path) {
@@ -761,7 +805,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
       try {
         const result = await client.call('files.delete', { path, recursive: true });
-        quick.patch({ loadedAt: 0 });
+        quickAccessDomain.actions.invalidate();
         await actions.listDir(parent, { refresh: true });
         return result;
       } catch (error) {
@@ -819,13 +863,18 @@ export function createStores({ client, sessionId, host, preferences = null }) {
 
     openFile(path) {
       if (!path) return null;
-      ui.patch({ quickOpen: false, menu: null });
+      quickAccessDomain.actions.close();
+      ui.patch({ menu: null });
       // In the narrow column the file list is a drawer: opening a file must reveal the editor.
       if (ui.getSnapshot().compact) ui.patch({ sidebarCollapsed: true, navManual: true });
       layoutModel.actions.open({ id: fileTabId(path), kind: 'file', path, title: basename(path) });
       files.patch({ selected: path });
       editor.patch({ activePath: path });
-      return editorDomain.openPath(path);
+      const root = workspace.getSnapshot().root;
+      return Promise.resolve(editorDomain.openPath(path)).then((result) => {
+        if (workspace.getSnapshot().root === root) quickAccessDomain.actions.recordFile(path);
+        return result;
+      });
     },
 
     activateLayoutTab(groupId, tabId) {
@@ -953,45 +1002,18 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       ui.patch({ menu: ui.getSnapshot().menu === menu ? null : menu });
     },
 
-    /** Quick-open: index once per workspace visit, then just filter in the view. */
-    async openQuick() {
-      ui.patch({ quickOpen: true, menu: null, quickQuery: '', quickActive: 0 });
-      const state = quick.getSnapshot();
-      const stale = !state.paths.length || Date.now() - state.loadedAt > 60_000;
-      if (!stale || state.phase === 'loading') return;
-      quick.patch({ phase: 'loading', error: null });
-      try {
-        const listing = await client.call('files.index', { maxAgeMs: 2000 });
-        quick.patch({
-          phase: 'ready',
-          paths: listing.paths ?? [],
-          engine: listing.engine ?? null,
-          total: listing.total ?? 0,
-          truncated: Boolean(listing.truncated),
-          loadedAt: Date.now(),
-          error: null,
-        });
-      } catch (error) {
-        quick.patch({ phase: 'error', error: error?.message ?? '无法读取文件索引' });
-        fail(quick, error, '无法读取文件索引');
-      }
-    },
+    openQuick() { return quickAccessDomain.actions.open({ mode: 'files' }); },
+    openCommandPalette() { return quickAccessDomain.actions.open({ mode: 'commands' }); },
+    openContentSearch() { return quickAccessDomain.actions.open({ mode: 'content' }); },
+    closeQuick() { quickAccessDomain.actions.close(); },
 
-    closeQuick() {
-      ui.patch({ quickOpen: false, quickQuery: '', quickActive: 0 });
-    },
+    setQuickQuery(query) { quickAccessDomain.actions.setQuery(query); },
 
-    setQuickQuery(query) {
-      ui.patch({ quickQuery: query });
-    },
-
-    setQuickActive(index) {
-      ui.patch({ quickActive: index });
-    },
+    setQuickActive(index) { quickAccessDomain.actions.setActive(index); },
 
     /** Called after a write/delete/create so the next open re-reads the index. */
     invalidateQuickIndex() {
-      quick.patch({ loadedAt: 0 });
+      quickAccessDomain.actions.invalidate();
     },
 
     closeDiff() {
@@ -1009,7 +1031,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
     async save(path) {
       const result = await editorDomain.save(path);
       if (result) {
-        quick.patch({ loadedAt: 0 });
+        quickAccessDomain.actions.invalidate();
         void actions.refreshScm();
       }
       return result;
@@ -1023,41 +1045,10 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       return editorDomain.closeTab(path);
     },
 
-    setSearchQuery(query) {
-      search.patch({ query });
-    },
-
-    clearSearch() {
-      search.patch({ query: '', phase: 'idle', hits: [], truncated: false, engine: null, elapsedMs: 0, error: null });
-    },
-
-    async runSearch(query) {
-      const needle = String(query ?? '').trim();
-      if (needle.length < 2) {
-        search.patch({ phase: 'idle', hits: [], error: null });
-        return;
-      }
-      search.patch({ phase: 'loading', error: null });
-      try {
-        const result = await client.call('files.search', { query: needle });
-        search.patch({
-          phase: 'ready',
-          hits: result?.hits ?? [],
-          truncated: Boolean(result?.truncated),
-          engine: result?.engine ?? null,
-          elapsedMs: result?.elapsedMs ?? 0,
-          error: null,
-        });
-      } catch (error) {
-        search.patch({ phase: 'error', error: error?.message ?? '搜索失败' });
-        fail(search, error, '搜索失败');
-      }
-    },
-
-    openAt(path, line, column) {
-      void actions.openFile(path).then(() => {
-        editor.patch({ reveal: { path, line, column: column ?? 1, seq: Date.now() } });
-      });
+    async openAt(path, line, column) {
+      const root = workspace.getSnapshot().root;
+      await actions.openFile(path);
+      if (workspace.getSnapshot().root === root) editor.patch({ reveal: { path, line, column: column ?? 1, seq: Date.now() } });
     },
 
     notify,
@@ -1094,6 +1085,36 @@ export function createStores({ client, sessionId, host, preferences = null }) {
 
     notify,
   };
+
+  const quickAccessDomain = createQuickAccessDomain({
+    client, workspace,
+    openFile: (path) => actions.openFile(path),
+    openAt: (path, line, column) => actions.openAt(path, line, column),
+    commandEnabled: (id) => {
+      if (['changes', 'graph'].includes(id) && repositoriesDomain.store.getSnapshot().active == null) return '请先选择要跟踪的仓库';
+      if (['repositories', 'commands', 'quickOpen', 'search', 'refresh'].includes(id) && !workspace.getSnapshot().root) return '请先选择工作区';
+      return true;
+    },
+    dispatchCommand: (id) => {
+      switch (id) {
+        case 'repositories': return actions.openRepositories();
+        case 'commands': return actions.openCommands();
+        case 'quickOpen': return actions.openQuick();
+        case 'search': return actions.openContentSearch();
+        case 'changes': return actions.openChanges();
+        case 'graph': return actions.openGraph();
+        case 'terminal': return actions.togglePanel();
+        case 'fullView': return host?.toggleFullView?.();
+        case 'navigation': return actions.toggleSidebar();
+        case 'refresh': return actions.refreshWorkspace();
+        default: return false;
+      }
+    },
+  });
+  const detachQuickAccess = quickAccessDomain.store.subscribe(() => {
+    const next = quickAccessDomain.store.getSnapshot();
+    if (ui.getSnapshot().quickOpen !== next.open) ui.patch({ quickOpen: next.open, menu: null });
+  });
 
   const terminals = createTerminalController({ client, store: terminal, notify });
   const editorDomain = createEditorDomain({ client, editor, files, notify, fail });
@@ -1195,6 +1216,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
         if (session !== watchSession) return;
       }
       if ((frame.events ?? []).length > 0) {
+        if ((frame.events ?? []).some((event) => event.kind === 'worktree')) quickAccessDomain.actions.invalidate();
         await actions.refreshScm();
         if (session !== watchSession) return;
         const hasGraph = Boolean(layoutModel.store.getSnapshot().tabs[GRAPH_TAB]);
@@ -1230,8 +1252,10 @@ export function createStores({ client, sessionId, host, preferences = null }) {
 
 
   return {
-    ui, layout: layoutModel.store, workspace, notices, files, editor, search, quick, scm, graph, diff, conflict,
+    ui, layout: layoutModel.store, workspace, notices, files, editor, scm, graph, diff, conflict,
     terminal, terminals,
+    explorerSelection: explorerSelectionDomain.store, explorerSelectionActions: explorerSelectionDomain,
+    quickAccess: quickAccessDomain.store, quickAccessActions: quickAccessDomain.actions,
     repositories: repositoriesDomain.store, repositoryActions: repositoriesDomain,
     commands: commandsDomain.store, commandActions: commandsDomain,
     actions: {
@@ -1242,7 +1266,10 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       dispose() {
         disposed = true;
         detachPreferences?.();
-        if (workbenchTimer) clearTimeout(workbenchTimer);
+        explorerSelectionDomain.dispose();
+        quickAccessDomain.dispose();
+        detachQuickAccess();
+            if (workbenchTimer) clearTimeout(workbenchTimer);
         workbenchTimer = null;
         actions.stopScmPoll();
         void actions.stopWatch();

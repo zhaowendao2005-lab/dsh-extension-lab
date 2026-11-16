@@ -30,7 +30,7 @@ export function scorePath(path, query) {
     if (firstIndex === -1) firstIndex = found;
     score += 1;
     if (found === previous + 1) score += CONSECUTIVE_BONUS;
-    if (found === 0 || lower[found - 1] === '/' || lower[found - 1] === '.' || lower[found - 1] === '_' || lower[found - 1] === '-') {
+    if (found === 0 || /[\s/._\-]/.test(path[found - 1]) || (/[a-z0-9]/.test(path[found - 1]) && /[A-Z]/.test(path[found]))) {
       score += SEGMENT_BONUS;
     }
     if (found >= baseStart) score += 2;

@@ -8,17 +8,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { LIMITS } from '../shared/contract.js';
 import { ideError } from '../shared/errors.js';
-import { gitOrThrow } from './git/exec.js';
+import { createSearch } from './search.js';
 
 const ALWAYS_IGNORED = new Set(['.git', 'node_modules', '.DS_Store']);
-const INDEX_TTL_MS = 5000;
-const INDEX_MAX_ENTRIES = 50_000;
 const BINARY_PROBE_BYTES = 8000;
 const MAX_TREE_ENTRIES = 200_000;
 
 const dirCache = new Map();
-/** Lazily built file list for quick-open; `null` means "never built for this root". */
-let indexCache = { at: 0, root: null, paths: null, engine: null };
 
 function statVersion(stat) {
   return createHash('sha1').update(`${stat.size}|${stat.mtimeMs}|${stat.ino ?? 0}`).digest('hex').slice(0, 16);
@@ -48,6 +44,7 @@ function splitLines(text) {
 
 export function createFiles(ctx, workspace) {
   const writeQueues = new Map();
+  const searchEngine = createSearch(ctx, workspace);
 
   function serializeWrite(key, task) {
     const previous = writeQueues.get(key) ?? Promise.resolve();
@@ -78,6 +75,7 @@ export function createFiles(ctx, workspace) {
 
   function invalidateFile(absolute) {
     fileCache.delete(absolute);
+    searchEngine.invalidate();
   }
 
   async function readTextFile(absolute, version) {
@@ -301,6 +299,7 @@ export function createFiles(ctx, workspace) {
     workspace.requireRoot();
     if (kind === 'directory') {
       await fs.mkdir(absolute, { recursive: true });
+      searchEngine.invalidate();
       dirCache.delete(path.dirname(absolute));
       return { path: relative, kind };
     }
@@ -375,155 +374,13 @@ export function createFiles(ctx, workspace) {
     return { path: relative, deleted: true };
   }
 
-  /**
-   * Flat file list for quick-open. `git ls-files` is the fast path because it already honours
-   * `.gitignore` and needs one process; a plain walk is the fallback for non-repositories.
-   */
-  async function index({ maxAgeMs, limit = INDEX_MAX_ENTRIES } = {}) {
-    const root = workspace.requireRoot();
-    const ttl = maxAgeMs ?? INDEX_TTL_MS;
-    const fresh = indexCache.paths && indexCache.root === root && Date.now() - indexCache.at < ttl;
-    if (!fresh) {
-      const started = Date.now();
-      let paths = null;
-      let engine = 'walk';
-      const state = await workspace.state();
-      if (state.git?.isRepo) {
-        try {
-          const result = await gitOrThrow(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
-            timeoutMs: LIMITS.gitTimeoutMs,
-            maxBytes: 32 * 1024 * 1024,
-          });
-          paths = result.stdout.split('\0').filter(Boolean);
-          engine = 'git';
-        } catch {
-          paths = null;
-        }
-      }
-      if (!paths) paths = await walkIndex(root);
-      indexCache = { at: Date.now(), root, paths, engine, elapsedMs: Date.now() - started };
-    }
-    const cap = Math.min(limit, INDEX_MAX_ENTRIES);
-    const paths = indexCache.paths;
-    return {
-      paths: paths.length > cap ? paths.slice(0, cap) : paths,
-      total: paths.length,
-      truncated: paths.length > cap,
-      engine: indexCache.engine,
-      elapsedMs: indexCache.elapsedMs ?? 0,
-    };
+  async function index(input = {}) {
+    return searchEngine.run('index', input);
   }
 
-  async function walkIndex(root) {
-    const paths = [];
-    const queue = [root];
-    while (queue.length && paths.length < INDEX_MAX_ENTRIES) {
-      const current = queue.shift();
-      let dir;
-      try {
-        dir = await fs.opendir(current);
-      } catch {
-        continue;
-      }
-      try {
-        for await (const entry of dir) {
-          if (paths.length >= INDEX_MAX_ENTRIES) break;
-          if (entry.isDirectory()) {
-            if (ALWAYS_IGNORED.has(entry.name) || entry.name.startsWith('.cache')) continue;
-            queue.push(path.join(current, entry.name));
-            continue;
-          }
-          if (entry.name === '.DS_Store') continue;
-          paths.push(path.relative(root, path.join(current, entry.name)).split(path.sep).join('/'));
-        }
-      } finally {
-        await dir.close().catch(() => {});
-      }
-    }
-    return paths;
+  async function search(input) {
+    return searchEngine.run('search', input);
   }
-
-  async function search({ query, include, exclude, maxResults = 200, caseSensitive, regex, wholeWord }) {
-    workspace.requireRoot();
-    if (!query) throw ideError('E_INVALID_ARG', 'query 不能为空', { field: 'query' });
-    const limit = Math.min(maxResults, LIMITS.searchMaxResults);
-    const matcher = buildMatcher({ query, caseSensitive, regex, wholeWord });
-    const includeRe = include ? new RegExp(include) : null;
-    const excludeRe = exclude ? new RegExp(exclude) : null;
-    const hits = [];
-    let scanned = 0;
-    let truncated = false;
-    const started = Date.now();
-    const queue = [workspace.root];
-
-    while (queue.length && hits.length < limit) {
-      const current = queue.shift();
-      let dir;
-      try {
-        dir = await fs.opendir(current);
-      } catch {
-        continue;
-      }
-      try {
-        for await (const entry of dir) {
-          const absolute = path.join(current, entry.name);
-          const relative = path.relative(workspace.root, absolute).split(path.sep).join('/');
-          if (entry.isDirectory()) {
-            if (ALWAYS_IGNORED.has(entry.name) || entry.name.startsWith('.cache')) continue;
-            if (excludeRe && excludeRe.test(relative)) continue;
-            queue.push(absolute);
-            continue;
-          }
-          if (scanned >= 20_000) {
-            truncated = true;
-            break;
-          }
-          scanned += 1;
-          if (includeRe && !includeRe.test(relative)) continue;
-          if (excludeRe && excludeRe.test(relative)) continue;
-          let text;
-          try {
-            const info = await fs.stat(absolute);
-            if (info.size > 2 * 1024 * 1024) continue;
-            const buffer = await fs.readFile(absolute);
-            if (looksBinary(buffer)) continue;
-            text = buffer.toString('utf8');
-          } catch {
-            continue;
-          }
-          const lines = text.split('\n');
-          for (let index = 0; index < lines.length && hits.length < limit; index += 1) {
-            const line = lines[index];
-            matcher.lastIndex = 0;
-            const match = matcher.exec(line);
-            if (!match) continue;
-            hits.push({
-              path: relative,
-              line: index + 1,
-              column: match.index + 1,
-              text: line.slice(0, 400),
-              matchStart: match.index,
-              matchEnd: match.index + match[0].length,
-            });
-          }
-          if (hits.length >= limit) {
-            truncated = true;
-            break;
-          }
-        }
-      } finally {
-        await dir.close().catch(() => {});
-      }
-    }
-
-    return { hits, truncated, engine: 'js', elapsedMs: Date.now() - started, scanned };
-  }
-}
-
-function buildMatcher({ query, caseSensitive, regex, wholeWord }) {
-  const source = regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = wholeWord ? `\\b(?:${source})\\b` : source;
-  return new RegExp(pattern, caseSensitive ? 'g' : 'gi');
 }
 
 async function canWrite(absolute) {

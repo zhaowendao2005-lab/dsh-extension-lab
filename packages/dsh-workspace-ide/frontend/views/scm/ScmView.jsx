@@ -33,7 +33,8 @@ export function ScmView({ stores }) {
   useEffect(() => {
     if (!scm.contextMenu) return undefined;
     function onPointerDown(event) {
-      if (!event.target.closest || !event.target.closest('.wid-scm__ctx')) stores.actions.closeScmMenu();
+      const inside = event.composedPath().some((node) => node?.classList?.contains('wid-scm__ctx'));
+      if (!inside) stores.actions.closeScmMenu();
     }
     function onKeyDown(event) {
       if (event.key === 'Escape' && stores.scm.getSnapshot().contextMenu) {
@@ -404,10 +405,11 @@ function ScmMenu({ menu, stores, scm, model, writeReason, onRun }) {
   const items = menuItems(menu, stores, scm, model, writeReason);
   useLayoutEffect(() => {
     const node = menuRef.current;
-    const previous = document.activeElement;
+    const root = node?.getRootNode() ?? document;
+    const previous = root.activeElement;
     node?.querySelector('button:not(:disabled)')?.focus();
     return () => {
-      if (node?.contains(document.activeElement) && previous?.isConnected) previous.focus({ preventScroll: true });
+      if (node?.contains(root.activeElement) && previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, [menu]);
   return (
@@ -418,7 +420,7 @@ function ScmMenu({ menu, stores, scm, model, writeReason, onRun }) {
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const buttons = [...event.currentTarget.querySelectorAll('button:not(:disabled)')];
-        const index = buttons.indexOf(document.activeElement);
+        const index = buttons.indexOf(event.currentTarget.getRootNode().activeElement);
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
           : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
         buttons[next]?.focus();

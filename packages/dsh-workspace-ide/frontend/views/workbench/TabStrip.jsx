@@ -12,9 +12,10 @@ function rootPoint(element, clientX, clientY, width, height) {
 }
 
 /** Resolve the group element the pointer is over; never query another workbench instance's DOM. */
-function groupAt(x, y) {
-  const node = document.elementFromPoint(x, y);
-  return node && node.closest ? node.closest('[data-wid-group]') : null;
+function groupAt(x, y, root) {
+  const scope = root?.getRootNode() ?? document;
+  const node = scope.elementFromPoint(x, y);
+  return node?.closest && workbenchRoot(node) === root ? node.closest('[data-wid-group]') : null;
 }
 
 function changesOf(status) {
@@ -68,6 +69,7 @@ export function TabStrip({ stores, groupId }) {
     const startX = event.clientX;
     const startY = event.clientY;
     const pointerId = event.pointerId;
+    const root = workbenchRoot(event.currentTarget);
     let dragging = false;
     let finished = false;
     let raf = 0;
@@ -81,7 +83,7 @@ export function TabStrip({ stores, groupId }) {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       pending = null;
-      delete document.body.dataset.widDragging;
+      if (root) delete root.dataset.widDragging;
     }
 
     /** One geometry + store update per animation frame, not per pointer event. */
@@ -99,10 +101,10 @@ export function TabStrip({ stores, groupId }) {
       if (!dragging) {
         if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < DRAG_THRESHOLD) return;
         dragging = true;
-        document.body.dataset.widDragging = 'true';
+        if (root) root.dataset.widDragging = 'true';
         stores.actions.beginTabDrag(tabId, groupId, moveEvent.clientX, moveEvent.clientY);
       }
-      const groupElement = groupAt(moveEvent.clientX, moveEvent.clientY);
+      const groupElement = groupAt(moveEvent.clientX, moveEvent.clientY, root);
       let target = null;
       if (groupElement) {
         const targetGroupId = groupElement.getAttribute('data-wid-group');

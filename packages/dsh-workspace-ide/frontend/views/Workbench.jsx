@@ -2,7 +2,7 @@ import { useStore, useEffect, useRef } from '../runtime.js';
 import { Toolbar } from './shell/Toolbar.jsx';
 import { NavHeader } from './nav/NavHeader.jsx';
 import { FileTree } from './explorer/FileTree.jsx';
-import { SearchView } from './search/SearchView.jsx';
+import { ExplorerContextMenu } from './explorer/ExplorerContextMenu.jsx';
 import { SplitTree } from './workbench/SplitTree.jsx';
 import { TabContextMenu } from './workbench/TabContextMenu.jsx';
 import { TerminalPanel } from './panel/TerminalPanel.jsx';
@@ -19,13 +19,14 @@ import { workbenchScale } from '../service/geometry.js';
  * the terminal/status bar. All overlays are children of .wid-root, so nothing escapes the
  * right column.
  */
-export function Workbench({ stores, visible }) {
+export function Workbench({ stores, visible, surface = 'sidebar' }) {
   const ui = useStore(stores.ui);
   const layout = useStore(stores.layout);
   const workspace = useStore(stores.workspace);
   const rootRef = useRef(null);
   const frameRef = useRef(null);
 
+  const ownsOverlays = visible && (surface === 'overlay' || !ui.overlayVisible);
   const navOpen = !ui.sidebarCollapsed;
   const panelOpen = !ui.panelCollapsed;
   const drag = layout.drag;
@@ -97,10 +98,8 @@ export function Workbench({ stores, visible }) {
       <div className="wid-nav" aria-label="文件与搜索">
         <NavHeader stores={stores} />
         <div className="wid-nav__body">
-          {!workspace.root && ui.activityView !== 'search' ? (
+          {!workspace.root ? (
             <EmptyState stores={stores} />
-          ) : ui.activityView === 'search' ? (
-            <SearchView stores={stores} />
           ) : (
             <FileTree stores={stores} />
           )}
@@ -122,10 +121,11 @@ export function Workbench({ stores, visible }) {
         {visible && panelOpen ? <TerminalPanel stores={stores} /> : null}
       </section>
       <StatusBar stores={stores} />
-      {visible && <QuickOpen stores={stores} />}
+      {ownsOverlays && <ExplorerContextMenu stores={stores} />}
+      {ownsOverlays && <QuickOpen stores={stores} />}
       <Notices stores={stores} />
-      {visible && <ConfirmModal stores={stores} />}
-        {visible && ui.tabMenu && <TabContextMenu stores={stores} menu={ui.tabMenu} />}
+      {ownsOverlays && <ConfirmModal stores={stores} />}
+        {ownsOverlays && ui.tabMenu && <TabContextMenu stores={stores} menu={ui.tabMenu} />}
         {ghost}
       </div>
     </div>

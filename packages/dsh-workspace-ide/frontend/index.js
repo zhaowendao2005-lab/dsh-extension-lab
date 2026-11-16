@@ -3,7 +3,7 @@
  * (sidebar.right.pane.tab) and its workbench body. Every session gets its own client and
  * store bundle; no main panel and no left sidebar icon are registered any more.
  */
-import { setReact } from './runtime.js';
+import { setReact, setReactDom, canCreatePortal } from './runtime.js';
 import { CSS } from './styles.js';
 import { remoteInfo } from '../backend/contract.js';
 import { WORKBENCH_PANEL_ID } from '../shared/contract.js';
@@ -26,6 +26,9 @@ window.__ModuleLoader__.load({
   id: ID,
   factory(require) {
     setReact(require('react'));
+    try { setReactDom(require('react-dom')); } catch (error) {
+      console.warn('[workspace-ide] isolated full view unavailable', error);
+    }
 
     async function apply(ctx) {
       // Browser-global preferences are independent of any session, the remote contribution and
@@ -106,6 +109,10 @@ window.__ModuleLoader__.load({
         const openFullView = () => {
           const sessionId = mountedSession();
           if (!sessionId) return false;
+          if (!canCreatePortal()) {
+            runtimeFor(sessionId).stores.actions.notify('warn', '当前宿主不支持隔离全视图，请更新 DSH 后重试');
+            return false;
+          }
           closeSidebarWorkbenchTab(sessionId);
           fullView.set({ open: true, sessionId });
           return true;
@@ -277,7 +284,8 @@ window.__ModuleLoader__.load({
             ['workspace-ide.scm', '工作台：打开改动', () => withSession((stores) => stores.actions.openChanges())],
             ['workspace-ide.graph', '工作台：提交图谱', () => withSession((stores) => stores.actions.openGraph())],
             ['workspace-ide.panel', '工作台：显示/隐藏终端', () => withSession((stores) => stores.actions.togglePanel())],
-            ['workspace-ide.quickOpen', '工作台：快速打开文件', () => withSession((stores) => void stores.actions.openQuick())],
+            ['workspace-ide.quickOpen', '工作台：搜索文件', () => withSession((stores) => void stores.actions.openQuick())],
+            ['workspace-ide.commandPalette', '工作台：打开命令面板', () => withSession((stores) => stores.actions.openCommandPalette())],
             ['workspace-ide.save', '工作台：保存当前文件', () => withSession((stores) => {
               const path = activeFilePath(stores);
               if (path) void stores.actions.save(path);
