@@ -391,6 +391,19 @@
       },
       "versions": [
         {
+          "version": "2.1.1",
+          "publishTimestamp": 1794802661,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "74434fff1236ee633b59ed370925c46c30a7aa8e",
+            "path": "packages/dsh-workspace-ide"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+          }
+        },
+        {
           "version": "2.1.0",
           "publishTimestamp": 1794795562,
           "source": {
