@@ -54,10 +54,9 @@ export class ModelIntelligenceService extends Service {
   a6Tokens() { return this.guard(() => this.a6.tokens()); }
   a6Selections(request) { return this.guard(() => this.a6.selections(request)); }
   a6Create(request) { return this.guard(() => this.a6.create(request)); }
-  a6Action(request) { return this.guard(() => this.a6.action(request)); }
-  a6ProviderState(request) { return this.guard(async () => { await this.a6.config(); return this.a6.providerState(request ?? {}); }); }
-  a6ProviderConfigure(request) { return this.guard(async () => { await this.a6.config(); return this.a6.providerConfigure(request); }); }
-  a6TargetSave(request) { return this.guard(() => this.a6.targetSave(request)); }
+  a6OperationState(request) { return this.guard(() => this.a6.operationState(request ?? {})); }
+  a6OperationSelect(request) { return this.guard(() => this.a6.operationSelect(request)); }
+  a6OperationRefresh(request) { return this.guard(() => this.a6.operationRefresh(request)); }
   a6ResultAction(request) { return this.guard(() => this.a6.resultAction(request)); }
   a6LedgerView(request) { return this.guard(async () => {
     await this.a6.config();
@@ -102,8 +101,8 @@ export const REMOTE_METHODS = [
   'catalog',
   'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear',
   'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
-  'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6Action',
-  'a6ProviderState', 'a6ProviderConfigure', 'a6TargetSave', 'a6ResultAction', 'a6LedgerView',
+  'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create',
+  'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView',
 ];
 const remoteInitializers = [];
 for (const name of REMOTE_METHODS) {

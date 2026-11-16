@@ -1,9 +1,8 @@
 import { createStore } from 'zustand/vanilla';
-import type { A6Channel, A6Config, A6Draft, A6Operation, A6Selection, A6State, ModelIntelligenceTransport, StoredRecord } from '../types';
-import { copyIntakeToken, createA6Record, oneClickLink, performA6Action, readA6Config, readA6Selections, rotateA6Intake, writeA6Config } from './a6api.datasource';
+import type { A6Channel, A6Config, A6Draft, A6Selection, A6State, ModelIntelligenceTransport, StoredRecord } from '../types';
+import { copyIntakeToken, createA6Record, oneClickLink, readA6Config, readA6Selections, rotateA6Intake, writeA6Config } from './a6api.datasource';
 
 export const a6ChannelKey = (row: A6Channel): string => JSON.stringify([row.listingId, row.channelId, row.supplierId, row.model]);
-export const a6ChannelOf = (rows: A6Channel[], key: string): A6Channel | undefined => rows.find(row => a6ChannelKey(row) === key);
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 /**
@@ -90,19 +89,19 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
       if (!ensureDraft(selectionId)) return;
       callbacks.open(selectionId);
     },
-    patch(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs' | 'targetTokenId' | 'targetChannel'>>): void {
+    patch(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void {
       patch(selectionId, value);
     },
     removeModel(selectionId: string, key: string): void {
       const draft = store.getState().drafts[selectionId];
       if (!draft) return;
-      patch(selectionId, { models: draft.models.filter(row => a6ChannelKey(row) !== key), result: undefined });
+      patch(selectionId, { models: draft.models.filter(row => a6ChannelKey(row) !== key) });
     },
     toggleToken(selectionId: string, tokenId: number): void {
       const draft = store.getState().drafts[selectionId];
       if (!draft) return;
       const selected = draft.tokens.includes(tokenId);
-      patch(selectionId, { tokens: selected ? draft.tokens.filter(id => id !== tokenId) : [...draft.tokens, tokenId], error: undefined, result: undefined });
+      patch(selectionId, { tokens: selected ? draft.tokens.filter(id => id !== tokenId) : [...draft.tokens, tokenId], error: undefined });
     },
     async submit(selectionId: string): Promise<void> {
       const draft = store.getState().drafts[selectionId];
@@ -121,19 +120,6 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
         callbacks.created(record, attemptId);
       } catch (error) {
         patch(selectionId, { creating: false, error: message(error) });
-      }
-    },
-    async action(selectionId: string, operation: A6Operation): Promise<void> {
-      const draft = store.getState().drafts[selectionId];
-      const target = draft ? a6ChannelOf(draft.models, draft.targetChannel ?? '') : undefined;
-      if (!draft || !target) { patch(selectionId, { error: '请先在清单里选择一个目标渠道' }); return; }
-      if (!draft.targetTokenId) { patch(selectionId, { error: '请先选择一个测试令牌' }); return; }
-      patch(selectionId, { pending: operation, error: undefined, result: undefined });
-      try {
-        const { result } = await performA6Action(transport, { selectionId, tokenId: draft.targetTokenId, model: target.model, channelId: target.channelId, operation });
-        patch(selectionId, { pending: undefined, result: `${operation === 'restore' ? '已恢复' : operation === 'pin' ? '已固定' : '已加入路由'}：渠道 ${target.channelId} · ${result ? '已核对' : '未返回明细'}` });
-      } catch (error) {
-        patch(selectionId, { pending: undefined, error: message(error) });
       }
     },
     async loadConfig(): Promise<void> {

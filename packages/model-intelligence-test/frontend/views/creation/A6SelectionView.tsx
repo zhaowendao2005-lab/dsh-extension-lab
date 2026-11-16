@@ -10,14 +10,12 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
   const selection=state.selections.find(item => item.id===selectionId);
   const draft=state.drafts[selectionId];
   if(!selection||!draft) return <Empty title="网页选择已不可用">请回到 a6api 页面勾选渠道并发送新的专项选择。</Empty>;
-  const busy=draft.creating||Boolean(draft.pending);
+  const busy=draft.creating;
   const count=draft.models.length;
   const slots=draft.tokens.length;
   // Host shares a pool of 18 sampling requests across all jobs.
   const maxRequests=Math.min(count,slots,6)*3;
   const canSubmit=count>0&&count<=64&&slots>0&&!busy;
-  const target=draft.models.find(row => a6ChannelKey(row)===draft.targetChannel);
-  const targetToken=selection.tokens.find(token => token.id===draft.targetTokenId);
   const base=`${store.sessionId}-a6-${selectionId}`;
   return <div className="mit-draft mit-a6-selection">
     <div className="mit-draft-fields">
@@ -39,7 +37,7 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
       </section>
       <section className="mit-a6-section" aria-labelledby={`${base}-slots`}>
         <div className="mit-label-row"><h3 id={`${base}-slots`}>测试令牌与并发槽</h3><span className="mit-muted">{slots} 槽</span></div>
-        <p className="mit-muted">每个勾选的令牌是一个并发槽位，同一时刻只会固定一个渠道。请使用专用测试令牌；若已有日常固定或本插件手动固定，先解除固定或改选其他令牌再开始。</p>
+        <p className="mit-muted">每个勾选的令牌是一个并发槽位，同一时刻只会固定一个渠道。请使用专用测试令牌；若已有日常固定，请在 a6api 站点管理固定关系或改选专用令牌再开始。日常渠道操作统一在结果页上方选择操作 Key。</p>
         <div className="mit-a6-slots">{selection.tokens.map(token => {
           const checked=draft.tokens.includes(token.id);
           const order=draft.tokens.indexOf(token.id);
@@ -50,17 +48,6 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
         })}</div>
         {!selection.tokens.length&&<p className="mit-error">这次网页选择没有令牌，请回到网页重新选择。</p>}
         <label className="mit-field mit-a6-timeout">单请求最大时长（秒）<input type="number" min={1} step={30} value={draft.timeoutMs===undefined? '':draft.timeoutMs/1000} placeholder="使用 Host 默认时长" disabled={busy} onChange={event => store.actions.patchA6(selectionId,{timeoutMs: event.currentTarget.value===''? undefined:Number(event.currentTarget.value)*1000})} /></label>
-      </section>
-      <section className="mit-a6-section" aria-labelledby={`${base}-actions`}>
-        <h3 id={`${base}-actions`}>快速渠道操作</h3>
-        <p className="mit-muted">每次操作仅作用于下方明确选择的一个令牌和一个渠道；「固定」会让该项直接从固定关系起跑，「恢复」解除本轮手动固定。</p>
-        <div className="mit-a6-targets">
-          <label className="mit-field">目标令牌<select value={draft.targetTokenId??''} disabled={busy} onChange={event => store.actions.patchA6(selectionId,{targetTokenId: event.currentTarget.value===''? undefined:Number(event.currentTarget.value)})}><option value="">选择一个令牌</option>{selection.tokens.map(token => <option value={token.id} key={token.id}>{token.name||'token'} (#{token.id})</option>)}</select></label>
-          <label className="mit-field">目标渠道<select value={draft.targetChannel??''} disabled={busy} onChange={event => store.actions.patchA6(selectionId,{targetChannel: event.currentTarget.value||undefined})}><option value="">选择一个渠道</option>{draft.models.map(row => <option key={a6ChannelKey(row)} value={a6ChannelKey(row)}>{row.model} · {row.supplierName||row.supplierId} · 渠道 #{row.channelId}</option>)}</select></label>
-        </div>
-        {target&&targetToken&&<p className="mit-muted">本次目标：{targetToken.name} (#{targetToken.id}) → {target.model} / 渠道 #{target.channelId}</p>}
-        <div className="mit-a6-actions">{(['pin','restore'] as const).map(operation => <button type="button" className="mit-button" key={operation} disabled={busy||!target||!targetToken} onClick={() => store.actions.a6Action(selectionId,operation)}>{draft.pending===operation? '执行中…':({pin: '固定到该渠道',restore: '解除固定'})[operation]}</button>)}</div>
-        {draft.result&&<pre className="mit-a6-operation-result" role="status">{draft.result}</pre>}
       </section>
       <div className="mit-info"><strong>真实请求：</strong>{count} 项 · {slots} 槽 · {count*3} 次计划请求 · 最多 {maxRequests} 路并发。同一模型的 3 条挑战同时请求，每个槽位完成一项后领取下一项。每次换项前 Host 会先固定渠道、核对生效后才发采样请求，测完立刻恢复原固定。已发出的请求会产生费用。</div>
     </div>

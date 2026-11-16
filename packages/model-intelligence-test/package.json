@@ -1,8 +1,8 @@
 {
   "name": "model-intelligence-test",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "private": true,
-  "description": "a6api 专项指纹测试：油猴选渠道与测试令牌，按令牌槽位固定渠道后用 DSH 提供商采样。",
+  "description": "a6api 专项指纹测试：令牌槽位采样、请求账单与全局操作 Key 固定/路由管理。",
   "type": "module",
   "exports": {
     ".": "./lib/index.js",

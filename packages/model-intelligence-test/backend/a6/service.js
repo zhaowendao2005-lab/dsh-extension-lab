@@ -1,14 +1,14 @@
 /**
  * a6api specialised tests: credential configuration, token slots, and record creation.
  *
- * Automatic test slots use the user's selected token IDs. Explicit daily-provider association is
- * separate and resolves Host credentials per operation; it never changes the DSH configuration.
+ * Automatic test slots use the user's selected test token IDs. Daily result actions use one
+ * account-level operation token and metadata only; they never inspect DSH providers or API keys.
  */
 import { A6Error } from './errors.js';
 import { channelKey, channelOf } from './intake.js';
 import { tokenIdentity } from './slots.js';
 import { SITE_ORIGIN } from './site.js';
-import { A6Providers, publicToken } from './providers.js';
+import { A6Operations, publicToken } from './operations.js';
 
 const CONFIG_KEY = 'a6-site';
 const KEY_TTL_MS = 10 * 60_000;
@@ -25,7 +25,7 @@ export class A6Service {
     this.configSaving = false;
     this.creating = 0;
     this.disposed = false;
-    this.providers = new A6Providers(this);
+    this.operations = new A6Operations(this);
   }
 
   async table() {
@@ -65,7 +65,7 @@ export class A6Service {
     if (!next.userId) throw new A6Error('auth-user-id-missing', '请填写 a6api 用户 ID');
     this.configSaving = true;
     this.generation += 1;
-    this.keyCache.clear(); this.keyFlights.clear(); this.providers.reset();
+    this.keyCache.clear(); this.keyFlights.clear(); this.operations.invalidate();
     try {
       this.site.configure(next);
       const verified = await this.site.verify();
@@ -75,7 +75,7 @@ export class A6Service {
     } catch (error) {
       this.site.configure(previous);
       this.generation += 1;
-      this.providers.reset();
+      this.operations.invalidate();
       throw error;
     } finally { this.configSaving = false; }
   }
@@ -118,9 +118,10 @@ export class A6Service {
     return { tokens: (await this.site.tokens()).map(publicToken) };
   }
 
-  providerState(input) { return this.providers.state(input); }
-  providerConfigure(input) { return this.providers.configure(input); }
-  invalidateProviders() { this.providers.invalidate(); }
+  operationState(input) { return this.operations.state(input); }
+  operationSelect(input) { return this.operations.select(input); }
+  operationRefresh(input) { return this.operations.refresh(input); }
+  invalidateOperations() { this.operations.invalidate(); }
 
   assertRecordActive(recordId) {
     if (this.clearInProgress) throw new A6Error('records-clearing', '记录正在清空，请稍后重试');
@@ -192,25 +193,6 @@ export class A6Service {
     }
   }
 
-  async targetSave(input) {
-    await this.recordTarget(input);
-    const account = await this.providers.ensure();
-    const generation = this.generation;
-    const epoch = this.providers.epoch;
-    // Assign after validation starts but before IO: an old verification cannot replace a newer choice.
-    this.targetVersions ??= new Map();
-    const id = `${account.identity}:${input.model}`;
-    const version = (this.targetVersions.get(id) ?? 0) + 1;
-    this.targetVersions.set(id, version);
-    await this.providers.verifyTarget(input, account);
-    await this.recordTarget(input);
-    if (generation !== this.generation || epoch !== this.providers.epoch || this.targetVersions.get(id) !== version) throw new A6Error('target-superseded', '目标选择已更新，请刷新');
-    account.targets[input.model] = { tokenId: input.tokenId, ...(input.providerId === undefined ? {} : { providerId: input.providerId }) };
-    this.providers.revision += 1;
-    await this.providers.persist(account);
-    return this.providers.snapshot(account);
-  }
-
   // ---- selections ----------------------------------------------------------------------------
   selections(request) {
     return this.intake.list(request?.revision);
@@ -276,11 +258,6 @@ export class A6Service {
     return this.leasesReady;
   }
 
-  async putLease(key, lease) {
-    await (await this.table()).put(`a6-lease:${key}`, { ...lease, siteId: 'a6-lease' });
-    this.manualLeases.set(key, lease);
-  }
-
   async deleteLease(key) {
     await (await this.table()).delete(`a6-lease:${key}`);
     this.manualLeases.delete(key);
@@ -316,26 +293,16 @@ export class A6Service {
       await this.loadLeases();
       const candidates = [...this.manualLeases.values()].filter(lease =>
         lease.accountId === String(record.a6api.accountId) && lease.siteOrigin === SITE_ORIGIN &&
-        lease.recordId === input.recordId && lease.model === input.model && lease.channelId === input.channelId);
+        (lease.recordId === input.recordId || lease.recordId == null) && lease.model === input.model && lease.channelId === input.channelId);
       const original = candidates.find(lease => lease.tokenId === input.tokenId) ?? (candidates.length === 1 ? candidates[0] : null);
       if (!original && candidates.length > 1) throw new A6Error('lease-ambiguous', '此结果有多个待恢复目标，请选择原令牌后恢复');
       if (original) input = { ...input, tokenId: original.tokenId };
     }
-    return this.performAction(input, record.a6api, async () => {
-      await this.recordTarget(input);
-      if (input.operation === 'restore') return;
-      const account = await this.providers.ensure();
-      const target = account.targets[input.model];
-      if (!target || target.tokenId !== input.tokenId || target.providerId !== input.providerId) {
-        throw new A6Error('target-changed', '此模型的使用目标已变更，请重新选择');
-      }
-      await this.providers.verifyTarget(input, account);
-      await this.recordTarget(input);
-    });
+    return this.performAction(input, record.a6api, async () => this.recordTarget(input));
   }
 
   async performAction(input, meta, validate) {
-    if (!['pin', 'route', 'restore'].includes(input.operation)) throw new A6Error('invalid-operation', '只支持固定、加入路由与恢复');
+    if (!['pin', 'route', 'restore'].includes(input.operation)) throw new A6Error('invalid-operation', '只支持固定、加入路由与旧租约恢复');
     this.assertAvailable();
     this.assertRecordActive(input.recordId);
     this.assertAccount(meta);
@@ -345,62 +312,65 @@ export class A6Service {
     if (this.engine.tokenSlots.busy.has(identity)) throw new A6Error('slot-busy', '该令牌正在执行任务，请等槽位空闲后再操作');
     await this.engine.tokenSlots.acquire(identity, new AbortController().signal);
     const key = `${identity}:${input.model}`;
-    const targetId = `${this.accountIdentity()}:${input.model}`;
-    const targetVersion = this.targetVersions?.get(targetId);
-    const providerEpoch = this.providers.epoch;
+    let account;
+    let selectionVersion;
     const assertCurrent = () => {
       this.assertAvailable();
       this.assertRecordActive(input.recordId);
-      if (input.recordId && input.operation !== 'restore' && (targetVersion !== this.targetVersions?.get(targetId) || providerEpoch !== this.providers.epoch)) {
-        throw new A6Error('target-changed', '目标或提供商配置已变更，请重新选择');
-      }
+      this.assertAccount(meta);
+      if (generation !== this.generation) throw new A6Error('account-changed', '账号已切换，请刷新');
+      if (input.operation !== 'restore') this.operations.assertSelected(account, input.tokenId, selectionVersion);
     };
+    const relationKind = input.operation === 'route' ? 'routes' : 'pins';
+    let written = false;
     try {
       await this.loadLeases();
       await validate();
-      assertCurrent();
-      if (generation !== this.generation) throw new A6Error('account-changed', '账号已切换，请刷新');
       const lease = this.manualLeases.get(key);
       if (input.operation === 'restore') {
-        if (!lease) return { ok: true, result: { skipped: true, operation: 'restore' } };
-        if (lease.channelId !== input.channelId) throw new A6Error('lease-conflict', '当前固定租约属于其他渠道，请先恢复原目标');
-        return await this.restoreLease(key, lease);
-      }
-      if (input.operation === 'route') {
         assertCurrent();
-        const outcome = await this.site.addRoute({ tokenId: input.tokenId, model: input.model, channelId: input.channelId });
-        if (outcome?.verified !== true) throw new A6Error('route-unverified', '未能读回路由新增结果');
-        return { ok: true, result: outcome };
+        if (!lease) return { ok: true, result: { skipped: true, operation: 'restore' }, state: await this.operationState() };
+        if (lease.channelId !== input.channelId) throw new A6Error('lease-conflict', '当前旧固定租约属于其他渠道，请先恢复原目标');
+        account = await this.operations.ensure();
+        selectionVersion = account.selectionVersion;
+        this.operations.beginWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion });
+        written = true;
+        const outcome = await this.restoreLease(key, lease);
+        await this.operations.afterWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion });
+        written = false;
+        return { ...outcome, state: this.operations.snapshot(account) };
       }
-      if (lease) throw new A6Error('already-pinned', '此目标尚有固定或恢复租约，请先恢复');
-      const current = (await this.site.pins()).filter(pin => pin.tokenId === input.tokenId && pin.model === input.model);
-      if (current.length > 1) throw new A6Error('pin-conflict', '站点固定关系不唯一，请先在站点处理');
-      const previous = current[0] ?? null;
-      if (previous && typeof previous.fallback !== 'boolean') {
-        throw new A6Error('pin-conflict', '无法确认已有固定的智能兜底设置，未覆盖现有固定');
-      }
-      const target = {
-        identity, accountId: String(meta.accountId), siteOrigin: SITE_ORIGIN,
-        tokenId: input.tokenId, model: input.model, channelId: input.channelId,
-        recordId: input.recordId ?? null, previous, fallback: false, stage: 'preparing', createdAt: Date.now(),
-      };
-      // A crash or ambiguous write failure must leave a durable recovery handle.
-      await this.putLease(key, target);
-      const before = (await this.site.pins()).filter(pin => pin.tokenId === input.tokenId && pin.model === input.model);
-      if (previous ? before.length !== 1 || !this.samePin(before[0], previous) : before.length !== 0) {
-        throw new A6Error('pin-conflict', '固定准备期间站点关系已变化，未执行覆盖且保留租约');
-      }
+      account = await this.operations.ensure();
+      if (!account.attempted.tokens) await this.operations.read(account, 'tokens');
+      selectionVersion = account.selectionVersion;
       assertCurrent();
-      const outcome = await this.site.pin({ tokenId: input.tokenId, model: input.model, channelId: input.channelId, fallback: false });
-      if (!outcome.routeEffective) throw new A6Error('pin-unverified', '固定渠道未生效；已保留恢复租约，请先恢复');
-      const observed = (await this.site.pins()).filter(pin => pin.tokenId === input.tokenId && pin.model === input.model);
-      const pinned = observed[0];
-      if (observed.length !== 1 || pinned.channelId !== input.channelId || pinned.fallback !== false || pinned.routeEffective !== true) {
-        throw new A6Error('pin-unverified', '固定读回未确认，已保留恢复租约');
+      if (input.operation === 'pin' && lease) throw new A6Error('lease-held', '此模型仍有旧固定恢复租约，请先恢复旧租约后再设置固定');
+      // Invalidate every relation read started before this write. New pins are permanent settings,
+      // so neither a previous-channel snapshot nor a new recovery lease is created here.
+      this.operations.beginWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion });
+      assertCurrent();
+      written = true;
+      const outcome = input.operation === 'pin'
+        ? await this.site.pin({ tokenId: input.tokenId, model: input.model, channelId: input.channelId, fallback: false })
+        : await this.site.addRoute({ tokenId: input.tokenId, model: input.model, channelId: input.channelId });
+      await this.operations.afterWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion }, input.operation === 'pin' ? outcome.pins : outcome.subscriptions);
+      written = false;
+      if (account.selectionVersion !== selectionVersion) throw new A6Error('token-changed', '操作期间令牌选择已变更，请检查当前令牌的最新关系');
+      if (input.operation === 'pin') {
+        const pins = account.pins.filter(pin => pin.model === input.model);
+        if (!outcome?.routeEffective || account.tokenId !== input.tokenId || account.errors.pins ||
+            pins.length !== 1 || pins[0].channelId !== input.channelId || pins[0].routeEffective !== true) {
+          throw new A6Error('pin-unverified', '站点固定读回未确认，请刷新固定关系检查实际状态');
+        }
+      } else if (outcome?.verified !== true || account.tokenId !== input.tokenId || account.errors.routes ||
+          !account.routes.some(route => route.model === input.model && route.channelIds.includes(input.channelId))) {
+        throw new A6Error('route-unverified', '站点路由读回未确认，请刷新路由关系检查实际状态');
       }
-      await this.putLease(key, { ...target, stage: 'pinned', supplierId: pinned.supplierId });
-      return { ok: true, result: { verified: true, operation: 'pin', tokenId: input.tokenId, model: input.model, channelId: input.channelId, target: { tokenId: input.tokenId, model: input.model, channelId: input.channelId, supplierId: pinned.supplierId } } };
-    } finally { this.engine.tokenSlots.release(identity); }
+      return { ok: true, result: { verified: true, operation: input.operation, tokenId: input.tokenId, model: input.model, channelId: input.channelId, ...(input.operation === 'pin' ? { supplierId: outcome.supplierId } : { subscriptionId: outcome.subscriptionId }) }, state: this.operations.snapshot(account) };
+    } finally {
+      try { if (written && account) await this.operations.afterWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion }); }
+      finally { this.engine.tokenSlots.release(identity); }
+    }
   }
 
   samePin(actual, expected) {
@@ -433,22 +403,10 @@ export class A6Service {
     return { ok: true, result: { restored: true, operation: 'restore', tokenId: lease.tokenId, model: lease.model, channelId: lease.channelId } };
   }
 
-  async action(input) {
-    await this.config();
-    this.assertAvailable();
-    const selection = this.selection(input.selectionId);
-    this.assertAccount(selection);
-    if (!selection.tokens.some(token => token.id === input.tokenId)) throw new A6Error('token-not-selected', '只能操作你选择的测试令牌');
-    if (!selection.models.some(channel => channel.model === input.model && channel.channelId === input.channelId)) {
-      throw new A6Error('invalid-selection', '目标不属于当前待测清单');
-    }
-    return this.performAction(input, selection, async () => this.assertAccount(selection));
-  }
-
   dispose() {
     this.disposed = true;
     this.generation += 1;
     this.keyCache.clear(); this.keyFlights.clear();
-    this.providers.dispose();
+    this.operations.dispose();
   }
 }

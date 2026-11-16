@@ -6,7 +6,7 @@ import type { MenuOption } from '../../components/MenuSelect';
 import { FingerprintConfigPanel } from './FingerprintConfigPanel';
 import { MonitorTable } from '../monitor/MonitorTable';
 import {LedgerOverview} from '../a6/LedgerOverview';
-import {ProviderManager} from '../a6/ProviderManager';
+import {OperationKeyPicker} from '../a6/OperationKeyPicker';
 import { endedRunIds,isEndedStage } from './runOrder';
 import { ATTEMPT_STATUS_LABELS,currentAttempt,modelLabel,providerLabel } from './modelLabel';
 
@@ -197,7 +197,7 @@ export function RecordView({ store,id }: {
         </dl>
         {record.fingerprint?.error&&<div className="mit-error-box" role="alert"><strong>任务或连接信息</strong><p>{record.fingerprint.error}</p></div>}
       </div>}
-      {record.a6api&&<><LedgerOverview store={store} record={record} /><ProviderManager store={store} /></>}
+      {record.a6api&&<><LedgerOverview store={store} record={record} /><OperationKeyPicker store={store} record={record} /></>}
       <div className="mit-record-toolbar">
         <div className="mit-record-controls">
           <MenuSelect label="查看" value={mode} options={VIEW_OPTIONS} open={viewOpen} onToggle={store.actions.toggleView} onClose={store.actions.toggleView} onChange={value => store.actions.navigate({ mode: value })} />

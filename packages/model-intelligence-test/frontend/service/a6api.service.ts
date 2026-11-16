@@ -1,4 +1,4 @@
-import type { A6ActionInput, A6CreateInput, ModelIntelligenceTransport } from '../types';
+import type { A6CreateInput, ModelIntelligenceTransport } from '../types';
 
 // The Host Remote is the only path to a6api; the client never holds the account access token.
 export const readA6Config = (transport: ModelIntelligenceTransport) => transport.a6Config();
@@ -16,7 +16,6 @@ export const rotateA6Intake = (transport: ModelIntelligenceTransport) => transpo
 export const readA6Tokens = (transport: ModelIntelligenceTransport) => transport.a6Tokens();
 export const readA6Selections = (transport: ModelIntelligenceTransport, revision: number) => transport.a6Selections(revision >= 0 ? { revision } : {});
 export const createA6Record = (transport: ModelIntelligenceTransport, input: A6CreateInput) => transport.a6Create(input);
-export const performA6Action = (transport: ModelIntelligenceTransport, input: A6ActionInput) => transport.a6Action(input);
 
 export async function copyIntakeToken(token: string): Promise<void> {
   if (!token) throw new Error('导入口令尚未生成');
