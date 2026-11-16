@@ -23,7 +23,7 @@
 
 ## Host 侧
 
-- `backend/service.js` 是唯一动作分发点：严格 zod 校验 payload、解析根目录、信任门禁、并发闸门、写队列、错误映射。
+- `backend/service.js` 是唯一动作分发点：严格 zod 校验 payload、解析根目录与仓库请求上下文、并发闸门、写队列、错误映射。
 - 根目录**只能**由 Host 解析：该会话手动选择（`workspace.open` 记录在 `sessionRoots`）> `ctx.sessionController.resolveAgent(sessionId)?.session.header.cwd` > `lastRoot`；不允许 wire 传任意绝对路径直接当根。
 - 所有路径先 `path.resolve(root, rel)` 再 `realpath`，前缀比较带 `/` 边界；越界一律 `E_OUTSIDE_ROOT`。**校验在 Host，不在前端。**
 - 错误不得静默：每个 `catch` 都要落到 `ErrCode` 之一；`E_GIT_FAILED` 必须带过滤后的 stderr，且脱敏。
@@ -50,7 +50,7 @@
 
 - PTY 只用 `subprocess.spawnTerminal`，**不要用官方 `ctx.webTerminals`**（`reconcileHolds()` 会 release 我们的 hold）。
 - 通道是 Host 环形缓冲 + **字符**游标：`poll(offset)` 返回 `{data, offset, dropped, exited}`；缓冲 512 KB；UTF-8 不能在 `Buffer` 层按字节切。
-- 未信任工作区创建终端需显式确认；env 白名单，不带任何 DSH 凭据或 `DSH_*` 敏感项。
+- 工作区不持有信任状态，不注册信任动作，不设信任门禁。终端 env 白名单，不带任何 DSH 凭据或 `DSH_*` 敏感项；系统默认 shell 正常加载用户 profile。
 - 关闭 = `terminate()` + 等 `done` + 2 s 强杀；标签切走不 kill；插件 dispose 全 kill。
 - 实现复制自 `packages/dsh-plugin-dev-sandbox`，**不改该包、不共享模块**。
 
@@ -62,6 +62,11 @@
 - Host 的根目录上下文按请求绑定（Service 入口 + `AsyncLocalStorage`）：files/git/terminal/watch 只能读活动上下文，任何新资源都不得重新引入共享可变 `current`。
 - 分栏最多 4 组、最小新组 180×140；树/组合并在 `service/split.js` 的纯函数里做，视图只调 layout 动作。
 - 标签关闭：文件先处理未保存确认；组清空后（非最后组）合并；`关闭所有` 只作用于当前组，绝不关宿主 tab。
+
+- Git/watch 可带工作区相对 `repositoryPath`，Host 校验真实仓库根并绑定请求上下文；文件/搜索/终端仍以工作区为根。watch token 必须绑定原会话、工作区与仓库。
+- 仓库跟踪默认空，用户勾选后才能成为活动仓库；跟踪 / 活动选择按工作区持久化。切换仓库丢弃旧响应，写操作中禁止切换。
+- 命令标签只有 package.json 路径树与所选包 Scripts 两个根；播放必须新建终端，在包目录按 Host 重读的脚本运行，不复用现有终端。
+- 整体 uiScale 与编辑器字号独立；浮层、分栏拖拽统一换算逻辑坐标。编辑器字号只在偏好扩展设置，普通编辑器与 Diff 共享规范化、tab / indent / wrap 规则。
 
 ## 图谱
 

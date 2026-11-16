@@ -1,7 +1,7 @@
 /**
  * Git write operations. Every function here mutates the repository, so the caller
  * (backend/git/index.js) runs them through a single serial queue and has already checked
- * that the workspace is trusted.
+ * that its paths resolve inside the request-local repository.
  *
  * Rules that matter (docs/security.md §4, docs/git-model.md §6):
  * - never `git clean -f`: untracked removal goes through `fs.rm` file by file, and a

@@ -257,7 +257,7 @@ argv（#11–#15） → 逐行状态机（\n 切；保留行末 \r）
 ### 6.1 统一前置检查（顺序固定）
 
 ```text
-1. trust==='trusted' → 否则 E_TRUST_REQUIRED；isRepo → 否则 E_NOT_A_REPO；gitAvailable → 否则 E_GIT_MISSING
+1. 工作区根目录已解析；isRepo → 否则 E_NOT_A_REPO；gitAvailable → 否则 E_GIT_MISSING（信任机制已移除）
 2. paths 非空 且 每项经 security.md §5 校验 → 否则 E_OUTSIDE_ROOT / E_INVALID_ARG（§12 差异 5）
 3. 取该 root 的写队列（串行，排队 > 30 s → E_LIMIT）
 4. stale index.lock（存在且 mtime 早于本次操作开始 10 s）→ 仅警告，不删

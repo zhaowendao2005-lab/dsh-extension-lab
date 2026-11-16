@@ -258,7 +258,7 @@ export function createFiles(ctx, workspace) {
 
   async function write({ path: relative, text, expectedVersion, create: createMode, force }) {
     const { absolute } = await workspace.resolvePath(relative);
-    workspace.assertTrusted('write');
+    workspace.requireRoot();
     if (typeof text !== 'string') throw ideError('E_INVALID_ARG', 'text 必须是字符串', { field: 'text' });
     if (Buffer.byteLength(text, 'utf8') > LIMITS.writeBytesMax) {
       throw ideError('E_TOO_LARGE', '内容超过写入上限', { limit: LIMITS.writeBytesMax });
@@ -298,7 +298,7 @@ export function createFiles(ctx, workspace) {
 
   async function create({ path: relative, kind, text }) {
     const { absolute } = await workspace.resolvePath(relative);
-    workspace.assertTrusted('write');
+    workspace.requireRoot();
     if (kind === 'directory') {
       await fs.mkdir(absolute, { recursive: true });
       dirCache.delete(path.dirname(absolute));
@@ -321,7 +321,7 @@ export function createFiles(ctx, workspace) {
   async function rename({ from, to }) {
     const { absolute: source } = await workspace.resolvePath(from);
     const { absolute: target } = await workspace.resolvePath(to);
-    workspace.assertTrusted('write');
+    workspace.requireRoot();
     try {
       await fs.access(target);
       throw ideError('E_VERSION_CONFLICT', '目标已存在', { path: to });
@@ -350,7 +350,7 @@ export function createFiles(ctx, workspace) {
 
   async function remove({ path: relative, recursive }) {
     const { absolute } = await workspace.resolvePath(relative);
-    workspace.assertTrusted('write');
+    workspace.requireRoot();
     if (absolute === workspace.root) throw ideError('E_INVALID_ARG', '不能删除工作区根目录', { field: 'path' });
     let info;
     try {

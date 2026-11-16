@@ -14,7 +14,7 @@ const OVERSCAN = 12;
  */
 export function GraphView({ stores }) {
   const graph = useStore(stores.graph);
-  const workspace = useStore(stores.workspace);
+  const repositories = useStore(stores.repositories);
   const scrollRef = useRef(null);
   // Windowing is a view-local concern, so it lives in its own tiny store rather than in
   // the Host snapshot: scroll position is worthless after a reload.
@@ -23,10 +23,10 @@ export function GraphView({ stores }) {
   const view = useStore(viewport.current);
 
   useEffect(() => {
-    if (!workspace.git?.isRepo) return;
+    if (repositories.active == null) return;
     if (graph.phase === 'idle') void stores.graphActions.load({ reset: true });
     if (!graph.refs) void stores.graphActions.loadRefs();
-  }, [workspace.git?.isRepo, graph.phase, graph.refs]);
+  }, [repositories.active, graph.phase, graph.refs]);
 
   const rows = graph.rows;
   const visible = useMemo(() => {
@@ -69,10 +69,11 @@ export function GraphView({ stores }) {
     return items;
   }, [visible, view.scrollTop, view.height]);
 
-  if (!workspace.git?.isRepo) {
+  if (repositories.active == null) {
     return (
       <div className="wid-empty">
-        <span className="wid-hint">当前目录不是 Git 仓库</span>
+        <span className="wid-hint">请先选择要跟踪的 Git 仓库</span>
+        <button type="button" className="wid-button" onClick={() => stores.actions.openRepositories()}>打开仓库</button>
       </div>
     );
   }

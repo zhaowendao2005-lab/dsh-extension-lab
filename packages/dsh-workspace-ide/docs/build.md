@@ -306,7 +306,7 @@ pnpm --dir packages/dsh-workspace-ide run build -- --check
 | 3 | 主题不生效、颜色全灰或不可读 | token 名不存在（如 `--dsw-alias-surface-1`）；`<style>` 没注入 | 只允许 §ui-spec 出现过的 `--dsw-alias-*`；确认注入的 `style#dsh-workspace-ide/css` 在 `document.head` 里且 `textContent` 非空 |
 | 4 | 构建报 `client bundle exceeds 1.2 MB gzip` | 误引整包（如 `import * as CM from '@codemirror/view'` 之外又多引了一个大依赖）；语言包白名单被绕过 | 看步骤 8 打的 top-10 inputs；跑 `check.mjs` 的 R12/R13 |
 | 5 | 终端打不开，Host 抛 `subprocess.spawnTerminal is not available` | 缺 `@deepseek-ai/dsh-sandbox` peer（或宿主版本低于 `0.2.2-rc.1`） | 确认 `peerDependencies` 在；`dsh` 版本在 `engines.dsh` 区间内；不要自己 `spawn` 伪终端 |
-| 6 | 反复出现 `E_TRUST_REQUIRED` | 工作区未信任；或信任键写错（`workspace_ide/trust` 之外的位置） | 面板里走一次显式「信任此工作区」；确认 storage key 与契约一致；`E_TRUST_REQUIRED` 必须走受控对话框而不是无限 toast |
+| 6 | 改动 / 图谱显示尚未选择仓库 | 仓库跟踪默认全空，或已取消活动仓库 | 打开「仓库」标签，勾选并选择目标；核对请求 repositoryPath 与实际工作树根，切换时丢弃旧响应 |
 | 7 | 终端中文乱码 / 半个汉字 | 在 `Buffer` 层按字节切了 UTF-8；`poll` 的 offset 被当成字节偏移 | 只在 Host 侧按**字符**切缓冲（`terminalBufferBytes` 是上限，切点必须落在完整码点之间）；`poll` 原样回传 offset，客户端不做换算 |
 | 8 | SCM 报 `E_GIT_MISSING` / git 找不到 | 宿主环境的 `PATH` 里没有 `git` | 显示安装引导，**不自动下载**；确认不是拼错可执行名；桌面端用绝对路径提示用户装 Xcode CLT |
 | 9 | 改完代码，面板还是旧行为 | 浏览器模块缓存；或面板没重新挂载 | 按 §4 三步走；最后重启宿主；确认 `lib/client.js` 的 `mtime` 真的变了 |

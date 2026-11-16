@@ -1,4 +1,5 @@
 import { useEffect, useRef } from '../../runtime.js';
+import { workbenchScale } from '../../service/geometry.js';
 
 /**
  * Row-resize handle for the bottom panel (docs/ui-spec.md §9). It writes on every
@@ -12,7 +13,7 @@ export function Splitter({ value, min, max, onChange, onCommit, label }) {
   useEffect(() => {
     function move(event) {
       if (!dragging.current) return;
-      const delta = start.current.y - event.clientY;
+      const delta = (start.current.y - event.clientY) / workbenchScale(node.current);
       const next = Math.min(max, Math.max(min, start.current.value + delta));
       onChange(next);
     }

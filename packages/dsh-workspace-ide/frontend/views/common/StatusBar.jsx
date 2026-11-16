@@ -18,8 +18,9 @@ export function StatusBar({ stores }) {
   const changes = status
     ? status.staged.length + status.working.length + status.untracked.length + status.conflicts.length
     : null;
-  const branch = workspace.git?.isRepo
-    ? (workspace.git.detached ? 'HEAD@' + (workspace.git.sha ?? '').slice(0, 7) : workspace.git.branch ?? 'HEAD')
+  const branchInfo = status?.branch;
+  const branch = branchInfo
+    ? (branchInfo.detached ? 'HEAD@' + (branchInfo.sha ?? '').slice(0, 7) : branchInfo.name ?? 'HEAD')
     : null;
 
   return (
@@ -36,7 +37,8 @@ export function StatusBar({ stores }) {
       <button
         type="button"
         className="wid-statusbar__item"
-        title={branch ? '打开提交图谱' : '当前工作区不是 Git 仓库'}
+        title={branch ? '打开提交图谱' : '尚未选择或加载 Git 仓库'}
+        disabled={!branch}
         onClick={() => stores.actions.openGraph()}
       >
         <Icon name="branch" size={11} />
@@ -52,17 +54,6 @@ export function StatusBar({ stores }) {
         <button type="button" className="wid-statusbar__item" onClick={() => stores.actions.openChanges()} title="打开改动">
           <span className="wid-statusbar__dot" aria-hidden="true" />
           {changes} 变更
-        </button>
-      )}
-      {workspace.root && !workspace.trust && (
-        <button
-          type="button"
-          className="wid-statusbar__item"
-          onClick={() => void stores.actions.setTrusted(true)}
-          title="写入、Git 写操作与终端都需要先信任该目录"
-        >
-          <Icon name="warning" size={11} />
-          未信任
         </button>
       )}
       {files.error && <span className="wid-statusbar__item wid-hint">{files.error}</span>}

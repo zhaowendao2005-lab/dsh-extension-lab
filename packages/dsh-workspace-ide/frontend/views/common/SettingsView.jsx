@@ -1,33 +1,14 @@
 import { useStore } from '../../runtime.js';
 
-/** Rows shown in the shortcut section; the host panel owns the actual bindings. */
-const SHORTCUT_COMMANDS = [
-  { id: 'workspace-ide.explorer', label: '文件栏' },
-  { id: 'workspace-ide.search', label: '工作区搜索' },
-  { id: 'workspace-ide.scm', label: '打开改动' },
-  { id: 'workspace-ide.graph', label: '提交图谱' },
-  { id: 'workspace-ide.panel', label: '显示/隐藏终端' },
-  { id: 'workspace-ide.quickOpen', label: '快速打开文件' },
-  { id: 'workspace-ide.save', label: '保存当前文件' },
-  { id: 'workspace-ide.saveAll', label: '保存全部文件' },
-  { id: 'workspace-ide.nav', label: '收起/展开文件栏' },
-  { id: 'workspace-ide.closeTab', label: '关闭当前标签' },
-  { id: 'workspace-ide.fullview', label: '打开/关闭全视图' },
-];
+import { SHORTCUT_COMMANDS, shortcutBindingLabel } from '../../service/shortcuts.js';
 
-const EMPTY_CATALOG = { getSnapshot: () => [], subscribe: () => () => {} };
-
-function keysOf(catalog, id) {
-  const keys = catalog.find((row) => row.id === id)?.keys ?? [];
-  return keys.length ? keys.join(' + ') : '未绑定';
-}
-
-/** Settings page: workspace root, trust gate, recents and the effective limits. */
+/** Settings page: workspace, presentation, editor preferences and effective limits. */
 export function SettingsView({ stores }) {
   const workspace = useStore(stores.workspace);
   const ui = useStore(stores.ui);
   const files = useStore(stores.files);
-  const catalog = useStore(stores.host?.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
+  const catalog = useStore(stores.host.shortcutCatalog);
+  const shortcutStatus = useStore(stores.host.shortcutStatus);
   const limits = workspace.limits ?? {};
 
   return (
@@ -36,13 +17,13 @@ export function SettingsView({ stores }) {
         <h3 className="wid-settings__title">工作区</h3>
         <div className="wid-settings__row">
           <span className="wid-settings__label">根目录</span>
-          <span className="wid-mono wid-settings__value" title={workspace.root ?? ''}>
+          <span className="wid-mono wid-settings__root" title={workspace.root ?? ''}>
             {workspace.root ?? '未选择'}
           </span>
         </div>
         <div className="wid-settings__actions">
           <button type="button" className="wid-button" onClick={() => void stores.actions.pickRoot()}>
-            选择目录…
+            切换工作区…
           </button>
           <button type="button" className="wid-button" onClick={() => void stores.actions.refreshWorkspace()}>
             重新读取
@@ -50,21 +31,6 @@ export function SettingsView({ stores }) {
         </div>
       </section>
 
-      <section className="wid-settings__section">
-        <h3 className="wid-settings__title">信任</h3>
-        <p className="wid-hint">
-          未信任的工作区不能写入文件、执行 Git 写操作或启动终端。信任按精确路径记录，子目录需要各自信任。
-        </p>
-        <label className="wid-settings__row">
-          <input
-            type="checkbox"
-            checked={Boolean(workspace.trust)}
-            disabled={!workspace.root}
-            onChange={(event) => void stores.actions.setTrusted(event.target.checked)}
-          />
-          <span className="wid-settings__label">信任此目录</span>
-        </label>
-      </section>
 
       <section className="wid-settings__section">
         <h3 className="wid-settings__title">最近打开</h3>
@@ -92,31 +58,33 @@ export function SettingsView({ stores }) {
       </section>
 
       <section className="wid-settings__section">
+        <h3 className="wid-settings__title">工作台尺寸</h3>
+        <label className="wid-settings__row">
+          <span className="wid-settings__label">整体缩放</span>
+          <select className="wid-settings__input" value={ui.uiScale} onChange={(event) => stores.actions.setUiScale(Number(event.target.value))}>
+            {[80, 90, 100, 110, 125, 150].map((value) => <option key={value} value={value}>{value}%</option>)}
+          </select>
+        </label>
+        <p className="wid-hint">立即调整工作台内的标签、按钮、文件树、编辑器和终端，并记住设置。右栏和全视图共用此尺寸。</p>
+      </section>
+
+      <section className="wid-settings__section">
         <h3 className="wid-settings__title">编辑器</h3>
-        <label className="wid-settings__row">
-          <span className="wid-settings__label">字号</span>
-          <input
-            className="wid-settings__input"
-            type="number"
-            min="10"
-            max="20"
-            step="1"
-            value={ui.editor.fontSize}
-            onChange={(event) => stores.actions.setEditorPref('fontSize', Number(event.target.value))}
-          />
-        </label>
-        <label className="wid-settings__row">
-          <span className="wid-settings__label">制表宽度</span>
-          <input
-            className="wid-settings__input"
-            type="number"
-            min="1"
-            max="8"
-            step="1"
-            value={ui.editor.tabSize}
-            onChange={(event) => stores.actions.setEditorPref('tabSize', Number(event.target.value))}
-          />
-        </label>
+        {[
+          { key: 'fontSize', label: '字号', min: 10, max: 20 },
+          { key: 'tabSize', label: 'Tab 显示宽度', min: 1, max: 8 },
+          { key: 'indentSize', label: '缩进空格数', min: 1, max: 8 },
+        ].map(({ key, label, min, max }) => (
+          <label className="wid-settings__row" key={key}>
+            <span className="wid-settings__label">{label}</span>
+            <select className="wid-settings__input" value={ui.editor[key]}
+              onChange={(event) => stores.actions.setEditorPref(key, Number(event.target.value))}>
+              {Array.from({ length: max - min + 1 }, (_, index) => min + index).map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+        ))}
         <label className="wid-settings__row">
           <input
             type="checkbox"
@@ -125,20 +93,24 @@ export function SettingsView({ stores }) {
           />
           <span className="wid-settings__label">自动换行</span>
         </label>
-        <p className="wid-hint">这些偏好只存在本机浏览器，不写入工作区。</p>
+        <p className="wid-hint">修改后立即应用到当前编辑器和差异视图，切回其他文件时沿用。Tab 显示宽度只控制已有制表符的显示；缩进空格数用于新的缩进操作，不会重写已有空格。</p>
+        <p className="wid-hint">自动换行仅用于不超过 2000 行、最长行不超过 500 字符的内容，超出时视图会说明原因。这些偏好保存在本机浏览器，不写入工作区。</p>
       </section>
 
       <section className="wid-settings__section">
         <h3 className="wid-settings__title">快捷键</h3>
         <p className="wid-hint">
-          工作台不绑定默认按键，也不提供自己的录制器。全部命令都出现在 DSH 官方设置面板里，
-          在「设置 → 通用 → 编辑快捷键」（<span className="wid-mono">Mod + /</span>）中为它们分配组合键。
+          从 DSH 主左侧栏底部的「设置」（或账号 / 更多菜单）进入「通用 → 编辑快捷键」，搜索“工作台：”后分配按键。
+          <span className="wid-mono">Mod + /</span> 可直接打开宿主快捷键弹窗（Mod 在 macOS 为 ⌘，其他平台为 Ctrl）。工作台默认不绑定按键。
         </p>
+        {(!shortcutStatus.available || shortcutStatus.error || shortcutStatus.failed.length > 0) && (
+          <p className="wid-hint" role="status">宿主快捷键尚未就绪或部分命令注册失败。请重载插件后查看；此状态不代表“未绑定”。</p>
+        )}
         <ul className="wid-settings__list">
           {SHORTCUT_COMMANDS.map((item) => (
             <li key={item.id} className="wid-settings__row">
               <span className="wid-settings__label">{item.label}</span>
-              <span className="wid-mono wid-settings__value wid-settings__keys">{keysOf(catalog, item.id)}</span>
+              <span className="wid-mono wid-settings__value wid-settings__keys">{shortcutBindingLabel(catalog, shortcutStatus, item.id)}</span>
             </li>
           ))}
         </ul>

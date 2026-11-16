@@ -1,27 +1,23 @@
-import { useStore, useEffect, useMemo, useRef } from '../../runtime.js';
+import { useStore, useEffect, useLayoutEffect, useMemo, useRef } from '../../runtime.js';
 import { Icon } from '../common/Icon.jsx';
+import { FileIcon } from '../common/FileIcon.jsx';
+import { localPoint } from '../../service/geometry.js';
+import {
+  buildScmTree, flattenScmTree, resolveScmFocus, scmTreeNavigation,
+  scmVirtualWindow, scmRevealScroll, scmWriteReason, scmOpenReason, scmDiscardReason,
+  SCM_ROW_HEIGHT, isScmCollapsed,
+} from '../../service/scm-tree.js';
 
-const ROW_H = 22;
-const OVERSCAN = 12;
+const ROW_H = SCM_ROW_HEIGHT;
 
-const FLAT_GROUPS = [
-  { key: 'conflicts', label: '合并冲突', icon: 'warning' },
-  { key: 'staged', label: '暂存的更改', icon: 'check' },
-  { key: 'working', label: '更改', icon: 'dot' },
-  { key: 'untracked', label: '未跟踪', icon: 'plus' },
-];
-
-/**
- * Source Control view: branch/commit header plus a two-level change tree (更改 / 暂存).
- * The tree and the legacy flat groups share one windowed row list, so a working tree with
- * tens of thousands of changes renders a bounded number of DOM rows.
- */
+/** Windowed SCM renderer. The pure service owns grouping, sorting and hierarchy. */
 export function ScmView({ stores }) {
   const scm = useStore(stores.scm);
-  const workspace = useStore(stores.workspace);
+  const repositories = useStore(stores.repositories);
   const ui = useStore(stores.ui);
   const status = scm.status;
   const treeRef = useRef(null);
+  const focusRequestRef = useRef(null);
 
   useEffect(() => {
     const node = treeRef.current;
@@ -32,7 +28,7 @@ export function ScmView({ stores }) {
     const observer = new ResizeObserver(report);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [stores, scm.view]);
+  }, [stores, scm.view, Boolean(status), repositories.active]);
 
   useEffect(() => {
     if (!scm.contextMenu) return undefined;
@@ -40,7 +36,11 @@ export function ScmView({ stores }) {
       if (!event.target.closest || !event.target.closest('.wid-scm__ctx')) stores.actions.closeScmMenu();
     }
     function onKeyDown(event) {
-      if (event.key === 'Escape') stores.actions.closeScmMenu();
+      if (event.key === 'Escape' && stores.scm.getSnapshot().contextMenu) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        stores.actions.closeScmMenu();
+      }
     }
     window.addEventListener('pointerdown', onPointerDown, true);
     window.addEventListener('keydown', onKeyDown, true);
@@ -50,17 +50,33 @@ export function ScmView({ stores }) {
     };
   }, [Boolean(scm.contextMenu), stores]);
 
-  // Rebuilding the flattened row list on every scroll/keystroke would be O(N) even though the
-  // DOM is windowed; memoize it on the only three inputs that shape the tree.
-  const rows = useMemo(
-    () => (status ? buildRows(status, scm.view, scm.collapsed) : []),
-    [status, scm.view, scm.collapsed],
-  );
+  const model = useMemo(() => buildScmTree(status, scm.view), [status, scm.view]);
+  const rows = useMemo(() => flattenScmTree(model, scm.collapsed), [model, scm.collapsed]);
+  const focusedKey = useMemo(() => resolveScmFocus(model, rows, scm.focusedKey), [model, rows, scm.focusedKey]);
+  const virtual = scmVirtualWindow(rows.length, scm.scrollTop, scm.treeHeight);
 
-  if (!workspace.git?.isRepo) {
+  useLayoutEffect(() => {
+    const tree = treeRef.current;
+    if (!tree) return;
+    // The browser clamps its scroll position after a collapse; mirror that in the store.
+    if (tree.scrollTop !== virtual.scrollTop) tree.scrollTop = virtual.scrollTop;
+    if (scm.scrollTop !== virtual.scrollTop) stores.actions.setScmScroll(virtual.scrollTop);
+    if (scm.focusedKey !== focusedKey) stores.actions.setScmFocus(focusedKey);
+    if (focusRequestRef.current) {
+      const index = rows.findIndex((row) => row.key === focusRequestRef.current);
+      const target = tree.querySelector('[data-scm-index="' + index + '"]');
+      if (target) {
+        target.focus({ preventScroll: true });
+        focusRequestRef.current = null;
+      }
+    }
+  }, [stores, rows, scm.scrollTop, scm.focusedKey, focusedKey, virtual.scrollTop, virtual.start, virtual.end]);
+
+  if (repositories.active == null) {
     return (
       <div className="wid-empty">
-        <span className="wid-hint">当前目录不是 Git 仓库</span>
+        <span className="wid-hint">请先选择要跟踪的 Git 仓库</span>
+        <button type="button" className="wid-button" onClick={() => stores.actions.openRepositories()}>打开仓库</button>
       </div>
     );
   }
@@ -76,21 +92,54 @@ export function ScmView({ stores }) {
   const branch = status.branch ?? {};
   const stagedCount = (status.staged ?? []).length;
   const busy = scm.writes.length > 0;
-  const canCommit = stagedCount > 0 && scm.message.trim().length > 0 && !busy && workspace.trust;
-  const viewport = scm.treeHeight || 360;
-  const start = Math.max(0, Math.floor(scm.scrollTop / ROW_H) - OVERSCAN);
-  const end = Math.min(rows.length, start + Math.ceil(viewport / ROW_H) + OVERSCAN * 2);
-  const slice = rows.slice(start, end);
+  const canCommit = stagedCount > 0 && scm.message.trim().length > 0 && !busy;
+  const slice = rows.slice(virtual.start, virtual.end);
+  const writeReason = scmWriteReason({ busy });
+
+  function focusRow(row, index) {
+    if (!row) return;
+    focusRequestRef.current = row.key;
+    stores.actions.setScmFocus(row.key);
+    const top = scmRevealScroll(index, virtual.scrollTop, virtual.viewport);
+    if (treeRef.current) {
+      treeRef.current.scrollTop = top;
+      const target = treeRef.current.querySelector('[data-scm-index="' + index + '"]');
+      if (target) {
+        target.focus({ preventScroll: true });
+        focusRequestRef.current = null;
+      }
+    }
+    stores.actions.setScmScroll(top);
+  }
+
+  function onRowKey(event, row, index) {
+    if (event.target.closest('button')) return;
+    const navigation = scmTreeNavigation(rows, row.key, event.key);
+    if (navigation) {
+      event.preventDefault();
+      if (navigation.toggleKey) stores.actions.toggleScmNode(navigation.toggleKey);
+      else focusRow(rows[navigation.index], navigation.index);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (row.kind === 'file') void rowDiff(row);
+      else stores.actions.toggleScmNode(row.key);
+    } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      openMenu(event, { kind: row.kind, row });
+    }
+  }
 
   function openMenu(event, menu) {
     event.preventDefault();
     event.stopPropagation();
     const panel = event.currentTarget.closest('.wid-scm');
-    const rect = panel ? panel.getBoundingClientRect() : { left: 0, top: 0, width: 360, height: 480 };
     const width = 210;
-    const height = menu.kind === 'file' ? 250 : 160;
-    const x = Math.max(4, Math.min(event.clientX - rect.left, rect.width - width));
-    const y = Math.max(4, Math.min(event.clientY - rect.top, rect.height - height));
+    const height = menu.kind === 'file' ? 290 : 190;
+    const anchor = event.currentTarget.getBoundingClientRect();
+    const keyboard = !Number.isFinite(event.clientX) || (event.clientX === 0 && event.clientY === 0);
+    const clientX = keyboard ? anchor.left + 16 : event.clientX;
+    const clientY = keyboard ? anchor.bottom : event.clientY;
+    const { x, y } = localPoint(panel, clientX, clientY, width, height);
     stores.actions.openScmMenu({ ...menu, x, y });
   }
 
@@ -125,7 +174,7 @@ export function ScmView({ stores }) {
         {branch.ahead > 0 && <span className="wid-hint">↑{branch.ahead}</span>}
         {branch.behind > 0 && <span className="wid-hint">↓{branch.behind}</span>}
         <span className="wid-scm__branch-spacer" />
-        <span className="wid-hint">{scm.view === 'tree' ? 'Tree' : '默认'}</span>
+        <span className="wid-hint">{scm.view === 'tree' ? '路径树' : '列表'}</span>
         <button
           type="button"
           className="wid-icon-button"
@@ -158,33 +207,17 @@ export function ScmView({ stores }) {
           </div>
           <ul className="wid-scm__menu-list">
             {(scm.refs?.local ?? []).map((ref) => (
-              <li key={ref.name}>
-                <button
-                  type="button"
-                  className="wid-scm__menu-item"
-                  data-active={ref.head ? 'true' : undefined}
+              <li key={ref.name} className="wid-scm__branch-item">
+                <button type="button" className="wid-scm__menu-item" data-active={ref.head ? 'true' : undefined}
                   onClick={() => {
                     stores.actions.toggleMenu('branches');
                     void stores.scmActions.checkout(ref.name);
-                  }}
-                >
+                  }}>
                   <span className="wid-mono">{ref.name}</span>
                   {ref.upstreamGone && <span className="wid-hint">gone</span>}
-                  {!ref.head && (
-                    <span
-                      className="wid-icon-button"
-                      role="button"
-                      tabIndex={0}
-                      title="删除分支"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void stores.scmActions.deleteBranch(ref.name);
-                      }}
-                    >
-                      ×
-                    </span>
-                  )}
                 </button>
+                {!ref.head && <button type="button" className="wid-icon-button" title="删除分支" aria-label={'删除分支 ' + ref.name}
+                  disabled={Boolean(writeReason)} onClick={() => void stores.scmActions.deleteBranch(ref.name)}>×</button>}
               </li>
             ))}
             {!(scm.refs?.local ?? []).length && <li className="wid-hint">还没有分支</li>}
@@ -234,16 +267,6 @@ export function ScmView({ stores }) {
           未跟踪 {status.counts?.untracked ?? 0} 项，自动刷新已降级为手动
         </div>
       )}
-      {!workspace.trust && (
-        <div className="wid-scm__banner wid-scm__banner--warn">
-          <span>未信任该工作区：不能暂存、提交或切换分支</span>
-          <span className="wid-scm__banner-actions">
-            <button type="button" className="wid-button wid-button--sm wid-button--primary" onClick={() => void stores.actions.setTrusted(true)}>
-              信任此工作区
-            </button>
-          </span>
-        </div>
-      )}
 
       <div className="wid-scm__commit">
         <textarea
@@ -255,24 +278,22 @@ export function ScmView({ stores }) {
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
               event.preventDefault();
-              void stores.scmActions.commit(scm.message);
-              stores.actions.setCommitMessage('');
+              if (canCommit) void stores.scmActions.commit(scm.message);
             }
           }}
           onContextMenu={(event) => openMenu(event, { kind: 'page' })}
         />
         <div className="wid-scm__commit-row">
-          <span className="wid-hint" title={canCommit ? undefined : commitHint({ stagedCount, message: scm.message, busy, trust: workspace.trust })}>
+          <span className="wid-hint" title={canCommit ? undefined : commitHint({ stagedCount, message: scm.message, busy })}>
             {scm.message.length > 72 ? scm.message.length + '/72' : stagedCount + ' 个已暂存'}
           </span>
           <button
             type="button"
             className="wid-button wid-button--primary"
             disabled={!canCommit}
-            title={canCommit ? '提交' : commitHint({ stagedCount, message: scm.message, busy, trust: workspace.trust })}
+            title={canCommit ? '提交' : commitHint({ stagedCount, message: scm.message, busy })}
             onClick={() => {
-              void stores.scmActions.commit(scm.message);
-              stores.actions.setCommitMessage('');
+              if (canCommit) void stores.scmActions.commit(scm.message);
             }}
           >
             提交
@@ -282,84 +303,76 @@ export function ScmView({ stores }) {
       </div>
 
       <div
-        className="wid-scm__tree"
-        ref={treeRef}
+        className="wid-scm__tree" ref={treeRef} role="tree" aria-label="源代码管理更改"
+        tabIndex={0}
+        onFocus={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const index = rows.findIndex((row) => row.key === focusedKey);
+          focusRow(rows[index], index);
+        }}
         onScroll={(event) => stores.actions.setScmScroll(event.currentTarget.scrollTop)}
         onContextMenu={(event) => openMenu(event, { kind: 'page' })}
       >
-        <div className="wid-scm__canvas" style={{ height: rows.length * ROW_H + 'px' }}>
+        <div className="wid-scm__canvas" role="presentation" style={{ height: virtual.totalHeight + 'px' }}>
           {slice.map((row, index) => {
-            const position = start + index;
-            const style = { transform: 'translateY(' + position * ROW_H + 'px)', height: ROW_H + 'px' };
-            if (row.kind === 'group') {
-              const collapsed = Boolean(scm.collapsed[row.key]);
-              return (
-                <div
-                  key={'group:' + row.key}
-                  className="wid-scm__node"
-                  style={style}
-                  role="treeitem"
-                  aria-expanded={!collapsed}
-                  onClick={() => stores.actions.toggleScmNode(row.key)}
-                  onContextMenu={(event) => openMenu(event, { kind: 'group', groupKey: row.key })}
-                >
-                  <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={12} />
-                  <span className="wid-scm__node-title">{row.label}</span>
-                  <span className="wid-scm__node-count">{row.count}</span>
-                  <span className="wid-scm__node-spacer" />
-                  {row.key === 'changes' && row.count > 0 && (
-                    <button
-                      type="button"
-                      className="wid-icon-button"
-                      title="全部暂存"
-                      disabled={busy}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void stores.scmActions.stage(collectPaths(status, 'changes'), true);
-                      }}
-                    >
-                      +
-                    </button>
-                  )}
-                  {row.key === 'staged' && row.count > 0 && (
-                    <button
-                      type="button"
-                      className="wid-icon-button"
-                      title="全部取消暂存"
-                      disabled={busy}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void stores.scmActions.unstage(collectPaths(status, 'staged'), true);
-                      }}
-                    >
-                      −
-                    </button>
-                  )}
-                </div>
-              );
-            }
-
-            const change = row.change;
+            const position = virtual.start + index;
+            const isFile = row.kind === 'file';
+            const active = row.key === focusedKey;
+            const stageReason = scmWriteReason({ busy }, row.paths.length);
+            const openReason = scmOpenReason(row);
+            const discardReason = writeReason || scmDiscardReason(row);
+            const stageLabel = row.bucket === 'staged' ? '取消暂存' : '暂存';
             return (
               <div
-                key={row.key + ':' + row.group + ':' + change.path + ':' + (change.origPath ?? '')}
-                className="wid-scm__row wid-scm__row--tree"
-                style={style}
-                role="treeitem"
-                title={change.path}
-                onClick={() => void rowDiff(row)}
-                onDoubleClick={() => void stores.actions.openFile(change.path)}
-                onContextMenu={(event) => openMenu(event, { kind: 'file', row })}
+                key={row.key}
+                className={isFile ? 'wid-scm__item wid-scm__row wid-scm__row--tree' : 'wid-scm__item wid-scm__node'}
+                style={{ transform: 'translateY(' + position * ROW_H + 'px)', height: ROW_H + 'px',
+                  paddingInlineStart: 4 + (row.level - 1) * 14 + 'px' }}
+                data-scm-index={position} data-focused={active ? 'true' : undefined}
+                role="treeitem" tabIndex={-1}
+                aria-level={row.level} aria-posinset={row.posInSet} aria-setsize={row.setSize}
+                aria-expanded={row.expanded}
+                aria-label={isFile ? row.path + '，' + row.change.status : row.label + '，' + row.count + ' 个更改'}
+                title={isFile && row.change.origPath ? row.change.origPath + ' → ' + row.path : row.path || row.label}
+                onFocus={() => stores.actions.setScmFocus(row.key)}
+                onKeyDown={(event) => onRowKey(event, row, position)}
+                onClick={(event) => {
+                  if (event.target.closest('button')) return;
+                  focusRow(row, position);
+                  if (isFile) void rowDiff(row);
+                  else stores.actions.toggleScmNode(row.key);
+                }}
+                onDoubleClick={(event) => { if (!event.target.closest('button') && isFile && !openReason) void stores.actions.openRepositoryFile(row.path); }}
+                onContextMenu={(event) => {
+                  focusRow(row, position);
+                  openMenu(event, { kind: row.kind, row });
+                }}
               >
-                <span className="wid-scm__file-icon"><Icon name="file" size={12} /></span>
-                <span className="wid-scm__status" data-status={change.status} aria-hidden="true">{change.status}</span>
-                <span className="wid-scm__path">{basename(change.path)}</span>
-                <span className="wid-scm__dir">{dirname(change.path)}</span>
+                {!isFile && <Icon name={row.expanded ? 'chevronDown' : 'chevronRight'} size={12} />}
+                {isFile ? <FileIcon name={row.path} size={14} /> : row.kind === 'directory' && <Icon name="folder" size={14} />}
+                <span className={isFile ? 'wid-scm__path' : 'wid-scm__node-title'}>{row.label}</span>
+                {isFile && scm.view === 'flat' && <span className="wid-scm__dir">{row.directory}</span>}
+                {isFile && row.change.status === 'R' && <span className="wid-scm__rename" title={row.change.origPath}>← {row.change.origPath}</span>}
+                {!isFile && <span className="wid-scm__node-count">{row.count}</span>}
+                <span className="wid-scm__node-spacer" />
+                {isFile && <span className="wid-scm__status" data-status={row.change.status} aria-hidden="true">{row.change.status}</span>}
+                <span className="wid-scm__row-actions">
+                  {isFile && <ScmAction label="打开文件" reason={openReason} icon="file" active={active}
+                    onRun={() => stores.actions.openRepositoryFile(row.path)} />}
+                  <ScmAction label={stageLabel} reason={stageReason} icon={row.bucket === 'staged' ? 'diff' : 'plus'} active={active}
+                    onRun={() => row.bucket === 'staged' ? stores.scmActions.unstage(row.paths) : stores.scmActions.stage(row.paths)} />
+                  {isFile && (row.group === 'working' || row.group === 'untracked') && <ScmAction
+                    label="丢弃更改" reason={discardReason} icon="trash" active={active}
+                    onRun={() => stores.scmActions.discard([row.path])} />}
+                </span>
+                <button type="button" className="wid-icon-button wid-scm__more" title="更多操作" aria-label={row.label + '，更多操作'}
+                  aria-haspopup="menu" tabIndex={active ? 0 : -1}
+                  onClick={(event) => { event.stopPropagation(); openMenu(event, { kind: row.kind, row }); }}>⋯</button>
               </div>
             );
           })}
         </div>
-        {rows.length === 0 && <div className="wid-empty"><span className="wid-hint">没有变更</span></div>}
+        {rows.every((row) => row.kind === 'group' && !row.count) && <div className="wid-empty"><span className="wid-hint">没有变更</span></div>}
       </div>
 
       {scm.contextMenu && (
@@ -367,7 +380,8 @@ export function ScmView({ stores }) {
           menu={scm.contextMenu}
           stores={stores}
           scm={scm}
-          status={status}
+          model={model}
+          writeReason={writeReason}
           onRun={runMenu}
         />
       )}
@@ -375,108 +389,79 @@ export function ScmView({ stores }) {
   );
 }
 
-function collectPaths(status, bucket) {
-  if (bucket === 'changes') {
-    return [
-      ...(status.working ?? []).map((item) => item.path),
-      ...(status.untracked ?? []).map((item) => item.path),
-      ...(status.conflicts ?? []).map((item) => item.path),
-    ];
-  }
-  return (status.staged ?? []).map((item) => item.path);
-}
-
-function buildRows(status, view, collapsed) {
-  const rows = [];
-  if (view === 'flat') {
-    for (const group of FLAT_GROUPS) {
-      const items = status[group.key] ?? [];
-      if (!items.length) continue;
-      rows.push({ kind: 'group', key: group.key, label: group.label, count: items.length });
-      if (collapsed[group.key]) continue;
-      for (const change of items) rows.push({ kind: 'file', key: group.key, bucket: group.key, group: group.key, change });
-    }
-    return rows;
-  }
-
-  const changes = [
-    ...(status.conflicts ?? []).map((change) => ({ group: 'conflicts', change })),
-    ...(status.working ?? []).map((change) => ({ group: 'working', change })),
-    ...(status.untracked ?? []).map((change) => ({ group: 'untracked', change })),
-  ];
-  rows.push({ kind: 'group', key: 'changes', label: '更改', count: changes.length });
-  if (!collapsed.changes) {
-    for (const item of changes) rows.push({ kind: 'file', key: 'changes', bucket: 'changes', group: item.group, change: item.change });
-  }
-  const staged = status.staged ?? [];
-  rows.push({ kind: 'group', key: 'staged', label: '暂存', count: staged.length });
-  if (!collapsed.staged) {
-    for (const change of staged) rows.push({ kind: 'file', key: 'staged', bucket: 'staged', group: 'staged', change });
-  }
-  return rows;
-}
-
-function ScmMenu({ menu, stores, scm, status, onRun }) {
-  const items = menuItems(menu, stores, scm, status);
+function ScmAction({ label, reason, icon, active, onRun }) {
   return (
-    <div className="wid-scm__ctx" style={{ left: menu.x + 'px', top: menu.y + 'px' }} role="menu">
-      {items.map((item, index) => (item.separator ? (
+    <button type="button" className="wid-icon-button" title={reason || label} aria-label={label}
+      disabled={Boolean(reason)} tabIndex={active ? 0 : -1}
+      onClick={(event) => { event.stopPropagation(); if (!reason) void onRun(); }}>
+      <Icon name={icon} size={12} />
+    </button>
+  );
+}
+
+function ScmMenu({ menu, stores, scm, model, writeReason, onRun }) {
+  const menuRef = useRef(null);
+  const items = menuItems(menu, stores, scm, model, writeReason);
+  useLayoutEffect(() => {
+    const node = menuRef.current;
+    const previous = document.activeElement;
+    node?.querySelector('button:not(:disabled)')?.focus();
+    return () => {
+      if (node?.contains(document.activeElement) && previous?.isConnected) previous.focus({ preventScroll: true });
+    };
+  }, [menu]);
+  return (
+    <div ref={menuRef} className="wid-scm__ctx" style={{ left: menu.x + 'px', top: menu.y + 'px' }} role="menu"
+      aria-label="源代码管理操作"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.preventDefault(); stores.actions.closeScmMenu(); }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const buttons = [...event.currentTarget.querySelectorAll('button:not(:disabled)')];
+        const index = buttons.indexOf(document.activeElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+          : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      }}>
+      {items.map((item, index) => item.separator ? (
         <div key={'sep:' + index} className="wid-scm__ctx-sep" role="separator" />
       ) : (
-        <button
-          key={item.label + ':' + index}
-          type="button"
-          role="menuitem"
-          className="wid-scm__ctx-item"
-          disabled={item.disabled}
-          onClick={() => onRun(item)}
-        >
+        <button key={item.label + ':' + index} type="button" role="menuitem" className="wid-scm__ctx-item"
+          disabled={Boolean(item.reason)} title={item.reason || item.label} onClick={() => { if (!item.reason) onRun(item); }}>
           {item.label}
         </button>
-      )))}
+      ))}
     </div>
   );
 }
 
-function menuItems(menu, stores, scm, status) {
+function menuItems(menu, stores, scm, model, writeReason) {
   const viewItems = [
-    { label: (scm.view === 'tree' ? '✓ ' : '') + '使用 Tree 视图', run: () => stores.actions.setScmView('tree') },
-    { label: (scm.view === 'flat' ? '✓ ' : '') + '使用默认视图', run: () => stores.actions.setScmView('flat') },
+    { label: (scm.view === 'tree' ? '✓ ' : '') + '路径树', run: () => stores.actions.setScmView('tree') },
+    { label: (scm.view === 'flat' ? '✓ ' : '') + '列表', run: () => stores.actions.setScmView('flat') },
   ];
-
   if (menu.kind === 'page') return viewItems;
-
-  if (menu.kind === 'group') {
-    const collapsed = Boolean(scm.collapsed[menu.groupKey]);
-    return [
-      { label: collapsed ? '展开' : '收起', run: () => stores.actions.toggleScmNode(menu.groupKey) },
-      { separator: true },
-      ...viewItems,
-    ];
-  }
-
-  const row = menu.row;
-  const change = row.change;
-  const path = change.path;
-  const items = [
-    { label: '打开文件', run: () => void stores.actions.openFile(path) },
-    row.group === 'conflicts'
-      ? { label: '解决冲突', run: () => void stores.actions.openConflict(path) }
-      : { label: '查看差异', run: () => void rowDiffFrom(stores, row) },
-    { separator: true },
+  // Re-resolve against the latest status: never operate on stale context-menu snapshots.
+  const row = model.byKey.get(menu.row?.key);
+  if (!row) return [{ label: '更改已更新，请重新选择', reason: '此节点已不在当前状态中' }, { separator: true }, ...viewItems];
+  const actionReason = writeReason || (!row.paths.length ? '没有可操作的更改' : undefined);
+  const stageItem = row.bucket === 'staged'
+    ? { label: '取消暂存', reason: actionReason, run: () => stores.scmActions.unstage(row.paths) }
+    : { label: '暂存', reason: actionReason, run: () => stores.scmActions.stage(row.paths) };
+  if (row.kind !== 'file') return [
+    { label: isScmCollapsed(scm.collapsed, row.key) ? '展开' : '收起', run: () => stores.actions.toggleScmNode(row.key) },
+    stageItem, { separator: true }, ...viewItems,
   ];
-  if (row.bucket === 'staged') {
-    items.push({ label: '取消暂存', run: () => void stores.scmActions.unstage([path]) });
-  } else {
-    items.push({ label: '暂存', run: () => void stores.scmActions.stage([path]) });
-  }
-  if (row.group === 'working' || row.group === 'untracked') {
-    items.push({ label: '丢弃更改', run: () => void stores.scmActions.discard([path]) });
-  }
-  items.push({ separator: true });
-  items.push({ label: '复制相对路径', run: () => void navigator.clipboard?.writeText(path) });
-  items.push({ separator: true });
-  items.push(...viewItems);
+  const items = [
+    { label: '打开文件', reason: scmOpenReason(row), run: () => stores.actions.openRepositoryFile(row.path) },
+    { label: row.group === 'conflicts' ? '解决冲突' : '查看差异', run: () => rowDiffFrom(stores, row) },
+    { separator: true }, stageItem,
+  ];
+  if (row.group === 'working' || row.group === 'untracked') items.push({ label: '丢弃更改',
+    reason: writeReason || scmDiscardReason(row), run: () => stores.scmActions.discard([row.path]) });
+  items.push({ separator: true }, { label: '复制相对路径',
+    reason: navigator.clipboard?.writeText ? undefined : '当前环境不支持剪贴板',
+    run: () => stores.actions.copyText(row.path) }, { separator: true }, ...viewItems);
   return items;
 }
 
@@ -488,20 +473,9 @@ function rowDiffFrom(stores, row) {
   return stores.actions.openDiff(target, row.change.path);
 }
 
-function commitHint({ stagedCount, message, busy, trust }) {
-  if (!trust) return '需要先信任该工作区';
+function commitHint({ stagedCount, message, busy }) {
   if (busy) return '上一个写操作还在执行';
   if (!stagedCount) return '没有已暂存的更改';
   if (!String(message ?? '').trim()) return '提交信息不能为空';
   return undefined;
-}
-
-function basename(path) {
-  const index = path.lastIndexOf('/');
-  return index === -1 ? path : path.slice(index + 1);
-}
-
-function dirname(path) {
-  const index = path.lastIndexOf('/');
-  return index === -1 ? '' : path.slice(0, index);
 }

@@ -64,11 +64,12 @@
   box-sizing: border-box;
 }
 
-.wid-root button {
+:where(.wid-root) :where(button) {
   font: inherit;
   color: inherit;
   background: none;
-  border: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
   padding: 0;
   cursor: pointer;
 }
@@ -228,7 +229,7 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.wid-icon-button:hover {
+.wid-icon-button:hover:not(:disabled) {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
@@ -416,12 +417,12 @@
   font-size: 12px;
 }
 
-.wid-button:hover {
+.wid-button:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .wid-button[data-variant="primary"] {
-  border-color: transparent;
+  border-color: var(--dsw-alias-brand-primary);
   background: var(--dsw-alias-brand-primary);
   color: var(--dsw-alias-label-primary-foreground);
 }
@@ -516,13 +517,13 @@
 .wid-button--danger {
   background: var(--dsw-alias-state-error-primary);
   color: var(--dsw-alias-label-primary-foreground);
-  border-color: transparent;
+  border-color: var(--dsw-alias-border-l2);
 }
 
 .wid-button--primary {
   background: var(--dsw-alias-brand-primary);
   color: var(--dsw-alias-label-primary-foreground);
-  border-color: transparent;
+  border-color: var(--dsw-alias-border-l2);
 }
 
 /* Semantic tones: status letters need a hue that survives both themes, and the raw
@@ -621,6 +622,8 @@
 
 /* 快捷键映射表的值列：右对齐；未绑定时显示弱化的「未绑定」 */
 .wid-settings__keys { text-align: right; }
+.wid-settings__root { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: normal; user-select: text; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.wid-settings__row:has(.wid-settings__root) { align-items: flex-start; }
 
 .wid-settings__list {
   margin: 0;
@@ -636,8 +639,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 0;
-  border: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
   background: none;
   color: var(--dsw-alias-brand-primary);
   font: inherit;
@@ -686,6 +690,8 @@
    ========================================================================== */
 
 .wid-frame {
+  position: relative;
+  overflow: hidden;
   height: 100%;
   min-height: 0;
   min-width: 0;
@@ -694,7 +700,11 @@
 }
 
 .wid-root {
-  --wid-nav-w: clamp(180px, 30cqi, 260px);
+  /* Zoom resolves percentage dimensions against the unzoomed parent; do not divide twice. */
+  zoom: var(--wid-ui-scale, 1);
+  width: 100%;
+  height: 100%;
+  --wid-nav-w: clamp(180px, calc(var(--wid-logical-width, 860px) * .3), 260px);
   --wid-toolbar-h: 30px;
   --wid-tabbar-h: 28px;
   --wid-statusbar-h: 22px;
@@ -841,14 +851,17 @@
 
 .wid-nav__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  flex: 0 0 28px;
-  padding: 0 4px 0 4px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 2px 4px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 
-.wid-nav__switch { display: flex; align-items: center; min-width: 0; }
+.wid-nav__switch { display: flex; flex: 0 0 auto; align-items: center; }
+.wid-nav__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; margin-inline-start: auto; }
 
 .wid-nav__tab {
   display: inline-flex;
@@ -868,8 +881,6 @@
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
 }
-
-.wid-nav__spacer { flex: 1; }
 
 .wid-nav__body {
   flex: 1;
@@ -1153,37 +1164,33 @@ body[data-wid-dragging='true'] { cursor: grabbing; user-select: none; }
 /* In-panel modal: absolute so it can never dim the rest of the window. */
 .wid-root .wid-modal__backdrop { position: absolute; inset: 0; }
 
-/* ---------- compact column ---------- */
-@container widframe (max-width: 519px) {
-  .wid-root { --wid-nav-w: 0px; --wid-statusbar-h: 20px; }
-  .wid-root[data-nav='open'] .wid-nav {
-    position: absolute;
-    top: var(--wid-toolbar-h);
-    bottom: calc(var(--wid-statusbar-h) + var(--wid-panel-h) + var(--wid-split-h));
-    left: 0;
-    width: min(280px, 86cqi);
-    z-index: 12;
-    border-inline-end: 1px solid var(--dsw-alias-border-l2);
-    box-shadow: var(--dsw-shadow-lv2);
-  }
-  .wid-root[data-nav='open'] .wid-nav__scrim {
-    display: block;
-    position: absolute;
-    top: var(--wid-toolbar-h);
-    bottom: calc(var(--wid-statusbar-h) + var(--wid-panel-h) + var(--wid-split-h));
-    left: 0;
-    right: 0;
-    z-index: 11;
-    background: color-mix(in srgb, var(--dsw-alias-bg-base) 35%, transparent);
-  }
-  .wid-tab { max-width: 140px; }
-  .wid-toolbar__root { max-width: 40%; }
+/* ---------- logical column width (per surface, after uiScale) ---------- */
+.wid-root:is([data-width='compact'], [data-width='medium']) .wid-toolbar__branch { display: none; }
+.wid-root[data-width='medium'] .wid-tab { max-width: 150px; }
+.wid-root[data-width='compact'] { --wid-nav-w: 0px; --wid-statusbar-h: 20px; }
+.wid-root[data-width='compact'][data-nav='open'] .wid-nav {
+  grid-area: auto;
+  position: absolute;
+  top: var(--wid-toolbar-h);
+  bottom: calc(var(--wid-statusbar-h) + var(--wid-panel-h) + var(--wid-split-h));
+  left: 0;
+  width: min(280px, calc(var(--wid-logical-width, 320px) * .86));
+  z-index: 12;
+  border-inline-end: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-shadow-lv2);
 }
-
-@container widframe (max-width: 719px) {
-  .wid-toolbar__branch { display: none; }
-  .wid-tab { max-width: 150px; }
+.wid-root[data-width='compact'][data-nav='open'] .wid-nav__scrim {
+  display: block;
+  position: absolute;
+  top: var(--wid-toolbar-h);
+  bottom: calc(var(--wid-statusbar-h) + var(--wid-panel-h) + var(--wid-split-h));
+  left: 0;
+  right: 0;
+  z-index: 11;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 35%, transparent);
 }
+.wid-root[data-width='compact'] .wid-tab { max-width: 140px; }
+.wid-root[data-width='compact'] .wid-toolbar__root { max-width: 40%; }
 /* A collapsed terminal hides the resize row entirely (its grid row is 0). */
 .wid-root[data-panel='collapsed'] .wid-split { display: none; }
 
@@ -1287,9 +1294,7 @@ body[data-wid-dragging='true'] { cursor: grabbing; user-select: none; }
 
 .wid-fullview .wid-frame { width: 100%; height: 100%; }
 
-@container widframe (max-width: 519px) {
-  .wid-toolbar__optional { display: none; }
-}
+.wid-root[data-width='compact'] .wid-toolbar__optional { display: none; }
 
 /* ---------- SCM two-level tree ---------- */
 .wid-scm { position: relative; }

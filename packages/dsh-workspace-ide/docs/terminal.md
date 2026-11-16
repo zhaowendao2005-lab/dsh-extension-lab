@@ -73,7 +73,7 @@ async function widTerminalSpec(ctx, input) {
 | spec 字段 | 值 |
 |---|---|
 | `argv[0]` | 已 `resolveExecutable` 的绝对路径（`terminalEnvironment().defaultShell`） |
-| `argv[1..]` | §1.1 #6 的交互参数（`bash --noprofile --norc -i` / `zsh -f -i` / `fish --no-config -i` / `pwsh -NoLogo -NoProfile` / `cmd /d /q`） |
+| `argv[1..]` | 系统默认 shell 的正常 profile：`bash -l -i` / `zsh -l -i` / `fish -l -i` / `pwsh -NoLogo` / `cmd /q`。不再禁用 profile、rc 或 cmd AutoRun；沿用用户终端配置与 PATH 初始化 |
 | `cwd` | `path.resolve(root, rel)` → `realpath`，带 `/` 边界前缀校验；越界 `E_OUTSIDE_ROOT`；默认 workspace root |
 | `rows`/`cols` | 客户端 `fit()` 后的值，缺省 24/80；zod `rows` 2..300、`cols` 10..500 |
 | `env` | §2.2 的 11 个键 + `PWD` + `TERM`；禁止 `...process.env`、禁止 `...ctx.env` 直传 |
@@ -94,7 +94,15 @@ async function widTerminalSpec(ctx, input) {
 
 白名单输出里永不出现的键（Host 单测断言）：`^DSH_`、`*_API_KEY`、`OPENAI_*`、`ANTHROPIC_*`、`DEEPSEEK_*`、`AWS_*`、`GCP_*`、`AZURE_*`、`GITHUB_TOKEN`、`CI_*`、`GIT_DIR`、`GIT_TERMINAL_PROMPT`、`GIT_OPTIONAL_LOCKS`、`npm_*`、`npm_config_*`、`AUTH`、`COOKIE`、`SECRET`、`TOKEN`。实现 = `FORBIDDEN_ENV` 正则剔除 + 墓碑法：provider 会把 overrides 合并到它自己的环境，墓碑防止被剔掉的键借 provider 回归。
 
-### 2.3 handle 消费
+### 2.3 包脚本运行
+
+命令面板固定两个根节点：第一个按真实目录层级列出 workspace 扫描发现的 package.json（跳过依赖目录），第二个仅显示所选包的 scripts。脚本行右侧播放按钮只发 `terminal.runScript {path, script}`，每次点击新建一个终端，不复用已有 shell。
+
+Host 每次重新读取所选 manifest，并确认脚本仍存在；runner 由 packageManager / 最近祖先锁文件选择，固定为 npm、pnpm、yarn、bun 的 `run`。wire 不接受任意命令。终端在包目录启动，写入前再以 shell 对应规则切回包的绝对目录（profile 可能改 cwd），然后执行 runner 与经过转义的脚本名。POSIX、fish、PowerShell 各用对应字面量引用；cmd 对无法安全引用的引号、百分号、感叹号返回 E_UNSUPPORTED，提示使用 PowerShell。控制字符和以连字符开头的脚本名返回 E_BAD_PAYLOAD。
+
+系统 shell profile 正常加载，环境仍先墓碑清空 ambient 与 terminalEnvironment 提供的键，再复制固定白名单；不会把 DSH 凭据、NODE_OPTIONS、token 等注入终端。新增保留 locale、Windows 标准 home/system/path 变量，与已有开发工具路径变量。终端使用正常标签、输出缓冲、轮询与关闭流程；写入或转义失败则关闭刚创建的 PTY 并返回错误。
+
+### 2.4 handle 消费
 
 ```js
 async function startPty(entry, spec) {
@@ -367,7 +375,7 @@ function urlAt(term: Terminal, event: MouseEvent): string | null {
 
 | 项 | 规则 | 出处 |
 |---|---|---|
-| 未信任目录 | `trust !== 'trusted'` → `E_TRUST_REQUIRED`，弹确认框（绝对 `cwd` + 「终端里的命令以你的身份执行，不经任何沙箱」），确认后**一次一个**终端；确认状态不缓存到仓库 | security.md §7.1 |
+| 工作区目录 | 打开的工作区内可直接创建终端，不设 trusted 状态或二次确认；`cwd` 仍须通过 Host realpath 根目录边界校验 | security.md §7.1 |
 | env | §2.2 白名单；禁止 `...process.env` | security.md §7.2 |
 | 不自动执行 | 无"运行"按钮、不自动 `cd`、不自动 `source`、不自动粘贴命令；终端只响应键盘 | security.md §7.1 |
 | 多行粘贴 | 不自动回车（§9） | 本文 |
@@ -414,7 +422,7 @@ function urlAt(term: Terminal, event: MouseEvent): string | null {
 | 4 | `write` 无单次上限 | **已并入契约 v2**：`data.length ≤ 65536`，超限 `E_TOO_LARGE`，客户端分段发 |
 | 5 | resize 外壳不支持改尺寸 | 契约 v2 写明「静默成功」，不新增字段；UI 首次提示一次即止 |
 | 6 | 无 `terminal.rename` | **契约定为 P1**；本期标签改名走客户端呈现态 |
-| 7 | `create` 的信任确认 | 契约 v2 明确 Host 一票否决、UI 确认后**用同一参数重试**（不引入可伪造凭据） |
+| 7 | `create` 与 `runScript` 的工作区行为 | 当前版本取消 trust 门禁，仍保留路径边界、环境脱敏和 PTY 生命周期约束 |
 | 8 | Host 剥离 OSC 0/2 | **已并入契约 v2**（Host 责任，客户端不做标题嗅探） |
 | 9 | shell 不存在 | **契约 v2 写明** `E_UNSUPPORTED` + `detail.reason:'shell-unavailable'` |
 | 10 | `list` 无缓冲游标 | 不加字段：刷新后对每个 id 先 `poll(offset:0)`，据 `dropped` 判断旧内容是否被截断 |

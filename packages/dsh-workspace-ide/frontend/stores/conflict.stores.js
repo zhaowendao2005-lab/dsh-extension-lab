@@ -6,11 +6,14 @@
 import { createStore } from '../store.js';
 
 export function createConflictDomain({ client, conflict, notify, fail, refreshScm, closePanel }) {
+  let requestEpoch = 0;
   async function open(path) {
     if (!path) return null;
+    const epoch = ++requestEpoch;
     conflict.patch({ phase: 'loading', path, error: null });
     try {
       const data = await client.call('git.conflict', { path });
+      if (epoch !== requestEpoch) return null;
       conflict.patch({
         phase: 'ready',
         path,
@@ -23,6 +26,7 @@ export function createConflictDomain({ client, conflict, notify, fail, refreshSc
       });
       return data;
     } catch (error) {
+      if (epoch !== requestEpoch || error?.detail?.staleRepository) return null;
       conflict.patch({ phase: 'error', error: error?.message ?? '无法读取冲突', path });
       fail(conflict, error, '无法读取冲突');
       return null;
@@ -30,6 +34,7 @@ export function createConflictDomain({ client, conflict, notify, fail, refreshSc
   }
 
   function close() {
+    requestEpoch += 1;
     conflict.patch({ phase: 'idle', path: null, base: null, ours: null, theirs: null, binary: false, truncated: false, error: null });
     // The editor area swaps its whole region while a conflict is open, so the panel flag has to
     // be cleared too or the area keeps showing an empty conflict frame after resolving.

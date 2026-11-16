@@ -3,13 +3,15 @@
  * exist once in a workspace are singletons. Ids never encode display text.
  */
 
-export const TAB_KINDS = ['file', 'diff', 'conflict', 'graph', 'changes', 'settings'];
+export const TAB_KINDS = ['file', 'diff', 'conflict', 'graph', 'changes', 'settings', 'repositories', 'commands'];
 
 export const DIFF_TAB = 'view:diff';
 export const CONFLICT_TAB = 'view:conflict';
 export const GRAPH_TAB = 'view:graph';
 export const CHANGES_TAB = 'view:changes';
 export const SETTINGS_TAB = 'view:settings';
+export const REPOSITORIES_TAB = 'view:repositories';
+export const COMMANDS_TAB = 'view:commands';
 
 /** File tab id: path-keyed so two opens are one tab. */
 export function fileTabId(path) {
@@ -42,6 +44,8 @@ export function tabTitle(tab, editorTab) {
   if (tab.kind === 'graph') return '提交图谱';
   if (tab.kind === 'changes') return '改动';
   if (tab.kind === 'settings') return '设置';
+  if (tab.kind === 'repositories') return '仓库';
+  if (tab.kind === 'commands') return '命令';
   return tab.title || tab.id || '未命名';
 }
 
@@ -50,6 +54,8 @@ export function tabIcon(kind) {
   if (kind === 'graph') return 'graph';
   if (kind === 'changes') return 'scm';
   if (kind === 'settings') return 'settings';
+  if (kind === 'repositories') return 'branch';
+  if (kind === 'commands') return 'terminal';
   if (kind === 'diff') return 'diff';
   if (kind === 'conflict') return 'warning';
   return 'file';
@@ -60,6 +66,8 @@ export function kindOfViewId(id) {
   if (id === GRAPH_TAB) return 'graph';
   if (id === CHANGES_TAB) return 'changes';
   if (id === SETTINGS_TAB) return 'settings';
+  if (id === REPOSITORIES_TAB) return 'repositories';
+  if (id === COMMANDS_TAB) return 'commands';
   if (id === DIFF_TAB) return 'diff';
   if (id === CONFLICT_TAB) return 'conflict';
   return null;

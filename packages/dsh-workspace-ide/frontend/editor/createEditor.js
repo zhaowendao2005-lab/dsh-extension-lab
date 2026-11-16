@@ -20,10 +20,10 @@ import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemir
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { languageSupport } from './languages.js';
 import { editorThemeExtension } from './theme.js';
+import { editorPrefsExtension, getEditorWrapState } from './preferences.js';
+import { normalizeEditorPrefs } from '../service/layout.js';
 
 const LIMITS = {
-  wrapMaxLines: 2000,
-  wrapMaxLineChars: 500,
   syntaxMaxBytes: 4 * 1024 * 1024,
   historyMaxBytes: 2 * 1024 * 1024,
 };
@@ -31,17 +31,12 @@ const LIMITS = {
 export function createEditor({ parent, doc = '', languageId = 'plaintext', readOnly = false, prefs, onChange, onCursor, onSave }) {
   const languageLane = new Compartment();
   const readOnlyLane = new Compartment();
-  const wrapLane = new Compartment();
   const prefsLane = new Compartment();
-  const fontSize = prefs?.fontSize ?? 13;
-  const tabSize = prefs?.tabSize ?? 2;
+  let currentPrefs = normalizeEditorPrefs(prefs);
   const size = doc.length;
-  const lineCount = countLines(doc);
-  const longLine = longestLine(doc) > LIMITS.wrapMaxLineChars;
   const big = size > LIMITS.syntaxMaxBytes;
   const degrade = {
     syntax: !big,
-    wrap: lineCount <= LIMITS.wrapMaxLines && !longLine,
     history: size <= LIMITS.historyMaxBytes,
   };
 
@@ -66,8 +61,7 @@ export function createEditor({ parent, doc = '', languageId = 'plaintext', readO
       indentWithTab,
     ]),
     editorThemeExtension(),
-    prefsLane.of(prefsExtension({ fontSize, tabSize })),
-    wrapLane.of(degrade.wrap && (prefs?.wrap ?? true) ? EditorView.lineWrapping : []),
+    prefsLane.of(editorPrefsExtension(currentPrefs)),
     readOnlyLane.of(readOnlyExtensions(readOnly)),
     languageLane.of(degrade.syntax ? languageExtension(languageId) : []),
     EditorView.updateListener.of((update) => {
@@ -83,9 +77,19 @@ export function createEditor({ parent, doc = '', languageId = 'plaintext', readO
 
   const view = new EditorView({ state: EditorState.create({ doc, extensions }), parent });
 
+  function setPrefs(next) {
+    const normalized = normalizeEditorPrefs(next, currentPrefs);
+    if (Object.keys(normalized).every((key) => normalized[key] === currentPrefs[key])) return;
+    currentPrefs = normalized;
+    // Effects only: keep the document, selection and undo history intact.
+    view.dispatch({ effects: prefsLane.reconfigure(editorPrefsExtension(currentPrefs)) });
+  }
+
   return {
     view,
-    degrade,
+    get degrade() {
+      return { ...degrade, wrap: getEditorWrapState(view.state.doc, { wrap: true }).enabled };
+    },
     focus() {
       view.focus();
     },
@@ -99,16 +103,9 @@ export function createEditor({ parent, doc = '', languageId = 'plaintext', readO
       view.dispatch({ effects: readOnlyLane.reconfigure(readOnlyExtensions(next)) });
     },
     setWrap(next) {
-      view.dispatch({ effects: wrapLane.reconfigure(next ? EditorView.lineWrapping : []) });
+      setPrefs({ wrap: next });
     },
-    setPrefs(next) {
-      view.dispatch({
-        effects: [
-          prefsLane.reconfigure(prefsExtension(next)),
-          wrapLane.reconfigure(next.wrap && degrade.wrap ? EditorView.lineWrapping : []),
-        ],
-      });
-    },
+    setPrefs,
     /** Put the cursor on a 1-based line/column and scroll it into view. */
     gotoLine(line, column = 1) {
       const doc = view.state.doc;
@@ -132,14 +129,6 @@ export function createEditor({ parent, doc = '', languageId = 'plaintext', readO
   };
 }
 
-/** Font size and tab width come from panel settings, never from the theme. */
-function prefsExtension({ fontSize, tabSize }) {
-  return [
-    EditorView.theme({ '&': { fontSize: `${fontSize}px` }, '.cm-content': { tabSize: String(tabSize) } }),
-    EditorState.tabSize.of(tabSize),
-  ];
-}
-
 function readOnlyExtensions(readOnly) {
   return readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [];
 }
@@ -147,24 +136,4 @@ function readOnlyExtensions(readOnly) {
 function languageExtension(languageId) {
   const support = languageSupport(languageId);
   return support ? [support] : [];
-}
-
-function countLines(text) {
-  let lines = 1;
-  for (let index = 0; index < text.length; index += 1) if (text.charCodeAt(index) === 10) lines += 1;
-  return lines;
-}
-
-function longestLine(text) {
-  let longest = 0;
-  let current = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    if (text.charCodeAt(index) === 10) {
-      longest = Math.max(longest, current);
-      current = 0;
-    } else {
-      current += 1;
-    }
-  }
-  return Math.max(longest, current);
 }

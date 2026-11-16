@@ -1,8 +1,6 @@
 import { useStore, useEffect, useRef } from '../../runtime.js';
 import { Icon } from '../common/Icon.jsx';
 
-const EMPTY_ROWS = [];
-const EMPTY_CATALOG = { getSnapshot: () => EMPTY_ROWS, subscribe: () => () => {} };
 const FULL_VIEW_ID = 'workspace-ide.fullview';
 
 function changesOf(status) {
@@ -17,7 +15,7 @@ export function Toolbar({ stores }) {
   const workspace = useStore(stores.workspace);
   const scm = useStore(stores.scm);
   const fullView = useStore(stores.host.fullView);
-  const catalog = useStore(stores.host.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
+  const catalog = useStore(stores.host.shortcutCatalog);
   const changes = changesOf(scm.status);
   const keysOf = (id) => catalog.find((row) => row.id === id)?.keys ?? [];
   const hintOf = (id) => {
@@ -25,25 +23,22 @@ export function Toolbar({ stores }) {
     return keys.length ? '（' + keys.join(' + ') + '）' : '';
   };
   const fullViewKeys = keysOf(FULL_VIEW_ID);
-  const branch = workspace.git?.isRepo
-    ? (workspace.git.detached ? 'HEAD@' + String(workspace.git.sha ?? '').slice(0, 7) : workspace.git.branch || 'HEAD')
-    : null;
+  const branchInfo = scm.status?.branch;
+  const branch = branchInfo ? (branchInfo.detached ? 'HEAD@' + String(branchInfo.sha ?? '').slice(0, 7) : branchInfo.name || 'HEAD') : null;
 
   const workspaceItems = [
     { label: '打开文件夹…', run: () => void stores.actions.pickRoot() },
     { label: '恢复会话默认工作区', run: () => void stores.actions.useSessionRoot() },
     { separator: true },
-    {
-      label: workspace.trust ? '取消信任此工作区' : '信任此工作区',
-      run: () => void stores.actions.setTrusted(!workspace.trust),
-    },
     { label: '刷新', run: () => void stores.actions.refreshWorkspace() },
     { separator: true },
-    { label: '收起左侧会话栏', hint: '⌘B', run: () => stores.host?.toggleSidebar?.() },
+    { label: '收起/展开左侧会话栏', run: () => stores.host?.toggleSidebar?.() },
     { label: '设置', run: () => stores.actions.openSettings() },
   ];
 
   const moreItems = [
+    { label: '仓库', run: () => stores.actions.openRepositories() },
+    { label: '命令', run: () => stores.actions.openCommands() },
     { label: '设置', run: () => stores.actions.openSettings() },
     { label: '关闭所有分栏', run: () => void stores.actions.closeAllTabs() },
     { label: ui.sidebarCollapsed ? '展开文件栏' : '收起文件栏', hint: hintOf('workspace-ide.nav'), run: () => stores.actions.toggleSidebar() },
@@ -67,7 +62,10 @@ export function Toolbar({ stores }) {
       <button
         type="button"
         className="wid-toolbar__root"
-        title={workspace.root ?? '未选择工作区'}
+        title={(workspace.root ?? '未选择工作区') + ' · 点击切换工作区'}
+        aria-label="工作区菜单：切换目录或恢复会话工作区"
+        aria-haspopup="menu"
+        aria-expanded={ui.menu === 'workspace'}
         onClick={() => stores.actions.toggleMenu('workspace')}
       >
         <Icon name="folder" size={12} />
@@ -85,6 +83,12 @@ export function Toolbar({ stores }) {
         </button>
       )}
       <span className="wid-toolbar__spacer" />
+      <button type="button" className="wid-icon-button" title="仓库：选择要跟踪的 Git 仓库" aria-label="打开仓库" onClick={() => stores.actions.openRepositories()}>
+        <Icon name="branch" size={14} />
+      </button>
+      <button type="button" className="wid-icon-button" title="命令：查看并运行 package 脚本" aria-label="打开命令" onClick={() => stores.actions.openCommands()}>
+        <Icon name="terminal" size={14} />
+      </button>
       <button type="button" className="wid-icon-button" title={'快速打开' + hintOf('workspace-ide.quickOpen')} aria-label="快速打开" onClick={() => void stores.actions.openQuick()}>
         <Icon name="search" size={14} />
       </button>

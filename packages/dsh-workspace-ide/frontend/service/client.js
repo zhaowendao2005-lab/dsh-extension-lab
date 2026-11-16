@@ -14,10 +14,6 @@ export class IdeError extends Error {
   }
 }
 
-export function isTrustError(error) {
-  return error?.code === 'E_TRUST_REQUIRED';
-}
-
 /**
  * Peel the Typert transport envelope off a Remote result. A Host that answers with the bare
  * service envelope (older builds) is still accepted, so the two layers never have to be in
@@ -36,8 +32,9 @@ export function createClient(execute, getSessionId) {
      * @param {string} action one of shared/contract.js ACTIONS
      * @param {Record<string, unknown>} [payload]
      */
-    async call(action, payload) {
+    async call(action, payload, scope) {
       const request = { action, payload: payload ?? {} };
+      if (scope?.repositoryPath != null) request.repositoryPath = scope.repositoryPath;
       const sessionId = getSessionId?.();
       if (sessionId) request.sessionId = sessionId;
       let response;

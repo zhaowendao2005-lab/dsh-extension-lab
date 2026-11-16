@@ -11,6 +11,7 @@
 // 请求
 {
   sessionId: string,        // 用于解析默认根目录；不是权限来源
+  repositoryPath?: string, // 仅 git.* / watch.*，工作区相对仓库根（根仓库为 "."）
   action: string,           // "files.read"
   payload: object           // 按 action 定义，严格校验，多余字段报错
 }
@@ -39,7 +40,6 @@
 | `E_GIT_FAILED` | git 退出码非 0（`detail:{code, argv, stderr, reason}`） | 错误条 + 可展开 |
 | `E_TIMEOUT` | 命令超时被 kill | 错误条 + 重试 |
 | `E_CANCELLED` | 被新的同类操作取消 | 静默 |
-| `E_TRUST_REQUIRED` | 未信任工作区执行了写/执行类动作（`detail.reason: 'write'\|'terminal'\|'network'\|'watch'`） | 按 reason 弹对应确认框 |
 | `E_PERMISSION` | 权限不足（`EACCES`/`EPERM`，`detail.syscall`） | 行级/条级提示，不伪装成"不存在" |
 | `E_INVALID_ARG` | payload 语义非法（空 `paths[]`、空 message、非法 ref 名、非法路径字符；`detail.field`） | 输入框红字，不发命令 |
 | `E_TOO_LARGE` | 文件/结果超上限（`detail.limit`） | 降级提示 |
@@ -73,21 +73,21 @@
 
 ## 2. workspace
 
-> 除 `workspace.*` 自身外，所有动作都在 Service 入口按信封 `sessionId` 绑定不可变根上下文并运行在 `AsyncLocalStorage` 中：`files.* / git.* / terminal.* / watch.*` 的路径解析、信任判定与实际执行使用同一份 `{sessionId, root}`，并发会话不再共享可变的 `current`。
+> 除 `workspace.*` 自身外，资源动作在 Service 入口按信封 `sessionId` 绑定不可变根上下文并运行在 `AsyncLocalStorage` 中：`files.* / git.* / terminal.* / watch.start / watch.poll` 的路径解析与实际执行使用同一份 `{sessionId, root}`，并发会话不再共享可变的 `current`。`watch.stop` 是资源回收，使用 token 创建时保存的原始上下文，不解析当前根目录。
 
 ### `workspace.resolve`
 根目录按会话解析（右栏工作台一个会话一份）：**该会话手动选择的目录 > 会话 `session.header.cwd` > 上次根目录**。优先级里的「手动选择」只由 `workspace.open` 记录，`workspace.useSessionRoot` 清除；Host 从不信任 wire 上传来的任意路径。
 ```js
 payload: {}                                // 信封 sessionId 可选；有则按该会话解析
 → { root: string|null, name: string|null, source: 'override'|'session'|'last'|null,
-    trust: 'trusted'|'untrusted'|'unknown', git, recents: string[], limits }
+    git, recents: string[], limits }
 ```
 `source` 只是呈现提示（「自定义 / 会话目录 / 上次」），不参与鉴权。
 
 ### `workspace.open`
 ```js
 payload: { root: string }                  // 绝对路径，必须存在且是目录
-→ { root, name, source: 'override'|'last', trust, git, recents, limits }
+→ { root, name, source: 'override'|'last', git, recents, limits }
 错误: E_NOT_DIR | E_OUTSIDE_ROOT(当 root 在禁区内，如 /dev)
 ```
 信封带 `sessionId` 时，这次选择会记到该会话的 `sessionRoots`，下次 `resolve` 直接命中。
@@ -102,7 +102,7 @@ payload: {}
 ### `workspace.state`
 ```js
 payload: {}
-→ { root, name, source: 'override'|'session'|'last'|null, trust,
+→ { root, name, source: 'override'|'session'|'last'|null,
     git: { available: boolean, isRepo: boolean, branch: string|null, head: string|null, bare: boolean,
            version: string|null,      // `git --version` 归一后的 "2.39.3"；<2.15 时 porcelain v2 不可用 → UI 提示升级
            shallow: boolean,          // 浅克隆：log 不完整，图谱显示"历史不完整"
@@ -111,16 +111,28 @@ payload: {}
 ```
 > 面板每次获得焦点、以及 Remote 重连后调用此动作做一次对齐。
 
-### `workspace.trust`
+### `workspace.scan`
 ```js
-payload: { root: string, trusted: boolean }
-→ { root, trust }
+payload: {}
+→ { root, repositories: [{path, name}], packages: [{path, name}], truncated, warnings,
+    counts: {directories, entries, repositories, packages},
+    limits: {directories:10000, entries:100000, depth:40, results:2000, durationMs:8000} }
 ```
-信任状态存插件自己的 `storageDomain`（键 `workspace_ide/trust`，值为 `{ roots: { [path]: 'trusted'|'untrusted', updatedAt } }`），不写仓库文件。
-**精确匹配**：信任按 `realpath` 后的**完整路径**相等判定，不递归子目录（父目录受信任的子目录仍需单独信任）；撤销信任不中断进行中的操作，但后续每次调用重新判定。
-**未信任时的限制**：`files.write/create/rename/delete`、`git.stage/unstage/discard/commit/checkout/stash`、`terminal.create` 全部返回 `E_TRUST_REQUIRED`；`git.*` 读动作可用但强制硬化参数 + 不启用 hooks。
-**门禁在 Host**：UI 里的确认弹窗只是 UX，真正的判定发生在 `backend/service.js`（客户端每次调用都会被重新校验；`terminal.create` 亦同）。
-**未信任时的 diff**：`git.diff` 仍可用，但可能只给摘要（`truncated:true` / 无 hunk），因为外部 filter 驱动被禁用——UI 必须说明"未信任，仅显示摘要"。清空 filter 只针对**该仓库声明过的** filter 名（读 `.gitattributes`），**永远不要无条件清 `filter.*`**（git-lfs 依赖它）。
+- 路径均为工作区相对 POSIX 路径；根仓库为 "."，包路径指向 package.json 文件。根目录已是仓库时仍继续发现嵌套仓库；支持 .git 目录与 worktree/submodule 的 .git 文件，必须验证真实工作树根。
+- 不跟随目录符号链接；排除 .git/.hg/.svn、node_modules、.yarn/.pnpm/.pnpm-store/.npm、bower_components/vendor、.venv/venv/__pycache__、.cache/.turbo/.next/.nuxt/.output/.parcel-cache/.svelte-kit/.gradle、dist/coverage。普通 build/out/target 源码目录仍遍历。
+- 达到上限返回部分结果、truncated:true 及 warnings；最多100条警告。不可读目录或无效 JSON 保留警告；无效 package.json 仍列出，名称退回父目录名。单份清单读取上限1 MiB，packageScripts 会明确报错。
+
+### `workspace.packageScripts`
+```js
+payload: { path: string } // 工作区相对 package.json 路径
+→ { path, cwd, name, packageManager, scripts: [{name, command}], runner: {command, args:['run']} }
+```
+只读取，不运行脚本。cwd 为工作区相对目录（根为 "."）；packageManager 优先当前/最近祖先清单声明，其次同层 pnpm/yarn/bun/npm 锁文件，向上止于工作区根，无声明则 npm；仅支持 npm/pnpm/yarn/bun，声明可含版本。scripts 只含字符串值。执行脚本时 terminal.runScript 必须重新读取，不能信任客户端提供的命令。
+
+### 仓库请求上下文
+信封 repositoryPath 仅对 git.* / watch.* 有效；绝对路径、..、越界符号链接、非仓库根均被拒绝。Host 保留工作区根上下文，按请求建立仓库 ALS 子上下文，文件与终端仍以工作区为根。watch.poll/stop 必须携带创建 token 时相同的 repositoryPath，不能改用当前活动仓库。watch.poll 校验当前工作区根、会话和原始仓库路径均与 token 绑定一致。watch.stop 在解析当前工作区之前，仅核对原会话和原始仓库路径，使用 token 保存的原根上下文释放 watcher；即使工作区已切换、原根/仓库已删除，或 watch.start 在切换后才返回 token，也能清理。跨会话或原始仓库路径不匹配返回 E_INVALID_ARG；不存在的 token 幂等返回 stopped:true。省略该字段保留原有工作区根行为。
+
+信任机制已移除：没有信任开关、状态字段、持久化列表或信任错误码。旧存储中的 trustedRoots 不参与读取，后续持久化记录不包含该字段；路径边界、写入版本和 Git 串行队列仍保留。
 **UI 呈现态不进 Remote**：面板高度、折叠、活动视图、标签顺序等存在插件 `storageDomain` 的 `workspace_ide/ui.*` 键下（客户端直接读写），契约不定义它们，Host 也不关心。
 
 ## 3. files
@@ -167,9 +179,9 @@ payload: { path: string, offset?: number /*行号 1-based*/, limit?: number,
 ### `files.write`
 ```js
 payload: { path: string, text: string, expectedVersion: string|null, create?: boolean,
-           force?: boolean }   // force：用户明确选择覆盖时用，且要求 trusted；不给就是硬冲突
+           force?: boolean }   // force：用户明确选择覆盖时用，不给就是硬冲突
 → { path, version, savedAt, bytes }
-错误: E_VERSION_CONFLICT { currentVersion } | E_TOO_LARGE | E_TRUST_REQUIRED
+错误: E_VERSION_CONFLICT { currentVersion } | E_TOO_LARGE
 ```
 - `expectedVersion:null` 表示「文件必须不存在」（新建）；写已存在文件必须传版本。
 - 原子写：同目录 `.<name>.tmp-<rand>` → `rename`；保留原文件 mode 与 mtime 不保留（新 mtime 必然变）。
@@ -223,7 +235,7 @@ git --no-optional-locks -c core.fsmonitor=false -c core.pager=cat -c core.hooksP
 // env: { ...process.env, LC_ALL:'en_US.UTF-8', LANGUAGE:'en', GIT_TERMINAL_PROMPT:'0',
 //        GIT_OPTIONAL_LOCKS:'0', GIT_PAGER:'cat' }
 // 读操作: spawn(argv, {cwd:root}), 超时 statusTimeoutMs/gitTimeoutMs, 输出上限 32 MB
-// 写操作: 追加 -c core.hooksPath 用用户配置（信任时），串行队列
+// 写操作: 追加 -c core.hooksPath 保持禁用 hooks 的硬化配置，串行队列
 ```
 
 ### `git.status`
@@ -416,16 +428,19 @@ payload: { path: string, hunkIndex: number, mode: 'stage'|'unstage',
 ### `git.network`（P2，默认在 UI 上关闭）
 ```js
 payload: { action:'fetch'|'pull'|'push', remote?: string, branch?: string, setUpstream?: boolean }
-→ { ok: boolean, output: string, seq }   // 只在用户显式点击且已信任时可用；超时 120 s；必须 `--progress` 或 `--porcelain`
+→ { ok: boolean, output: string, seq }   // 只在用户显式点击时可用；超时 120 s；必须 `--progress` 或 `--porcelain`
 ```
 - `remote` **只能是仓库里已配置的 remote 名**（先与 `git.remote` 列表比对），不接受 URL / `file://` / `ssh://`——否则这个动作就成了任意网络出口。
-- 默认全部关闭：没有 `git.network` 之外的动作能触网；`E_TRUST_REQUIRED.detail.reason='network'` 表示需要单独授权。
+- 默认全部关闭：没有 `git.network` 之外的动作能触网。
 
 ## 5. terminal
 
 ```js
 terminal.create payload: { cwd?: string, shell?: string, cols: number, rows: number }
 → { terminalId: string, pid: number, shell: string, title: string }
+
+terminal.runScript payload: { path: string, script: string, confirmed?: boolean }
+→ { terminalId: string, pid: number|null, shell: string, title: string, cols: number, rows: number }
 
 terminal.write  payload: { terminalId: string, data: string }        → { accepted: number }
 terminal.resize payload: { terminalId: string, cols: number, rows: number } → {}
@@ -436,7 +451,8 @@ terminal.close  payload: { terminalId: string }                      → {}
 terminal.list   payload: {}                                          → { terminals: [{terminalId, pid, shell, title, createdAt, exited}] }
 ```
 
-- `create`：`cwd` 缺省 = 工作区根；`shell` 缺省 = `subprocess.terminalEnvironment().defaultShell`；env 继承 `subprocess.terminalEnvironment()` + `TERM=xterm-256color`。
+- `create`：`cwd` 缺省 = 工作区根；`shell` 缺省 = `subprocess.terminalEnvironment().defaultShell`；正常加载系统 shell profile（bash/zsh/fish login + interactive，PowerShell 不加 NoProfile，cmd 不加 /d）。env 先墓碑清空 ambient 与 terminalEnvironment 提供的键，再复制固定白名单并加 `TERM=xterm-256color`。
+- `runScript`：path 必须是工作区相对 package.json 文件；Host 每次调用 `workspace.packageScripts` 重新读取并验证 script 存在。runner 仅为 npm/pnpm/yarn/bun，args 固定为 run；拒绝任意 command/args payload。每次新建包目录下的独立 PTY，按当前 shell 字面量规则写入 cd + runner run + script（不使用 manifest 的命令值拼接）；title 为包名与脚本名。失败关闭新 PTY；成功按普通终端标签接入轮询。控制字符/前导连字符脚本返回 E_BAD_PAYLOAD；cmd 无法安全引用的引号、百分号、感叹号返回 E_UNSUPPORTED，建议 PowerShell；其它未知 shell 的脚本执行也返回 E_UNSUPPORTED。confirmed 仅兼容旧参数，无 trust 状态或确认门禁。
 - 目标 shell 不可用 → `E_UNSUPPORTED` + `detail.reason:'shell-unavailable'`（客户端展示可选的 shell 列表）。
 - `terminal.rename` 为 **P1**（本期标签改名只存客户端呈现态）。
 - `terminal.list` 不返回缓冲游标：刷新后客户端对每个已知 id 先 `poll(offset:0)` 一次，据 `dropped` 判断旧内容是否已被截断。
@@ -455,7 +471,7 @@ watch.poll  payload: { token: string, offset: number }
 → { events: [{ kind: 'git-status'|'dir'|'file', path?: string, at: number }],
     offset: number, dropped: boolean, stopped: boolean,   // stopped=true 表示 watcher 失效（fd 上限/网络盘/不支持）
     reason?: 'limit'|'error'|'fs-events-unsupported'|'network-volume' }
-watch.stop  payload: { token: string } → {}
+watch.stop  payload: { token: string } → { stopped: true }
 ```
 - Host 侧合并同类事件（800 ms debounce），队列上限 500；`offset` 是**单调游标**，裁剪旧事件只推进游标、不改写它。客户端传回上次 offset，Host 返回其后的事件；`dropped:true` 表示已裁剪，客户端应全量刷新。
 - watcher 不可用时 `watch.start` 返回 `token:null` + `stopped.reason`；客户端必须继续 1500 ms `git.status` 轮询（P0 正确性路径与 watcher 无关），不得静默停刷。
@@ -482,7 +498,7 @@ async function call(action, payload) {
   return res.data
 }
 ```
-- 错误处理分三层：`E_CANCELLED` 静默；`E_VERSION_CONFLICT`/`E_TRUST_REQUIRED` 走受控对话框；其余进错误条（可折叠 detail）。
+- 错误处理分三层：`E_CANCELLED` 静默；`E_VERSION_CONFLICT` 走受控对话框；其余进错误条（可折叠 detail）。
 - 任何 datasource 都不得吞掉 `ok:false` 变成 `null`。
 - **未实现能力的统一约定**：按钮 `disabled` + `title`/tooltip 走 `common.unsupported`（文案表见 `docs/ui-spec.md`），绝不做成"点了没反应"；契约里标注 P1/P2 的动作即视为未实现。
 
@@ -490,6 +506,7 @@ async function call(action, payload) {
 
 | 版本 | 变更 | 兼容性 |
 | --- | --- | --- |
+| v4 | workspace.scan/packageScripts、terminal.runScript；信封 repositoryPath 支持嵌套仓库；删除信任机制与持久化 | 客户端需同步移除信任 UI；旧 trustedRoots 忽略且不再写入 |
 | v1 | 初版：workspace / files / git / terminal / watch 五组动作 | — |
 | v3 | 右栏工作台：`workspace.resolve/open/state` 新增 `source`（override/session/last）；`workspace.resolve` 信封 `sessionId` 参与根目录优先级；`workspace.open` 记录会话级目录选择；新动作 `workspace.useSessionRoot` 清除会话选择 | 只增不改：老客户端忽略 `source` 即可，旧的「lastRoot 优先」行为在无 sessionId 时保持 |
 | v2 | 增补：错误码 `E_INVALID_ARG`、`E_PERMISSION`；`E_GIT_FAILED.detail.reason`；`workspace.state.git.version/shallow/repoEpoch`；`git.status.untrackedMode`/`repoEpoch` 与 `Change.stages`；`git.diff` 新增 `kind:'untracked'`、`files[].truncated`、行级 `noNewline`；`git.refs` 的 `upstreamGone`/`remote[].url`；`git.stageHunk.expectedIndexSha`；`git.graph.maxLane`/`GraphRow.parents`；`git.stage/unstage/discard` 统一 `all`；新动作 `git.init`；`files.search.queryId` 回显；`files.list` 的 `hasChildren`/`ignored`/`target`；`files.stat.writable/mode`；`files.read.expectedVersion`；`files.write.force`；`limits.longLineChars`；`git.diff` 的 `context:-1` 语义与行号基准；`Hunk.oldNoEol/newNoEol`；`git.graph` 的 `layoutEpoch`/`totalKnown`/`GraphRow.degraded`/行带语义/`search`(P1)；lane 回收改为条件触发；`terminal.write` 64 KiB 上限、OSC 0/2 剥离归 Host、`shell-unavailable`、`terminal.rename`(P1)；`git.network.remote` 限定为已配置 remote 名；`watch.reason` 扩展两种失效原因；trust 精确匹配与「未信任 diff 只给摘要」写进契约 | **只增不改**：老客户端忽略新字段即可，无破坏性变更 |
@@ -515,7 +532,7 @@ async function call(action, payload) {
 另外两条实现级的约束，写在这里防止被当成可选项：
 
 1. **所有写动作都在 Host 侧的单写队列里串行执行**（`backend/git/index.js` 的 `enqueueWrite`）；并发写会让 `.git/index.lock` 变成随机失败。客户端另外有一个 Promise 队列只为「按钮状态」服务，不是正确性保证。
-2. **写动作前必须先 `workspace.assertTrusted(...)`**，文件写入用 `'write'`、终端用 `'terminal'`；未信任时返回 `E_TRUST_REQUIRED`，前端只负责提示，不做放行判断。
+2. **Host 始终校验根目录与真实路径边界**；信任机制已移除。文件写保留版本校验，Git 写保留每仓库串行队列。
 
 ### 12.1 运行期联调发现的传输层差异（launch 后实测）
 
@@ -524,10 +541,9 @@ async function call(action, payload) {
 | 现象 | 根因 | 实现结论 |
 |---|---|---|
 | 客户端拿到的结果是 `undefined` | `service.execute()` 已经返回 `{ok, data}`，Typert 的 `result.mode:'strict'` 又在外面包了一层 `{ok, value}` | `frontend/service/client.js` 的 `unwrapTransport()` 先剥外层（`response.value.ok`），再按 `{ok, error}` 判成败。**任何新客户端都要做这一层** |
-| `workspace.resolve` 的 `trusted` 永远是 `false` | 文档写的是 `trust: {root, trusted}` 对象 | Host 统一返回**布尔** `trusted`；`workspace.trust` 的 payload 只收 `{trusted}`（root 以 Host 当前根为准），传 `{root,trusted}` 会被 `strictObject` 拒绝 |
 | 打开目录后状态栏显示「无仓库」 | `workspace.open` 原来只回 root/name | `resolve`/`open`/`state` 都必须带回 `git: {available,isRepo,branch,detached,unborn,version,shallow}`；空态回 `{git:{available:true,isRepo:false}}` |
 | 清空分支过滤后图谱报 `refs 数组不能为空` | `normalizeRefsArg(undefined)` 返回 `[]` 继续往下传 | `backend/git/log.js` 的 `normalizeRefs`：空数组等价 `['--all']`（面板的「所有引用」就是这条路） |
-| 插件状态（上次根目录、信任列表）重启即丢 | `await import('@deepseek-ai/dsh-storage-domain')` 在插件目录解析不到（npm 只有 `0.0.1-rc.1`，装机是 `0.2.2-rc.2`） | 不再 import 该包，改传**纯 DomainSpec** 给 Host 服务：`ctx.get('storageDomain').open({name:'workspace_ide', version:1, layout:'single', tables:{state:{valueSchema}}})` |
+| 插件状态（上次根目录、会话根目录）重启即丢 | `await import('@deepseek-ai/dsh-storage-domain')` 在插件目录解析不到（npm 只有 `0.0.1-rc.1`，装机是 `0.2.2-rc.2`） | 不再 import 该包，改传**纯 DomainSpec** 给 Host 服务：`ctx.get('storageDomain').open({name:'workspace_ide', version:1, layout:'single', tables:{state:{valueSchema}}})` |
 | SCM 顶部误报「进行中：unborn」 | `git status --porcelain=v2` 里新增文件的 head mode 就是 `000000`，被当成「无提交」 | `operation` **只能**来自 `.git` 标记文件（`MERGE_HEAD`/`CHERRY_PICK_HEAD`/`REVERT_HEAD`/`BISECT_LOG`/`rebase-*`/`sequencer`）；`branch.unborn` 只看 `# branch.oid (initial)` |
 
 还有一条不属契约但属交付面的结论：`dsh.client.inject` 里写的包名必须是 boot 图里真实存在的 row id，写了不存在的包**不会报错，只会让整个客户端 bundle 静默不加载**（本插件第一次 launch 失败的唯一原因）。
@@ -537,5 +553,5 @@ async function call(action, payload) {
 | 动作 | 请求 | 返回 | 说明 |
 |---|---|---|---|
 | `git.conflict` | `{path}` | `{path, base, ours, theirs, binary, truncated, elapsedMs, seq}` | 三类索引阶段 `:1:`/`:2:`/`:3:`，缺失的一侧为 `null`（add/add、delete/modify 天然如此）；只读 |
-| `git.resolveConflict` | `{path, side:'ours'\|'theirs'\|'both'\|'delete'}` | `{path, side, resolved, seq}` | `ours/theirs` 走 `git checkout --ours/--theirs` + `git add`；`both` 由 Host 拼 `:2:`+`:3:` 写盘后 `add`；`delete` 走 `git rm -f`。**写动作**：串行队列 + `assertTrusted('write')` |
+| `git.resolveConflict` | `{path, side:'ours'\|'theirs'\|'both'\|'delete'}` | `{path, side, resolved, seq}` | `ours/theirs` 走 `git checkout --ours/--theirs` + `git add`；`both` 由 Host 拼 `:2:`+`:3:` 写盘后 `add`；`delete` 走 `git rm -f`。**写动作**：每仓库串行队列 + 路径边界校验 |
 | `files.index` | `{maxAgeMs?, limit?}` | `{paths, total, truncated, engine:'git'\|'walk', elapsedMs}` | 快速打开的扁平文件表。有仓库时走 `git ls-files -z --cached --others --exclude-standard`（自带 `.gitignore`、一次子进程），否则退回目录遍历；Host 侧 5 s 缓存，上限 50000 条 |

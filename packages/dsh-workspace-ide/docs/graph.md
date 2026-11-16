@@ -2,7 +2,7 @@
 
 > 本文是 `git.graph` 的实现规格：Host 侧布局、分页与缓存、wire 行怎么变成 SVG、虚拟滚动与交互、降级与可访问性。
 > 分层与状态所有权见 [ARCHITECTURE.md](../ARCHITECTURE.md)；动作/字段/错误码唯一出处 [remote-contract.md](./remote-contract.md) §4.6；log 格式串与实测口径见 [git-model.md](./git-model.md) §4.4 / §9；算法选型论证见 `research/git-graph.md`。
-> **不写实现代码**：`backend/git/layout.js` 与 `frontend/views/graph/**` 由实现者按本文写。
+> 当前图谱由 `backend/git/layout.js` 与 `frontend/views/graph/**` 实现。Git 请求携带活动仓库的工作区相对 repositoryPath；无活动仓库时显示选择空态，切换时清理图谱窗口、选择和详情，并丢弃旧仓库响应。布局始终在 Host，不因多仓库支持改为客户端计算。
 
 ## 1. 分工：谁算、谁传、谁画
 
@@ -319,10 +319,10 @@ export function coalesceRuns(rows: GraphRow[], from: number, to: number): VertRu
 
 | 项 | 动作 | 阶段 | 前置 |
 |---|---|---|---|
-| Checkout 此提交 | `git.checkout({ref: hash, detach: true})` | P0 | trusted；脏工作区先确认；对话框写明"分离 HEAD" |
+| Checkout 此提交 | `git.checkout({ref: hash, detach: true})` | P0 | 脏工作区先确认；对话框写明"分离 HEAD" |
 | 复制完整哈希 / 复制提交信息 | 剪贴板 | P0 | — |
-| 创建分支… | `git.branch({action:'create', name, startPoint: hash})` | **P1** | trusted；`git check-ref-format` 实时校验名字 |
-| 创建标签… | `git.tag({action:'create', name, target: hash})` | **P1** | trusted |
+| 创建分支… | `git.branch({action:'create', name, startPoint: hash})` | **P1** | `git check-ref-format` 实时校验名字 |
+| 创建标签… | `git.tag({action:'create', name, target: hash})` | **P1** | 活动仓库且非忙碌 |
 | 在终端中执行 | **不做** | — | 违反"不自动执行命令"（security.md §7.1） |
 
 自建 `position:absolute` + `role="menu"`（`↑↓/Enter/Esc`），不引第三方库。

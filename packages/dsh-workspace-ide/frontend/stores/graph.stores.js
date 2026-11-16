@@ -52,7 +52,7 @@ export function createGraphDomain({ client, graph, fail }) {
       graph.patch({ refs });
       return refs;
     } catch (error) {
-      if (error?.code !== 'E_NOT_A_REPO') fail(graph, error, '读取分支失败');
+      if (!error?.detail?.staleRepository && error?.code !== 'E_NOT_A_REPO') fail(graph, error, '读取分支失败');
       return null;
     }
   }

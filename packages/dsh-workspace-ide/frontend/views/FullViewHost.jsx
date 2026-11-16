@@ -22,11 +22,18 @@ export function FullViewHost({ fullView, runtimeFor, close }) {
       if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
-      close();
+      event.stopImmediatePropagation();
+      const ui = stores?.ui.getSnapshot();
+      if (ui?.modal) stores.actions.resolveModal(false);
+      else if (stores?.scm.getSnapshot().contextMenu) stores.actions.closeScmMenu();
+      else if (ui?.tabMenu) stores.actions.closeTabMenu();
+      else if (ui?.menu) stores.actions.toggleMenu(ui.menu);
+      else if (ui?.quickOpen) stores.actions.closeQuick();
+      else close();
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [state.open, close]);
+  }, [state.open, stores, close]);
 
   if (!state.open || !stores) return null;
 

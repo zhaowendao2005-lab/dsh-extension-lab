@@ -6,21 +6,21 @@
 
 /** Every Remote action. `P` marks the phase it becomes reachable in. */
 export const ACTIONS = [
-  'workspace.resolve', 'workspace.open', 'workspace.state', 'workspace.trust', 'workspace.useSessionRoot',
+  'workspace.resolve', 'workspace.open', 'workspace.state', 'workspace.scan', 'workspace.packageScripts', 'workspace.useSessionRoot',
   'files.list', 'files.stat', 'files.read', 'files.write', 'files.create',
   'files.rename', 'files.delete', 'files.search', 'files.index',
   'git.status', 'git.refs', 'git.log', 'git.graph', 'git.graph.search', 'git.commit',
   'git.diff', 'git.stage', 'git.unstage', 'git.discard', 'git.commitCreate', 'git.checkout',
   'git.branch', 'git.tag', 'git.stash', 'git.stageHunk', 'git.init', 'git.network', 'git.conflict',
   'git.resolveConflict',
-  'terminal.create', 'terminal.write', 'terminal.resize', 'terminal.poll', 'terminal.close',
+  'terminal.create', 'terminal.runScript', 'terminal.write', 'terminal.resize', 'terminal.poll', 'terminal.close',
   'terminal.list', 'terminal.rename',
   'watch.start', 'watch.poll', 'watch.stop',
 ];
 
 /** Actions that only read; the client may retry them freely. */
 export const READ_ONLY_ACTIONS = new Set([
-  'workspace.resolve', 'workspace.state', 'files.list', 'files.stat', 'files.read', 'files.search',
+  'workspace.resolve', 'workspace.state', 'workspace.scan', 'workspace.packageScripts', 'files.list', 'files.stat', 'files.read', 'files.search',
   'files.index',
   'git.status', 'git.refs', 'git.log', 'git.graph', 'git.graph.search', 'git.commit', 'git.diff', 'git.conflict',
   'terminal.poll', 'terminal.list', 'watch.poll',
@@ -53,15 +53,12 @@ export const LIMITS = {
 export const ERROR_CODES = [
   'E_NO_ROOT', 'E_NOT_DIR', 'E_OUTSIDE_ROOT', 'E_NOT_FOUND', 'E_VERSION_CONFLICT',
   'E_NOT_A_REPO', 'E_GIT_MISSING', 'E_GIT_FAILED', 'E_TIMEOUT', 'E_CANCELLED',
-  'E_TRUST_REQUIRED', 'E_PERMISSION', 'E_INVALID_ARG', 'E_TOO_LARGE', 'E_BINARY',
+  'E_PERMISSION', 'E_INVALID_ARG', 'E_TOO_LARGE', 'E_BINARY',
   'E_LIMIT', 'E_TERMINAL_GONE', 'E_UNSUPPORTED',
 ];
 
 /** Panes of the activity bar, in order. */
 export const VIEW_IDS = ['explorer', 'scm', 'graph'];
-
-/** Trust reasons surfaced through `E_TRUST_REQUIRED.detail.reason`. */
-export const TRUST_REASONS = ['write', 'terminal', 'network', 'watch'];
 
 export const WORKBENCH_PANEL_ID = 'workspace-ide';
 export const STORAGE_STATE_KEY = 'workspace_ide/state';

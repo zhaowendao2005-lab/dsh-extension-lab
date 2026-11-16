@@ -13,5 +13,7 @@ import quickopen from './styles/quickopen.css';
 import conflict from './styles/conflict.css';
 import terminal from './styles/terminal.css';
 import xtermCss from '@xterm/xterm/css/xterm.css';
+import repositories from './styles/repositories.css';
+import commands from './styles/commands.css';
 
-export const CSS = [base, explorer, editor, scm, search, graph, diff, quickopen, conflict, terminal, xtermCss].join('\n');
+export const CSS = [base, explorer, editor, scm, search, graph, diff, quickopen, conflict, terminal, xtermCss, repositories, commands].join('\n');

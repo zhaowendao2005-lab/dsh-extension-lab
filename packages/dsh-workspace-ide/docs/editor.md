@@ -1,5 +1,7 @@
 # 编辑器模块设计（CodeMirror 6）
 
+现行偏好链路：`service/layout.js` 统一规范化即时输入和本地恢复；字号 10–20，Tab / 缩进宽度 1–8，非法值保留上次有效值。基础 `editor/theme.js` 不设字号，普通编辑器与 Diff 通过可重配置扩展统一设置字体、tab 与 wrap，改变配置不重建文档、撤销栈或选区。自动换行仅在不超过 2000 行且最长行不超过 500 字符时启用；请求开启但超限时显示原因。偏好保存在 `workspace_ide/ui.layout`，当前可见视图立即生效，隐藏文件切回应用最新配置。
+
 > 分层与禁用项见 [ARCHITECTURE.md](../ARCHITECTURE.md)、[AGENTS.md](../AGENTS.md)：`frontend/views/editor/`（CM6 实例绑定）+ `frontend/stores/editor.{stores,datasource}.ts` + `frontend/service/{bytes,language,diff-text,editor-theme}.js`（纯函数）；打开文件的跨域编排只在 `frontend/stores/workbench.stores.ts`。字段名以 [remote-contract.md](./remote-contract.md) 为准，文件树见 [files.md](./files.md)。结论先行：**单视图池 + 全 token 主题 + 无 worker/无 LSP**，正文永不进 Zustand。
 
 ## 1. 依赖与装配
@@ -40,9 +42,9 @@ CM6 被打进 `lib/client.js`（esbuild IIFE、`react` external），按既有�
 | `indentOnInput`/`bracketMatching`/`closeBrackets`/`syntaxHighlighting` | 用，`noSyntax` 起依次关 | 全依赖语法树或缩进规则；`closeBrackets` 在纯文本里自动补右括号是灾难 |
 | `highlightActiveLine` + `highlightActiveLineGutter` | 用，`noFold` 起关 | 各只 1 行背景，但大文件每次选移动都触发重绘 |
 | `highlightSelectionMatches` | 用，`noSyntax` 起关 | 全文扫描无上限，是「1 MB 文件 `Cmd+F` 卡顿」主因之一 |
-| `EditorView.lineWrapping` | 用，`plain` 起关 | 见 §7 |
+| 自动换行 contentAttributes | 按 wrap 偏好与共享文档阈值启用 | 不超过 2000 行且最长行不超过 500 字符；普通与 Diff 共用 §7 |
 | `scrollPastEnd()` | 用 | 末行能滚到视口中央，否则贴边无法居中编辑 |
-| `indentUnit.of('  ')` + `EditorState.tabSize.of(2)` | 用 | `indentUnit` 决定缩进宽度（默认按语言猜，`.txt` 猜不出）；`tabSize` 只影响 Tab 显示宽 |
+| `indentUnit` + `EditorState.tabSize` | 用 | 来自统一偏好：`indentSize`（默认 2）控制新的缩进空格数，`tabSize`（默认 2）仅控制已有制表符显示；均为 1–8，不重写已有内容 |
 | `contentAttributes.of({spellcheck:'false',autocorrect:'off',autocapitalize:'off'})` | 用 | 不关会把代码首字母大写、把标识符划红线 |
 | `dropCursor`/`rectangularSelection`/`crosshairCursor` | 不用 | 不做文件拖放；块选区与宿主文本选择心智冲突 |
 | `autocompletion()` + `completionKeymap` | **不用** | 无 LSP 只有词法补全，价值低；95.4 KB 包只取 `closeBrackets` |
@@ -71,7 +73,7 @@ const keymaps = [Prec.highest(keymap.of([indentWithTab])), keymap.of([...closeBr
 | --- | --- | --- |
 | `&` | `backgroundColor` / `color` | `--dsw-alias-bg-layer-1` / `--dsw-alias-label-primary` |
 | `&.cm-focused` | `outline` | `none`（焦点环由面板容器画 `var(--dsw-focus-ring-color)`） |
-| `.cm-scroller` | `fontFamily`/`fontSize`/`lineHeight` | `var(--dsh-font-family-code)` / `var(--dsh-code-font-size)` / `1.5` |
+| `.cm-scroller` | `fontFamily`/`lineHeight` | 代码字体族 token / `1.5`；字号只由 `editorPrefsExtension` 写入，避免基础主题与偏好主题优先级冲突 |
 | `.cm-content` / `.cm-cursor` | `caretColor` / `borderLeftColor` | `--dsw-alias-label-primary` |
 | `.cm-selectionBackground, .cm-content ::selection` | `backgroundColor` | `--dsw-alias-bg-document-selection` |
 | `.cm-gutters` / `.cm-gutterElement` | `backgroundColor`/`color`/`borderRight` / `padding` | `--dsw-alias-bg-layer-1` / `--dsw-alias-label-tertiary` / `1px solid var(--dsw-alias-border-l1)` / `0 8px 0 12px` |
@@ -197,7 +199,7 @@ export const fromDiskBytes = (text, { eol, bom }) => {
 | 4 | 请求 | `files.write { path, text, expectedVersion: tab.version }` |
 | 5a | 成功 | `tab.version=data.version`；`rt.savedDoc=doc`；`rt.savedLength=doc.length`；`dirty=false`；状态栏「已保存 HH:mm:ss」（`data.savedAt`） |
 | 5b | `E_VERSION_CONFLICT` | §5.3 |
-| 5c | `E_TOO_LARGE`/`E_TRUST_REQUIRED`/`E_OUTSIDE_ROOT` | 「超过服务端 8 MB 上限」/「目录未被信任，保存已禁用」+信任入口/「路径解析到工作区之外（可能是符号链接），禁止保存」；后两者置 `readOnly=true` |
+| 5c | `E_TOO_LARGE` / `E_OUTSIDE_ROOT` | 显示服务端大小上限或「路径解析到工作区之外（可能是符号链接），禁止保存」；保留未保存正文，不以客户端偏好绕过 Host 校验 |
 | 5d | 其它（`ENOSPC`/`EACCES`/`E_TIMEOUT`） | toast「保存失败：<message>」+「重试」；**保留 dirty，绝不改 version** |
 
 ### 5.3 `E_VERSION_CONFLICT` 三选一
@@ -221,35 +223,25 @@ export const fromDiskBytes = (text, { eol, bom }) => {
 | 二进制 | `stat.binary` 或 `read` 的 `E_BINARY` | 居中卡片「二进制文件 · {size}」（P1 十六进制） | 否 |
 | ≥20 MB | `size >= limits.largeFileBytes.readonly` → `E_TOO_LARGE` | 「文件 24.3 MB，超过 20 MB 上限，仅显示前 2000 行」 | 否 |
 | 非 UTF-8 | `stat.encoding === 'other'` | 「非 UTF-8 编码（可能是 GBK/Shift-JIS），无法安全编辑」+「以 Latin-1 只读查看」；**绝不**用宽松 `TextDecoder` 解出 U+FFFD 再允许保存 | 否 |
-| 未信任目录 | `E_TRUST_REQUIRED` | 横幅 + 禁用保存，直接 `readOnly` | 否 |
 | diff 两栏 | 恒只读 | 工具栏只留「在编辑器中打开」 | 否 |
 
 diff 两栏各自 `[EditorState.readOnly.of(true), EditorView.editable.of(false)]`（§1.4）。
 
-## 7. 大文件分级降级
+## 7. 当前编辑器降级与偏好
 
-阈值取 Host 下发的 `limits.largeFileBytes`，**客户端不写死数字**（唯一客户端常量是 `LONG_LINE_BOUNDARY`，差异 #6）。
+`createEditor` 创建时按文档字符长度决定语言和历史扩展：超过 `4 * 1024 * 1024` 不装语言扩展，超过 `2 * 1024 * 1024` 不装 history。文件读取 / 只读上限仍由 Host 的 limits 与文件模式控制。此前按 256KB / 2MB / 10MB / 20MB 分五级移除扩展的表格是方案口径，不能代替当前装配逻辑。
 
-| 级 | 大小区间 | `largeMode` | 移除的 extension | 保留 |
-| --- | --- | --- | --- | --- |
-| 1 | `< 262144` | `full` | — | 全部 |
-| 2 | `262144–2097152` | `noFold` | `foldGutter` `foldKeymap` `highlightActiveLine` `highlightActiveLineGutter`；`history` 降 50 | 语法高亮、软换行、括号匹配 |
-| 3 | `2097152–10485760` | `noSyntax` | 再移除 `syntaxHighlighting` `bracketMatching` `closeBrackets` `indentOnInput` `highlightSelectionMatches`，`language.reconfigure([])` | 行号、`drawSelection`、`history`、软换行 |
-| 4 | `10485760–20971520` | `plain` | 再移除**软换行**（`wrap.reconfigure([])`）、`highlightSpecialChars` | 行号、`drawSelection`、`history` |
-| 5 | `>= 20971520` | `readonly` | 全部 + 只读组合 + 首屏 2000 行 | 滚动、当前页内搜索、复制 |
+自动换行独立于这些大小判断，统一由 `editor/preferences.js` 的 `EDITOR_WRAP_LIMITS = { maxLines: 2000, maxLineChars: 500 }` 决定：
 
-单行 ≥ 10000 字符（照 VS Code `LONG_LINE_BOUNDARY = 10000`）：
+- `getEditorWrapState(doc, prefs)` 返回 `{requested, enabled, reason}`；超过 2000 行或最长行超过 500 字符才禁用，等于阈值仍允许。
+- `getDiffWrapState(sides, prefs)` 使用相同规则；任意一侧超限，两侧共同禁用。
+- 请求开启而实际禁用时，editor pane / diff 显示 `.wid-editor-wrap-notice`，说明原因并保留开启偏好。有效状态从文档派生，不在 store 保存第二份事实。
+- 普通编辑器用依赖 doc 的 contentAttributes 自动跟随阈值变化；偏好变化只派发 Compartment reconfigure effects，不改变正文、撤销栈或选区。
 
-```js
-let maxLen = 0
-for (let i = 1; i <= state.doc.lines; i++) maxLen = Math.max(maxLen, state.doc.line(i).length)
-if (maxLen >= 10000) {                       // 2 万行全扫 ≈ 5 ms；大文件改抽样（前 2000 + 随机 500 行）
-  view.dispatch({ effects: compartments.wrap.reconfigure([]) })          // 关软换行，该行横向滚动
-  showBanner(`检测到 ${maxLen} 字符的超长行，已关闭自动换行`)
-}
-```
+`service/layout.js` 导出 `normalizeEditorPrefs(source, fallback = DEFAULT_EDITOR_PREFS)`；默认 `{fontSize:13, wrap:true, tabSize:2, indentSize:2}`。字号范围 10–20、tab / indent 范围 1–8，输入必须是有限数字，取整后限幅；非法值沿用合法 fallback，未知字段丢弃。`readEditorPrefs(stored)` 复用同一函数，workbench setter 也走相同路径。
 
-## 8. diff 视图
+`editorPrefsExtension(source, {wrapAllowed = true} = {})` 是字号唯一来源，同时设置 `EditorState.tabSize` 与 `indentUnit`。tabSize 只调整制表符展示，indentSize 调整之后的新缩进单位，不改写已有空格。普通与并排 / 统一 Diff 共用此扩展；基础主题不重复声明字号。可见编辑器实时 setPrefs，隐藏文件切回应用最新偏好，切偏好不重建实例。
+
 
 ### 8.1 `MergeView` vs `unifiedMergeView`
 
@@ -438,7 +430,7 @@ P1 用 `@codemirror/legacy-modes 6.5.5` 兜底（**不在 P0 bundle**）：`shel
 | 2 | `Hunk` 缺「末尾无换行」 | 改为 Hunk 级 `oldNoEol/newNoEol` | 左右两侧各一个布尔，不要靠正则扫原始 patch |
 | 3 | `files.stat` 缺 `writable` | 已有 `writable: boolean` + `mode: number` | 只读文件提前禁用保存并说明原因 |
 | 4 | `files.read` 分页版本一致性 | 已加可选 `expectedVersion` | 版本不一致 → 整体重载，不许拼接两页 |
-| 5 | `files.write` 缺 `force` | 已有 `force?: boolean`（要求 trusted） | 只有用户明确点「覆盖」才传 |
+| 5 | `files.write` 缺 `force` | 已有 `force?: boolean`（仍须遵守 Host 路径与大小校验） | 只有用户明确点「覆盖」才传 |
 | 6 | 单行长度阈值不在 `limits` | 已加 `limits.longLineChars: 10000` | 关软换行 + 关高亮的判据统一走它 |
 | 7 | diff 行号基准未声明 | 已声明 1-based、`oldLines/newLines` 可为 0 | 「跳到 hunk」与暂存按钮定位直接用它 |
 

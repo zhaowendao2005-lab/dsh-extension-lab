@@ -1,17 +1,6 @@
 import { useStore } from '../../runtime.js';
 import { Icon } from '../common/Icon.jsx';
-
-/** Dot colour by file kind, never by language (docs/ui-spec.md §4). */
-function fileKind(name) {
-  const dot = name.lastIndexOf('.');
-  const ext = dot === -1 ? '' : name.slice(dot + 1).toLowerCase();
-  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'php'].includes(ext)) return 'code';
-  if (['css', 'scss', 'less'].includes(ext)) return 'style';
-  if (['json', 'yml', 'yaml', 'toml', 'env', 'ini', 'xml'].includes(ext)) return 'config';
-  if (['md', 'mdx', 'txt', 'rst'].includes(ext)) return 'doc';
-  if (['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'].includes(ext)) return 'image';
-  return 'other';
-}
+import { FileIcon } from '../common/FileIcon.jsx';
 
 /**
  * Recursive file tree. Each directory renders at most `DIR_PAGE` rows until the user asks for
@@ -94,7 +83,7 @@ function TreeRow({ stores, entry, path, depth, files }) {
           {isDir ? <Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={12} /> : null}
         </span>
         <span className="wid-tree__icon">
-          {isDir ? <Icon name="folder" size={12} /> : <span className="wid-tree__dot" data-kind={fileKind(entry.name)} />}
+          {isDir ? <Icon name="folder" size={12} /> : <FileIcon name={entry.name} size={14} />}
         </span>
         <span className="wid-tree__name" title={path}>{entry.name}</span>
         <span className="wid-tree__actions">

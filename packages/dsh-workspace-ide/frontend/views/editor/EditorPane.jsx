@@ -1,6 +1,7 @@
 import { useRef, useEffect } from '../../runtime.js';
 import { createEditor } from '../../editor/createEditor.js';
 import { renderMarkdown } from '../../editor/markdown.js';
+import { getEditorWrapState } from '../../editor/preferences.js';
 
 /**
  * One CodeMirror view for one open file tab. The store holds the text, so the view can be
@@ -38,7 +39,7 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
 
   useEffect(() => {
     handle.current?.setPrefs(prefs);
-  }, [prefs]);
+  }, [prefs, visible, preview, tab.mode, tab.path]);
 
   useEffect(() => {
     if (!reveal || reveal.path !== tab.path || !handle.current) return;
@@ -70,12 +71,20 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
     );
   }
 
+  const wrap = getEditorWrapState(tab.text ?? '', prefs);
   return (
     <div className="wid-editor__pane" data-visible={String(visible)}>
       {preview ? (
         <div className="wid-md">{renderMarkdown(tab.text ?? '')}</div>
       ) : (
-        <div ref={host} className="wid-editor__cm" />
+        <>
+          {wrap.reason && (
+            <div className="wid-editor-wrap-notice" role="status">
+              {wrap.reason}；已保留自动换行偏好
+            </div>
+          )}
+          <div ref={host} className="wid-editor__cm" />
+        </>
       )}
     </div>
   );

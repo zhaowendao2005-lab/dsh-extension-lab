@@ -2,6 +2,8 @@
 
 布局基准：`MINI-VSCODE-PLAN.md` §2 与 `README.md` 的 ASCII 图；状态所有权见 `ARCHITECTURE.md`；动作名与字段见 `docs/remote-contract.md`；禁色规则见 `docs/build.md` §3。约定：颜色只能取 `--dsw-alias-*`；尺寸用本包自有 `--wid-*`（纯长度）；类名 `.wid-` 前缀；CSS 内联进 `lib/client.js` 后注入 `<style id="dsh-workspace-ide/css">`。
 
+当前实现新增仓库 / 命令内部标签和整体缩放，详见本文末尾「仓库、命令与缩放」。工作区无信任状态、信任提示条或信任入口。
+
 ## 1 设计原则
 
 | # | 原则 | 可 review 的判定 |
@@ -18,7 +20,7 @@
 侧栏宽度、面板高度、折叠状态、当前活动视图、diff 分栏比例存在**浏览器 `localStorage`**（键 `workspace_ide/ui.layout`，`frontend/service/layout.js`），不写 Host storage。理由：面板关闭/重开与浏览器刷新都必须在**零 Host 往返**下恢复出上一次的版式，而 `localStorage` 正是宿主页面自己的存储；写进插件 storage 会让每次打开面板都先等一次 Remote 往返再首绘。代价与边界：
 
 - 换浏览器/换机器不继承版式（可接受：这是纯偏好，不是工作区数据）。
-- **工作区相关的状态（根目录、信任、最近打开）仍然只在 Host**（`workspace.resolve`），不能借道 `localStorage`——那会绕过 `E_TRUST_REQUIRED` 的门禁。
+- **工作区相关的状态（根目录、最近打开）仍然只在 Host**（`workspace.resolve`）；仓库跟踪 / 活动选择是本地呈现偏好，按工作区路径另存 `dsh-workspace-ide:repositories:<encoded-root>`，扫描事实与路径边界仍由 Host 决定。
 - `localStorage` 不可用（隐私模式/被禁）时静默退化为内存默认值，不弹错误。
 
 ## 2 整体布局（右栏工作台 v2）
@@ -96,21 +98,21 @@
 | 缩进 | `padding-inline-start: calc(8px + 12px * depth)`；展开箭头占 16px |
 | 展开箭头 | 12×12 chevron，`stroke-width: 1.5`，`--dsw-alias-label-tertiary`；hover → `--dsw-alias-label-primary` |
 | 文件名 / 目录名 | 12px、字重 400、单行省略；目录展开后不加粗（保密度） |
-| 文件图标 | **8×8 圆点**，不引图标库；未知扩展名用中性圆点 |
+| 文件图标 | 文件树与 SCM 复用内联 `FileIcon`，代码 / 配置 / 文档 / 样式 / 图片等按文件名或扩展名区分；未知类型用通用文件图标，Git 状态另列 |
 | hover 行 | 底 `--dsw-alias-interactive-bg-hover`，行内操作浮现（`opacity` 过渡 120ms） |
 | 选中行 | 底 `--dsw-alias-bg-multi-select`，字 `--dsw-alias-label-primary` |
 | 焦点行 | 内描边 `box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary)`，可与选中并存 |
 | 行内操作 | 右侧 3 个 18×18 图标：新建文件 / 刷新 / 折叠全部；hover 或键盘聚焦行时出现 |
 
-圆点按"类别"上色（不区分具体语言；图例在设置页）：代码 `.ts .tsx .js .jsx .py .go .rs .java .c .cpp` → `--dsw-alias-state-business-primary`；样式 `.css .scss .less` → `--dsw-alias-state-done-primary`；配置 `.json .yml .yaml .toml .env` → `--dsw-alias-state-warn-primary`；文档 `.md .mdx .txt .rst` → `--dsw-alias-label-secondary`；图片 `.png .jpg .svg .webp` → `--dsw-alias-state-success-primary`；其它 → `--dsw-alias-label-tertiary`。
+文件图标使用静态 SVG 形状与 `currentColor`，不再以单一圆点表示类型；完整名称、特殊配置变体优先于通用扩展名，具体类别见 §20.3。Git 增删 / 冲突状态保留自己的状态列。
 
-右键菜单（`onContextMenu`，交互见 §12）：打开 / 重命名（`files.rename`）/ 删除（`files.delete` + 确认框）/ 复制相对路径（纯客户端 `navigator.clipboard`）/ 刷新（`files.list`）/ 在文件管理器中显示（**无动作 → `disabled` + tooltip**）。未信任时写类项 `disabled`。
+右键菜单（`onContextMenu`，交互见 §12）：打开 / 重命名（`files.rename`）/ 删除（`files.delete` + 确认框）/ 复制相对路径（纯客户端 `navigator.clipboard`）/ 刷新（`files.list`）/ 在文件管理器中显示（**无动作 → `disabled` + tooltip**）。写类项按忙碌、选中范围和实际能力禁用并说明原因。
 
 拖拽移动文件：**P2 不做**；`draggable={false}`，不出拖影，避免与分隔条拖拽混淆。
 
 ## 5 SCM 面板
 
-**提交框**：`<textarea>`，`min-height: 56px`（≈2 行）、`max-height: 140px` 后内部滚动；字号 `var(--dsh-content-font-size)`、行高 20px、`padding: 8px 10px`；边框 1px `--dsw-alias-border-l2`，focus 时 `--dsw-alias-brand-primary` + `outline: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent)`；占位符 `scm.commit.placeholder`；右下角 11px 字符计数（>72 字符转 `--dsw-alias-state-warn-label`）；`Cmd/Ctrl+Enter` 提交（输入框内 `onKeyDown`，不注册全局命令）；空消息（trim）/ 写操作进行中 / 未信任 / 无根目录 → 按钮 `disabled` + tooltip 给原因。
+**提交框**：`<textarea>`，`min-height: 56px`（≈2 行）、`max-height: 140px` 后内部滚动；字号 `var(--dsh-content-font-size)`、行高 20px、`padding: 8px 10px`；边框 1px `--dsw-alias-border-l2`，focus 时 `--dsw-alias-brand-primary` + `outline: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent)`；占位符 `scm.commit.placeholder`；右下角 11px 字符计数（>72 字符转 `--dsw-alias-state-warn-label`）；`Cmd/Ctrl+Enter` 提交（输入框内 `onKeyDown`，不注册全局命令）；空消息（trim）/ 写操作进行中 / 无活动仓库 → 按钮 `disabled` + tooltip 给原因。
 
 **四组分区**：
 
@@ -357,10 +359,10 @@ ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
 
 插件**不再自带录制器**（原 `view:shortcuts` 标签已删除）。改键入口是宿主自己的面板：
 
-- 「设置 → 通用 → 编辑快捷键」，或 `Mod + /`；标题「快捷键」，480×600。
+- 从 DSH 主左侧栏底部「设置」（或账号 / 更多菜单）进入「通用 → 编辑快捷键」，搜索“工作台：”。`Mod + /` 直接开关宿主快捷键弹窗，并非打开通用设置；macOS 的 Mod 为 ⌘，其他平台为 Ctrl。
 - 面板列出所有已注册命令，含本插件 11 条未绑定命令；选中行按组合键即写入。
 - 存储位置由宿主决定：Web 端 `localStorage['dsh.keybindings.v1']`，桌面端 `userData/keybindings.json`。
-- 工作台「设置」页只做**只读映射**：列出 11 条命令与其当前有效键（未绑定显示「未绑定」）并给出上面这条路径说明；工具栏/右键菜单里的按键提示也从 `shortcuts.catalog` 动态取，绑定为空时不渲染提示。
+- 工作台「设置」页只做**只读映射**：区分快捷键服务不可用、读取失败、命令注册失败、命令未注册、已注册未绑定和实际键位。由宿主 catalog 同步到稳定的响应式 store，注入迟到或卸载时同样更新；工具栏 / 右键菜单无键位时不渲染提示。
 - 插件侧不调用 `shortcuts.edit`：`Shortcuts` 接口没有 `invoke`/`openSettings`，唯一合法路径是用户自己在面板里改。
 
 ### 13.4 其它约束
@@ -411,7 +413,6 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 | `notice.noRoot.title` / `action` | 还没有打开文件夹 / 打开文件夹 | No folder opened / Open Folder |
 | `notice.noGit.title` / `hint` | 未检测到 git / 请安装 git 后重新打开面板（本插件不会自动下载） | git not found / Install git and reopen (never auto-downloaded) |
 | `notice.notRepo.title` / `action` | 当前目录不是 git 仓库 / 初始化仓库 | Not a git repository / Initialize Repository |
-| `notice.untrusted.title` / `hint` / `action` | 此工作区尚未受信任 / 受信任后才能保存、暂存、提交和打开终端 / 信任此工作区 | Untrusted workspace / Trust it to write / Trust Workspace |
 | `notice.huge.title` | 仓库较大，已停止自动刷新 | Large repository — auto refresh paused |
 | `error.gitFailed` / `error.showCommand` | git 执行失败（退出码 {code}）/ 查看完整命令 | git failed (exit code {code}) / Show full command |
 | `shortcut.save` / `shortcut.noEditor` | 保存文件 / 没有可保存的文件 | Save file / No file to save |
@@ -432,7 +433,7 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 | 错误·全局 | `ok:false`（除受控错误） | 顶部 28px 错误条：左沿 2px `--dsw-alias-state-error-primary` + 浅底 `color-mix(... 10%, transparent)`；含 `{code}` 与「查看完整命令」（`E_GIT_FAILED` 的 `detail.argv/stderr`，脱敏） | 可关闭、可重试 |
 | 错误·行级 | 单文件读写失败 | 行内红字 11px + 行首红条，5s 消失 | 重试 |
 | 降级·超大仓库 | `status.isHuge` | 顶部 20px 条 `notice.huge.title` + 右上「手动刷新」 | 关自动刷新 |
-| 降级·只读 | 未信任 / 大文件超限 | 编辑器只读，状态栏加锁图标，写类按钮 `disabled` | 浏览与复制可用 |
+| 降级·只读 | 大文件超限 | 编辑器只读，状态栏加锁图标，写类按钮 `disabled` | 浏览与复制可用 |
 | 断连 | Remote 连续 2 次失败 | 顶部条 `status.disconnected` + 写操作全禁用 + 3s→30s 指数退避重试 | 只读浏览 |
 | 版本冲突 | `E_VERSION_CONFLICT` | 受控 modal：`editor.conflict.reload` / `overwrite`，显示 `detail.currentVersion` | 二选一 |
 
@@ -528,19 +529,19 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 - L1（宿主右栏 tab 条）：宿主 chip 胶囊，本插件不控制。
 - L2（内部标签行）：编辑器标签风格（上圆角、活动标签与内容同底、上沿 2px、关闭按钮 hover 出现）；不加外框/阴影，避免看起来像第二层宿主 chrome。
 
-## 19 Tree 改动视图与全视图
+## 19 路径树改动视图与全视图
 
 ### 19.1 改动页两种视图
 
 | 视图 | 结构 | 切换 |
 | --- | --- | --- |
-| Tree（默认） | 一级「更改 / 暂存」两级节点；未跟踪、冲突并入「更改」，文件行带状态与文件类型图标 | 改动页任意位置右键 →「使用默认视图」 |
-| 默认（平铺） | 原来的「合并冲突 / 暂存的更改 / 更改 / 未跟踪」四组 | 右键 →「使用 Tree 视图」 |
+| 路径树（默认） | 顶层「更改 / 已暂存」，内部按真实文件路径形成多层目录，压缩单一目录链；未跟踪、冲突并入「更改」，文件行分别显示类型图标与 Git 状态 | 改动页任意位置右键 →「使用列表视图」 |
+| 列表（平铺） | 「合并冲突 / 暂存的更改 / 更改 / 未跟踪」四组，文件名旁显示目录 | 右键 →「使用路径树」 |
 
-- 一级节点可收起；节点右侧提供「全部暂存 / 全部取消暂存」。
-- 文件行右键：打开文件、查看差异、暂存/取消暂存、丢弃、复制相对路径，以及两种视图切换。
+- 目录与分组可独立收起，折叠键按分组与相对路径生成；同一文件的暂存和未暂存状态分别保留。目录与组的暂存操作仅传入该节点下实际变更路径（重命名含所需旧路径），不传 `all:true`；超过 5000 条分批串行，失败提示部分完成并刷新。
+- 文件行 hover / focus-within 显示打开、暂存 / 取消暂存及可用的丢弃操作；触屏常显，右键菜单提供等价操作。busy 时写按钮禁用并说明原因，丢弃保留二次确认。
 - 行列表按 22px 行高窗口化，只渲染可视区 + overscan，不随变更数量线性增长 DOM。
-- 未跟踪文件使用后端 `{ kind:'untracked' }` diff，不再按工作区 diff 发送。
+- 未跟踪文件使用后端 `{ kind:'untracked' }` diff，不按工作区 diff 发送。
 
 ### 19.2 全视图
 
@@ -552,6 +553,29 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ### 19.3 设置与快捷键入口
 
-- 工具栏有「设置」与「全视图」两个入口；窄栏（<520px）隐藏「设置」，保留全视图与「⋯」。
-- 「设置」是内部标签 `view:settings`：工作区根、信任、最近打开、编辑器偏好、生效上限，以及**只读的快捷键映射表**（11 条命令 ↔ 当前绑定，未绑定显示「未绑定」）并注明改键位置是宿主面板（设置 → 通用 → 编辑快捷键 / `Mod + /`）。
-- 插件不自带录制 UI：宿主 `Shortcuts` 接口没有 `invoke`/`openSettings`，无法用代码打开该对话框，因此在设置页只给文字路径。
+- 工具栏有「设置」与「全视图」入口，窄栏通过「⋯」保留次要入口。
+- 「设置」是内部标签 `view:settings`：完整可换行根路径与切换入口、最近打开、编辑器偏好和生效上限。快捷键区提供宿主入口说明，并区分未注册 / 未绑定 / 服务不可用等状态。
+- 宿主没有真实目录选择器时，工作台复用内部输入对话框，输入运行 DSH 的主机上的绝对路径，提交后由 `workspace.open` 在 Host 侧校验；取消不切换工作区。
+- 字号 10–20、Tab 显示宽度与缩进空格数 1–8，共用即时规范化与恢复逻辑。当前编辑器 / 差异视图立即更新，隐藏文件切回沿用；不重写文档内容。自动换行上限为 2000 行且最长行 500 字符，超限时编辑器显示原因。
+- 按钮 reset 使用低优先级 `:where`，文字 / 图标操作均有 1px 主题边框；组件控制间距、主次 / 危险 / 禁用 / 聚焦状态，不用 `!important` 覆盖。
+- 插件不自带录制 UI；设置页说明宿主「设置 → 通用 → 编辑快捷键」入口，不调用不存在的打开设置接口。
+
+## 20 仓库、命令与缩放
+
+### 20.1 仓库标签
+
+仓库清单来自有界的 `workspace.scan`，按工作区相对路径分层，区分目录与实际仓库。初次打开跟踪列表为空；勾选是加入跟踪，点选跟踪项是设为活动仓库。取消当前项后使用剩余跟踪项或回到无活动仓库；不自动跟踪扫描结果。存储键为 `dsh-workspace-ide:repositories:<encoded-root>`，恢复后对照当前扫描过滤消失项，扫描截断不能据此删除未扫描到的旧选择。持久化失败显示提示。
+
+改动、图谱、分支与 watch 只面向活动仓库；无选择时显示选择仓库的空态。切换时重置旧仓库视图，旧响应不能覆盖新数据；写操作进行中禁用跟踪 / 选择并说明原因。
+
+### 20.2 命令标签
+
+命令树固定只有两个顶层根：`package.json` 与 `Scripts`。包根保留清单真实路径层级；选中清单后只刷新 Scripts 根的内容。脚本行显示名称、完整命令预览与播放图标；没有包、没有 scripts、扫描受限、读取失败和启动失败均有明确状态。播放按钮禁用到对应终端创建完成，随后允许再次启动新的终端。
+
+每次播放调用 `terminal.runScript`，Host 重新读清单并验证脚本名。新终端 cwd 为清单所在包目录，使用系统默认 shell 与用户正常 profile；按 packageManager 或祖先锁文件选择 npm / pnpm / yarn / bun，最终兜底 npm。输出留在新终端标签，自动展开并选中该终端；不占用现有会话。
+
+### 20.3 整体缩放与文件图标
+
+设置提供 80% / 90% / 100% / 110% / 125% / 150%，默认 100%。`uiScale` 保存在工作台布局偏好中，只缩放工作台根，不改变宿主界面；编辑器 10–20px 字号是独立值。菜单、快速打开、拖拽与分隔条使用 `.wid-root` 的缩放比换算逻辑坐标，限制浮层在工作台内，终端尺寸随容器重新适配。
+
+文件树、SCM 与命令包节点共用 `FileIcon`：完整文件名和工具配置变体优先于扩展名。包清单、npm / pnpm / yarn / bun 锁文件、Git 点文件、tsconfig / jsconfig、Vite / webpack / Rollup、ESLint / Prettier、Docker / Compose、环境文件、README / LICENSE 等有专用内联 SVG；未知文件使用通用图标。SVG 形状来自静态代码，颜色取 currentColor，Git 状态不混入文件图标。

@@ -5,13 +5,13 @@
  */
 import { createStore } from '../store.js';
 import { LIMITS } from '../../shared/contract.js';
-import { IdeError, isTrustError } from '../service/client.js';
+import { IdeError } from '../service/client.js';
 import {
-  DEFAULT_EDITOR_PREFS, loadLayout, loadWorkbench, readEditorPrefs, saveLayout, saveWorkbench,
+  DEFAULT_EDITOR_PREFS, loadLayout, loadWorkbench, normalizeEditorPrefs, readEditorPrefs, saveLayout, saveWorkbench,
 } from '../service/layout.js';
 import { createLayoutStore } from './layout.stores.js';
 import {
-  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, fileTabId,
+  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, REPOSITORIES_TAB, COMMANDS_TAB, fileTabId,
 } from '../service/tabs.js';
 import { createTerminalController } from './terminal.stores.js';
 import { createEditorDomain } from './editor.stores.js';
@@ -19,13 +19,37 @@ import { createScmDomain } from './scm.stores.js';
 import { createConflictDomain, createConflictStore } from './conflict.stores.js';
 import { createGraphDomain } from './graph.stores.js';
 import { createDiffDomain } from './diff.stores.js';
+import { createRepositoriesDomain } from './repositories.stores.js';
+import { createCommandsDomain } from './commands.stores.js';
 
 const EMPTY_LIMITS = LIMITS;
 
 export function createStores({ client, sessionId, host }) {
+  let repositoryEpoch = 0;
+  const transport = client;
+  client = { async call(action, payload, scope) {
+    const scoped = action.startsWith('git.') || action.startsWith('watch.');
+    const epoch = repositoryEpoch;
+    const repositoryPath = scoped ? (scope?.repositoryPath ?? repositoriesDomain.store.getSnapshot().active) : null;
+    if (scoped && repositoryPath == null) throw new IdeError('E_NOT_A_REPO', '请先在仓库视图中勾选并选择一个仓库');
+    let result;
+    try {
+      result = await transport.call(action, payload, scoped ? { repositoryPath } : undefined);
+    } catch (error) {
+      if (scoped && epoch !== repositoryEpoch && !action.startsWith('watch.')) {
+        throw new IdeError('E_INVALID_ARG', '仓库已切换，忽略旧响应', { staleRepository: true });
+      }
+      throw error;
+    }
+    if (scoped && epoch !== repositoryEpoch && !action.startsWith('watch.')) {
+      throw new IdeError('E_INVALID_ARG', '仓库已切换，忽略旧响应', { staleRepository: true });
+    }
+    return result;
+  } };
   const ui = createStore({
     activityView: 'files',
     sidebarWidth: 260,
+    uiScale: 100,
     panelHeight: 220,
     sidebarCollapsed: false,
     navManual: false,
@@ -50,7 +74,6 @@ export function createStores({ client, sessionId, host }) {
     root: null,
     name: null,
     git: { available: false, isRepo: false, branch: null, detached: false },
-    trust: false,
     recents: [],
     limits: EMPTY_LIMITS,
     error: null,
@@ -115,11 +138,12 @@ export function createStores({ client, sessionId, host }) {
     message: '',
     refs: null,
     stashes: [],
-    /** Presentation of the change list: two-level tree (default) or the legacy flat groups. */
+    /** Path tree (default) or grouped flat list; state here is presentation only. */
     view: 'tree',
     collapsed: { changes: false, staged: false },
     scrollTop: 0,
     treeHeight: 0,
+    focusedKey: null,
     contextMenu: null,
   });
 
@@ -173,6 +197,7 @@ export function createStores({ client, sessionId, host }) {
 
   /** Uniform failure handling: an error bar line, and the code kept for the view. */
   function fail(scope, error, fallback) {
+    if (error?.detail?.staleRepository) return error;
     const message = error instanceof IdeError ? error.message : (error?.message ?? fallback ?? '操作失败');
     notify('error', message, error instanceof IdeError ? error.detail : null, error instanceof IdeError ? error.code : null);
     scope?.patch?.({ error: message });
@@ -188,6 +213,7 @@ export function createStores({ client, sessionId, host }) {
       panelCollapsed: Boolean(persisted.panelCollapsed),
       activityView: persisted.activityView === 'search' ? 'search' : 'files',
       editor: readEditorPrefs(persisted),
+      uiScale: normalizeUiScale(persisted.uiScale),
     });
   }
 
@@ -200,6 +226,7 @@ export function createStores({ client, sessionId, host }) {
       panelCollapsed: state.panelCollapsed,
       activityView: state.activityView,
       editor: state.editor,
+      uiScale: state.uiScale,
     });
   }
 
@@ -264,6 +291,8 @@ export function createStores({ client, sessionId, host }) {
    * old tree, so file tabs/editor buffers/diff/conflict must be dropped before the next save.
    */
   function resetRootScopedState() {
+    repositoriesDomain.reset();
+    commandsDomain.reset();
     refsLoadedAt = 0;
     diffDomain.close();
     conflictDomain.close();
@@ -329,6 +358,11 @@ export function createStores({ client, sessionId, host }) {
       ui.patch({ diffRatio: Math.min(0.8, Math.max(0.2, ratio)) });
     },
 
+    setUiScale(value) {
+      ui.patch({ uiScale: normalizeUiScale(value) });
+      persistLayout();
+    },
+
     toggleSettings() {
       return actions.openSettings();
     },
@@ -340,7 +374,6 @@ export function createStores({ client, sessionId, host }) {
         root: next?.root ?? null,
         name: next?.name ?? null,
         git: next?.git ?? { available: false, isRepo: false },
-        trust: Boolean(next?.trusted),
         recents: next?.recents ?? [],
         limits: next?.limits ?? EMPTY_LIMITS,
         error: null,
@@ -420,6 +453,7 @@ export function createStores({ client, sessionId, host }) {
         if (changed) {
           resetRootScopedState();
           await actions.listDir('');
+          await repositoriesDomain.scan();
         }
         await actions.refreshScm();
       } catch (error) {
@@ -437,24 +471,27 @@ export function createStores({ client, sessionId, host }) {
           root: next.root ?? state.root,
           name: next.name ?? state.name,
           git: next.git ?? state.git,
-          trust: Boolean(next.trusted),
         });
         await actions.listDir('');
+        await repositoriesDomain.scan();
         await actions.refreshScm();
       } catch (error) {
         fail(workspace, error, '无法读取工作区状态');
       }
     },
 
-    /** Ask the host for a directory, then open it. No silent fallbacks. */
+    /** Prefer a real host picker; otherwise ask for a Host path in our dialog. */
     async pickRoot() {
-      if (typeof host?.pickDirectory !== 'function') {
-        notify('error', '宿主没有提供目录选择器', null);
-        return;
-      }
       try {
-        const picked = await host.pickDirectory();
-        const root = typeof picked === 'string' ? picked : picked?.path;
+        const picked = typeof host?.pickDirectory === 'function'
+          ? await host.pickDirectory()
+          : await actions.prompt({
+            title: '切换工作区',
+            body: '输入运行 DSH 的主机上的文件夹绝对路径。',
+            input: { label: '文件夹路径', value: workspace.getSnapshot().root ?? '', placeholder: '/path/to/workspace' },
+            confirmLabel: '打开文件夹',
+          });
+        const root = typeof picked === 'string' ? picked.trim() : picked?.path;
         if (root) await actions.openRoot(root);
       } catch (error) {
         fail(workspace, error, '选择目录失败');
@@ -464,7 +501,8 @@ export function createStores({ client, sessionId, host }) {
     async openRoot(root) {
       try {
         const opened = await client.call('workspace.open', { root });
-        workspace.patch({ root: opened.root, name: opened.name, git: opened.git, trust: Boolean(opened.trusted), phase: 'ready', error: null });
+        resetRootScopedState();
+        workspace.patch({ root: opened.root, name: opened.name, git: opened.git, phase: 'ready', error: null });
         diffDomain.close();
         conflictDomain.close();
         ui.patch({ menu: null, tabMenu: null });
@@ -477,31 +515,12 @@ export function createStores({ client, sessionId, host }) {
           phase: 'idle', error: null, layoutMs: 0, refs: null, filter: '', filterRef: null,
         });
         await actions.listDir('');
+        await repositoriesDomain.scan();
         await actions.refreshScm();
         // The old watcher token belongs to the previous root; rebind it after the switch.
         void actions.startWatch();
       } catch (error) {
         fail(workspace, error, '无法打开该目录');
-      }
-    },
-
-    async setTrusted(trusted) {
-      const state = workspace.getSnapshot();
-      if (!state.root) return;
-      try {
-        const next = await client.call('workspace.trust', { trusted });
-        workspace.patch({ trust: Boolean(next.trusted) });
-        if (next.trusted) {
-          // Old E_TRUST_REQUIRED notices for this root are now false; dismiss them so the panel
-          // never shows "untrusted" next to an already trusted workspace.
-          notices.set((current) => ({
-            items: current.items.filter((item) => !(item.code === 'E_TRUST_REQUIRED'
-              && (!item.detail?.root || item.detail.root === state.root))),
-          }));
-          await actions.refreshWorkspace();
-        }
-      } catch (error) {
-        fail(workspace, error, '无法更新信任设置');
       }
     },
 
@@ -515,6 +534,7 @@ export function createStores({ client, sessionId, host }) {
         if (resolved.root !== previous) {
           resetRootScopedState();
           await actions.listDir('');
+          await repositoriesDomain.scan();
           await actions.refreshScm();
           void actions.startWatch();
         } else {
@@ -528,13 +548,6 @@ export function createStores({ client, sessionId, host }) {
     /** Groups report their content size so drag/split can respect the minimum pane size. */
     measureGroup(groupId, width, height) {
       layoutModel.actions.measure(groupId, width, height);
-    },
-
-    /** Called by any view that gets E_TRUST_REQUIRED: show the trust gate once. */
-    handleTrustError(error) {
-      if (!isTrustError(error)) return false;
-      notify('warn', '此操作需要先信任当前工作区', error.detail ?? null, error.code);
-      return true;
     },
 
     async listDir(path, { refresh } = {}) {
@@ -579,6 +592,19 @@ export function createStores({ client, sessionId, host }) {
       files.patch({ selected: path });
     },
 
+    async copyText(text) {
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('当前环境不支持剪贴板');
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        fail(null, error, '复制失败');
+      }
+    },
+
+    setScmFocus(key) {
+      if (scm.getSnapshot().focusedKey !== key) scm.patch({ focusedKey: key });
+    },
+
     setScmView(view) {
       scm.patch({ view: view === 'flat' ? 'flat' : 'tree', contextMenu: null });
     },
@@ -609,8 +635,9 @@ export function createStores({ client, sessionId, host }) {
     /** One status request at a time; refs/stash are refreshed on a slower cadence. */
     async refreshScm() {
       if (scmInFlight) return scmInFlight;
+      const refreshEpoch = repositoryEpoch;
       const state = workspace.getSnapshot();
-      if (!state.root || !state.git?.isRepo) {
+      if (!state.root || repositoriesDomain.store.getSnapshot().active == null) {
         scm.patch({ status: null, phase: 'idle', error: null, writes: [], refs: null, stashes: [] });
         return null;
       }
@@ -618,6 +645,7 @@ export function createStores({ client, sessionId, host }) {
       scmInFlight = (async () => {
         try {
           const status = await client.call('git.status', { untrackedMode: 'all' });
+          if (refreshEpoch !== repositoryEpoch) return null;
           scm.patch({ status, phase: 'ready', error: null });
           if (Date.now() - refsLoadedAt > 15000) {
             refsLoadedAt = Date.now();
@@ -626,11 +654,12 @@ export function createStores({ client, sessionId, host }) {
           }
           return status;
         } catch (error) {
+          if (refreshEpoch !== repositoryEpoch) return null;
           scm.patch({ phase: 'error' });
           fail(scm, error, '无法读取 Git 状态');
           return null;
         } finally {
-          scmInFlight = null;
+          if (refreshEpoch === repositoryEpoch) scmInFlight = null;
         }
       })();
       return await scmInFlight;
@@ -742,8 +771,23 @@ export function createStores({ client, sessionId, host }) {
     openChanges() {
       const opened = layoutModel.actions.open({ id: CHANGES_TAB, kind: 'changes' });
       const state = workspace.getSnapshot();
-      if (state.root && state.git?.isRepo) void actions.refreshScm();
+      if (state.root && repositoriesDomain.store.getSnapshot().active != null) void actions.refreshScm();
       return opened;
+    },
+
+    openRepositories() {
+      return layoutModel.actions.open({ id: REPOSITORIES_TAB, kind: 'repositories' });
+    },
+
+    openCommands() {
+      void commandsDomain.load(repositoriesDomain.store.getSnapshot());
+      return layoutModel.actions.open({ id: COMMANDS_TAB, kind: 'commands' });
+    },
+
+    openRepositoryFile(path) {
+      const repository = repositoriesDomain.store.getSnapshot().active;
+      if (repository == null) return Promise.resolve(null);
+      return actions.openFile(repository === '.' ? path : joinPath(repository, path));
     },
 
     openSettings() {
@@ -878,7 +922,7 @@ export function createStores({ client, sessionId, host }) {
     },
 
     setEditorPref(key, value) {
-      ui.patch({ editor: { ...ui.getSnapshot().editor, [key]: value } });
+      ui.patch({ editor: normalizeEditorPrefs({ [key]: value }, ui.getSnapshot().editor) });
       persistLayout();
     },
 
@@ -1049,24 +1093,67 @@ export function createStores({ client, sessionId, host }) {
     confirm: actions.confirm,
     prompt: actions.prompt,
     refreshScm: actions.refreshScm,
-    openFile: (path) => actions.openFile(path),
+    openFile: (path) => actions.openRepositoryFile(path),
   });
+
+  const repositoriesDomain = createRepositoriesDomain({
+    client, workspace, notify,
+    changeReason: () => {
+      if (scm.getSnapshot().writes.length) return 'Git 操作进行中，暂不能切换仓库';
+      if (ui.getSnapshot().modal) return '请先完成当前确认，再切换仓库';
+      if (diff.getSnapshot().phase === 'loading') return '差异正在加载，暂不能切换仓库';
+      if (conflict.getSnapshot().phase === 'loading') return '冲突内容正在加载，暂不能切换仓库';
+      return null;
+    },
+    onSelectionChange() {
+      repositoryEpoch += 1;
+      scmInFlight = null;
+      refsLoadedAt = 0;
+      scm.patch({ status: null, phase: 'idle', error: null, refs: null, stashes: [], message: '', contextMenu: null, scrollTop: 0, focusedKey: null });
+      graphDomain.reset();
+      diffDomain.close();
+      conflictDomain.close();
+      const epoch = repositoryEpoch;
+      void stopWatch().then(() => {
+        if (!runtimeActive || epoch !== repositoryEpoch) return;
+        void actions.refreshScm();
+        void startWatch();
+        if (layoutModel.store.getSnapshot().tabs[GRAPH_TAB]) void graphDomain.load();
+      });
+    },
+  });
+  const commandsDomain = createCommandsDomain({ client, workspace, notify, terminals, onRun() {
+    ui.patch({ panelCollapsed: false });
+    persistLayout();
+  } });
 
   // --- watcher -------------------------------------------------------------------------
   // `git.status` polling is the correctness path; the watcher only shortens the delay
   // between "file changed" and "panel shows it" (docs/git-model.md §7).
   let watchSession = null;
+  let watchEpoch = 0;
 
   async function startWatch() {
-    await stopWatch();
+    const epoch = ++watchEpoch;
+    const previous = watchSession;
+    watchSession = null;
+    await releaseWatch(previous);
+    if (epoch !== watchEpoch || disposed) return null;
+    const repositoryPath = repositoriesDomain.store.getSnapshot().active;
+    if (repositoryPath == null) return null;
     try {
-      const started = await client.call('watch.start', {});
+      const started = await client.call('watch.start', {}, { repositoryPath });
       if (!started?.token) return null;
-      watchSession = { token: started.token, offset: 0, timer: null, pending: false };
-      watchSession.timer = setInterval(() => void pollWatch(), 2000);
+      const session = { token: started.token, repositoryPath, offset: 0, timer: null, pending: false };
+      if (epoch !== watchEpoch || disposed || repositoriesDomain.store.getSnapshot().active !== repositoryPath) {
+        await releaseWatch(session);
+        return null;
+      }
+      watchSession = session;
+      session.timer = setInterval(() => void pollWatch(), 2000);
       return started;
     } catch (error) {
-      if (error?.code !== 'E_UNSUPPORTED') fail(workspace, error, '无法监听文件变化');
+      if (epoch === watchEpoch && error?.code !== 'E_UNSUPPORTED') fail(workspace, error, '无法监听文件变化');
       return null;
     }
   }
@@ -1076,14 +1163,17 @@ export function createStores({ client, sessionId, host }) {
     if (!session || session.pending) return;
     session.pending = true;
     try {
-      const frame = await client.call('watch.poll', { token: session.token, offset: session.offset });
+      const frame = await client.call('watch.poll', { token: session.token, offset: session.offset }, { repositoryPath: session.repositoryPath });
+      if (session !== watchSession) return;
       session.offset = frame.offset;
       if (frame.dropped) {
         // Missed events mean the local view may be stale in ways we cannot enumerate.
         await actions.refreshWorkspace();
+        if (session !== watchSession) return;
       }
       if ((frame.events ?? []).length > 0) {
         await actions.refreshScm();
+        if (session !== watchSession) return;
         const hasGraph = Boolean(layoutModel.store.getSnapshot().tabs[GRAPH_TAB]);
         if (hasGraph && graph.getSnapshot().phase === 'ready') void graphDomain.load({ reset: true });
       }
@@ -1092,19 +1182,24 @@ export function createStores({ client, sessionId, host }) {
         await stopWatch();
       }
     } catch (error) {
-      if (error?.code === 'E_LIMIT' || error?.code === 'E_UNSUPPORTED') await stopWatch();
+      if (session === watchSession && (error?.code === 'E_LIMIT' || error?.code === 'E_UNSUPPORTED')) await stopWatch();
     } finally {
       session.pending = false;
     }
   }
 
   async function stopWatch() {
+    watchEpoch += 1;
     const session = watchSession;
     watchSession = null;
+    await releaseWatch(session);
+  }
+
+  async function releaseWatch(session) {
     if (!session) return;
     if (session.timer) clearInterval(session.timer);
     try {
-      await client.call('watch.stop', { token: session.token });
+      await client.call('watch.stop', { token: session.token }, { repositoryPath: session.repositoryPath });
     } catch {
       // The token may already be gone; nothing to clean up then.
     }
@@ -1114,9 +1209,12 @@ export function createStores({ client, sessionId, host }) {
   return {
     ui, layout: layoutModel.store, workspace, notices, files, editor, search, quick, scm, graph, diff, conflict,
     terminal, terminals,
+    repositories: repositoriesDomain.store, repositoryActions: repositoriesDomain,
+    commands: commandsDomain.store, commandActions: commandsDomain,
     actions: {
       ...actions,
       ...editorDomain,
+      ...actions,
       setCommitMessage: (text) => scm.patch({ message: text }),
       dispose() {
         disposed = true;
@@ -1149,4 +1247,8 @@ function clamp(value, min, max) {
 function basename(path) {
   const index = String(path ?? '').lastIndexOf('/');
   return index === -1 ? String(path ?? '') : String(path ?? '').slice(index + 1);
+}
+
+function normalizeUiScale(value) {
+  return [80, 90, 100, 110, 125, 150].includes(Number(value)) ? Number(value) : 100;
 }

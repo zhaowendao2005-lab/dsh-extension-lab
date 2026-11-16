@@ -23,6 +23,8 @@ export function WelcomeView({ stores }) {
             打开文件夹…
           </button>
         )}
+        <button type="button" className="wid-button" onClick={() => stores.actions.openRepositories()}>仓库</button>
+        <button type="button" className="wid-button" onClick={() => stores.actions.openCommands()}>命令</button>
         <button type="button" className="wid-button" onClick={() => stores.actions.openChanges()}>
           查看改动
         </button>

@@ -1,22 +1,14 @@
 import { useStore, useEffect, useRef } from '../../runtime.js';
 import { Icon } from '../common/Icon.jsx';
+import { FileIcon } from '../common/FileIcon.jsx';
+import { workbenchRoot, localPoint } from '../../service/geometry.js';
 import { tabIcon, tabTitle } from '../../service/tabs.js';
 import { zoneAt } from '../../service/split.js';
 
 const DRAG_THRESHOLD = 4;
 
-function rootOf(element) {
-  const node = element && element.closest ? element.closest('.wid-root') : null;
-  return node ?? document.querySelector('.wid-root');
-}
-
 function rootPoint(element, clientX, clientY, width, height) {
-  const node = rootOf(element);
-  const rect = node ? node.getBoundingClientRect() : { left: 0, top: 0, width: 1200, height: 800 };
-  return {
-    x: Math.max(4, Math.min(clientX - rect.left, rect.width - width)),
-    y: Math.max(4, Math.min(clientY - rect.top, rect.height - height)),
-  };
+  return localPoint(workbenchRoot(element), clientX, clientY, width, height);
 }
 
 /** Resolve the group element the pointer is over; never query another workbench instance's DOM. */
@@ -216,7 +208,7 @@ export function TabStrip({ stores, groupId }) {
                 }
               }}
             >
-              <Icon name={tabIcon(tab.kind)} size={12} />
+              {tab.kind === 'file' ? <FileIcon name={tab.path} size={14} /> : <Icon name={tabIcon(tab.kind)} size={12} />}
               <span className="wid-tab__title">{title}</span>
               {tab.kind === 'changes' && changes > 0 && (
                 <span className="wid-tab__badge">{changes > 99 ? '99+' : changes}</span>

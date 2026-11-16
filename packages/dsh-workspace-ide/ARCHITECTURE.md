@@ -4,7 +4,7 @@
 
 ## 一句话定位
 
-DSH 的一个**右栏工作台插件**：它是右栏（rightbar）的一个宿主 tab；内部左栏是文件/搜索，工作区是可分栏的标签页（文件、diff、提交图谱、当前改动、设置），底部是真 PTY 终端。
+DSH 的一个**右栏工作台插件**：它是右栏（rightbar）的一个宿主 tab；内部左栏是文件/搜索，工作区是可分栏的标签页（文件、diff、提交图谱、当前改动、仓库、命令、设置），底部是真 PTY 终端。
 它**不注册任何模型工具**，不参与会话对话——纯人用工作台；数据全部来自 Host（文件系统 + `git` CLI + PTY），浏览器只做渲染与交互。
 
 ## 依赖方向
@@ -24,8 +24,8 @@ views/*.tsx ──使用──> stores/*.stores.ts ──调用──> stores/*.
 Host 侧：
 backend/index.js  apply(ctx)  ← export name/inject
   ├─ backend/contract.js     ← shared/contract.js（zod 双端共享）
-  ├─ backend/service.js      ← 动作分发、根目录校验、信任门禁、并发闸门、写队列
-  ├─ backend/workspace.js    ← 根目录解析与切换、信任状态、限制参数
+  ├─ backend/service.js      ← 动作分发、根目录与 repositoryPath 校验、请求上下文、并发闸门
+  ├─ backend/workspace.js    ← 根目录解析与切换、仓库请求上下文、限制参数
   ├─ backend/files.js        ← 按行读、版本化写、目录懒加载、重命名/删除
   ├─ backend/search.js       ← ripgrep / 系统 rg / 纯 JS 降级
   ├─ backend/git/{exec,status,log,layout,diff,write,stash,watch}.js
@@ -52,10 +52,13 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 
 | 域 | 唯一持有内容 | 不持有 |
 | --- | --- | --- |
-| `workspace` | 根目录、仓库名、信任状态、限制参数（文件大小阈值、log 页长） | 文件内容、git 状态（各自域持有） |
+| `workspace` | 根目录、工作区名、限制参数（文件大小阈值、log 页长） | 文件内容、git 状态（各自域持有） |
 | `files` | 目录展开态与列表缓存、选中/焦点、排序与过滤、文件图标映射 | 文件正文（编辑器域）、git 状态 |
 | `editor` | 打开文件的正文与每文件 `{path,version,dirty,cursor,eol,bom,mode}`、保存/冲突状态 | 标签顺序与分栏归属（`layout` 域）；CM6 只呈现 store 里的文本 |
 | `layout` | 内部标签元数据、每组 `{tabs,active}`、分栏树 `{dir,ratio,a,b}`、`activeGroup`、拖拽中间态、组尺寸 | 文件正文、git 事实；树只存结构，组只存 tab id |
+| `repositories` | Host 扫描清单、目录折叠、用户跟踪列表与活动仓库；按工作区路径持久化选择，默认空 | Git 业务事实、任意绝对根目录 |
+| `commands` | Host 包清单、包路径树、选中包的 scripts、加载态与启动中状态 | shell 执行结果（留在终端）、脚本正文的客户端真相 |
+| `ui` | 工作台布局偏好、uiScale、编辑器偏好与浮层呈现态 | 有效换行状态（由 editor/diff 文档派生） |
 | `scm` | `git.status` 快照镜像、提交信息草稿、写操作队列可视化、逐文件展开态 | 变更事实（Host 计算）、文件内容 |
 | `graph` | `git.graph` 行窗口、滚动锚点、选中提交、refs 徽章、过滤词 | 布局（Host 算）、提交详情（按需拉） |
 | `diff` | 当前 diff 视图的目标与解析后 hunk、折叠态 | 原文（Host 出结构化 hunk） |
@@ -85,6 +88,12 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 - **Host 是唯一真相**：客户端不做「猜测式更新」，只做**乐观 UI**（标签高亮、终端 tab 关闭、输入框草稿），失败即回滚并出错误条。
 - **刷新触发**：用户显式动作（保存、stage、切分支…）→ 立即刷新；面板获得焦点 / 窗口重新可见 → 刷新一次；P0 每 1.5 s 轮询 `git.status`（仅当面板可见且非写操作中）；P1 换 `watch` 推送。
 
+### 仓库与命令请求
+
+文件、搜索和普通终端保持工作区根上下文；Git / watch 请求另带工作区相对的 `repositoryPath`（根仓库为 `.`），Host 校验它在工作区内且为自己的 Git 工作树根，再绑定请求局部上下文。watch token 同时绑定会话、工作区和仓库，停止旧 token 使用原绑定；切仓库递增前端 epoch，丢弃旧 Git 响应并重置相关视图。SCM 写操作中不能切换活动仓库。仓库跟踪与活动选择存于 `dsh-workspace-ide:repositories:<encoded-root>`，属于用户呈现偏好，扫描事实来自 Host。
+
+命令页使用 `workspace.scan` 与 `workspace.packageScripts`；`terminal.runScript` 在 Host 重新读取包清单、确认脚本存在并选择 npm / pnpm / yarn / bun。只把固定运行器和正确引用的脚本名交给新终端，cwd 为包目录；脚本命令正文只用于预览，不由浏览器拼接执行。
+
 ## 硬边界（DSH 集成契约）
 
 | 项 | 要求 |
@@ -95,7 +104,7 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 | 根目录 | 按会话解析：该会话手动选择 > `session.header.cwd` > lastRoot；Host 决策，wire 不放任意路径。每个 Remote 请求在 Service 入口绑定 `{sessionId, root}` 并跑在 `AsyncLocalStorage` 里，files/git/terminal/watch 只读活动上下文，不共享可变 `current` |
 | 主题 | 只用 `--dsw-alias-*` / `--dsw-*` token；禁硬编码色值（构建期扫描）；明暗两套都要过 |
 | 顶栏/左缘 | 右栏 body 不在窗口顶/左缘，**不**吃 `--dsh-frame-top-clearance` / `--dsh-frame-leading-clearance`；宿主 tab 条已经处理 |
-| 字号 | 代码 = `var(--dsh-code-font-size)`、正文 = `var(--dsh-content-font-size)`、终端 = `var(--dsh-terminal-font-size)` |
+| 字号与缩放 | 编辑器 / Diff 共用 10–20px 字号偏好；正文 / 终端沿用宿主 token。整个 `.wid-root` 的 uiScale 为 80/90/100/110/125/150，独立于编辑器字号；浮层与拖拽坐标先换算为逻辑像素 |
 | 外部依赖 | 不 require 任何 `@deepseek-ai/*` client 包；`react`/`react-dom` 由宿主提供（external） |
 | 资源 | 不打包独立 CSS 文件（内联进 JS 后运行时注入 `<style id="dsh-workspace-ide/css">`）；不依赖图片资源路由 |
 | 卸载 | 所有注册（slot、remote mount、listener、定时器、CM6/xterm 实例、Host 侧终端与 git 队列）都挂在 `ctx.effect` 的 disposer 上 |
@@ -106,9 +115,9 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 | 阶段 | 行为 |
 | --- | --- |
 | 插件 apply | 注册右栏 tab 类型 + body；每个会话首次渲染时构建 stores（不启动 IO）；`ctx.remote.$mount` 挂载 Remote |
-| tab 首次可见 | `workspace.resolve { sessionId }` → 无根目录显示欢迎页；有则 `git.status` + `files.list(root)` + 恢复该会话的标签/分栏布局 |
+| tab 首次可见 | `workspace.resolve { sessionId }` → 无根目录显示欢迎页；有则扫描仓库 / 包、`files.list(root)` + 恢复该会话的标签/分栏布局；只为恢复后的活动仓库加载 Git 状态 |
 | tab 不可见（切会话 / 收起右栏） | body 由 `keepMounted` 保留；**停 watch/轮询/window 监听**；编辑器正文在 store 里，终端 PTY 继续跑 |
-| tab 再次可见 | `workspace.resolve` 对齐 Host 单根 → 刷新 status → 恢复 watch；编辑器与内部布局原样 |
+| tab 再次可见 | `workspace.resolve` 对齐 Host 工作区根 → 对活动仓库刷新 status → 恢复该仓库 watch；编辑器与内部布局原样 |
 | tab 关闭 | 宿主 close handler 只移除 `sidebar` surface；全视图仍可见时 runtime 继续运行。运行时保留到插件卸载（快速重开不丢未保存） |
 | 全视图打开/关闭 | 关闭右栏 tab 且保留内部标签/分栏；`overlay` surface 加入/移除。两者之间切换不重建 stores |
 | 插件 dispose | 关闭全部 PTY、取消在途 git 子进程、清空定时器与 listener、解除 Remote、移除 `<style>` |
@@ -120,11 +129,10 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 | 场景 | 表现 |
 | --- | --- |
 | 系统无 `git` | 面板可浏览/编辑文件，SCM 与图谱页显示「未检测到 git」+ 安装引导；不自动下载 |
-| 目录不是 git 仓库 | 同上，SCM 显示「初始化仓库」按钮（显式确认后 `git init`） |
-| 未信任目录 | 只读：打开/查看/diff 可用；编辑保存、stage、commit、终端里也不代表安全——终端需显式确认才创建 |
+| 无活动仓库 | 改动 / 图谱提示到仓库标签勾选并选择；工作区根本身不是仓库不妨碍选择子仓库，不自动初始化 |
 | 超大文件 | 分级降级（见 `docs/editor.md`）；超上限只读 + 提示 |
 | 超大仓库 | `git.status` 超过 `statusLimitMs` 后置「巨大仓库」：停自动刷新、改手动；图谱分页上限收紧 |
-| git 命令失败 | `error.code='E_GIT_FAILED'` + 过滤后的 stderr（去路径噪声）+ 可展开的完整命令（脱敏） |
+| git 命令失败 | `error.code='E_GIT_FAILED'` + 有限 argv / stderr 摘要与 reason；实际过滤范围见 `docs/security.md` §6 |
 | Remote 断连 | 顶部错误条「Host 连接中断」；所有写操作禁用；恢复后重新 `workspace.state` 对齐 |
 | 版本冲突 | 保存返回 `E_VERSION_CONFLICT` + `currentVersion`；弹「重新加载 / 强制覆盖」 |
 

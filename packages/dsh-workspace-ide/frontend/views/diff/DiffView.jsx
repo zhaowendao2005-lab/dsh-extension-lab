@@ -1,15 +1,29 @@
 import { useStore, useRef, useEffect } from '../../runtime.js';
 import { MergeView, unifiedMergeView } from '@codemirror/merge';
 import { EditorView } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import { Icon } from '../common/Icon.jsx';
 import { languageForPath } from '../../service/language.js';
 import { languageSupport } from '../../editor/languages.js';
 import { editorThemeExtension } from '../../editor/theme.js';
+import { editorPrefsExtension, getDiffWrapState } from '../../editor/preferences.js';
+
+/** An editor handle, with no duplicate document or preference state. */
+function prefsHandle(views, lane, sides) {
+  return {
+    setPrefs(prefs) {
+      const wrapAllowed = getDiffWrapState(sides, prefs).enabled;
+      for (const view of views) {
+        view.dispatch({ effects: lane.reconfigure(editorPrefsExtension(prefs, { wrapAllowed })) });
+      }
+    },
+  };
+}
 
 /** Read-only side-by-side diff for the file selected in the Source Control view. */
 export function DiffView({ stores }) {
   const diff = useStore(stores.diff);
+  const ui = useStore(stores.ui);
   const hostRef = useRef(null);
   const mergeRef = useRef(null);
 
@@ -19,7 +33,12 @@ export function DiffView({ stores }) {
     const language = languageForPath(diff.path ?? '');
     // `editorThemeExtension()` already wraps the highlight style in `syntaxHighlighting`; passing the
     // bare HighlightStyle here throws "Unrecognized extension value in extension set".
-    const extensions = [EditorView.editable.of(false), EditorState.readOnly.of(true), editorThemeExtension()];
+    const prefsLane = new Compartment();
+    const wrapAllowed = getDiffWrapState(diff.sides, ui.editor).enabled;
+    const extensions = [
+      EditorView.editable.of(false), EditorState.readOnly.of(true), editorThemeExtension(),
+      prefsLane.of(editorPrefsExtension(ui.editor, { wrapAllowed })),
+    ];
     const support = languageSupport(language);
     if (support) extensions.push(support);
 
@@ -41,7 +60,7 @@ export function DiffView({ stores }) {
           ],
         }),
       });
-      mergeRef.current = view;
+      mergeRef.current = prefsHandle([view], prefsLane, diff.sides);
       return () => {
         view.destroy();
         mergeRef.current = null;
@@ -57,12 +76,17 @@ export function DiffView({ stores }) {
       collapseUnchanged: { margin: 3, minSize: 4 },
       renderRevertControl: () => null,
     });
-    mergeRef.current = merge;
+    mergeRef.current = prefsHandle([merge.a, merge.b], prefsLane, diff.sides);
     return () => {
       merge.destroy();
       mergeRef.current = null;
     };
   }, [diff.sides, diff.phase, diff.path, diff.mode]);
+
+  // Keep both split panes / the unified view mounted when only preferences change.
+  useEffect(() => {
+    mergeRef.current?.setPrefs(ui.editor);
+  }, [ui.editor, diff.sides, diff.phase, diff.path, diff.mode]);
 
   if (diff.phase === 'idle') {
     return (
@@ -73,6 +97,7 @@ export function DiffView({ stores }) {
   }
 
   const file = (diff.files ?? []).find((entry) => entry.path === diff.selected) ?? diff.files?.[0] ?? null;
+  const wrap = getDiffWrapState(diff.sides, ui.editor);
 
   return (
     <div className="wid-diff">
@@ -162,6 +187,11 @@ export function DiffView({ stores }) {
               )}
             </span>
           ))}
+        </div>
+      )}
+      {diff.phase === 'ready' && wrap.reason && (
+        <div className="wid-editor-wrap-notice" role="status">
+          {wrap.reason}；已保留自动换行偏好
         </div>
       )}
       <div className="wid-diff__panes" ref={hostRef} />

@@ -1,5 +1,5 @@
 /**
- * Workspace root resolution, trust gate and repository probing.
+ * Workspace root resolution and request-local repository probing.
  *
  * The root is decided Host-side and is **per request**: the Service binds a session's
  * context before dispatch and runs the action inside AsyncLocalStorage. Files/git/terminal
@@ -12,6 +12,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { LIMITS } from '../shared/contract.js';
 import { ideError } from '../shared/errors.js';
 import { gitOrThrow, runGit } from './git/exec.js';
+import { readPackageScripts, repositoryRoot, scanWorkspace } from './inventory.js';
 
 /** @returns {Promise<{root: string, name: string}>} */
 async function canonical(root) {
@@ -34,7 +35,6 @@ function nullState(recents) {
     name: null,
     source: null,
     git: { available: true, isRepo: false },
-    trusted: false,
     recents,
     limits: LIMITS,
   };
@@ -52,7 +52,8 @@ export function createWorkspace(ctx, store) {
   const keyOf = (sessionId) => (sessionId ? String(sessionId) : '__last__');
 
   function active() {
-    return storage.getStore() ?? fallback;
+    const context = storage.getStore();
+    return context === undefined ? fallback : context;
   }
 
   async function sessionRoot(sessionId) {
@@ -104,7 +105,7 @@ export function createWorkspace(ctx, store) {
   }
 
   function recents() {
-    const list = [...store.trustedRoots];
+    const list = [];
     if (store.lastRoot && !list.includes(store.lastRoot)) list.unshift(store.lastRoot);
     for (const root of Object.values(store.snapshot().sessionRoots ?? {})) {
       if (typeof root === 'string' && !list.includes(root)) list.push(root);
@@ -118,7 +119,6 @@ export function createWorkspace(ctx, store) {
       name: context.name,
       source: context.source,
       git: await probeGit(context.root),
-      trusted: store.isTrusted(context.root),
       recents: recents(),
       limits: LIMITS,
     };
@@ -172,9 +172,20 @@ export function createWorkspace(ctx, store) {
 
     contextFor,
 
+    /** A nested ALS scope only for git/watch; workspace contexts remain unchanged. */
+    async repositoryContext(context, relative) {
+      if (!context) throw ideError('E_NO_ROOT', '还没有打开工作区', {});
+      const workspaceRoot = context.workspaceRoot ?? context.root;
+      const root = await repositoryRoot(workspaceRoot, relative);
+      return { ...context, workspaceRoot, root, name: path.basename(root), repositoryPath: relative };
+    },
+
+    async scan() { return await scanWorkspace(api); },
+    async packageScripts(input) { return await readPackageScripts(api, input); },
+
     /** Run a dispatch inside the session's immutable root context. */
     run(context, task) {
-      return storage.run(context ?? undefined, task);
+      return storage.run(context ?? null, task);
     },
 
     async resolve(input = {}) {
@@ -207,17 +218,10 @@ export function createWorkspace(ctx, store) {
 
     async state(sessionId) {
       await store.ready();
-      const context = storage.getStore() ?? (sessionId ? contexts.get(keyOf(sessionId)) : fallback);
+      const bound = storage.getStore();
+      const context = bound === undefined ? (sessionId ? contexts.get(keyOf(sessionId)) : fallback) : bound;
       if (!context) return nullState(recents());
       return await stateOf(context);
-    },
-
-    async setTrusted(input) {
-      const context = active();
-      if (!context) throw ideError('E_NO_ROOT', '还没有打开工作区', { recents: recents() });
-      if (input.trusted) store.trust(context.root);
-      else store.untrust(context.root);
-      return { root: context.root, trusted: store.isTrusted(context.root) };
     },
 
     requireRoot() {
@@ -226,23 +230,21 @@ export function createWorkspace(ctx, store) {
       return context.root;
     },
 
-    isTrusted() {
-      const context = active();
-      return context ? store.isTrusted(context.root) : false;
-    },
-
-    /** Trust gate for write / terminal / network / watch (docs/security.md §2). */
-    assertTrusted(reason) {
-      const root = api.requireRoot();
-      if (store.isTrusted(root)) return root;
-      throw ideError('E_TRUST_REQUIRED', '此工作区尚未被信任', { reason, root });
-    },
-
     /** Resolve a workspace-relative path and prove it stays inside the active root. */
     async resolvePath(rel) {
       const root = api.requireRoot();
       const target = path.resolve(root, rel ?? '');
-      const real = await realpath(target).catch(() => target);
+      let real, ancestor = target;
+      const missing = [];
+      while (real === undefined) {
+        try { real = path.resolve(await realpath(ancestor), ...missing); } catch (error) {
+          if (error?.code !== 'ENOENT') throw ideError('E_PERMISSION', '无法解析路径', { syscall: error?.code ?? 'realpath' });
+          const parent = path.dirname(ancestor);
+          if (parent === ancestor) throw ideError('E_NOT_FOUND', '路径不存在', { path: rel });
+          missing.unshift(path.basename(ancestor));
+          ancestor = parent;
+        }
+      }
       const normalizedRoot = root.endsWith(path.sep) ? root : root + path.sep;
       if (real !== root && !real.startsWith(normalizedRoot)) {
         throw ideError('E_OUTSIDE_ROOT', '路径在工作区之外', { path: rel });

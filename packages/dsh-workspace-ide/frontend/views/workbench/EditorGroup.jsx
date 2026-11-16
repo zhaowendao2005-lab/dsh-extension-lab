@@ -8,6 +8,9 @@ import { ConflictView } from '../editor/ConflictView.jsx';
 import { GraphView } from '../graph/GraphView.jsx';
 import { ScmView } from '../scm/ScmView.jsx';
 import { SettingsView } from '../common/SettingsView.jsx';
+import { RepositoryView } from '../repositories/RepositoryView.jsx';
+import { CommandsView } from '../commands/CommandsView.jsx';
+import { workbenchScale } from '../../service/geometry.js';
 
 /** One editor group: tab row plus the active tab's content, with a drop overlay while dragging. */
 export function EditorGroup({ stores, groupId }) {
@@ -20,7 +23,8 @@ export function EditorGroup({ stores, groupId }) {
     if (!node) return undefined;
     const report = () => {
       const rect = node.getBoundingClientRect();
-      stores.actions.measureGroup(groupId, rect.width, rect.height);
+      const scale = workbenchScale(node);
+      stores.actions.measureGroup(groupId, rect.width / scale, rect.height / scale);
     };
     report();
     if (typeof ResizeObserver === 'undefined') return undefined;
@@ -55,6 +59,8 @@ function TabContent({ stores, tab }) {
   if (tab.kind === 'conflict') return <div className="wid-tabcontent"><ConflictView stores={stores} /></div>;
   if (tab.kind === 'graph') return <div className="wid-tabcontent"><GraphView stores={stores} /></div>;
   if (tab.kind === 'changes') return <div className="wid-tabcontent"><ScmView stores={stores} /></div>;
+  if (tab.kind === 'repositories') return <div className="wid-tabcontent"><RepositoryView stores={stores} /></div>;
+  if (tab.kind === 'commands') return <div className="wid-tabcontent"><CommandsView stores={stores} /></div>;
   if (tab.kind === 'settings') return <div className="wid-tabcontent"><SettingsView stores={stores} /></div>;
   return <div className="wid-empty"><span className="wid-hint">未知的标签类型</span></div>;
 }

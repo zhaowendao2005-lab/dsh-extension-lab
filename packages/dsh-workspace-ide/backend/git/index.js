@@ -290,12 +290,6 @@ export function createGit(ctx, workspace) {
     return info.repoRoot;
   }
 
-  async function requireTrust(reason) {
-    await requireRepo();
-    workspace.assertTrusted(reason);
-    return workspace.requireRoot();
-  }
-
   return {
     get seq() {
       return seq;
@@ -323,43 +317,43 @@ export function createGit(ctx, workspace) {
           return await showConflict(payload ?? {});
         case 'git.resolveConflict':
           return await enqueueWrite(async () => {
-            const cwd = await requireTrust('write');
+            const cwd = await requireRepoRoot();
             return { ...(await resolveConflictOp(cwd, payload ?? {})), seq: nextSeq() };
           });
         case 'git.stash':
           return payload?.action === 'list' || payload === undefined
             ? await stash(await requireRepoRoot(), { action: 'list' })
-            : await enqueueWrite(async () => stash(await requireTrust('write'), payload ?? {}));
+            : await enqueueWrite(async () => stash(await requireRepoRoot(), payload ?? {}));
         case 'git.stage':
           return await enqueueWrite(async () => {
-            const cwd = await requireTrust('write');
+            const cwd = await requireRepoRoot();
             return payload?.all ? stageAll(cwd) : stageFiles(cwd, payload?.paths ?? []);
           });
         case 'git.unstage':
           return await enqueueWrite(async () => {
-            const cwd = await requireTrust('write');
+            const cwd = await requireRepoRoot();
             return payload?.all ? unstageAll(cwd) : unstageFiles(cwd, payload?.paths ?? []);
           });
         case 'git.discard':
           return await enqueueWrite(async () => {
-            const trustedRoot = await requireTrust('write');
+            const repoRoot = await requireRepoRoot();
             if (payload?.all) {
               throw ideError('E_INVALID_ARG', '丢弃全部更改需要逐个文件确认', { field: 'all' });
             }
-            return discardFiles(trustedRoot, payload?.paths ?? [], { untracked: payload?.untracked ?? [] });
+            return discardFiles(repoRoot, payload?.paths ?? [], { untracked: payload?.untracked ?? [] });
           });
         case 'git.commitCreate':
-          return await enqueueWrite(async () => createCommit(await requireTrust('write'), payload ?? {}));
+          return await enqueueWrite(async () => createCommit(await requireRepoRoot(), payload ?? {}));
         case 'git.checkout':
-          return await enqueueWrite(async () => checkoutRef(await requireTrust('write'), payload ?? {}));
+          return await enqueueWrite(async () => checkoutRef(await requireRepoRoot(), payload ?? {}));
         case 'git.branch':
-          return await enqueueWrite(async () => manageBranch(await requireTrust('write'), payload ?? {}));
+          return await enqueueWrite(async () => manageBranch(await requireRepoRoot(), payload ?? {}));
         case 'git.tag':
-          return await enqueueWrite(async () => manageTag(await requireTrust('write'), payload ?? {}));
+          return await enqueueWrite(async () => manageTag(await requireRepoRoot(), payload ?? {}));
         case 'git.init':
-          return await enqueueWrite(async () => initRepo(await requireTrust('write'), payload ?? {}));
+          return await enqueueWrite(async () => initRepo(workspace.requireRoot(), payload ?? {}));
         case 'git.stageHunk':
-          return await enqueueWrite(async () => stageHunk(await requireTrust('write'), payload ?? {}));
+          return await enqueueWrite(async () => stageHunk(await requireRepoRoot(), payload ?? {}));
         case 'git.graph.search':
         case 'git.network':
           throw ideError('E_UNSUPPORTED', `${action} 尚未实现`, { reason: 'not-implemented', action });

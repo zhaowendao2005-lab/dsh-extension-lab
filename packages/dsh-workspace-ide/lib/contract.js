@@ -14,7 +14,8 @@ export const payloadSchemas = {
   'workspace.resolve': z.strictObject({}),
   'workspace.open': z.strictObject({ root: z.string().min(1).max(4096) }),
   'workspace.state': z.strictObject({}),
-  'workspace.trust': z.strictObject({ trusted: z.boolean() }),
+  'workspace.scan': z.strictObject({}),
+  'workspace.packageScripts': z.strictObject({ path: z.string().min(1).max(4096) }),
   'workspace.useSessionRoot': z.strictObject({}),
 
   'files.list': z.strictObject({ path: REL_PATH.optional(), refresh: z.boolean().optional() }),
@@ -129,6 +130,7 @@ export const payloadSchemas = {
     cols: z.number().int().min(10).max(500).optional(),
     confirmed: z.boolean().optional(),
   }),
+  'terminal.runScript': z.strictObject({ path: z.string().min(1).max(4096), script: z.string().min(1).max(512), confirmed: z.boolean().optional() }),
   'terminal.write': z.strictObject({ terminalId: z.string().min(1).max(128), data: z.string().max(65536) }),
   'terminal.resize': z.strictObject({
     terminalId: z.string().min(1).max(128),
@@ -147,6 +149,7 @@ export const payloadSchemas = {
 
 export const requestSchema = z.strictObject({
   sessionId: SESSION_ID.optional(),
+  repositoryPath: z.string().min(1).max(4096).optional(),
   action: z.enum(ACTIONS),
   payload: z.record(z.string(), z.unknown()).optional(),
 });

@@ -17,18 +17,27 @@ export function loadLayout() {
   }
 }
 
-export const DEFAULT_EDITOR_PREFS = { fontSize: 13, wrap: true, tabSize: 2 };
+export const DEFAULT_EDITOR_PREFS = Object.freeze({ fontSize: 13, wrap: true, tabSize: 2, indentSize: 2 });
+
+/** Pure validation shared by persisted values, settings actions and editor instances.
+ * Invalid updates keep the validated fallback; finite numbers are rounded and clamped.
+ * tabSize displays existing tabs; indentSize controls spaces inserted by future indentation.
+ */
+export function normalizeEditorPrefs(source, fallback = DEFAULT_EDITOR_PREFS) {
+  const prefs = { ...DEFAULT_EDITOR_PREFS };
+  for (const candidate of [fallback, source]) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    for (const [key, min, max] of [['fontSize', 10, 20], ['tabSize', 1, 8], ['indentSize', 1, 8]]) {
+      if (Number.isFinite(candidate[key])) prefs[key] = Math.min(max, Math.max(min, Math.round(candidate[key])));
+    }
+    if (typeof candidate.wrap === 'boolean') prefs.wrap = candidate.wrap;
+  }
+  return prefs;
+}
 
 /** Merge persisted editor preferences over the defaults (unknown keys are dropped). */
 export function readEditorPrefs(stored) {
-  const prefs = { ...DEFAULT_EDITOR_PREFS };
-  const source = stored?.editor;
-  if (source && typeof source === 'object') {
-    if (Number.isFinite(source.fontSize)) prefs.fontSize = Math.min(20, Math.max(10, Math.round(source.fontSize)));
-    if (typeof source.wrap === 'boolean') prefs.wrap = source.wrap;
-    if (Number.isFinite(source.tabSize)) prefs.tabSize = Math.min(8, Math.max(1, Math.round(source.tabSize)));
-  }
-  return prefs;
+  return normalizeEditorPrefs(stored?.editor);
 }
 
 export function saveLayout(value) {

@@ -89,17 +89,33 @@
 }
 
 .wid-editor__pane[data-visible="true"] {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .wid-editor__cm {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
   overflow: hidden;
+}
+
+.wid-editor-wrap-notice {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 /* Markdown preview (frontend/editor/markdown.js): reading width, no hard-coded colours. */
 .wid-md {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
   overflow: auto;
   padding: 16px 24px 64px;
   color: var(--dsw-alias-label-primary);

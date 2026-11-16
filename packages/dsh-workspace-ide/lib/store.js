@@ -1,5 +1,5 @@
 /**
- * Plugin-private persisted state: last workspace root + trusted roots.
+ * Plugin-private persisted state: last workspace root + per-session roots.
  * Backed by `ctx.storageDomain` when the host has it, otherwise in-memory only
  * (the panel stays usable, it just forgets across restarts).
  */
@@ -7,16 +7,15 @@ import { z } from 'zod';
 
 const recordSchema = z.object({
   lastRoot: z.string().max(4096).nullable(),
-  trustedRoots: z.array(z.string().max(4096)).max(200),
   // A manual folder choice per session; absent means "use the session's own cwd".
   sessionRoots: z.record(z.string(), z.string().max(4096)).default({}),
   updatedAt: z.number().int().min(0),
 });
 
-const EMPTY = Object.freeze({ lastRoot: null, trustedRoots: [], sessionRoots: {}, updatedAt: 0 });
+const EMPTY = Object.freeze({ lastRoot: null, sessionRoots: {}, updatedAt: 0 });
 
 export function createStore(ctx) {
-  let state = { ...EMPTY, trustedRoots: [], sessionRoots: {} };
+  let state = { ...EMPTY, sessionRoots: {} };
   let domain = null;
   let ready = null;
   let rewriteQueued = false;
@@ -41,7 +40,6 @@ export function createStore(ctx) {
       if (stored) {
         state = {
           lastRoot: stored.lastRoot ?? null,
-          trustedRoots: [...(stored.trustedRoots ?? [])],
           sessionRoots: { ...(stored.sessionRoots ?? {}) },
           updatedAt: stored.updatedAt ?? 0,
         };
@@ -55,7 +53,6 @@ export function createStore(ctx) {
   function snapshot() {
     return {
       lastRoot: state.lastRoot,
-      trustedRoots: [...state.trustedRoots],
       sessionRoots: { ...state.sessionRoots },
     };
   }
@@ -78,9 +75,6 @@ export function createStore(ctx) {
     },
     get lastRoot() {
       return state.lastRoot;
-    },
-    get trustedRoots() {
-      return [...state.trustedRoots];
     },
     /** The folder this session explicitly opened, or null for "follow the session cwd". */
     sessionRoot(sessionId) {
@@ -109,17 +103,6 @@ export function createStore(ctx) {
           void persist();
         });
       }
-    },
-    trust(root) {
-      if (!state.trustedRoots.includes(root)) state.trustedRoots.push(root);
-      void persist();
-    },
-    untrust(root) {
-      state.trustedRoots = state.trustedRoots.filter((item) => item !== root);
-      void persist();
-    },
-    isTrusted(root) {
-      return state.trustedRoots.includes(root);
     },
     close() {
       if (domain && typeof domain.close === 'function') domain.close();

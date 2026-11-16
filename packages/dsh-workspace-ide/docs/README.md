@@ -1,7 +1,7 @@
 # `packages/dsh-workspace-ide` 文档集 · 阅读地图
 
-一句话：一个 DSH 全局面板插件，小号 VS Code（SCM + 提交图谱 / 文件编辑高亮 / 真终端），根目录 = 工作区目录。
-**当前仓库状态：只有文档，没有实现代码。**
+一句话：一个 DSH 会话右栏工作台插件，小号 VS Code（SCM + 提交图谱 / 文件编辑高亮 / 真终端），根目录 = 工作区目录。
+**当前仓库已实现文件编辑、差异、改动、图谱、终端、仓库选择、命令与设置。** 当前行为以使用说明、架构与 Remote 契约记录为准；`plan/` 和调研材料保留历史决策，不表示尚未实现或当前授权流程。
 
 ## 阅读路线
 
@@ -42,9 +42,9 @@ docs/research/*.md ── 选型调研原文，作为论证依据，不作为实
 
 | 中文 | 英文/标识 | 本文档集里的精确含义 |
 | --- | --- | --- |
-| 工作区根 | root | 面板的绝对根目录。**只有 Host 能解析**：上次打开的目录，或最近活跃会话的 `cwd`，或用户显式选择 |
-| 全局面板 | main panel | 注册在 `main` keyed slot、`key='workspace-ide'` 的页面；与「对话」平级切换；**拿不到 sessionId** |
-| Remote | Typert Remote | Host 侧服务在浏览器里的投影，单一动作入口 `execute({sessionId,action,payload})` |
+| 工作区根 | root | 面板的绝对根目录。**只有 Host 能解析**：该会话手动选择 > 会话 cwd > 上次根目录 |
+| 工作台 | workbench | `sidebar.right.pane.tab` keyed slot 的会话工作台；frame 全视图与右栏共享同一 runtime，均持 sessionId |
+| Remote | Typert Remote | Host 侧服务在浏览器里的投影，单一动作入口 `execute({sessionId,action,payload,repositoryPath?})` |
 | 动作 | action | `files.read`、`git.status` 这类字符串；全集在 `docs/remote-contract.md` |
 | 快照 / 序号 | snapshot / `seq` | `git.status` 返回的单调递增序号；**旧 seq 的响应必须丢弃** |
 | 版本 | `version` | 文件新鲜度 token（`sha1(size\|mtimeMs\|inode)` 短串），写盘时作 `expectedVersion` |
@@ -55,7 +55,6 @@ docs/research/*.md ── 选型调研原文，作为论证依据，不作为实
 | 未跟踪 | untracked | 不在 index 也不在 HEAD 的文件（`?`） |
 | **版本冲突** | `E_VERSION_CONFLICT` | 写盘时文件的 `version` 已变（外部改写），**不是**合并冲突 |
 | **合并冲突** | merge conflict（`u` 行） | git 的 conflicted 条目（stages 1/2/3 都在）；这是 status 四组里的 `conflicts` |
-| 信任 | trust / `trusted\|untrusted` | 用户对该目录的显式授权；未信任 = 只读 + 硬化 + 禁终端 |
 | 巨大仓库 | huge repo | `git.status` 超时或超量的仓库；自动刷新停用，改手动 |
 | 降级 | degrade | 明确告知能力缩小（关高亮、关自动刷新、只读），**不许静默** |
 | 轮询 | poll | 前端按固定间隔向 Host 要增量（终端 120 ms、`git.status` 1500 ms） |
@@ -66,7 +65,7 @@ docs/research/*.md ── 选型调研原文，作为论证依据，不作为实
 | 编排 | workbench.stores | 唯一允许跨域串流程的地方（打开文件、出 diff、切分支刷新） |
 | 单文件 IIFE | bundle | `lib/client.js`：一个自执行函数，无 chunk、无 worker、无 wasm |
 | 主题令牌 | `--dsw-alias-*` | DSH 宿主提供的颜色变量；**禁止硬编码色值** |
-| 顶栏留白 | `--dsh-frame-top-clearance` | macOS 红绿灯占据的高度（48px），主面板根元素必须留 |
+| 顶栏留白 | `--dsh-frame-top-clearance` | 由宿主 tab 条处理，右栏工作台 body 不重复添加 |
 | DoD | Definition of Done | 每个里程碑的完成判据，见 `docs/milestones.md` |
 
 ## 文档维护规则

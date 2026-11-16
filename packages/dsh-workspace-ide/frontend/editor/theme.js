@@ -11,7 +11,6 @@ export const editorTheme = EditorView.theme({
     height: '100%',
     color: 'var(--dsw-alias-label-primary)',
     backgroundColor: 'var(--dsw-alias-bg-base)',
-    fontSize: 'var(--dsh-code-font-size, 13px)',
   },
   '.cm-scroller': {
     fontFamily: 'var(--ds-font-family-code)',

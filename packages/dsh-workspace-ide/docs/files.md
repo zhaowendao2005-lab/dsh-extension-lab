@@ -3,6 +3,10 @@
 > 分层见 [ARCHITECTURE.md](../ARCHITECTURE.md)、[AGENTS.md](../AGENTS.md)：`frontend/views/files/`（树、行内输入、搜索面板的 DOM/虚拟滚动绑定）+ `frontend/stores/{tree,editor,search}.{stores,datasource}.ts` + `frontend/service/{path,sort,tree}.js`（纯函数）；「点击文件 → 打开编辑 tab」「选中变更 → 出 diff」这类跨域编排只在 `frontend/stores/workbench.stores.ts`。编辑器侧见 [editor.md](./editor.md)，动作与字段以 [remote-contract.md](./remote-contract.md) 为准。
 > 三条硬事实：**目录只列一层、不递归**；**所有路径都是工作区相对路径**（Host 才是唯一路径裁判）；**`version` 是唯一的新旧依据**（`files.*` 响应带，旧的丢弃）。
 
+文件 / 搜索仍相对工作区根，不随活动 Git 仓库切换。文件树与 SCM、命令页复用 `FileIcon`，包清单、各包管理器锁文件、Git 点文件、工具配置等按完整名称识别，详情见 [ui-spec.md](./ui-spec.md) §20.3。
+
+仓库 / 包清单发现是独立的 Host 有界扫描 `workspace.scan`，不是把文件树懒加载改成递归：扫描不跟随目录符号链接并跳过依赖 / 缓存 / 构建目录，达到数量、深度或时间上限返回 warnings 与 truncated。包脚本读取由 `workspace.packageScripts` 提供，执行前 Host 重新读取；真实接口见 [remote-contract.md](./remote-contract.md)。
+
 ## 1. 目录树模型
 
 ### 1.1 数据结构与归属
@@ -401,7 +405,6 @@ const loop = async (token, offset) => {
 | 无根目录（Host 解析不到 `cwd` 且用户未选） | 居中：「未选择工作区」+ 「选择目录」按钮 | 调 `ctx.uiWorkspace.pickDirectory()`，结果只告诉 Host（不在 wire 传绝对路径） |
 | 根为空目录 | 「此工作区没有文件」+ 「新建文件」 | 直接在根下 `create` |
 | 目录为空 | 展开后一行灰字「空目录」（`loaded && childPaths.length === 0`） | — |
-| 未信任目录 | 顶部横幅「此目录未被信任，仅可浏览，不可写入」+ 保存/新建/删除按钮全部 `disabled` + tooltip | — |
 
 ### 10.2 `ErrCode` → 文案/动作
 
@@ -409,7 +412,6 @@ const loop = async (token, offset) => {
 | --- | --- | --- |
 | `E_NOT_FOUND` | 「`{path}` 已不存在（可能被外部删除）」 | 从 `Map` 删除节点、失效父目录、关闭对应 tab；提供「刷新」 |
 | `E_OUTSIDE_ROOT` | 「该路径指向工作区之外，已阻止访问」 | 标红该 symlink；不提供强制入口 |
-| `E_TRUST_REQUIRED` | 「目录未被信任」 | 横幅 + 信任入口（Host 决定流程） |
 | `E_TIMEOUT` | 「操作超时（8 s），请重试」 | 「重试」按钮；连续 2 次超时提示检查路径深度/网络盘 |
 | 无权限（`EACCES` 映射到 `E_GIT_FAILED`? 否 → `E_TOO_LARGE`? 否） | 「没有权限读取 `{path}`」——契约无独立码，落在 `E_NOT_FOUND` 之外时统一按 `error.message` 显示（差异 #7） | 「以只读打开父目录」 |
 

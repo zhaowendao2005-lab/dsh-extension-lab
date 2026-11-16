@@ -75,6 +75,19 @@ export function createTerminalController({ client, store, notify }) {
     item.timer = null;
   }
 
+  function adopt(created) {
+    const tab = {
+      terminalId: created.terminalId,
+      title: created.title || created.shell || 'shell',
+      shell: created.shell,
+      pid: created.pid,
+      exited: false,
+      exitCode: null,
+    };
+    store.set((current) => ({ ...current, tabs: [...current.tabs, tab], activeId: tab.terminalId, phase: 'ready', error: null }));
+    return tab;
+  }
+
   const controller = {
     store,
 
@@ -102,19 +115,26 @@ export function createTerminalController({ client, store, notify }) {
       store.set((current) => ({ ...current, phase: 'creating', error: null }));
       try {
         const created = await client.call('terminal.create', { cols, rows, ...(shell ? { shell } : {}) });
-        const tab = {
-          terminalId: created.terminalId,
-          title: created.title || created.shell || 'shell',
-          shell: created.shell,
-          pid: created.pid,
-          exited: false,
-          exitCode: null,
-        };
-        store.set((current) => ({ ...current, tabs: [...current.tabs, tab], activeId: tab.terminalId, phase: 'ready', error: null }));
-        return tab;
+        return adopt(created);
       } catch (error) {
         store.set((current) => ({ ...current, phase: 'error', error: error?.message ?? '无法创建终端' }));
         notify?.('error', error?.message ?? '无法创建终端', { code: error?.code });
+        return null;
+      }
+    },
+
+    async runScript(path, script) {
+      store.patch({ phase: 'creating', error: null });
+      try {
+        const created = await client.call('terminal.runScript', { path, script });
+        if (disposed) {
+          await client.call('terminal.close', { terminalId: created.terminalId });
+          return null;
+        }
+        return adopt(created);
+      } catch (error) {
+        store.patch({ phase: 'error', error: error?.message ?? '无法运行脚本' });
+        notify?.('error', error?.message ?? '无法运行脚本', { code: error?.code });
         return null;
       }
     },

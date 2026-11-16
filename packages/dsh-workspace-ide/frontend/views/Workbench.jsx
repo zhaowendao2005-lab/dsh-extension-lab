@@ -12,6 +12,7 @@ import { Splitter } from './common/Splitter.jsx';
 import { QuickOpen } from './common/QuickOpen.jsx';
 import { ConfirmModal } from './common/ConfirmModal.jsx';
 import { EmptyState } from './common/EmptyState.jsx';
+import { workbenchScale } from '../service/geometry.js';
 
 /**
  * The workbench shell: toolbar, collapsible file/search column, the split editor area and
@@ -28,18 +29,27 @@ export function Workbench({ stores, visible }) {
   const navOpen = !ui.sidebarCollapsed;
   const panelOpen = !ui.panelCollapsed;
   const drag = layout.drag;
+  const scalePercent = [80, 90, 100, 110, 125, 150].includes(ui.uiScale) ? ui.uiScale : 100;
+  const scale = scalePercent / 100;
 
   // The right column's width (not the window's) decides compact vs regular.
   useEffect(() => {
     const node = frameRef.current;
     if (!node) return undefined;
-    const report = () => stores.actions.setColumnWidth(node.getBoundingClientRect().width);
+    const report = () => {
+      const width = Math.round(node.getBoundingClientRect().width / scale * 100) / 100;
+      if (width <= 0 || !rootRef.current) return;
+      // Each surface has its own geometry even when sidebar and full view share stores.
+      rootRef.current.dataset.width = width < 520 ? 'compact' : width < 720 ? 'medium' : 'wide';
+      rootRef.current.style.setProperty('--wid-logical-width', width + 'px');
+      stores.actions.setColumnWidth(width);
+    };
     report();
     if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(report);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [stores]);
+  }, [stores, scale]);
 
   useEffect(() => {
     if (!drag) return undefined;
@@ -59,7 +69,10 @@ export function Workbench({ stores, visible }) {
     ghost = (
       <div
         className="wid-dragghost"
-        style={{ left: drag.x - rect.left + 12 + 'px', top: drag.y - rect.top + 10 + 'px' }}
+        style={{
+          left: (drag.x - rect.left) / workbenchScale(rootRef.current) + 12 + 'px',
+          top: (drag.y - rect.top) / workbenchScale(rootRef.current) + 10 + 'px',
+        }}
         aria-hidden="true"
       >
         {title || '标签'}
@@ -72,10 +85,12 @@ export function Workbench({ stores, visible }) {
       <div
         ref={rootRef}
         className="wid-root"
-      data-nav={navOpen ? 'open' : 'collapsed'}
-      data-panel={panelOpen ? 'open' : 'collapsed'}
-      data-visible={visible ? 'true' : 'false'}
-    >
+        data-ui-scale={scalePercent}
+        style={{ '--wid-ui-scale': scale, '--wid-panel-h': panelOpen ? ui.panelHeight + 'px' : '0px' }}
+        data-nav={navOpen ? 'open' : 'collapsed'}
+        data-panel={panelOpen ? 'open' : 'collapsed'}
+        data-visible={visible ? 'true' : 'false'}
+      >
       <Toolbar stores={stores} />
       <div className="wid-nav" aria-label="文件与搜索">
         <NavHeader stores={stores} />
@@ -96,7 +111,7 @@ export function Workbench({ stores, visible }) {
       <Splitter
         value={ui.panelHeight}
         min={120}
-        max={Math.max(200, (window.innerHeight || 800) - 240)}
+        max={Math.max(120, (frameRef.current?.clientHeight || window.innerHeight || 800) / scale - 120)}
         label="调整终端面板高度"
         onChange={(height) => stores.ui.patch({ panelHeight: height })}
         onCommit={() => stores.actions.setPanelHeight(stores.ui.getSnapshot().panelHeight)}

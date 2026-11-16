@@ -3,7 +3,7 @@
  * the index lock and two concurrent writers produce `index.lock` failures that look like
  * random errors to the user (docs/git-model.md §写队列).
  */
-import { IdeError, isTrustError } from '../service/client.js';
+import { IdeError } from '../service/client.js';
 
 export function createScmDomain({ client, scm, workspace, notify, fail, confirm, prompt, refreshScm, openFile }) {
   let queue = Promise.resolve();
@@ -31,24 +31,43 @@ export function createScmDomain({ client, scm, workspace, notify, fail, confirm,
       await refreshScm();
       return result;
     } catch (error) {
-      if (isTrustError(error)) {
-        notify('warn', '此操作需要先信任当前工作区', error.detail ?? null, error.code);
-        return null;
-      }
       fail(scm, error, `${label} 失败`);
       return null;
     }
   }
 
+  async function writePaths(action, label, paths, all) {
+    const list = [...new Set(Array.isArray(paths) ? paths : [paths])];
+    if (all) return write(label + '全部', action, { paths: list, all: true });
+    if (!list.length || !workspace.getSnapshot().root) return null;
+    const root = workspace.getSnapshot().root;
+    let completed = 0;
+    try {
+      const result = await enqueue(label + ' ' + list.length + ' 个文件', async () => {
+        for (let offset = 0; offset < list.length; offset += 5000) {
+          if (workspace.getSnapshot().root !== root) throw new IdeError('E_INVALID_ARG', '工作区已切换，已停止剩余操作');
+          await client.call(action, { paths: list.slice(offset, offset + 5000), all: false });
+          completed = Math.min(list.length, offset + 5000);
+        }
+        return { paths: list };
+      });
+      return result;
+    } catch (error) {
+      if (completed) notify('warn', label + '部分完成', '已处理 ' + completed + ' / ' + list.length + ' 条路径，请查看刷新后的状态。');
+      fail(scm, error, label + '失败');
+      return null;
+    } finally {
+      await refreshScm();
+    }
+  }
+
   const actions = {
     stage(paths, all = false) {
-      const list = Array.isArray(paths) ? paths : [paths];
-      return write(all ? '暂存全部' : `暂存 ${list.length} 个文件`, 'git.stage', { paths: list, all });
+      return writePaths('git.stage', '暂存', paths, all);
     },
 
     unstage(paths, all = false) {
-      const list = Array.isArray(paths) ? paths : [paths];
-      return write(all ? '取消暂存全部' : `取消暂存 ${list.length} 个文件`, 'git.unstage', { paths: list, all });
+      return writePaths('git.unstage', '取消暂存', paths, all);
     },
 
     async discard(paths) {
@@ -71,13 +90,18 @@ export function createScmDomain({ client, scm, workspace, notify, fail, confirm,
     },
 
     async commit(message, { all = false, amend = false } = {}) {
-      const text = String(message ?? '').trim();
+      const draft = String(message ?? '');
+      const root = workspace.getSnapshot().root;
+      const text = draft.trim();
       if (!text) {
         notify('warn', '提交信息不能为空', null);
         return null;
       }
       const result = await write(amend ? '修订提交' : '提交', 'git.commitCreate', { message: text, all, amend });
-      if (result) notify('info', '提交完成', null);
+      if (result) {
+        if (workspace.getSnapshot().root === root && scm.getSnapshot().message === draft) scm.patch({ message: '' });
+        notify('info', '提交完成', null);
+      }
       return result;
     },
 
@@ -98,6 +122,7 @@ export function createScmDomain({ client, scm, workspace, notify, fail, confirm,
         scm.patch({ refs });
         return refs;
       }).catch((error) => {
+        if (error?.code === 'E_INVALID_ARG' && error?.detail?.staleRepository === true) return null;
         fail(scm, error, '无法读取分支');
         return null;
       });
@@ -147,6 +172,7 @@ export function createScmDomain({ client, scm, workspace, notify, fail, confirm,
         scm.patch({ stashes: result?.entries ?? [] });
         return result;
       } catch (error) {
+        if (error?.code === 'E_INVALID_ARG' && error?.detail?.staleRepository === true) return null;
         fail(scm, error, '无法读取贮藏');
         return null;
       }

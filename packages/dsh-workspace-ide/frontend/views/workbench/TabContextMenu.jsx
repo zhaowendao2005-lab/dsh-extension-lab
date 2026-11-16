@@ -1,15 +1,12 @@
 import { useStore, useEffect, useRef } from '../../runtime.js';
 
-const EMPTY_ROWS = [];
-const EMPTY_CATALOG = { getSnapshot: () => EMPTY_ROWS, subscribe: () => () => {} };
-
 /**
  * Tab / tab-strip context menu. Rendered inside .wid-root (absolute), never a native menu:
  * the host never sees our confirmations, and the menu must not leave the right column.
  */
 export function TabContextMenu({ stores, menu }) {
   const layout = useStore(stores.layout);
-  const catalog = useStore(stores.host?.shortcuts ? stores.host.shortcuts.catalog : EMPTY_CATALOG);
+  const catalog = useStore(stores.host.shortcutCatalog);
   const closeKeys = catalog.find((row) => row.id === 'workspace-ide.closeTab')?.keys ?? [];
   const node = useRef(null);
   const tab = menu.tabId ? layout.tabs[menu.tabId] : null;

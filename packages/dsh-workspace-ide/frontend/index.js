@@ -88,7 +88,7 @@ window.__ModuleLoader__.load({
         }
 
         const host = {
-          pickDirectory: async () => (typeof uiWorkspace?.pickDirectory === 'function' ? await uiWorkspace.pickDirectory() : null),
+          pickDirectory: typeof uiWorkspace?.pickDirectory === 'function' ? () => uiWorkspace.pickDirectory() : undefined,
           toggleSidebar: () => {
             try {
               ctx.layout?.toggleSidebar?.();
@@ -99,6 +99,8 @@ window.__ModuleLoader__.load({
           fullView,
           toggleFullView,
           closeFullView,
+          shortcutCatalog: createStore([]),
+          shortcutStatus: createStore({ available: false, failed: [], error: null }),
         };
 
         /** One runtime per session: its own client (sessionId stamped on every request) and stores. */
@@ -226,11 +228,12 @@ window.__ModuleLoader__.load({
         // Shortcut commands stay unbound by default: the host's own "Keyboard shortcuts" panel
         // (Settings → General → Edit shortcuts, or Mod+/) lists every registered command, so the
         // user assigns keys there instead of in a plugin-owned recorder.
-        const shortcutDisposers = [];
         ctx.inject(['shortcuts'], (shortcutCtx) => {
           const shortcuts = shortcutCtx.get('shortcuts');
           if (!shortcuts?.register) return;
-          host.shortcuts = shortcuts;
+          const shortcutDisposers = [];
+          const failed = [];
+          host.shortcutStatus.set({ available: true, failed: [], error: null });
           const commands = [
             ['workspace-ide.explorer', '工作台：文件栏', () => withSession((stores) => stores.actions.setActivity('files'))],
             ['workspace-ide.search', '工作台：工作区搜索', () => withSession((stores) => stores.actions.setActivity('search'))],
@@ -269,14 +272,27 @@ window.__ModuleLoader__.load({
                   : { status: 'blocked', reason: '请先选择一个会话' }),
               }));
             } catch (error) {
+              failed.push(id);
               console.error('[workspace-ide] shortcut register failed', id, error);
             }
           }
+          const syncCatalog = () => {
+            try {
+              host.shortcutCatalog.set(shortcuts.catalog.getSnapshot());
+              host.shortcutStatus.set({ available: true, failed: [...failed], error: null });
+            } catch (error) {
+              host.shortcutStatus.set({ available: true, failed: [...failed], error: String(error?.message ?? error) });
+              console.error('[workspace-ide] shortcut catalog failed', error);
+            }
+          };
+          syncCatalog();
+          if (shortcuts.catalog?.subscribe) shortcutDisposers.push(shortcuts.catalog.subscribe(syncCatalog));
+          shortcutCtx.effect(() => () => {
+            for (const dispose of shortcutDisposers.splice(0)) dispose();
+            host.shortcutCatalog.set([]);
+            host.shortcutStatus.set({ available: false, failed: [], error: null });
+          }, 'workspace-ide.shortcuts');
         });
-
-        ctx.effect(() => () => {
-          for (const dispose of shortcutDisposers.splice(0)) dispose();
-        }, 'workspace-ide.shortcuts');
       });
     }
 
