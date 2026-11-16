@@ -1,7 +1,6 @@
 import React,{ useStore } from '../../runtime';
 import type { Workbench } from '../../types';
 import { Icon } from '../../components/common';
-import {ProviderManager} from '../a6/ProviderManager';
 
 /** Credential setup for a6api. Everything here runs on the Host; the browser only sends selections. */
 export function FeatureHub({ store }: { store: Workbench }) {
@@ -17,14 +16,13 @@ export function FeatureHub({ store }: { store: Workbench }) {
       <button type="button" className="mit-feature-card" onClick={store.actions.openDraft}><span className="mit-feature-index">01</span><strong>模型智能测试</strong><span className="mit-muted">lm-detector 真实数字指纹，或自定义 Agent 任务评测。全局 {records.length} 条记录。</span><span className="mit-feature-action">打开工作台 <Icon name="chevron" size={12} /></span></button>
       <section className="mit-feature-card mit-a6-credentials" aria-label="a6api 接入">
         <span className="mit-feature-index">02</span><strong>a6api 接入</strong>
-        <p className="mit-muted">填一次账户访问令牌：之后固定渠道、解除固定、换取测试令牌密钥全部由 DSH 直接完成，网页只负责把渠道清单发过来。</p>
+        <p className="mit-muted">填一次账户访问令牌：之后固定渠道、加入路由及换取采样令牌密钥均由 DSH 直接完成，网页只负责把渠道清单发过来。</p>
         <label className="mit-field">账户访问令牌<input type="password" autoComplete="off" spellCheck={false} value={accessToken} placeholder={config?.configured? `已配置 ${config.mask}（留空则沿用）`:'在 a6api 设置里生成后粘贴'} onChange={event => store.actions.patchA6Form({accessToken: event.currentTarget.value})} /></label>
         <label className="mit-field">用户 ID<input inputMode="numeric" value={userId} placeholder={config?.userId? `当前 ${config.userId}`:'a6api 个人设置里的数字 ID'} onChange={event => store.actions.patchA6Form({userId: event.currentTarget.value})} /></label>
         <button type="button" className="mit-button" disabled={a6.saving} onClick={store.actions.saveA6Config}>{a6.saving? '正在验证…':'保存并验证'}</button>
         {config?.configured&&<p className="mit-muted" role="status">已连接：账号 {config.userId} · 访问令牌 {config.mask}</p>}
         {a6.configError&&<p className="mit-error" role="alert">{a6.configError}</p>}
         {a6.configFeedback&&<p className="mit-muted" role="status">{a6.configFeedback}</p>}
-        <ProviderManager store={store} />
         <div className="mit-a6-intake">
           <div className="mit-label-row"><strong>油猴接入</strong><button type="button" className="mit-text-button" disabled={a6.rotating} onClick={store.actions.rotateA6Intake}>{a6.rotating? '更换中…':'更换导入口令'}</button></div>
           <p className="mit-muted">包内脚本：{userscript? `v${userscript.version} · 协议 ${userscript.protocolVersion}`:'等待 Host 报告包内版本'}</p>

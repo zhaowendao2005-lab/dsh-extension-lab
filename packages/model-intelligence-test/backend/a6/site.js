@@ -118,8 +118,10 @@ export class A6Site {
   }
   async pin({ tokenId, model, channelId, fallback = false }) {
     await this.request('/api/marketplace/pin', { method: 'POST', body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId), fallback_to_smart_routing: Boolean(fallback) } });
-    const current = (await this.pins()).find(row => row.tokenId === Number(tokenId) && row.model === model);
-    return { routeEffective: current?.channelId === Number(channelId) && current?.routeEffective === true, supplierId: current?.supplierId ?? 0 };
+    const pins = await this.pins();
+    const matching = pins.filter(row => row.tokenId === Number(tokenId) && row.model === model);
+    const current = matching.length === 1 ? matching[0] : null;
+    return { routeEffective: current?.channelId === Number(channelId) && current?.routeEffective === true, supplierId: current?.supplierId ?? 0, pins };
   }
   async unpin({ tokenId, model, channelId }) {
     await this.request('/api/marketplace/unpin', { method: 'POST', body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId) } });
@@ -162,9 +164,10 @@ export class A6Site {
         await this.request('/api/subscriptions', { method: 'POST', body: { token_id: Number(tokenId), model_name: model, channels: [{ channel_id: Number(channelId) }], caps: { input_price_micros: 0, output_price_micros: 0, cache_read_price_micros: 0, cache_write_price_micros: 0, per_request_price_micros: 0 }, sort_strategy: 'price_asc' } });
       }
     }
-    const observed = await read();
+    const subscriptions = await this.subscriptions();
+    const observed = subscriptions.find(row => Number(row.token_id) === Number(tokenId) && (row.model_name ?? row.model) === model);
     if (!has(observed)) throw new A6Error('route-unverified', '未能读回加入路由结果，请检查站点状态');
-    return { verified: true, tokenId: Number(tokenId), model, channelId: Number(channelId), subscriptionId: observed.id };
+    return { verified: true, tokenId: Number(tokenId), model, channelId: Number(channelId), subscriptionId: observed.id, subscriptions };
   }
   dispose() { this.controller.abort(); }
 }

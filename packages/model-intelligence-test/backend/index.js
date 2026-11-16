@@ -20,7 +20,7 @@ export function apply(ctx) {
   let records;
   let a6;
   const ledger = new A6Ledger({ storage, site, onChange: () => records?.bump() });
-  site.onConfigure = meta => { ledger.configure(meta); a6?.invalidateProviders(); };
+  site.onConfigure = meta => { ledger.configure(meta); a6?.invalidateOperations(); };
   const engine = new FingerprintEngine(ctx, {
     ledger,
     onTouch: job => records?.onTouch(job),
@@ -35,9 +35,6 @@ export function apply(ctx) {
   });
   records = new RecordsService(ctx, storage, engine, { ledger });
   a6 = new A6Service({ ctx, storage, intake, site, records, engine });
-  for (const event of ['llm/adapters-updated', 'credentials/reference-updated', 'settings/document-updated']) {
-    ctx.on(event, () => a6.invalidateProviders());
-  }
   ctx.effect(() => () => {
     a6.dispose();
     engine.dispose();

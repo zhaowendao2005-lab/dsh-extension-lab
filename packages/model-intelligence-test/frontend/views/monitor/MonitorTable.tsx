@@ -13,7 +13,7 @@ import { FINGERPRINT_DECISIONS,formatRankingScore,hasCalibratedProbability,isSam
 // Keep in sync with `.mit-table .mit-sticky-match { right: ... }` in styles.css.
 const ACTION_COLUMN_WIDTH=144;
 const A6_COLUMNS = new Set(['price','cache24h','target']);
-const defaultWidth = (column: string): number => column === 'target' ? 320 : column === 'price' ? 228 : 144;
+const defaultWidth = (column: string): number => column === 'target' ? 236 : column === 'price' ? 228 : 144;
 const supportsColumn = (column: string,record: Evaluation): boolean => column in COLUMN_LABELS && (record.kind === 'custom' || column !== 'round') && (Boolean(record.a6api) || !A6_COLUMNS.has(column));
 
 function columnLabel(column: string,custom: boolean): string {

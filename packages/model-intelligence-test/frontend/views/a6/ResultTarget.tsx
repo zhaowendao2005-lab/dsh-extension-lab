@@ -1,68 +1,43 @@
 import React,{useStore} from '../../runtime';
-import type {A6ProviderToken,A6Target,Evaluation,Run,Workbench} from '../../types';
-import {MATCH_LABELS} from './ProviderManager';
+import type {Evaluation,Run,Workbench} from '../../types';
+import {operationRowKey,operationTokenIssue} from '../../stores/a6insights.stores';
 
-const targetValue = (target: A6Target): string => JSON.stringify([target.tokenId,target.providerId ?? '']);
-function tokenState(token: A6ProviderToken): string {
-  if (typeof token.expiredTime === 'number' && token.expiredTime > 0 && token.expiredTime * 1000 <= Date.now()) return '已过期';
-  if (token.status !== undefined && token.status !== 1 && token.status !== '1') return '不可用';
-  return '';
-}
-export function ResultTarget({store,record,run}: {store: Workbench;record: Evaluation;run: Run}) {
-  const view = useStore(store.a6Insights,state => state.providers);
+/** Relationship highlights are derived only from a successful Host readback for the selected Key. */
+export function ResultTarget({store,record,run}: {store:Workbench;record:Evaluation;run:Run}) {
+  const view = useStore(store.a6Insights,state => state.operations);
   const loading = useStore(store.a6Insights,state => state.loading);
   const error = useStore(store.a6Insights,state => state.error);
-  const query = useStore(store.a6Insights,state => state.targetQueries[run.model.id] ?? '');
-  const feedback = useStore(store.a6Insights,state => state.results[run.model.id]);
+  const feedback = useStore(store.a6Insights,state => state.results[operationRowKey(record.id,run.model.id,run.model.a6api?.channelId ?? 0)]);
   const config = useStore(store.a6,state => state.config);
   const channel = run.model.a6api;
   if (!channel || !record.a6api) return null;
-  const accountCurrent = Boolean(config?.configured && config.userId === record.a6api.accountId);
   const accountMatches = Boolean(config?.configured && view?.accountId && view.accountId === record.a6api.accountId && config.userId === record.a6api.accountId);
-  const saved = accountMatches ? view?.targets[run.model.id] : undefined;
-  const search = query.trim().toLowerCase();
-  const selectedIds = new Set(view?.selectedProviderIds ?? []);
-  const providers = view?.providers.filter(provider => selectedIds.has(provider.id)) ?? [];
-  const choices = providers.filter(provider => provider.state === 'exact').flatMap(provider => provider.tokenIds.flatMap(tokenId => {
-    const token = view?.tokens.find(item => item.id === tokenId);
-    return token ? [{target:{tokenId,providerId:provider.id},token,label:`${provider.name} · ${token.name || `令牌 #${token.id}`} #${token.id} ${token.maskedKey ?? ''}`}] : [];
-  }));
-  const matchedIds = new Set(choices.map(choice => choice.token.id));
-  const unlinked = view?.tokens.filter(token => !matchedIds.has(token.id)).map(token => ({target:{tokenId:token.id} as A6Target,token,label:`${token.name || '未命名令牌'} #${token.id} ${token.maskedKey ?? ''}`})) ?? [];
-  const all = [...choices,...unlinked];
-  const savedChoice = saved ? all.find(choice => targetValue(choice.target) === targetValue(saved)) : undefined;
-  const usable = accountMatches && savedChoice && !tokenState(savedChoice.token) && (!saved?.providerId || providers.some(provider => provider.id === saved.providerId && provider.state === 'exact' && provider.tokenIds.includes(saved.tokenId)));
-  const shown = (items: typeof all) => items.filter(choice => choice === savedChoice || !search || choice.label.toLowerCase().includes(search));
-  const renderChoice = (choice: typeof all[number]) => <option key={targetValue(choice.target)} value={targetValue(choice.target)} disabled={Boolean(tokenState(choice.token))}>{choice.label}{tokenState(choice.token) ? ` · ${tokenState(choice.token)}` : ''}</option>;
+  const tokenId = view?.tokenId;
+  const token = view?.tokens.find(item => item.id === tokenId);
+  const selected = tokenId !== null && tokenId !== undefined;
+  const usable = accountMatches && selected && !error && !operationTokenIssue(token) && view?.tokensAt !== null && !view?.loading.tokens && !view?.errors.tokens;
+  const modelPins = view?.pins.filter(item => item.model === run.model.id) ?? [];
+  const pinsConflict = modelPins.length > 1;
+  const pinsKnown = usable && !loading && view?.pinsAt !== null && !view?.loading.pins && !view?.errors.pins && !pinsConflict;
+  const routesKnown = usable && !loading && view?.routesAt !== null && !view?.loading.routes && !view?.errors.routes;
+  const pin = modelPins.length === 1 ? modelPins[0] : undefined;
+  const pinned = Boolean(pinsKnown && pin?.channelId === channel.channelId && pin.routeEffective === true);
+  const routed = Boolean(routesKnown && view?.routes.some(item => item.model === run.model.id && item.channelIds.includes(channel.channelId)));
   const pending = Boolean(feedback?.pending);
-  const restoreTokenId = saved?.tokenId;
-  const restoreAllowed = accountCurrent && restoreTokenId !== undefined;
-  return <div className="mit-a6-target" aria-busy={pending || loading}>
-    <input type="search" aria-label={`${run.model.id} 使用目标搜索`} placeholder="搜索提供商、令牌或掩码" value={query} disabled={!accountMatches || pending} onChange={event => store.actions.setA6TargetQuery(run.model.id,event.currentTarget.value)} />
-    <select aria-label={`${run.model.id} 使用目标`} value={saved ? targetValue(saved) : ''} disabled={!accountMatches || pending} onChange={event => {
-      const choice = all.find(item => targetValue(item.target) === event.currentTarget.value);
-      if (choice) store.actions.saveA6Target(record.id,run.model.id,choice.target);
-    }}>
-      <option value="" disabled>选择使用目标</option>
-      {saved && !savedChoice && <option value={targetValue(saved)} disabled>已保存目标失效 · 令牌 #{saved.tokenId}</option>}
-      <optgroup label="已匹配的提供商（优先）">{shown(choices).map(renderChoice)}</optgroup>
-      <optgroup label="其他站点令牌（未关联所选提供商）">{shown(unlinked).map(renderChoice)}</optgroup>
-    </select>
-    <select aria-label={`${run.model.id} 渠道操作`} value="" disabled={!accountCurrent || pending} onChange={event => {
-      const operation = event.currentTarget.value;
-      if (operation === 'restore' && restoreAllowed && restoreTokenId !== undefined) store.actions.a6ResultAction({recordId:record.id,model:run.model.id,channelId:channel.channelId,tokenId:restoreTokenId,operation});
-      else if (saved && usable && (operation === 'pin' || operation === 'route')) store.actions.a6ResultAction({recordId:record.id,model:run.model.id,channelId:channel.channelId,...saved,operation});
-    }}>
-      <option value="" disabled>{pending ? ({save:'正在保存目标…',pin:'正在固定…',route:'正在加入路由…',restore:'正在解除固定…'}[feedback?.pending ?? 'save']) : '操作此渠道…'}</option>
-      <option value="pin" disabled={!usable}>固定此渠道（关闭智能兜底）</option><option value="route" disabled={!usable}>加入此渠道路由</option><option value="restore" disabled={!restoreAllowed}>恢复此记录 / 渠道的原固定</option>
-    </select>
-    {!accountMatches && <small className="mit-error">{!config?.configured ? '请先配置并验证账号' : view?.accountId ? '当前账号与此记录不符' : loading ? '正在读取账号与匹配状态…' : '账号匹配状态不可用'}</small>}
-    {accountMatches && !all.length && <small className="mit-muted">没有可用令牌；请在上方管理提供商并刷新。</small>}
-    {accountMatches && providers.some(provider => provider.state !== 'exact') && <small className="mit-muted">{providers.filter(provider => provider.state !== 'exact').map(provider => `${provider.name}：${MATCH_LABELS[provider.state]}`).join('；')}</small>}
-    {saved && accountMatches && !usable && <small className="mit-error">已保存目标失效或不可用，请重新选择。</small>}
-    {search && !all.some(choice => choice.label.toLowerCase().includes(search)) && <small className="mit-muted">未找到匹配目标；已保存的目标仍保留显示。</small>}
-    {(feedback?.error || error || view?.error) && <small className="mit-error" role="alert">{feedback?.error || error || view?.error}</small>}
+  const act = (operation: 'pin'|'route'): void => {
+    if (tokenId !== null && tokenId !== undefined) store.actions.a6ResultAction({recordId:record.id,model:run.model.id,channelId:channel.channelId,tokenId,operation});
+  };
+  return <div className="mit-a6-row-operations" aria-busy={pending}>
+    <div className="mit-a6-actions">
+      <button type="button" className={`mit-button${pinned ? ' is-confirmed' : ''}`} aria-pressed={pinned} disabled={!pinsKnown || pending || pinned} title={pinned ? `Key #${tokenId} 已读回固定此渠道；再次点击不会解除` : `将 Key #${tokenId ?? '未选择'} 的 ${run.model.id} 固定至渠道 #${channel.channelId}，关闭智能兜底`} onClick={() => act('pin')}>固定</button>
+      <button type="button" className={`mit-button${routed ? ' is-confirmed' : ''}`} aria-pressed={routed} disabled={!routesKnown || pending || routed} title={routed ? `Key #${tokenId} 的此渠道已在路由中；再次点击不会移除` : `将渠道 #${channel.channelId} 加入 Key #${tokenId ?? '未选择'} 的 ${run.model.id} 路由`} onClick={() => act('route')}>加入路由</button>
+    </div>
+    {!accountMatches ? <small className="mit-error">{!config?.configured ? '请先配置并验证账号' : view?.accountId ? '当前账号与此记录不符' : '操作状态尚未读取'}</small> : !selected ? <small className="mit-muted">请在上方选择操作 Key</small> : !usable ? <small className="mit-error">操作 Key 尚未确认或不可用，请在上方刷新或重选</small> : <>
+      <small className="mit-muted">Key #{tokenId} · {pinsKnown ? pin ? pin.routeEffective ? `当前固定：渠道 #${pin.channelId}` : `固定尚未生效：渠道 #${pin.channelId}` : '此模型未固定' : pinsConflict ? '固定关系冲突，请刷新核对' : '固定关系未知，请刷新'}</small>
+      <small className="mit-muted">{routesKnown ? routed ? '此渠道已加入路由' : '此渠道尚未加入路由' : '路由关系未知，请刷新'}</small>
+    </>}
+    {pending && <small role="status">{feedback?.pending === 'pin' ? '固定并读取确认中…' : feedback?.pending === 'route' ? '加入路由并读取确认中…' : '恢复旧固定中…'}</small>}
+    {feedback?.error && <small className="mit-error" role="alert">{feedback.error}</small>}
     {feedback?.message && <small role="status">{feedback.message}</small>}
-    <small className="mit-muted">选择仅保存目标；恢复由 Host 查此记录 / 渠道的原租约，原令牌可能与当前目标不同。</small>
   </div>;
 }

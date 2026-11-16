@@ -20,18 +20,17 @@ export interface FingerprintOptions { concurrency?: number; timeoutMs?: number }
 
 export interface A6MarketSnapshot { capturedAt: number; chargeType?: string; currency?: string; unit?: string; inputPriceMicros?: number; outputPriceMicros?: number; cacheReadPriceMicros?: number; cacheWritePriceMicros?: number; perRequestPriceMicros?: number; exchangeRate?: number; cacheHitRate24h?: number; cacheHitState?: string }
 export interface A6Channel { listingId: number; channelId: number; supplierId: number; model: string; supplierName?: string; channelName?: string; brand?: string; market?: A6MarketSnapshot }
-export type A6ProviderMatch = 'exact' | 'pending' | 'stale' | 'ambiguous' | 'unmatched' | 'unsupported' | 'error';
-export interface A6ProviderInfo { id: string; name: string; state: A6ProviderMatch; tokenIds: number[]; error?: string }
-export interface A6ProviderToken { id: number; name: string; maskedKey?: string; status?: number | string; expiredTime?: number }
-export interface A6Target { tokenId: number; providerId?: string }
-export interface A6ProviderView { accountId: string; revision: number; providers: A6ProviderInfo[]; tokens: A6ProviderToken[]; selectedProviderIds: string[]; targets: Record<string, A6Target>; scanning?: boolean; error?: string }
-export interface A6ResultActionInput extends A6Target { recordId: string; model: string; channelId: number; operation: 'pin' | 'route' | 'restore' }
+export interface A6OperationToken { id: number; name: string; maskedKey?: string; status?: number | string; expiredTime?: number }
+export type A6RelationKind = 'pins' | 'routes' | 'all';
+export interface A6OperationView { accountId: string; revision: number; tokenId: number | null; tokens: A6OperationToken[]; tokensAt: number | null; pins: {model: string; channelId: number; routeEffective: boolean; status: string}[]; routes: {model: string; channelIds: number[]}[]; pinsAt: number | null; routesAt: number | null; loading: {tokens: boolean; pins: boolean; routes: boolean}; errors: {tokens?: string; pins?: string; routes?: string}; legacyLeases: {recordId: string | null; tokenId: number; model: string; channelId: number; stage: string}[] }
+export interface A6ResultActionInput { recordId: string; model: string; channelId: number; tokenId: number; operation: 'pin' | 'route' | 'restore' }
+export interface A6ResultActionOutcome { ok: true; result?: {operation?: string; tokenId?: number; model?: string; channelId?: number; verified?: boolean; skipped?: boolean}; state: A6OperationView }
 export interface A6LedgerSummary { requestCount: number | null; knownCostCny: number | null; billedCount: number; pendingCount: number; inputTokens?: number | null; outputTokens?: number | null; coverage: {requestIdCount: number; billingCompleteCount: number; usageCount: number; unattributedCount: number; inputCount?: number; outputCount?: number; ambiguousCount?: number; legacy?: boolean} }
 export interface A6Execution { id?: string; model?: string; intendedChannelId?: number; channelId?: number; requestId?: string; state: string; usageState?: string; billingState?: string; quota?: number; costCny?: number | null; inputTokens?: number | null; outputTokens?: number | null; channelMismatch?: boolean; accountState?: 'current'|'historical' }
 export interface A6LedgerView { executions: A6Execution[]; summary: A6LedgerSummary }
 export interface A6LedgerEntry { view?: A6LedgerView; loading: boolean; error?: string }
-export interface A6ResultFeedback { pending?: 'save' | 'pin' | 'route' | 'restore'; message?: string; error?: string }
-export interface A6InsightsState { providers: A6ProviderView | null; loading: boolean; managerOpen: boolean; query: string; selected: string[]; saving: boolean; error?: string; feedback?: string; targetQueries: Record<string,string>; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'> }
+export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'restore'; message?: string; error?: string }
+export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'> }
 export interface A6Token { id: number; name: string }
 export interface A6Slot { tokenId: number; name?: string }
 export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; models: A6Channel[]; tokens: A6Token[] }
@@ -39,10 +38,8 @@ export interface A6Selection { id: string; accountId: string; siteOrigin: string
 export interface A6Config { configured: boolean; mask: string; userId: string; intakeToken: string; origin: string; link?: string; userscript?: {version: string; protocolVersion: number; installUrl: string; updateUrl: string; recent?: {version: string; protocolVersion: number | null; seenAt: number; accountId: string}} }
 export type A6SelectionsView = {revision: number; selections: A6Selection[]} | {revision: number; unchanged: true};
 export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[] }
-export type A6Operation = 'pin' | 'restore';
-export interface A6ActionInput { selectionId: string; tokenId: number; model: string; channelId: number; operation: A6Operation }
 export interface A6Record { accountId: string; siteOrigin: string; selectionId: string; slots: A6Slot[] }
-export interface A6Draft { name: string; models: A6Channel[]; tokens: number[]; timeoutMs?: number; creating: boolean; error?: string; feedback?: string; targetTokenId?: number; targetChannel?: string; pending?: A6Operation; result?: string }
+export interface A6Draft { name: string; models: A6Channel[]; tokens: number[]; timeoutMs?: number; creating: boolean; error?: string; feedback?: string }
 export interface A6State { selections: A6Selection[]; drafts: Record<string, A6Draft>; loaded: boolean; error?: string; config: A6Config | null; configLoading: boolean; configError?: string; configFeedback?: string; form: {accessToken: string; userId: string}; saving: boolean; rotating: boolean; copying: boolean }
 export type RelayApi = 'chat' | 'responses' | 'messages';
 export interface RelayRef { siteId: string; channelId: number; model: string; api: RelayApi; listingId?: number; supplierId?: number }
@@ -69,11 +66,10 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  a6Tokens(): Promise<{tokens: A6Token[]}>;
  a6Selections(request: {revision?: number}): Promise<A6SelectionsView>;
  a6Create(request: A6CreateInput): Promise<{record: StoredRecord; attemptId: string}>;
- a6Action(request: A6ActionInput): Promise<{ok: true; result?: object}>;
- a6ProviderState(request: {refresh?: boolean; scan?: boolean}): Promise<A6ProviderView>;
- a6ProviderConfigure(request: {providerIds: string[]}): Promise<A6ProviderView>;
- a6TargetSave(request: {recordId: string; model: string} & A6Target): Promise<A6ProviderView>;
- a6ResultAction(request: A6ResultActionInput): Promise<{ok: true; result?: object}>;
+ a6OperationState(request: {refreshTokens?: boolean; refreshRelations?: boolean}): Promise<A6OperationView>;
+ a6OperationSelect(request: {tokenId: number | null}): Promise<A6OperationView>;
+ a6OperationRefresh(request: {kind: A6RelationKind}): Promise<A6OperationView>;
+ a6ResultAction(request: A6ResultActionInput): Promise<A6ResultActionOutcome>;
  a6LedgerView(request: {attemptId?: string; recordId?: string; refresh?: boolean}): Promise<A6LedgerView>;
 }
 export interface Preset { id: string; name: string; body: string }
@@ -105,12 +101,12 @@ export interface Workbench {
   patchDraft(value: Partial<Pick<DraftState, 'name' | 'kind' | 'body' | 'pickerOpen' | 'query'>>): void; toggleModel(key: string): void; refreshModels(): void; submit(): void;
   selectPreset(id: string): void; addPreset(): void; renamePreset(id: string): void; deletePreset(id: string): void; savePreset(): void; togglePresets(): void;
   cancelRecord(id: string): void; deleteRecord(id: string): void; resetMocks(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
-  openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs' | 'targetTokenId' | 'targetChannel'>>): void;
+  openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
-  submitA6(selectionId: string): void; a6Action(selectionId: string, operation: A6Operation): void;
+  submitA6(selectionId: string): void;
   loadA6Config(): void; patchA6Form(value: Partial<{accessToken: string; userId: string}>): void; saveA6Config(): void; rotateA6Intake(): void; copyA6Intake(): void;
-  toggleA6Providers(): void; setA6ProviderQuery(query: string): void; toggleA6Provider(id: string): void; saveA6Providers(): void; refreshA6Providers(scan?: boolean): void;
-  setA6TargetQuery(model: string, query: string): void; saveA6Target(recordId: string, model: string, target: A6Target): void; a6ResultAction(input: A6ResultActionInput): void;
+  loadA6Operations(): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
+  a6ResultAction(input: A6ResultActionInput): void;
   setA6LedgerScope(recordId: string, scope: 'attempt'|'record'): void; refreshA6Ledger(recordId: string): void;
   setFingerprintConfig(id: string, options: FingerprintOptions): void;
   retryFailedSample(id: string, runId: string): void;
@@ -122,4 +118,4 @@ export interface Workbench {
 export const FIXED_FOOTER_VERSION = 'delivery-v1';
 export const FIXED_FOOTER = '\n\n【最终交付约束 · delivery-v1】\n优先完成任务本身，由 Agent 根据任务选择合适的成果类型，无需过度包装。若交付绘图，只使用 Canvas + HTML 或 SVG。当前阶段不启动服务、不配置启动命令或端口。提供清晰的结果说明与可检查的成果。';
 export const STAGE_LABELS: Record<Stage, string> = {queued:'排队中', 'waiting-first-token':'等待首 Token', streaming:'生成中', finalizing:'收尾中', analyzing:'分析中', completed:'已完成', failed:'失败', timeout:'超时', cancelled:'已取消'};
-export const COLUMN_LABELS: Record<string,string> = {stage:'状态', input:'输入 Token', output:'输出 Token', ttft:'TTFT', e2e:'端到端 tok/s', generation:'生成 tok/s', cost:'费用（模拟）', price:'渠道报价（CNY）', cache24h:'渠道 24h 缓存率', target:'使用目标 / 渠道操作', match:'最高匹配', round:'当前轮次'};
+export const COLUMN_LABELS: Record<string,string> = {stage:'状态', input:'输入 Token', output:'输出 Token', ttft:'TTFT', e2e:'端到端 tok/s', generation:'生成 tok/s', cost:'费用（模拟）', price:'渠道报价（CNY）', cache24h:'渠道 24h 缓存率', target:'渠道操作', match:'最高匹配', round:'当前轮次'};

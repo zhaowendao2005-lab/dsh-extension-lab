@@ -64,11 +64,10 @@ var schemas = {
   a6ConfigSave: z2.strictObject({ accessToken: z2.string().max(512).optional(), userId: z2.string().max(40).optional() }),
   a6Selections: z2.strictObject({ revision: z2.number().int().nonnegative().optional() }),
   a6Create: z2.strictObject({ selectionId: id(), name: z2.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z2.array(a6Channel).min(1).max(64).optional() }),
-  a6Action: z2.strictObject({ selectionId: id(), tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive(), operation: z2.enum(["pin", "restore"]) }),
-  a6ProviderState: z2.strictObject({ refresh: z2.boolean().optional(), scan: z2.boolean().optional() }),
-  a6ProviderConfigure: z2.strictObject({ providerIds: z2.array(id(128)).max(256) }),
-  a6TargetSave: z2.strictObject({ recordId: id(), model: id(256), tokenId: z2.number().int().positive(), providerId: id(128).optional() }),
-  a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), providerId: id(128).optional(), operation: z2.enum(["pin", "route", "restore"]) }),
+  a6OperationState: z2.strictObject({ refreshTokens: z2.boolean().optional(), refreshRelations: z2.boolean().optional() }),
+  a6OperationSelect: z2.strictObject({ tokenId: z2.number().int().positive().nullable() }),
+  a6OperationRefresh: z2.strictObject({ kind: z2.enum(["pins", "routes", "all"]) }),
+  a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), operation: z2.enum(["pin", "route", "restore"]) }),
   a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID")
 };
 var DESCRIPTIONS = {
@@ -89,11 +88,10 @@ var DESCRIPTIONS = {
   a6Tokens: "List the account test tokens from a6api (id and name only, no key material).",
   a6Selections: "Read selections sent by the a6api userscript. Does not start inference.",
   a6Create: "Create an a6api-specific fingerprint attempt using user-selected test token slots (real inference).",
-  a6Action: "Pin or restore one explicit channel for a selected test token, using the stored access token.",
-  a6ProviderState: "Read account-scoped cached token metadata and configured-provider matching progress. No keys are returned.",
-  a6ProviderConfigure: "Persist selected local provider identities and start background account-key matching without modifying providers.",
-  a6TargetSave: "Save the account/model target token and optional matched local provider for a recorded channel.",
-  a6ResultAction: "Explicitly pin, add a route or restore a recorded channel for the saved target; serializes with active test slots.",
+  a6OperationState: "Read account token metadata and selected-key pin/route snapshots; only initial load or explicit refresh contacts the site.",
+  a6OperationSelect: "Persist the account-wide operation key and read its pin and route state. No key plaintext is read.",
+  a6OperationRefresh: "Explicitly refresh selected-key pins, routes, or both from the site.",
+  a6ResultAction: "Set a recorded channel pin or add it to routing under the global operation key; read back state. Restore handles legacy leases only.",
   a6LedgerView: "Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference."
 };
 var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z2.json() });
@@ -1281,23 +1279,14 @@ var ModelIntelligenceService = class extends Service {
   a6Create(request) {
     return this.guard(() => this.a6.create(request));
   }
-  a6Action(request) {
-    return this.guard(() => this.a6.action(request));
+  a6OperationState(request) {
+    return this.guard(() => this.a6.operationState(request ?? {}));
   }
-  a6ProviderState(request) {
-    return this.guard(async () => {
-      await this.a6.config();
-      return this.a6.providerState(request ?? {});
-    });
+  a6OperationSelect(request) {
+    return this.guard(() => this.a6.operationSelect(request));
   }
-  a6ProviderConfigure(request) {
-    return this.guard(async () => {
-      await this.a6.config();
-      return this.a6.providerConfigure(request);
-    });
-  }
-  a6TargetSave(request) {
-    return this.guard(() => this.a6.targetSave(request));
+  a6OperationRefresh(request) {
+    return this.guard(() => this.a6.operationRefresh(request));
   }
   a6ResultAction(request) {
     return this.guard(() => this.a6.resultAction(request));
@@ -1361,10 +1350,9 @@ var REMOTE_METHODS = [
   "a6Tokens",
   "a6Selections",
   "a6Create",
-  "a6Action",
-  "a6ProviderState",
-  "a6ProviderConfigure",
-  "a6TargetSave",
+  "a6OperationState",
+  "a6OperationSelect",
+  "a6OperationRefresh",
   "a6ResultAction",
   "a6LedgerView"
 ];
@@ -1898,8 +1886,10 @@ var A6Site = class {
   }
   async pin({ tokenId, model, channelId, fallback = false }) {
     await this.request("/api/marketplace/pin", { method: "POST", body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId), fallback_to_smart_routing: Boolean(fallback) } });
-    const current = (await this.pins()).find((row) => row.tokenId === Number(tokenId) && row.model === model);
-    return { routeEffective: current?.channelId === Number(channelId) && current?.routeEffective === true, supplierId: current?.supplierId ?? 0 };
+    const pins = await this.pins();
+    const matching = pins.filter((row) => row.tokenId === Number(tokenId) && row.model === model);
+    const current = matching.length === 1 ? matching[0] : null;
+    return { routeEffective: current?.channelId === Number(channelId) && current?.routeEffective === true, supplierId: current?.supplierId ?? 0, pins };
   }
   async unpin({ tokenId, model, channelId }) {
     await this.request("/api/marketplace/unpin", { method: "POST", body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId) } });
@@ -1941,9 +1931,10 @@ var A6Site = class {
         await this.request("/api/subscriptions", { method: "POST", body: { token_id: Number(tokenId), model_name: model, channels: [{ channel_id: Number(channelId) }], caps: { input_price_micros: 0, output_price_micros: 0, cache_read_price_micros: 0, cache_write_price_micros: 0, per_request_price_micros: 0 }, sort_strategy: "price_asc" } });
       }
     }
-    const observed = await read();
+    const subscriptions = await this.subscriptions();
+    const observed = subscriptions.find((row) => Number(row.token_id) === Number(tokenId) && (row.model_name ?? row.model) === model);
     if (!has(observed)) throw new A6Error("route-unverified", "\u672A\u80FD\u8BFB\u56DE\u52A0\u5165\u8DEF\u7531\u7ED3\u679C\uFF0C\u8BF7\u68C0\u67E5\u7AD9\u70B9\u72B6\u6001");
-    return { verified: true, tokenId: Number(tokenId), model, channelId: Number(channelId), subscriptionId: observed.id };
+    return { verified: true, tokenId: Number(tokenId), model, channelId: Number(channelId), subscriptionId: observed.id, subscriptions };
   }
   dispose() {
     this.controller.abort();
@@ -2191,11 +2182,7 @@ var A6Intake = class {
   }
 };
 
-// backend/a6/providers.js
-import { credentialRef } from "@deepseek-ai/dsh-credentials";
-var TTL_MS = 5 * 6e4;
-var clone = (value) => JSON.parse(JSON.stringify(value));
-var fail = (code, message) => new A6Error(code, message);
+// backend/a6/operations.js
 var mask = (value) => typeof value !== "string" ? "" : /[*•]/u.test(value) ? value.slice(0, 100) : value.length > 12 ? `${value.slice(0, 3)}\u2022\u2022\u2022\u2022${value.slice(-4)}` : value ? "\u2022\u2022\u2022\u2022" : "";
 var publicToken = (token) => ({
   id: Number(token.id),
@@ -2205,111 +2192,72 @@ var publicToken = (token) => ({
   ...token.expiredTime === void 0 ? {} : { expiredTime: token.expiredTime }
 });
 function assertUsableToken(token) {
-  if (!token) throw fail("token-not-found", "\u8BE5\u4EE4\u724C\u5DF2\u4E0D\u5C5E\u4E8E\u5F53\u524D\u8D26\u53F7\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u9009");
+  if (!token) throw new A6Error("token-not-found", "\u8BE5\u4EE4\u724C\u5DF2\u4E0D\u5C5E\u4E8E\u5F53\u524D\u8D26\u53F7\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u9009");
   if (token.status !== void 0 && ![1, "1", "enabled", "active"].includes(token.status)) {
-    throw fail("token-unavailable", "\u8BE5\u4EE4\u724C\u5DF2\u505C\u7528\u3001\u8FC7\u671F\u6216\u989D\u5EA6\u4E0D\u8DB3");
+    throw new A6Error("token-unavailable", "\u8BE5\u4EE4\u724C\u5DF2\u505C\u7528\u3001\u8FC7\u671F\u6216\u989D\u5EA6\u4E0D\u8DB3");
   }
   if (Number(token.expiredTime) > 0 && Number(token.expiredTime) * 1e3 <= Date.now()) {
-    throw fail("token-expired", "\u8BE5\u4EE4\u724C\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
+    throw new A6Error("token-expired", "\u8BE5\u4EE4\u724C\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
   }
 }
-var A6Providers = class {
+var idOf = (value) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
+var messageOf = (error, fallback) => error instanceof A6Error ? error.message : fallback;
+var storageKey = (identity2) => `a6-operations-${Buffer.from(identity2, "utf8").toString("base64url")}`;
+var A6Operations = class {
   constructor(service) {
     this.service = service;
-    this.revision = 1;
-    this.epoch = 0;
     this.account = null;
     this.loading = null;
-    this.scan = null;
+    this.epoch = 0;
+    this.revision = 1;
     this.writeTail = Promise.resolve();
-    this.reveals = /* @__PURE__ */ new Map();
-    this.revealActive = 0;
-    this.revealWaiters = [];
     this.disposed = false;
-  }
-  directory() {
-    const llm = this.service.ctx.get("llm");
-    const providers = llm?.listProviders?.() ?? [];
-    return providers.filter((row) => row && typeof row.id === "string" && typeof row.name === "string").map(({ id: id2, name: name2 }) => ({ id: id2, name: name2 }));
-  }
-  /** Only explicit API-key references have a known authentication contract in this version. */
-  reference(providerId) {
-    const ctx = this.service.ctx;
-    try {
-      const declaration = ctx.get("llm")?.listConfigurableProviders?.().find((row) => row.provider === providerId);
-      if (!declaration || declaration.error || !Array.isArray(declaration.settingsPath)) return null;
-      const descriptor = ctx.get("settings")?.describe?.({ redactSecrets: true }).find((row) => row.ns === declaration.settingsNs);
-      let section = descriptor?.value;
-      for (const part of declaration.settingsPath) section = section?.[part];
-      const secretOverride = descriptor?.secrets?.some((secret) => secret.set && declaration.settingsPath.every((part, index) => secret.path[index] === part) && ["apiKey", "headers", "auth", "apiKeys"].includes(secret.path[declaration.settingsPath.length]));
-      if (!section || typeof section !== "object" || secretOverride || section.apiKey || section.auth || section.apiKeys || section.headers && Object.keys(section.headers).length) return null;
-      if (typeof section.apiKeyEnv !== "string" || !section.apiKeyEnv.trim()) return null;
-      return { ref: credentialRef(section.apiKeyEnv.trim()), stamp: JSON.stringify([
-        declaration.settingsNs,
-        declaration.settingsPath,
-        section.apiKeyEnv,
-        section.baseURL ?? declaration.defaultBaseURL,
-        section.api,
-        section.auth,
-        descriptor.revision
-      ]) };
-    } catch {
-      return null;
-    }
-  }
-  async resolve(providerId) {
-    if (!this.directory().some((row) => row.id === providerId)) throw fail("provider-not-found", "\u6B64\u63D0\u4F9B\u5546\u5DF2\u4ECE DSH \u79FB\u9664");
-    const reference = this.reference(providerId);
-    if (!reference) throw fail("provider-unsupported", "\u6B64\u63D0\u4F9B\u5546\u6CA1\u6709\u53EF\u5B89\u5168\u89E3\u6790\u7684\u663E\u5F0F API Key \u5F15\u7528");
-    const credentials = this.service.ctx.get("credentials");
-    if (!credentials) throw fail("credentials-unavailable", "Host \u51ED\u636E\u670D\u52A1\u4E0D\u53EF\u7528");
-    let resolved;
-    try {
-      resolved = await credentials.resolve(reference.ref);
-    } catch {
-      throw fail("provider-credential-error", "\u65E0\u6CD5\u8BFB\u53D6\u6B64\u63D0\u4F9B\u5546\u5F53\u524D\u51ED\u636E");
-    }
-    if (typeof resolved?.value !== "string" || !resolved.value) throw fail("provider-key-missing", "\u6B64\u63D0\u4F9B\u5546\u5F53\u524D\u6CA1\u6709\u53EF\u7528\u7684 API Key");
-    return { value: resolved.value, stamp: reference.stamp };
   }
   invalidate() {
     this.epoch += 1;
-    if (this.account) this.account.observedAt = 0;
-    this.scan = null;
-    if (this.account) for (const row of Object.values(this.account.matches)) {
-      row.state = row.tokenIds?.length ? "stale" : "pending";
-    }
-    this.revision += 1;
-  }
-  reset() {
-    this.invalidate();
     this.account = null;
     this.loading = null;
+    this.revision += 1;
+  }
+  valid(account, epoch = this.epoch) {
+    return !this.disposed && !this.service.disposed && !this.service.configSaving && this.epoch === epoch && this.account === account && account.identity === this.service.accountIdentity();
+  }
+  assert(account) {
+    this.service.assertAvailable();
+    if (!this.valid(account)) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0");
   }
   async ensure() {
     this.service.assertAvailable();
     await this.service.config();
     this.service.assertAvailable();
-    if (this.disposed) throw fail("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
     const identity2 = this.service.accountIdentity();
     if (this.account?.identity === identity2) return this.account;
     if (!this.loading || this.loading.identity !== identity2) {
+      const epoch = this.epoch;
       const generation = this.service.generation;
       const task = (async () => {
         const table = await this.service.table();
-        const stored = table.get(`a6-providers:${identity2}`);
-        if (this.disposed || generation !== this.service.generation) throw fail("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5");
-        const matches = clone(stored?.matches ?? {});
-        for (const row of Object.values(matches)) row.state = row.tokenIds?.length ? "stale" : "pending";
+        const stored = table.get(storageKey(identity2)) ?? table.get(`a6-operations:${identity2}`);
+        if (this.disposed || epoch !== this.epoch || generation !== this.service.generation || identity2 !== this.service.accountIdentity()) {
+          throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0");
+        }
         this.account = {
           identity: identity2,
           accountId: this.service.site.configured ? String(this.service.site.userId) : "",
-          selectedProviderIds: Array.isArray(stored?.selectedProviderIds) ? stored.selectedProviderIds : [],
-          tokens: Array.isArray(stored?.tokens) ? stored.tokens.map(publicToken) : [],
-          targets: stored?.targets ?? {},
-          matches,
-          observedAt: 0,
-          error: void 0
+          tokenId: idOf(stored?.tokenId),
+          tokens: [],
+          pins: [],
+          routes: [],
+          tokensAt: null,
+          pinsAt: null,
+          routesAt: null,
+          attempted: { tokens: false, pins: false, routes: false },
+          errors: {},
+          flights: /* @__PURE__ */ new Map(),
+          activeWrites: /* @__PURE__ */ new Map(),
+          selectionVersion: 0,
+          selectionRequestVersion: 0,
+          writeVersion: { pins: 0, routes: 0 }
         };
         return this.account;
       })();
@@ -2317,184 +2265,222 @@ var A6Providers = class {
     }
     return this.loading.task;
   }
-  valid(account, epoch) {
-    return !this.disposed && !this.service.configSaving && this.account === account && this.epoch === epoch && account.identity === this.service.accountIdentity();
-  }
   async persist(account) {
     const task = this.writeTail.catch(() => {
     }).then(async () => {
-      if (this.disposed || this.account !== account || account.identity !== this.service.accountIdentity()) return;
+      this.assert(account);
       const table = await this.service.table();
-      if (this.disposed || this.account !== account || account.identity !== this.service.accountIdentity()) return;
-      await table.put(`a6-providers:${account.identity}`, {
-        siteId: "a6-providers",
-        selectedProviderIds: [...account.selectedProviderIds],
-        tokens: account.tokens.map(publicToken),
-        targets: clone(account.targets),
-        matches: clone(account.matches)
-      });
+      this.assert(account);
+      try {
+        await table.put(storageKey(account.identity), { siteId: "a6-operations", tokenId: account.tokenId });
+      } catch {
+        throw new A6Error("operation-storage-failed", "\u64CD\u4F5C Key \u9009\u62E9\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u672C\u5730\u5B58\u50A8\u540E\u91CD\u8BD5");
+      }
     });
     this.writeTail = task;
     await task;
   }
   snapshot(account) {
+    const loading = { tokens: false, pins: false, routes: false };
+    for (const flight of account.flights.values()) if (flight.current()) loading[flight.kind] = true;
+    for (const kind of ["pins", "routes"]) if (account.activeWrites.has(`${account.tokenId}:${kind}`)) loading[kind] = true;
     return {
       accountId: account.accountId,
       revision: this.revision,
-      providers: this.directory().map((provider) => {
-        const row = account.matches[provider.id];
-        return { ...provider, state: row?.state ?? "pending", tokenIds: [...row?.tokenIds ?? []], ...row?.error ? { error: row.error } : {} };
-      }),
+      tokenId: account.tokenId,
       tokens: account.tokens.map(publicToken),
-      selectedProviderIds: [...account.selectedProviderIds],
-      targets: clone(account.targets),
-      scanning: Boolean(this.scan),
-      ...account.error ? { error: account.error } : {}
+      tokensAt: account.tokensAt,
+      pins: account.pins.map((row) => ({ ...row })),
+      routes: account.routes.map((row) => ({ ...row, channelIds: [...row.channelIds] })),
+      pinsAt: account.pinsAt,
+      routesAt: account.routesAt,
+      loading,
+      errors: { ...account.errors },
+      legacyLeases: [...this.service.manualLeases.values()].filter((lease) => lease.accountId === account.accountId).map((lease) => ({ recordId: lease.recordId ?? null, tokenId: lease.tokenId, model: lease.model, channelId: lease.channelId, stage: lease.stage ?? "pending" }))
     };
   }
-  async state({ refresh = false, scan = false } = {}) {
-    const account = await this.ensure();
-    const ttl = account.error || Object.values(account.matches).some((row) => ["unmatched", "error"].includes(row.state)) ? 45e3 : TTL_MS;
-    if (!account.accountId) account.error = "\u8BF7\u5148\u914D\u7F6E a6api \u8D26\u53F7";
-    else if (refresh || scan || !account.observedAt || Date.now() - account.observedAt > ttl) this.start(account, { full: scan || refresh });
-    return this.snapshot(account);
-  }
-  async configure({ providerIds } = {}) {
-    const account = await this.ensure();
-    if (!account.accountId) throw fail("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8D26\u53F7");
-    const allowed = new Set(this.directory().map((row) => row.id));
-    if (!Array.isArray(providerIds) || providerIds.length > 256 || providerIds.some((id2) => !allowed.has(id2))) {
-      throw fail("invalid-providers", "\u63D0\u4F9B\u5546\u9009\u62E9\u65E0\u6548\uFF0C\u8BF7\u5237\u65B0 DSH \u76EE\u5F55");
-    }
-    this.invalidate();
-    account.selectedProviderIds = [...new Set(providerIds)];
-    await this.persist(account);
-    this.start(account, { full: true });
-    return this.snapshot(account);
-  }
-  start(account, { full }) {
-    if (this.disposed) return;
-    if (this.scan) {
-      if (full && !this.scan.full) this.scan.followupFull = true;
-      return;
-    }
+  read(account, kind, suppliedRows, fromWrite = false) {
+    this.assert(account);
+    const activeWrite = kind === "tokens" ? null : account.activeWrites.get(`${account.tokenId}:${kind}`);
+    if (activeWrite && !fromWrite) return activeWrite.promise;
     const epoch = this.epoch;
-    const handle = { full, followupFull: false };
-    this.scan = handle;
-    this.revision += 1;
-    handle.promise = this.discover(account, epoch, full).catch(async () => {
-      if (!this.valid(account, epoch)) return;
-      account.error = "\u63D0\u4F9B\u5546\u6838\u5BF9\u672A\u5B8C\u6210\uFF0C\u8BF7\u7A0D\u540E\u5237\u65B0";
-      account.observedAt = Date.now();
-      this.revision += 1;
-      await this.persist(account);
-    }).catch(() => {
-    }).finally(() => {
-      if (this.scan === handle) {
-        this.scan = null;
-        this.revision += 1;
-        if (handle.followupFull && this.valid(account, epoch)) this.start(account, { full: true });
-      }
-    });
-  }
-  /** Pending-only single flight, shared by discovery and explicit target checks. */
-  reveal(tokenId, account) {
-    const generation = this.service.generation;
-    const identity2 = `${account.identity}:${generation}:${tokenId}`;
-    if (!this.reveals.has(identity2)) {
-      const operation = (async () => {
-        if (this.revealActive >= 2) await new Promise((resolve) => this.revealWaiters.push(resolve));
-        else this.revealActive += 1;
-        try {
-          this.service.assertAvailable();
-          if (generation !== this.service.generation || this.account !== account) throw fail("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362");
-          return await this.service.site.tokenKey(tokenId);
-        } finally {
-          const next = this.revealWaiters.shift();
-          if (next) next();
-          else this.revealActive -= 1;
-        }
-      })().finally(() => this.reveals.delete(identity2));
-      this.reveals.set(identity2, operation);
-    }
-    return this.reveals.get(identity2);
-  }
-  async discover(account, epoch, full) {
-    const tokens2 = await this.service.site.tokens();
-    if (!this.valid(account, epoch)) return;
-    account.tokens = tokens2.map(publicToken);
-    account.error = void 0;
-    const selected = account.selectedProviderIds.filter((id2) => this.directory().some((row) => row.id === id2));
-    const locals = [];
-    for (const id2 of selected) {
-      const old = account.matches[id2];
+    const tokenId = account.tokenId;
+    const selectionVersion = account.selectionVersion;
+    const writeVersion = account.writeVersion[kind];
+    const key = kind === "tokens" ? `${kind}:${epoch}` : `${kind}:${epoch}:${selectionVersion}:${writeVersion}`;
+    const existing = account.flights.get(key);
+    if (existing) return existing.promise;
+    if (kind !== "tokens" && tokenId === null) return Promise.resolve();
+    const current = () => this.valid(account, epoch) && (kind === "tokens" || account.tokenId === tokenId && account.selectionVersion === selectionVersion && account.writeVersion[kind] === writeVersion && (fromWrite || !account.activeWrites.has(`${tokenId}:${kind}`)));
+    account.attempted[kind] = true;
+    const flight = { kind, current, promise: null };
+    const promise = (async () => {
       try {
-        const local = await this.resolve(id2);
-        if (!this.valid(account, epoch)) return;
-        locals.push({ id: id2, ...local, tokenIds: [], failed: false, previous: old?.tokenIds ?? [] });
-        account.matches[id2] = { state: old?.tokenIds?.length ? "stale" : "pending", tokenIds: old?.tokenIds ?? [] };
-      } catch (error) {
-        if (!this.valid(account, epoch)) return;
-        account.matches[id2] = { state: error.code === "provider-unsupported" ? "unsupported" : "error", tokenIds: old?.tokenIds ?? [], error: error instanceof A6Error ? error.message : "\u63D0\u4F9B\u5546\u914D\u7F6E\u8BFB\u53D6\u5931\u8D25" };
-      }
-    }
-    const revealIds = full || locals.some((local) => !local.previous.length) ? tokens2.map((token) => token.id) : [...new Set(locals.flatMap((local) => local.previous))].filter((id2) => tokens2.some((token) => token.id === id2));
-    const queue = [...revealIds];
-    const worker = async () => {
-      while (queue.length && this.valid(account, epoch)) {
-        const id2 = queue.shift();
-        try {
-          const key = await this.reveal(id2, account);
-          if (!this.valid(account, epoch)) return;
-          for (const local of locals) if (local.value === key) local.tokenIds.push(id2);
-        } catch {
-          for (const local of locals) local.failed = true;
+        const rows = await (suppliedRows ?? (kind === "tokens" ? this.service.site.tokens() : kind === "pins" ? this.service.site.pins() : this.service.site.subscriptions()));
+        if (!Array.isArray(rows)) throw new A6Error("relations-invalid", "\u7AD9\u70B9\u8FD4\u56DE\u7684\u5173\u7CFB\u5217\u8868\u683C\u5F0F\u65E0\u6548");
+        if (!current()) return;
+        if (kind === "tokens") {
+          account.tokens = rows.map(publicToken).sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id - b.id);
+          if (account.tokenId !== null && !account.tokens.some((token) => token.id === account.tokenId)) {
+            account.errors.tokens = "\u5DF2\u9009\u64CD\u4F5C\u4EE4\u724C\u4E0D\u5728\u5F53\u524D\u8D26\u53F7\u5217\u8868\u4E2D\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9";
+          } else delete account.errors.tokens;
+        } else if (kind === "pins") {
+          account.pins = rows.filter((row) => Number(row.tokenId) === tokenId && idOf(row.channelId) && typeof row.model === "string").map((row) => ({ model: row.model, channelId: Number(row.channelId), routeEffective: row.routeEffective === true, status: String(row.status ?? "") }));
+          delete account.errors.pins;
+        } else {
+          const routes = /* @__PURE__ */ new Map();
+          for (const row of rows) {
+            if (Number(row.token_id ?? row.tokenId) !== tokenId) continue;
+            const model = row.model_name ?? row.model;
+            if (typeof model !== "string" || !Array.isArray(row.channels)) continue;
+            const channels = routes.get(model) ?? /* @__PURE__ */ new Set();
+            for (const item of row.channels) {
+              const id2 = idOf(typeof item === "number" || typeof item === "string" ? item : item?.channel_id ?? item?.id);
+              if (id2 !== null) channels.add(id2);
+            }
+            routes.set(model, channels);
+          }
+          account.routes = [...routes].map(([model, ids]) => ({ model, channelIds: [...ids] }));
+          delete account.errors.routes;
         }
-      }
-    };
-    if (locals.length) await Promise.all([worker(), worker()]);
-    if (!this.valid(account, epoch)) return;
-    for (const local of locals) {
-      if (this.reference(local.id)?.stamp !== local.stamp) {
-        account.matches[local.id] = { state: "stale", tokenIds: local.previous };
-        continue;
-      }
-      const ids = [...new Set(local.tokenIds)];
-      account.matches[local.id] = {
-        state: ids.length > 1 ? "ambiguous" : ids.length === 1 ? "exact" : local.failed ? "error" : full ? "unmatched" : "stale",
-        tokenIds: ids.length ? ids : local.failed ? local.previous : [],
-        ...local.failed ? { error: "\u90E8\u5206\u4EE4\u724C\u5BC6\u94A5\u672A\u80FD\u6838\u5BF9\uFF0C\u8BF7\u5237\u65B0\u7EE7\u7EED\u53D1\u73B0" } : {}
-      };
-    }
-    account.observedAt = Date.now();
-    this.revision += 1;
-    await this.persist(account);
-  }
-  async verifyTarget({ tokenId, providerId }, account) {
-    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw fail("invalid-token", "\u4EE4\u724C ID \u65E0\u6548");
-    const epoch = this.epoch;
-    const tokens2 = await this.service.site.tokens();
-    if (!this.valid(account, epoch)) throw fail("account-changed", "\u8D26\u53F7\u6216\u63D0\u4F9B\u5546\u914D\u7F6E\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
-    const token = tokens2.find((row) => row.id === tokenId);
-    assertUsableToken(token);
-    if (providerId !== void 0) {
-      if (!account.selectedProviderIds.includes(providerId)) throw fail("provider-not-selected", "\u8BF7\u5148\u5728\u7BA1\u7406\u9762\u677F\u9009\u62E9\u6B64\u63D0\u4F9B\u5546");
-      const local = await this.resolve(providerId);
-      const remote = await this.reveal(tokenId, account);
-      if (!this.valid(account, epoch) || this.reference(providerId)?.stamp !== local.stamp) throw fail("provider-changed", "\u63D0\u4F9B\u5546\u914D\u7F6E\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9");
-      if (local.value !== remote) {
-        account.matches[providerId] = { state: "stale", tokenIds: [], error: "\u5F53\u524D\u51ED\u636E\u4E0E\u6B64\u4EE4\u724C\u4E0D\u5339\u914D" };
+        account[`${kind}At`] = Date.now();
+      } catch (error) {
+        if (current()) account.errors[kind] = messageOf(error, "\u7AD9\u70B9\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u663E\u5F0F\u5237\u65B0\u91CD\u8BD5");
+      } finally {
+        if (account.flights.get(key) === flight) account.flights.delete(key);
         this.revision += 1;
-        await this.persist(account);
-        throw fail("provider-mismatch", "\u5F53\u524D\u63D0\u4F9B\u5546\u51ED\u636E\u4E0E\u6240\u9009\u4EE4\u724C\u4E0D\u5339\u914D");
       }
-      const old = account.matches[providerId];
-      const tokenIds = ["exact", "ambiguous"].includes(old?.state) ? [.../* @__PURE__ */ new Set([...old.tokenIds ?? [], tokenId])] : [tokenId];
-      account.matches[providerId] = { state: tokenIds.length > 1 ? "ambiguous" : "exact", tokenIds };
-      this.revision += 1;
-      await this.persist(account);
+    })();
+    flight.promise = promise;
+    account.flights.set(key, flight);
+    this.revision += 1;
+    return promise;
+  }
+  async settle(account) {
+    while (true) {
+      this.assert(account);
+      const tasks = [...account.flights.values()].filter((flight) => flight.current()).map((flight) => flight.promise);
+      for (const kind of ["pins", "routes"]) {
+        const write = account.activeWrites.get(`${account.tokenId}:${kind}`);
+        if (write) tasks.push(write.promise);
+      }
+      if (!tasks.length) return;
+      await Promise.all(tasks);
     }
-    return token;
+  }
+  pending(account, kind) {
+    return [...account.flights.values()].some((flight) => flight.kind === kind && flight.current());
+  }
+  async state({ refreshTokens = false, refreshRelations = false } = {}) {
+    const account = await this.ensure();
+    await this.service.loadLeases();
+    this.assert(account);
+    if (!account.accountId) {
+      account.errors.tokens = "\u8BF7\u5148\u914D\u7F6E a6api \u8D26\u53F7";
+      return this.snapshot(account);
+    }
+    const tasks = [];
+    if (refreshTokens || !account.attempted.tokens || this.pending(account, "tokens")) tasks.push(this.read(account, "tokens"));
+    if (account.tokenId !== null) for (const kind of ["pins", "routes"]) {
+      if (refreshRelations || !account.attempted[kind] || this.pending(account, kind)) tasks.push(this.read(account, kind));
+    }
+    await Promise.all(tasks);
+    await this.settle(account);
+    this.assert(account);
+    return this.snapshot(account);
+  }
+  async select({ tokenId } = {}) {
+    if (tokenId !== null && (!Number.isSafeInteger(tokenId) || tokenId <= 0)) throw new A6Error("invalid-token", "\u64CD\u4F5C\u4EE4\u724C ID \u65E0\u6548");
+    const account = await this.ensure();
+    if (!account.accountId) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8D26\u53F7");
+    const requestVersion = ++account.selectionRequestVersion;
+    if (tokenId !== null) {
+      if (!account.attempted.tokens || !account.tokens.some((token) => token.id === tokenId)) await this.read(account, "tokens");
+      this.assert(account);
+      if (requestVersion !== account.selectionRequestVersion) throw new A6Error("token-superseded", "\u64CD\u4F5C\u4EE4\u724C\u9009\u62E9\u5DF2\u66F4\u65B0");
+      assertUsableToken(account.tokens.find((token) => token.id === tokenId));
+    }
+    const previousTokenId = account.tokenId;
+    const selectionVersion = ++account.selectionVersion;
+    account.tokenId = tokenId;
+    account.pins = [];
+    account.routes = [];
+    account.pinsAt = null;
+    account.routesAt = null;
+    account.attempted.pins = false;
+    account.attempted.routes = false;
+    delete account.errors.pins;
+    delete account.errors.routes;
+    this.revision += 1;
+    try {
+      await this.persist(account);
+    } catch (error) {
+      if (this.valid(account) && account.selectionVersion === selectionVersion) {
+        account.tokenId = previousTokenId;
+        account.selectionVersion += 1;
+        account.pins = [];
+        account.routes = [];
+        account.pinsAt = null;
+        account.routesAt = null;
+        account.attempted.pins = false;
+        account.attempted.routes = false;
+        this.revision += 1;
+      }
+      throw error;
+    }
+    this.assert(account);
+    if (selectionVersion !== account.selectionVersion) throw new A6Error("token-superseded", "\u64CD\u4F5C\u4EE4\u724C\u9009\u62E9\u5DF2\u66F4\u65B0");
+    return this.state();
+  }
+  async refresh({ kind = "all" } = {}) {
+    if (!["pins", "routes", "all"].includes(kind)) throw new A6Error("invalid-refresh", "\u5237\u65B0\u7C7B\u578B\u65E0\u6548");
+    const account = await this.ensure();
+    await this.service.loadLeases();
+    if (!account.accountId) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8D26\u53F7");
+    await Promise.all((kind === "all" ? ["pins", "routes"] : [kind]).map((item) => this.read(account, item)));
+    await this.settle(account);
+    this.assert(account);
+    return this.snapshot(account);
+  }
+  assertSelected(account, tokenId, selectionVersion = account.selectionVersion) {
+    this.assert(account);
+    if (account.tokenId !== tokenId || account.selectionVersion !== selectionVersion) throw new A6Error("token-changed", "\u64CD\u4F5C\u4EE4\u724C\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u8BD5");
+    assertUsableToken(account.tokens.find((token) => token.id === tokenId));
+  }
+  invalidateRelation(account, kind) {
+    account.writeVersion[kind] += 1;
+    account[kind] = [];
+    account[`${kind}At`] = null;
+    account.attempted[kind] = false;
+    delete account.errors[kind];
+    this.revision += 1;
+  }
+  /** Block ordinary reads for this token until its write and authoritative readback finish. */
+  beginWrite(account, kind, context) {
+    this.assert(account);
+    const tokenId = context?.tokenId ?? account.tokenId;
+    const key = `${tokenId}:${kind}`;
+    if (account.activeWrites.has(key)) throw new A6Error("slot-busy", "\u8BE5\u4EE4\u724C\u7684\u7AD9\u70B9\u5173\u7CFB\u6B63\u5728\u4FEE\u6539");
+    let resolve;
+    const promise = new Promise((done) => {
+      resolve = done;
+    });
+    account.activeWrites.set(key, { promise, resolve });
+    if (account.tokenId === tokenId) this.invalidateRelation(account, kind);
+  }
+  async afterWrite(account, kind, context, rows) {
+    const key = `${context?.tokenId ?? account.tokenId}:${kind}`;
+    const gate = account.activeWrites.get(key);
+    try {
+      if (!this.valid(account)) return;
+      if (context && account.tokenId !== context.tokenId) return;
+      this.invalidateRelation(account, kind);
+      await this.read(account, kind, rows, true);
+    } finally {
+      if (account.activeWrites.get(key) === gate) account.activeWrites.delete(key);
+      gate?.resolve();
+      this.revision += 1;
+    }
   }
   dispose() {
     this.disposed = true;
@@ -2517,7 +2503,7 @@ var A6Service = class {
     this.configSaving = false;
     this.creating = 0;
     this.disposed = false;
-    this.providers = new A6Providers(this);
+    this.operations = new A6Operations(this);
   }
   async table() {
     const domain = await this.storage.managed();
@@ -2554,7 +2540,7 @@ var A6Service = class {
     this.generation += 1;
     this.keyCache.clear();
     this.keyFlights.clear();
-    this.providers.reset();
+    this.operations.invalidate();
     try {
       this.site.configure(next);
       const verified = await this.site.verify();
@@ -2564,7 +2550,7 @@ var A6Service = class {
     } catch (error) {
       this.site.configure(previous);
       this.generation += 1;
-      this.providers.reset();
+      this.operations.invalidate();
       throw error;
     } finally {
       this.configSaving = false;
@@ -2605,14 +2591,17 @@ var A6Service = class {
     if (!this.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
     return { tokens: (await this.site.tokens()).map(publicToken) };
   }
-  providerState(input2) {
-    return this.providers.state(input2);
+  operationState(input2) {
+    return this.operations.state(input2);
   }
-  providerConfigure(input2) {
-    return this.providers.configure(input2);
+  operationSelect(input2) {
+    return this.operations.select(input2);
   }
-  invalidateProviders() {
-    this.providers.invalidate();
+  operationRefresh(input2) {
+    return this.operations.refresh(input2);
+  }
+  invalidateOperations() {
+    this.operations.invalidate();
   }
   assertRecordActive(recordId) {
     if (this.clearInProgress) throw new A6Error("records-clearing", "\u8BB0\u5F55\u6B63\u5728\u6E05\u7A7A\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
@@ -2679,23 +2668,6 @@ var A6Service = class {
       throw new A6Error("account-mismatch", "\u5F53\u524D a6api \u8D26\u53F7\u4E0E\u8BB0\u5F55\u6765\u6E90\u4E0D\u540C\uFF0C\u8BF7\u5207\u6362\u5230\u539F\u8D26\u53F7");
     }
   }
-  async targetSave(input2) {
-    await this.recordTarget(input2);
-    const account = await this.providers.ensure();
-    const generation = this.generation;
-    const epoch = this.providers.epoch;
-    this.targetVersions ??= /* @__PURE__ */ new Map();
-    const id2 = `${account.identity}:${input2.model}`;
-    const version = (this.targetVersions.get(id2) ?? 0) + 1;
-    this.targetVersions.set(id2, version);
-    await this.providers.verifyTarget(input2, account);
-    await this.recordTarget(input2);
-    if (generation !== this.generation || epoch !== this.providers.epoch || this.targetVersions.get(id2) !== version) throw new A6Error("target-superseded", "\u76EE\u6807\u9009\u62E9\u5DF2\u66F4\u65B0\uFF0C\u8BF7\u5237\u65B0");
-    account.targets[input2.model] = { tokenId: input2.tokenId, ...input2.providerId === void 0 ? {} : { providerId: input2.providerId } };
-    this.providers.revision += 1;
-    await this.providers.persist(account);
-    return this.providers.snapshot(account);
-  }
   // ---- selections ----------------------------------------------------------------------------
   selections(request) {
     return this.intake.list(request?.revision);
@@ -2761,10 +2733,6 @@ var A6Service = class {
     })();
     return this.leasesReady;
   }
-  async putLease(key, lease) {
-    await (await this.table()).put(`a6-lease:${key}`, { ...lease, siteId: "a6-lease" });
-    this.manualLeases.set(key, lease);
-  }
   async deleteLease(key) {
     await (await this.table()).delete(`a6-lease:${key}`);
     this.manualLeases.delete(key);
@@ -2795,25 +2763,15 @@ var A6Service = class {
     const record = await this.recordTarget(input2);
     if (input2.operation === "restore") {
       await this.loadLeases();
-      const candidates = [...this.manualLeases.values()].filter((lease) => lease.accountId === String(record.a6api.accountId) && lease.siteOrigin === SITE_ORIGIN && lease.recordId === input2.recordId && lease.model === input2.model && lease.channelId === input2.channelId);
+      const candidates = [...this.manualLeases.values()].filter((lease) => lease.accountId === String(record.a6api.accountId) && lease.siteOrigin === SITE_ORIGIN && (lease.recordId === input2.recordId || lease.recordId == null) && lease.model === input2.model && lease.channelId === input2.channelId);
       const original = candidates.find((lease) => lease.tokenId === input2.tokenId) ?? (candidates.length === 1 ? candidates[0] : null);
       if (!original && candidates.length > 1) throw new A6Error("lease-ambiguous", "\u6B64\u7ED3\u679C\u6709\u591A\u4E2A\u5F85\u6062\u590D\u76EE\u6807\uFF0C\u8BF7\u9009\u62E9\u539F\u4EE4\u724C\u540E\u6062\u590D");
       if (original) input2 = { ...input2, tokenId: original.tokenId };
     }
-    return this.performAction(input2, record.a6api, async () => {
-      await this.recordTarget(input2);
-      if (input2.operation === "restore") return;
-      const account = await this.providers.ensure();
-      const target = account.targets[input2.model];
-      if (!target || target.tokenId !== input2.tokenId || target.providerId !== input2.providerId) {
-        throw new A6Error("target-changed", "\u6B64\u6A21\u578B\u7684\u4F7F\u7528\u76EE\u6807\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
-      }
-      await this.providers.verifyTarget(input2, account);
-      await this.recordTarget(input2);
-    });
+    return this.performAction(input2, record.a6api, async () => this.recordTarget(input2));
   }
   async performAction(input2, meta, validate) {
-    if (!["pin", "route", "restore"].includes(input2.operation)) throw new A6Error("invalid-operation", "\u53EA\u652F\u6301\u56FA\u5B9A\u3001\u52A0\u5165\u8DEF\u7531\u4E0E\u6062\u590D");
+    if (!["pin", "route", "restore"].includes(input2.operation)) throw new A6Error("invalid-operation", "\u53EA\u652F\u6301\u56FA\u5B9A\u3001\u52A0\u5165\u8DEF\u7531\u4E0E\u65E7\u79DF\u7EA6\u6062\u590D");
     this.assertAvailable();
     this.assertRecordActive(input2.recordId);
     this.assertAccount(meta);
@@ -2823,70 +2781,61 @@ var A6Service = class {
     if (this.engine.tokenSlots.busy.has(identity2)) throw new A6Error("slot-busy", "\u8BE5\u4EE4\u724C\u6B63\u5728\u6267\u884C\u4EFB\u52A1\uFF0C\u8BF7\u7B49\u69FD\u4F4D\u7A7A\u95F2\u540E\u518D\u64CD\u4F5C");
     await this.engine.tokenSlots.acquire(identity2, new AbortController().signal);
     const key = `${identity2}:${input2.model}`;
-    const targetId = `${this.accountIdentity()}:${input2.model}`;
-    const targetVersion = this.targetVersions?.get(targetId);
-    const providerEpoch = this.providers.epoch;
+    let account;
+    let selectionVersion;
     const assertCurrent = () => {
       this.assertAvailable();
       this.assertRecordActive(input2.recordId);
-      if (input2.recordId && input2.operation !== "restore" && (targetVersion !== this.targetVersions?.get(targetId) || providerEpoch !== this.providers.epoch)) {
-        throw new A6Error("target-changed", "\u76EE\u6807\u6216\u63D0\u4F9B\u5546\u914D\u7F6E\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
-      }
+      this.assertAccount(meta);
+      if (generation !== this.generation) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0");
+      if (input2.operation !== "restore") this.operations.assertSelected(account, input2.tokenId, selectionVersion);
     };
+    const relationKind = input2.operation === "route" ? "routes" : "pins";
+    let written = false;
     try {
       await this.loadLeases();
       await validate();
-      assertCurrent();
-      if (generation !== this.generation) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0");
       const lease = this.manualLeases.get(key);
       if (input2.operation === "restore") {
-        if (!lease) return { ok: true, result: { skipped: true, operation: "restore" } };
-        if (lease.channelId !== input2.channelId) throw new A6Error("lease-conflict", "\u5F53\u524D\u56FA\u5B9A\u79DF\u7EA6\u5C5E\u4E8E\u5176\u4ED6\u6E20\u9053\uFF0C\u8BF7\u5148\u6062\u590D\u539F\u76EE\u6807");
-        return await this.restoreLease(key, lease);
-      }
-      if (input2.operation === "route") {
         assertCurrent();
-        const outcome2 = await this.site.addRoute({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
-        if (outcome2?.verified !== true) throw new A6Error("route-unverified", "\u672A\u80FD\u8BFB\u56DE\u8DEF\u7531\u65B0\u589E\u7ED3\u679C");
-        return { ok: true, result: outcome2 };
+        if (!lease) return { ok: true, result: { skipped: true, operation: "restore" }, state: await this.operationState() };
+        if (lease.channelId !== input2.channelId) throw new A6Error("lease-conflict", "\u5F53\u524D\u65E7\u56FA\u5B9A\u79DF\u7EA6\u5C5E\u4E8E\u5176\u4ED6\u6E20\u9053\uFF0C\u8BF7\u5148\u6062\u590D\u539F\u76EE\u6807");
+        account = await this.operations.ensure();
+        selectionVersion = account.selectionVersion;
+        this.operations.beginWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion });
+        written = true;
+        const outcome2 = await this.restoreLease(key, lease);
+        await this.operations.afterWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion });
+        written = false;
+        return { ...outcome2, state: this.operations.snapshot(account) };
       }
-      if (lease) throw new A6Error("already-pinned", "\u6B64\u76EE\u6807\u5C1A\u6709\u56FA\u5B9A\u6216\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D");
-      const current = (await this.site.pins()).filter((pin) => pin.tokenId === input2.tokenId && pin.model === input2.model);
-      if (current.length > 1) throw new A6Error("pin-conflict", "\u7AD9\u70B9\u56FA\u5B9A\u5173\u7CFB\u4E0D\u552F\u4E00\uFF0C\u8BF7\u5148\u5728\u7AD9\u70B9\u5904\u7406");
-      const previous = current[0] ?? null;
-      if (previous && typeof previous.fallback !== "boolean") {
-        throw new A6Error("pin-conflict", "\u65E0\u6CD5\u786E\u8BA4\u5DF2\u6709\u56FA\u5B9A\u7684\u667A\u80FD\u515C\u5E95\u8BBE\u7F6E\uFF0C\u672A\u8986\u76D6\u73B0\u6709\u56FA\u5B9A");
-      }
-      const target = {
-        identity: identity2,
-        accountId: String(meta.accountId),
-        siteOrigin: SITE_ORIGIN,
-        tokenId: input2.tokenId,
-        model: input2.model,
-        channelId: input2.channelId,
-        recordId: input2.recordId ?? null,
-        previous,
-        fallback: false,
-        stage: "preparing",
-        createdAt: Date.now()
-      };
-      await this.putLease(key, target);
-      const before = (await this.site.pins()).filter((pin) => pin.tokenId === input2.tokenId && pin.model === input2.model);
-      if (previous ? before.length !== 1 || !this.samePin(before[0], previous) : before.length !== 0) {
-        throw new A6Error("pin-conflict", "\u56FA\u5B9A\u51C6\u5907\u671F\u95F4\u7AD9\u70B9\u5173\u7CFB\u5DF2\u53D8\u5316\uFF0C\u672A\u6267\u884C\u8986\u76D6\u4E14\u4FDD\u7559\u79DF\u7EA6");
-      }
+      account = await this.operations.ensure();
+      if (!account.attempted.tokens) await this.operations.read(account, "tokens");
+      selectionVersion = account.selectionVersion;
       assertCurrent();
-      const outcome = await this.site.pin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, fallback: false });
-      if (!outcome.routeEffective) throw new A6Error("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u751F\u6548\uFF1B\u5DF2\u4FDD\u7559\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D");
-      const observed = (await this.site.pins()).filter((pin) => pin.tokenId === input2.tokenId && pin.model === input2.model);
-      const pinned = observed[0];
-      if (observed.length !== 1 || pinned.channelId !== input2.channelId || pinned.fallback !== false || pinned.routeEffective !== true) {
-        throw new A6Error("pin-unverified", "\u56FA\u5B9A\u8BFB\u56DE\u672A\u786E\u8BA4\uFF0C\u5DF2\u4FDD\u7559\u6062\u590D\u79DF\u7EA6");
+      if (input2.operation === "pin" && lease) throw new A6Error("lease-held", "\u6B64\u6A21\u578B\u4ECD\u6709\u65E7\u56FA\u5B9A\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D\u65E7\u79DF\u7EA6\u540E\u518D\u8BBE\u7F6E\u56FA\u5B9A");
+      this.operations.beginWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion });
+      assertCurrent();
+      written = true;
+      const outcome = input2.operation === "pin" ? await this.site.pin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, fallback: false }) : await this.site.addRoute({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
+      await this.operations.afterWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion }, input2.operation === "pin" ? outcome.pins : outcome.subscriptions);
+      written = false;
+      if (account.selectionVersion !== selectionVersion) throw new A6Error("token-changed", "\u64CD\u4F5C\u671F\u95F4\u4EE4\u724C\u9009\u62E9\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u68C0\u67E5\u5F53\u524D\u4EE4\u724C\u7684\u6700\u65B0\u5173\u7CFB");
+      if (input2.operation === "pin") {
+        const pins = account.pins.filter((pin) => pin.model === input2.model);
+        if (!outcome?.routeEffective || account.tokenId !== input2.tokenId || account.errors.pins || pins.length !== 1 || pins[0].channelId !== input2.channelId || pins[0].routeEffective !== true) {
+          throw new A6Error("pin-unverified", "\u7AD9\u70B9\u56FA\u5B9A\u8BFB\u56DE\u672A\u786E\u8BA4\uFF0C\u8BF7\u5237\u65B0\u56FA\u5B9A\u5173\u7CFB\u68C0\u67E5\u5B9E\u9645\u72B6\u6001");
+        }
+      } else if (outcome?.verified !== true || account.tokenId !== input2.tokenId || account.errors.routes || !account.routes.some((route) => route.model === input2.model && route.channelIds.includes(input2.channelId))) {
+        throw new A6Error("route-unverified", "\u7AD9\u70B9\u8DEF\u7531\u8BFB\u56DE\u672A\u786E\u8BA4\uFF0C\u8BF7\u5237\u65B0\u8DEF\u7531\u5173\u7CFB\u68C0\u67E5\u5B9E\u9645\u72B6\u6001");
       }
-      await this.putLease(key, { ...target, stage: "pinned", supplierId: pinned.supplierId });
-      return { ok: true, result: { verified: true, operation: "pin", tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, target: { tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, supplierId: pinned.supplierId } } };
+      return { ok: true, result: { verified: true, operation: input2.operation, tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, ...input2.operation === "pin" ? { supplierId: outcome.supplierId } : { subscriptionId: outcome.subscriptionId } }, state: this.operations.snapshot(account) };
     } finally {
-      this.engine.tokenSlots.release(identity2);
+      try {
+        if (written && account) await this.operations.afterWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion });
+      } finally {
+        this.engine.tokenSlots.release(identity2);
+      }
     }
   }
   samePin(actual, expected) {
@@ -2914,23 +2863,12 @@ var A6Service = class {
     await this.deleteLease(key);
     return { ok: true, result: { restored: true, operation: "restore", tokenId: lease.tokenId, model: lease.model, channelId: lease.channelId } };
   }
-  async action(input2) {
-    await this.config();
-    this.assertAvailable();
-    const selection = this.selection(input2.selectionId);
-    this.assertAccount(selection);
-    if (!selection.tokens.some((token) => token.id === input2.tokenId)) throw new A6Error("token-not-selected", "\u53EA\u80FD\u64CD\u4F5C\u4F60\u9009\u62E9\u7684\u6D4B\u8BD5\u4EE4\u724C");
-    if (!selection.models.some((channel) => channel.model === input2.model && channel.channelId === input2.channelId)) {
-      throw new A6Error("invalid-selection", "\u76EE\u6807\u4E0D\u5C5E\u4E8E\u5F53\u524D\u5F85\u6D4B\u6E05\u5355");
-    }
-    return this.performAction(input2, selection, async () => this.assertAccount(selection));
-  }
   dispose() {
     this.disposed = true;
     this.generation += 1;
     this.keyCache.clear();
     this.keyFlights.clear();
-    this.providers.dispose();
+    this.operations.dispose();
   }
 };
 
@@ -3254,7 +3192,7 @@ function apply(ctx) {
   const ledger = new A6Ledger({ storage, site, onChange: () => records?.bump() });
   site.onConfigure = (meta) => {
     ledger.configure(meta);
-    a6?.invalidateProviders();
+    a6?.invalidateOperations();
   };
   const engine = new FingerprintEngine(ctx, {
     ledger,
@@ -3270,9 +3208,6 @@ function apply(ctx) {
   });
   records = new RecordsService(ctx, storage, engine, { ledger });
   a6 = new A6Service({ ctx, storage, intake, site, records, engine });
-  for (const event of ["llm/adapters-updated", "credentials/reference-updated", "settings/document-updated"]) {
-    ctx.on(event, () => a6.invalidateProviders());
-  }
   ctx.effect(() => () => {
     a6.dispose();
     engine.dispose();

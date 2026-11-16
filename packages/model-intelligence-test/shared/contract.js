@@ -37,11 +37,10 @@ const schemas = {
   a6ConfigSave: z.strictObject({ accessToken: z.string().max(512).optional(), userId: z.string().max(40).optional() }),
   a6Selections: z.strictObject({ revision: z.number().int().nonnegative().optional() }),
   a6Create: z.strictObject({ selectionId: id(), name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
-  a6Action: z.strictObject({ selectionId: id(), tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive(), operation: z.enum(['pin', 'restore']) }),
-  a6ProviderState: z.strictObject({ refresh: z.boolean().optional(), scan: z.boolean().optional() }),
-  a6ProviderConfigure: z.strictObject({ providerIds: z.array(id(128)).max(256) }),
-  a6TargetSave: z.strictObject({ recordId: id(), model: id(256), tokenId: z.number().int().positive(), providerId: id(128).optional() }),
-  a6ResultAction: z.strictObject({ recordId: id(), model: id(256), channelId: z.number().int().positive(), tokenId: z.number().int().positive(), providerId: id(128).optional(), operation: z.enum(['pin', 'route', 'restore']) }),
+  a6OperationState: z.strictObject({ refreshTokens: z.boolean().optional(), refreshRelations: z.boolean().optional() }),
+  a6OperationSelect: z.strictObject({ tokenId: z.number().int().positive().nullable() }),
+  a6OperationRefresh: z.strictObject({ kind: z.enum(['pins', 'routes', 'all']) }),
+  a6ResultAction: z.strictObject({ recordId: id(), model: id(256), channelId: z.number().int().positive(), tokenId: z.number().int().positive(), operation: z.enum(['pin', 'route', 'restore']) }),
   a6LedgerView: z.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z.boolean().optional() }).refine(value => value.attemptId || value.recordId, '缺少测试记录或轮次 ID'),
 };
 
@@ -63,11 +62,10 @@ const DESCRIPTIONS = {
   a6Tokens: 'List the account test tokens from a6api (id and name only, no key material).',
   a6Selections: 'Read selections sent by the a6api userscript. Does not start inference.',
   a6Create: 'Create an a6api-specific fingerprint attempt using user-selected test token slots (real inference).',
-  a6Action: 'Pin or restore one explicit channel for a selected test token, using the stored access token.',
-  a6ProviderState: 'Read account-scoped cached token metadata and configured-provider matching progress. No keys are returned.',
-  a6ProviderConfigure: 'Persist selected local provider identities and start background account-key matching without modifying providers.',
-  a6TargetSave: 'Save the account/model target token and optional matched local provider for a recorded channel.',
-  a6ResultAction: 'Explicitly pin, add a route or restore a recorded channel for the saved target; serializes with active test slots.',
+  a6OperationState: 'Read account token metadata and selected-key pin/route snapshots; only initial load or explicit refresh contacts the site.',
+  a6OperationSelect: 'Persist the account-wide operation key and read its pin and route state. No key plaintext is read.',
+  a6OperationRefresh: 'Explicitly refresh selected-key pins, routes, or both from the site.',
+  a6ResultAction: 'Set a recorded channel pin or add it to routing under the global operation key; read back state. Restore handles legacy leases only.',
   a6LedgerView: 'Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference.',
 };
 

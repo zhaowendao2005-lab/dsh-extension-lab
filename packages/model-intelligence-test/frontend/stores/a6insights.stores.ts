@@ -1,52 +1,72 @@
 import { createStore } from 'zustand/vanilla';
-import type { A6InsightsState, A6ProviderView, A6ResultActionInput, A6ResultFeedback, A6Target, Evaluation, ModelIntelligenceTransport } from '../types';
-import { configureProviders, readLedger, readProviderState, resultAction, saveTarget } from './a6insights.datasource';
+import type { A6InsightsState, A6OperationToken, A6OperationView, A6RelationKind, A6ResultActionInput, A6ResultFeedback, Evaluation, ModelIntelligenceTransport } from '../types';
+import { readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
 
 export const ledgerKey = (recordId: string, attemptId?: string): string => JSON.stringify([recordId, attemptId ?? '*']);
+export const operationRowKey = (recordId: string, model: string, channelId: number): string => JSON.stringify([recordId, model, channelId]);
+export function operationTokenIssue(token?: A6OperationToken): string {
+  if (!token) return '已选 Key 不在当前账号列表中，请重新选择';
+  if (typeof token.expiredTime === 'number' && token.expiredTime > 0 && token.expiredTime * 1000 <= Date.now()) return 'Key 已过期';
+  if (token.status !== undefined && token.status !== 1 && token.status !== '1') return 'Key 不可用';
+  return '';
+}
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
-/** Host facts are polled once per plugin, independently from rendered rows or tabs. */
+/** Operation IO is explicit and single-flight. Only the local ledger mirror is polled. */
 export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
-  const store = createStore<A6InsightsState>(() => ({ providers: null, loading: false, managerOpen: false, query: '', selected: [], saving: false, targetQueries: {}, results: {}, ledgers: {}, scopes: {} }));
+  const store = createStore<A6InsightsState>(() => ({ operations: null, loading: false, busy: 0, query: '', results: {}, ledgers: {}, scopes: {} }));
   let disposed = false;
   let generation = 0;
   let accountId = '';
   let initialized = false;
   let credentialKey = '';
-  let providerRequest = false;
-  let providerWanted = false;
-  let mutationCount = 0;
-  let selectionDirty = false;
+  let operationsRequested = false;
+  let queue = Promise.resolve();
   let records: Evaluation[] = [];
   const ledgerRequests = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  function accept(view: A6ProviderView, epoch: number, resetSelection = false): boolean {
-    if (disposed || epoch !== generation || (accountId && view.accountId && view.accountId !== accountId)) return false;
-    const previous = store.getState().providers;
+  function accept(view: A6OperationView, epoch: number): boolean {
+    if (disposed || epoch !== generation) return false;
+    if (view.accountId && accountId && view.accountId !== accountId) {
+      store.setState({error: '账号已变化，请刷新账号信息后重试。'});
+      return false;
+    }
+    const previous = store.getState().operations;
     if (previous?.accountId === view.accountId && previous.revision > view.revision) return false;
-    store.setState({ providers: view, error: undefined, ...((!selectionDirty || resetSelection) ? {selected: view.selectedProviderIds} : {}) });
-    if (resetSelection) selectionDirty = false;
+    store.setState({operations: view, error: undefined});
     return true;
   }
-  function feedback(model: string, value: A6ResultFeedback): void {
-    if (!disposed) store.setState(state => ({ results: {...state.results, [model]: value} }));
+  function feedback(key: string, value: A6ResultFeedback): void {
+    if (!disposed) store.setState(state => ({results: {...state.results, [key]: value}}));
   }
-  async function refreshProviders(scan = false, refresh = false): Promise<void> {
-    providerWanted = true;
-    if (disposed || providerRequest || mutationCount) return;
-    providerRequest = true;
+  function enqueue(epoch: number, work: () => Promise<void>): void {
+    if (disposed) return;
+    store.setState(state => ({busy: state.busy + 1}));
+    queue = queue.then(async () => {
+      if (disposed || epoch !== generation) return;
+      try { await work(); }
+      finally { if (!disposed && epoch === generation) store.setState(state => ({busy: Math.max(0, state.busy - 1)})); }
+    }).catch(error => {
+      if (!disposed && epoch === generation) store.setState({error: message(error)});
+    });
+  }
+  function readOperations(options: {refreshTokens?: boolean; refreshRelations?: boolean} = {}): void {
+    operationsRequested = true;
     const epoch = generation;
-    store.setState({loading: true, error: undefined});
-    try { accept(await readProviderState(transport, {scan, refresh}), epoch); }
-    catch (error) { if (!disposed && epoch === generation) store.setState({error: message(error)}); }
-    finally { providerRequest = false; if (!disposed && epoch === generation) store.setState({loading: false}); }
+    enqueue(epoch, async () => {
+      store.setState({loading: true, error: undefined, feedback: undefined});
+      try { accept(await readOperationState(transport, options), epoch); }
+      catch (error) { if (!disposed && epoch === generation) store.setState({error: message(error)}); }
+      finally { if (!disposed && epoch === generation) store.setState({loading: false}); }
+    });
   }
   async function loadLedger(record: Evaluation, refresh = false): Promise<void> {
     const attemptId = (store.getState().scopes[record.id] ?? 'attempt') === 'record' ? undefined : record.attemptId;
     const key = ledgerKey(record.id, attemptId);
-    if (disposed || ledgerRequests.has(key)) return;
-    ledgerRequests.add(key);
+    const requestKey = `${generation}:${key}`;
+    if (disposed || ledgerRequests.has(requestKey)) return;
+    ledgerRequests.add(requestKey);
     const epoch = generation;
     store.setState(state => ({ledgers: {...state.ledgers, [key]: {...state.ledgers[key], loading: true, error: undefined}}}));
     try {
@@ -54,11 +74,10 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
       if (!disposed && epoch === generation && records.some(item => item.id === record.id)) store.setState(state => ({ledgers: {...state.ledgers, [key]: {view, loading: false}}}));
     } catch (error) {
       if (!disposed && epoch === generation && records.some(item => item.id === record.id)) store.setState(state => ({ledgers: {...state.ledgers, [key]: {...state.ledgers[key], loading: false, error: message(error)}}}));
-    } finally { ledgerRequests.delete(key); }
+    } finally { ledgerRequests.delete(requestKey); }
   }
   function tick(): void {
     if (disposed) return;
-    if (providerWanted || records.length) void refreshProviders();
     for (const record of records) void loadLedger(record);
     timer = setTimeout(tick, 4_000);
   }
@@ -72,8 +91,8 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
       if (changed) {
         generation++;
         accountId = account;
-        selectionDirty = false;
-        store.setState({providers: null, selected: [], results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, saving: false});
+        operationsRequested = false;
+        store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0});
       }
       const previous = new Set(records.map(record => ledgerKey(record.id, record.attemptId)));
       records = next.filter(record => Boolean(record.a6api));
@@ -83,63 +102,73 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
         const retained = entries.filter(([key]) => ids.has((JSON.parse(key) as string[])[0]));
         return entries.length === retained.length ? state : {ledgers: Object.fromEntries(retained)};
       });
-      if (changed || records.some(record => !previous.has(ledgerKey(record.id, record.attemptId)))) {
-        if (records.length || providerWanted) void refreshProviders();
-        for (const record of records) void loadLedger(record);
-      }
+      if (records.length && !operationsRequested) readOperations();
+      if (changed || records.some(record => !previous.has(ledgerKey(record.id, record.attemptId)))) for (const record of records) void loadLedger(record);
     },
-    toggleManager(): void {
-      const managerOpen = !store.getState().managerOpen;
-      store.setState({managerOpen});
-      if (managerOpen) void refreshProviders();
-    },
+    load(): void { if (!store.getState().busy) readOperations(); },
     setQuery(query: string): void { store.setState({query}); },
-    toggleProvider(id: string): void {
-      if (store.getState().saving) return;
-      selectionDirty = true;
-      store.setState(state => ({selected: state.selected.includes(id) ? state.selected.filter(value => value !== id) : [...state.selected, id], feedback: undefined}));
-    },
-    async configure(): Promise<void> {
-      if (store.getState().saving) return;
-      if (mutationCount) { store.setState({feedback: '正在保存使用目标或执行渠道操作，请完成后再保存提供商选择。'}); return; }
-      mutationCount++;
+    select(tokenId: number | null): void {
+      if (store.getState().busy) return;
       const epoch = generation;
-      store.setState({saving: true, error: undefined, feedback: undefined});
-      try {
-        const view = await configureProviders(transport, store.getState().selected);
-        if (accept(view, epoch, true)) store.setState({feedback: view.scanning ? '选择已保存，正在后台匹配…' : '参与匹配的提供商已保存'});
-      } catch (error) { if (!disposed && epoch === generation) store.setState({error: message(error)}); }
-      finally { mutationCount--; if (!disposed && epoch === generation) store.setState({saving: false}); }
+      enqueue(epoch, async () => {
+        store.setState({loading: true, error: undefined, feedback: undefined});
+        try {
+          const view = await selectOperationToken(transport, tokenId);
+          if (accept(view, epoch)) store.setState({results: {}, feedback: tokenId === null ? '已清除操作 Key 选择' : `已保存操作 Key #${tokenId}；所有结果行共用此 Key。`});
+        } catch (error) { if (!disposed && epoch === generation) store.setState({error: message(error)}); }
+        finally { if (!disposed && epoch === generation) store.setState({loading: false}); }
+      });
     },
-    refresh(scan = false): void {
-      if (mutationCount) { store.setState({feedback: '渠道操作进行中，请完成后再刷新匹配。'}); return; }
-      void refreshProviders(scan, true);
-    },
-    setTargetQuery(model: string, query: string): void { store.setState(state => ({targetQueries: {...state.targetQueries, [model]: query}})); },
-    async save(recordId: string, model: string, target: A6Target): Promise<void> {
-      if (store.getState().results[model]?.pending) return;
-      mutationCount++;
+    refreshTokens(): void { if (!store.getState().busy) readOperations({refreshTokens: true}); },
+    refreshRelations(kind: A6RelationKind): void {
+      if (store.getState().busy) return;
       const epoch = generation;
-      feedback(model, {pending: 'save'});
-      try {
-        const view = await saveTarget(transport, recordId, model, target);
-        if (records.some(record => record.id === recordId) && accept(view, epoch)) feedback(model, {message: '使用目标已保存'});
-      } catch (error) { if (!disposed && epoch === generation && records.some(record => record.id === recordId)) feedback(model, {error: message(error)}); }
-      finally { mutationCount--; if (!disposed && epoch === generation && store.getState().results[model]?.pending) feedback(model, {}); }
+      enqueue(epoch, async () => {
+        store.setState({loading: true, error: undefined, feedback: undefined});
+        try { accept(await refreshOperationRelations(transport, kind), epoch); }
+        catch (error) { if (!disposed && epoch === generation) store.setState({error: message(error)}); }
+        finally { if (!disposed && epoch === generation) store.setState({loading: false}); }
+      });
     },
-    async action(input: A6ResultActionInput): Promise<void> {
-      if (store.getState().results[input.model]?.pending) return;
-      mutationCount++;
+    action(input: A6ResultActionInput): void {
+      const key = operationRowKey(input.recordId, input.model, input.channelId);
+      if (store.getState().results[key]?.pending) return;
       const epoch = generation;
-      feedback(input.model, {pending: input.operation});
-      try {
-        const outcome = await resultAction(transport, input);
-        const skipped = outcome.result && 'skipped' in outcome.result && outcome.result.skipped === true;
-        const restoredTokenId = outcome.result && 'tokenId' in outcome.result && typeof outcome.result.tokenId === 'number' ? outcome.result.tokenId : undefined;
-        const text = input.operation === 'restore' ? skipped ? '没有待恢复的本插件固定' : `已恢复本插件保存的原固定关系${restoredTokenId === undefined ? '' : ` · 原令牌 #${restoredTokenId}`}` : `${input.operation === 'pin' ? '已固定到' : '已加入路由：'}渠道 #${input.channelId} · 令牌 #${input.tokenId}`;
-        if (!disposed && epoch === generation) feedback(input.model, {message: text});
-      } catch (error) { if (!disposed && epoch === generation && records.some(record => record.id === input.recordId)) feedback(input.model, {error: message(error)}); }
-      finally { mutationCount--; if (!disposed && epoch === generation && store.getState().results[input.model]?.pending) feedback(input.model, {}); }
+      const captured = {...input};
+      feedback(key, {pending: input.operation});
+      enqueue(epoch, async () => {
+        const current = store.getState().operations;
+        if (!records.some(record => record.id === captured.recordId)) { feedback(key, {}); return; }
+        if (captured.operation !== 'restore' && current?.tokenId !== captured.tokenId) { feedback(key, {error: '操作 Key 已改变，请确认当前选择后重试。'}); return; }
+        try {
+          const outcome = await resultAction(transport, captured);
+          if (!accept(outcome.state, epoch)) return;
+          if (captured.operation === 'restore') {
+            feedback(key, {message: outcome.result?.skipped ? '没有待恢复的旧固定' : `已恢复旧固定 · Key #${outcome.result?.tokenId ?? captured.tokenId}`});
+            return;
+          }
+          const state = outcome.state;
+          const modelPins = state.pins.filter(pin => pin.model === captured.model);
+          const verified = state.tokenId === captured.tokenId && (captured.operation === 'pin'
+            ? state.pinsAt !== null && !state.loading.pins && !state.errors.pins && modelPins.length === 1 && modelPins[0].channelId === captured.channelId && modelPins[0].routeEffective === true
+            : state.routesAt !== null && !state.loading.routes && !state.errors.routes && state.routes.some(route => route.model === captured.model && route.channelIds.includes(captured.channelId)));
+          feedback(key, verified ? {message: `${captured.operation === 'pin' ? '固定已读回确认' : '路由已读回确认'} · Key #${captured.tokenId}`} : {error: '操作后尚未读回确认，请刷新对应关系；按钮保持未确认状态。'});
+        } catch (error) {
+          let mirrored = false;
+          if (!disposed && epoch === generation) {
+            // Host refreshes in its mutation finally; this reads only that cached mirror.
+            try { mirrored = accept(await readOperationState(transport), epoch); } catch { /* Preserve the action error below. */ }
+          }
+          if (!disposed && epoch === generation) {
+            if (!mirrored) store.setState(state => {
+              if (!state.operations || (captured.operation !== 'restore' && state.operations.tokenId !== captured.tokenId)) return state;
+              const kind = captured.operation === 'route' ? 'routes' : 'pins';
+              return {operations: {...state.operations, errors: {...state.operations.errors, [kind]: '操作未确认，请显式刷新关系。'}}};
+            });
+            feedback(key, {error: message(error)});
+          }
+        } finally { if (!disposed && epoch === generation && store.getState().results[key]?.pending) feedback(key, {}); }
+      });
     },
     scope(recordId: string, scope: 'attempt'|'record'): void {
       store.setState(state => ({scopes: {...state.scopes, [recordId]: scope}}));

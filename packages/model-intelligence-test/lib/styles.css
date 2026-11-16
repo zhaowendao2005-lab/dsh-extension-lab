@@ -2113,10 +2113,7 @@
 .mit-workbench .mit-a6-token { display:flex; gap:8px; align-items:center; padding-top:8px; min-width:0; overflow-wrap:anywhere }
 .mit-workbench .mit-a6-token>span { display:grid; gap:4px; min-width:0 }
 .mit-workbench .mit-a6-timeout { max-width:280px }
-.mit-workbench .mit-a6-targets { display:grid; grid-template-columns:1fr 1fr; gap:12px; min-width:0 }
-.mit-workbench .mit-a6-targets select { width:100% }
 .mit-workbench .mit-a6-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center }
-.mit-workbench .mit-a6-operation-result { margin:0; padding:10px 12px; max-height:220px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:var(--mit-bg); border:1px solid var(--mit-border); border-radius:4px; font:inherit }
 .mit-workbench .mit-a6-credentials { cursor:default; align-items:stretch }
 .mit-workbench .mit-a6-credentials .mit-button { align-self:flex-start }
 .mit-workbench .mit-a6-intake { display:grid; gap:8px; margin-top:6px; padding-top:12px; border-top:1px solid var(--mit-border) }
@@ -2129,16 +2126,19 @@
 .mit-workbench .mit-a6-market { display:grid; gap:3px; line-height:1.45; white-space:normal; overflow-wrap:anywhere }
 .mit-workbench .mit-a6-market small { font-size:11px }
 .mit-workbench .mit-a6-channel-market { flex:0 1 390px; grid-template-columns:minmax(150px,1fr) minmax(100px,.7fr); gap:12px }
-.mit-workbench .mit-a6-provider-section,.mit-workbench .mit-a6-ledger { display:grid; gap:10px; padding:12px; margin-top:12px; min-width:0; border:1px solid var(--mit-border); border-radius:6px; background:var(--mit-layer) }
-.mit-workbench .mit-a6-provider-section p,.mit-workbench .mit-a6-ledger p { margin:0; line-height:1.5 }
-.mit-workbench .mit-a6-provider-panel { display:grid; gap:10px; min-width:0 }
-.mit-workbench .mit-a6-provider-list { display:grid; gap:4px; max-height:260px; overflow:auto; scrollbar-width:thin }
-.mit-workbench .mit-a6-provider-item { display:flex; gap:9px; align-items:flex-start; padding:8px; border:1px solid var(--mit-border); border-radius:4px; background:var(--mit-bg); cursor:pointer }
-.mit-workbench .mit-a6-provider-item>span { display:grid; gap:3px; min-width:0; overflow-wrap:anywhere }
-.mit-workbench .mit-a6-target { display:grid; gap:6px; min-width:0; white-space:normal; font-size:12px; line-height:1.45 }
-.mit-workbench .mit-a6-target input,.mit-workbench .mit-a6-target select { width:100%; max-width:100%; min-width:0; font:inherit; color:var(--mit-text); background:var(--mit-bg); border:1px solid var(--mit-border); border-radius:4px; padding:6px }
-.mit-workbench .mit-a6-target small { overflow-wrap:anywhere }
-.mit-workbench .mit-a6-target :disabled { opacity:.55; cursor:default }
+.mit-workbench .mit-a6-operation-key,.mit-workbench .mit-a6-ledger { display:grid; gap:10px; padding:12px; margin-top:12px; min-width:0; border:1px solid var(--mit-border); border-radius:6px; background:var(--mit-layer) }
+.mit-workbench .mit-a6-operation-key p,.mit-workbench .mit-a6-ledger p { margin:0; line-height:1.5 }
+.mit-workbench .mit-a6-operation-key .mit-label-row { flex-wrap:wrap; gap:10px }
+.mit-workbench .mit-a6-operation-controls { display:grid; grid-template-columns:minmax(160px,1fr) minmax(180px,2fr); gap:10px; min-width:0 }
+.mit-workbench .mit-a6-operation-controls .mit-field { min-width:0 }
+.mit-workbench .mit-a6-operation-controls select { width:100%; min-width:0; font:inherit; color:var(--mit-text); background:var(--mit-bg); border:1px solid var(--mit-border); border-radius:4px; padding:7px }
+.mit-workbench .mit-a6-row-operations { display:grid; gap:6px; min-width:0; white-space:normal; font-size:12px; line-height:1.45 }
+.mit-workbench .mit-a6-row-operations small { overflow-wrap:anywhere }
+.mit-workbench .mit-a6-row-operations .mit-button.is-confirmed { border-color:var(--mit-success); color:var(--mit-success); background:color-mix(in srgb,var(--mit-success) 12%,var(--mit-bg)); opacity:1; cursor:default }
+.mit-workbench .mit-a6-legacy-leases { display:grid; gap:8px; padding-top:8px; border-top:1px solid var(--mit-border) }
+.mit-workbench .mit-a6-legacy-leases>summary { cursor:pointer; font-size:12px }
+.mit-workbench .mit-a6-legacy-item { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 0; overflow-wrap:anywhere }
+.mit-workbench .mit-a6-legacy-item small { flex-basis:100% }
 .mit-workbench .mit-a6-ledger .mit-label-row { flex-wrap:wrap; gap:10px }
 .mit-workbench .mit-a6-ledger-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:0 }
 .mit-workbench .mit-a6-ledger-metrics>div { display:grid; gap:5px; padding:10px; border:1px solid var(--mit-border); border-radius:4px; background:var(--mit-bg); min-width:0 }
@@ -2150,10 +2150,10 @@
 .mit-workbench .mit-a6-executions th,.mit-workbench .mit-a6-executions td { padding:8px; border-bottom:1px solid var(--mit-border); max-width:240px; overflow-wrap:anywhere; vertical-align:top }
 .mit-workbench .mit-a6-executions small { display:block; margin-top:3px; color:var(--mit-muted) }
 @container mit-panel (max-width:620px) {
+  .mit-workbench .mit-a6-operation-controls { grid-template-columns:minmax(0,1fr) }
   .mit-workbench .mit-a6-ledger-metrics { grid-template-columns:repeat(2,minmax(0,1fr)) }
   .mit-workbench .mit-a6-channel-row { flex-wrap:wrap }
   .mit-workbench .mit-a6-channel-market { flex-basis:100%; order:3 }
-  .mit-workbench .mit-a6-targets { grid-template-columns:minmax(0,1fr) }
   .mit-workbench .mit-a6-selection .mit-draft-footer { align-items:stretch; flex-direction:column }
 }
 
