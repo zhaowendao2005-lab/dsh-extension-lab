@@ -62,7 +62,7 @@ test('actual Host registration is lazy, exposes no defaults and keeps provider r
   assert.equal(prepared.context,undefined);
   assert.equal(prepared.toolUpdate,undefined);
   assert.equal(prepared.systemPromptUpdate,'in-history');
-  assert.deepEqual(prepared.inputModalities,['text']);
+  assert.deepEqual(prepared.inputModalities,['text','image']);
   assert.equal(h.events.filter(([name])=>name==='session/prompt').length,0);
 });
 
@@ -108,13 +108,17 @@ test('actual Runtime does not give auxiliary or unmarked requests tool continuat
   });
 });
 
-test('Host blocks original image before actual text-model projection or attachment reads',async t=>{
-  const h=host(t);let reads=0;
-  h.ctx.provide('attachments',{readImage(){reads++;throw new Error('must not read');}});
+test('Host advertises image input and reads the attachment exactly once',async t=>{
+  const h=host(t,{behavior:async worker=>{worker.update('seen');return {stopReason:'end_turn'};}});
+  let reads=0;
+  h.ctx.provide('attachments',{readImage(){reads++;return {data:Buffer.from('png-bytes')};}});
   const message={role:'user',source:{kind:'user'},content:[{type:'image',attachment:{attachmentId:'sha256:abc',mediaType:'image/png',bytes:3,width:1,height:1,name:'image.png'}}]};
   const chunks=await collect(h.llm.stream(markAgentLoopRequest(request([message]))));
-  assert.equal(chunks.at(-1).reason.failure.code,'ACP_IMAGE_UNVERIFIED');
-  assert.equal(reads,0);assert.equal(h.observed.length,0);assert.equal(h.events.length,0);
+  assert.equal(chunks.at(-1).reason.kind,'stop');
+  assert.equal(reads,1);
+  assert.equal(h.observed.length,1);
+  const prompt=h.events.find(([method])=>method==='session/prompt')[1].prompt;
+  assert.equal(prompt.some(block=>block.type==='image'),true);
 });
 
 test('actual Runtime passes file handles with provenance and never reads the file body',async t=>{

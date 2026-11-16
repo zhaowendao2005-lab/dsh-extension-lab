@@ -148,3 +148,46 @@ test('capacity evicts only idle workers, never a parked tool prompt',async () =>
   const chunks=await collect(engine.stream(request([user('go')],{sessionId:'other',tools:[echo]})));
   assert.equal(last(chunks).reason.failure.code,'ACP_CAPACITY');assert.equal(workers.length,1);assert.equal(workers[0].closed,false);await engine.dispose();
 });
+
+test('an upstream failure rendered as CLI text becomes an explicit error, not an answer',async()=>{
+  const dump='\n⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted (e.g. check quota).\n\n⚠ RESOURCE_EXHAUSTED (code 429): Resource has been exhausted (e.g. check quota).\n';
+  const {engine,workers}=fixture({behavior:async worker=>{worker.update(dump);return {stopReason:'end_turn'};}});
+  const chunks=await collect(engine.stream(request([user('hi')])));
+  assert.equal(last(chunks).reason.failure.code,'ACP_UPSTREAM_QUOTA');
+  assert.equal(chunks.some(chunk=>chunk.type==='text-delta'),false);
+  assert.ok(workers.every(worker=>worker.closed));await engine.dispose();
+});
+
+test('a genuine answer that merely starts with a warning is still delivered',async()=>{
+  const {engine}=fixture({behavior:async worker=>{worker.update('⚠ 注意：这是普通回答，不是上游错误。');return {stopReason:'end_turn'};}});
+  const chunks=await collect(engine.stream(request([user('hi')])));
+  assert.equal(last(chunks).reason.kind,'stop');
+  assert.equal(chunks.filter(chunk=>chunk.type==='text-delta').map(chunk=>chunk.text).join(''),'⚠ 注意：这是普通回答，不是上游错误。');
+  await engine.dispose();
+});
+
+test('a repeated CLI failure aborts the turn instead of waiting for every retry',async()=>{
+  const {engine,workers}=fixture({behavior:async worker=>{
+    worker.update('\n⚠ API error (attempt 1): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted (e.g. check quota).\n');
+    worker.update('\n⚠ API error (attempt 2): RESOURCE_EXHAUSTED (code 429): Resource has been exhausted (e.g. check quota).\n');
+    return {stopReason:'end_turn'};
+  }});
+  const started=Date.now();
+  const chunks=await collect(engine.stream(request([user('hi')])));
+  assert.equal(last(chunks).reason.failure.code,'ACP_UPSTREAM_QUOTA');
+  assert.equal(chunks.some(chunk=>chunk.type==='text-delta'),false);
+  assert.ok(Date.now()-started < 5000);
+  assert.ok(workers.every(worker=>worker.closed));await engine.dispose();
+});
+
+test('a repeated upstream refusal from the gateway stops the turn without waiting for every CLI retry',async()=>{
+  const {engine,workers,gatewayFailures}=fixture({behavior:async worker=>{
+    worker.update('partial');await new Promise(resolve=>setTimeout(resolve,80));return {stopReason:'end_turn'};
+  }});
+  const work=collect(engine.stream(request([user('hi')])));
+  await new Promise(resolve=>setTimeout(resolve,20));
+  gatewayFailures[0]({status:429,attempts:2});
+  const chunks=await work;
+  assert.equal(last(chunks).reason.failure.code,'ACP_UPSTREAM_QUOTA');
+  assert.ok(workers.every(worker=>worker.closed));await engine.dispose();
+});

@@ -53,7 +53,7 @@ CLI 看不到网关之外的出口：请求体不落盘、不记录 body/token�
 
 1. **工具只声明当前可执行集合。** 不声明 `toolUpdate: 'in-history'`，避免 Runtime 把历史已移除 schema 作为 native 历史声明传入 eager MCP 桥。DSH 保留完整日志；Runtime 按该能力约定投影当前工具。系统提示仍声明 `systemPromptUpdate: 'in-history'`，适配器取最后一份非空完整版本，空历史表示清除。
 2. **只有主 Agent Loop 可挂起。** 在 `llm/stream` waterfall 的原始 envelope 上读取公开的 `isAgentLoopRequest`，并要求无辅助 purpose；通过 AsyncLocalStorage 只传递布尔分类，跨 Runtime 克隆保持它。每次 iterator 创建、next、return、throw 均进入同一作用域。辅助调用即使带 sessionId 也不能等待工具续轮。
-3. **图片明确拒绝。** 当前只公布文本能力。Host 在核心转换图片占位文本之前返回 `ACP_IMAGE_UNVERIFIED`，原始 adapter 调用也拒绝图片；不读取附件或把未核验的图片发送到 CLI。文件在正常 DSH 路径由核心转成文件 handle；原始 adapter 另保留同一 handle 接口。
+3. **图片按 ACP 原样传入。** `listModels` 公布 `['text','image']`；Host 只把附件的 `readImage` 结果读一次，adapter 把它投影成 ACP `{type:'image',mimeType,data}` 内容块，ACP `initialize` 已声明 `promptCapabilities.image`。真实链路已验证：1×1 PNG 经官方 CLI 上游请求出现 `inlineData`/`mimeType:image/png`，模型回答了颜色，附件只读一次且不把本地路径写进 prompt。文件仍由核心转成文件 handle；图片能力不再设核验门。
 
 挂起期间新增的 DSH user/context 记录可随工具结果续传。工具原始结果保留；新增记录在最后一份 MCP 结果中用独立 `dsh-continuation` 文本信封承载，带原始 role/source 和顺序表，不新增 ACP prompt、不重复载入 skill。**这是带来源的文本投影，MCP 的物理消息角色仍是 tool，不宣称原生角色或模型语义等价。**
 
@@ -78,7 +78,7 @@ pnpm probe
 
 包内单独声明 workspace 配置，关闭自动 peer 安装。Cordis `4.1.0`、dsh-llm / dsh-error `0.2.2-rc.3`、Schemastery `3.19.0` 作为精确 devDependencies 固定真实 Runtime 测试环境。`build` 只做静态检查并把源码复制至 `lib/`；`probe` 仅输出离线状态。
 
-本轮验证通过：**139/139 项测试，0 失败**（新增 7 项网关测试、1 项门禁顺序测试、2 项权限允许/拒绝测试），17 个源码模块静态检查及构建通过。另有一次真实 CLI 端到端（上述两轮，1 个模型、2 次生成请求）。没有安装或修改生产 profile，没有运行完整 agent-loop / GUI。
+本轮验证通过：**143/143 项测试，0 失败**（新增网关净化 7 项、门禁顺序 1 项、权限允许/拒绝 2 项、图片投影 2 项、上游拒绝识别与提前中止 4 项），18 个源码模块静态检查及构建通过。另有真实 CLI 端到端：工具续轮（`dsh_echo`→`DONE`）、图片轮（`inlineData` 到达上游）、强制 429（9.8 秒报 `ACP_UPSTREAM_QUOTA`、零文本）。没有安装或修改生产 profile，没有运行完整 agent-loop / GUI。
 
 配置根会包含 MCP 临时 bearer token、系统提示，以及官方 CLI 可能写入的会话/缓存。插件不持久化原始 stdout/stderr；只有受管进程范围退出已确认且所有权标记仍一致时才清理目录。无法退出或标记异常时保留目录并报告，不能承诺所有异常下零残留。
 

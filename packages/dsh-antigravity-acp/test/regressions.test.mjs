@@ -60,10 +60,18 @@ test('background calls with a session id cannot park DSH tools',async()=>{
   assert.equal(last(chunks).reason.failure.code,'ACP_AUXILIARY_TOOL');assert.equal(workers[0].closed,true);await engine.dispose();
 });
 
-test('images are rejected before any attachment read or runtime startup',async()=>{
-  const {engine,workers}=fixture();let reads=0;engine.readImage=async()=>{reads++;return {data:Buffer.alloc(1)};};
-  const chunks=await collect(engine.stream(request([{role:'user',content:[{type:'image',attachment:{}}]}])));
-  assert.equal(last(chunks).reason.failure.code,'ACP_IMAGE_UNVERIFIED');assert.equal(reads,0);assert.equal(workers.length,0);await engine.dispose();
+test('images are projected into the ACP prompt',async()=>{
+  const {engine,workers,events}=fixture({behavior:async worker=>{worker.update('seen');return {stopReason:'end_turn'};}});
+  let reads=0;engine.readImage=async()=>{reads++;return {data:Buffer.from('png-bytes')};};
+  const chunks=await collect(engine.stream(request([{role:'user',source:{kind:'user'},content:[{type:'image',attachment:{mediaType:'image/png',name:'a.png'}}]}])));
+  assert.equal(last(chunks).reason.kind,'stop');assert.equal(reads,1);
+  const prompt=events.find(([method])=>method==='session/prompt')[1].prompt;
+  const image=prompt.find(block=>block.type==='image');
+  assert.equal(image.mimeType,'image/png');
+  assert.equal(image.data,Buffer.from('png-bytes').toString('base64'));
+  // The image stays next to its owning record and no OS path is exposed.
+  assert.equal(prompt.some(block=>block.type==='text'&&block.text.includes('/Users/')),false);
+  await engine.dispose();assert.equal(workers[0].closed,true);
 });
 
 test('malformed CLI text never becomes a DSH delta',async()=>{

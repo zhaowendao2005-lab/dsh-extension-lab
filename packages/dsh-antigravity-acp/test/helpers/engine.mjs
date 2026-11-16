@@ -11,7 +11,7 @@ export function request(messages,more={}) { return {provider:PROVIDER,model:'tes
 export const echo = {name:'dsh_echo',description:'Echo from DSH',parameters:{type:'object',properties:{text:{type:'string'}},required:['text'],additionalProperties:false}};
 
 export function fixture({behavior,attestation={sanitizedAgentRequests:1,strippedDeclarations:0,systemRewritten:1,generationRequests:1},maxSessions=4,startGate,isConversation=()=>true}={}) {
-  const events=[]; const workers=[]; const gateways=[];
+  const events=[]; const workers=[]; const gateways=[]; const gatewayFailures=[];
   const engine = new AcpEngine({
     subprocess:{}, config:{maxSessions},
     inspect:async () => ({path:'/official/agy',version:'1.5.9',sha256:'fake-test-binary'}),
@@ -25,9 +25,10 @@ export function fixture({behavior,attestation={sanitizedAgentRequests:1,stripped
       worker.bridge=bridge; return bridge;
     },
     createGateway:async ({systemInstruction}) => {
-      const gateway={endpoint:'http://127.0.0.1:1/gateway-token',systemInstruction,closed:false,attested:()=>structuredClone(attestation),
+      let notifyFailure; const failure=new Promise(resolve=>{notifyFailure=resolve;});
+      const gateway={endpoint:'http://127.0.0.1:1/gateway-token',systemInstruction,closed:false,failure,attested:()=>structuredClone(attestation),
         async close(){gateway.closed=true;events.push(['gateway-close']);}};
-      gateways.push(gateway); return gateway;
+      gateways.push(gateway); gatewayFailures.push(failure=>notifyFailure(failure)); return gateway;
     },
     start:async ({onUpdate,onPermission,signal,gateway}) => {
       const worker=workers.at(-1); worker.gateway=gateway; worker.update=(text,type='agent_message_chunk')=>onUpdate({sessionId:worker.sessionId,update:{sessionUpdate:type,content:{type:'text',text}}});
@@ -45,5 +46,5 @@ export function fixture({behavior,attestation={sanitizedAgentRequests:1,stripped
       return {connection,isolation:{cwd:'/empty-test-workspace'},initializeResult:{agentCapabilities:{promptCapabilities:{image:true}}},async close(){worker.closed=true;events.push(['runtime-close']);closed.resolve({});}};
     },
   });
-  return {engine,events,workers,gateways};
+  return {engine,events,workers,gateways,gatewayFailures};
 }

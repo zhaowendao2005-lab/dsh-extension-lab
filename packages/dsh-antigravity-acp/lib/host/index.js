@@ -40,12 +40,6 @@ export function apply(ctx, config) {
   });
   ctx.on('llm/stream',(options,next)=>{
     if(options.provider !== PROVIDER)return next();
-    // Inspect original content before Runtime's text-only placeholder projection.
-    if(options.messages.some(message=>message.content.some(block=>block.type === 'image')))return {
-      async *[Symbol.asyncIterator](){
-        yield {type:'finish',reason:{kind:'error',failure:{code:'ACP_IMAGE_UNVERIFIED',message:'当前版本尚未核验所选 CLI 模型的图片能力；未读取或发送图片。'}}};
-      },
-    };
     return withinRequestScope(requestScope,isAgentLoopRequest(options) && options.purpose === undefined,next);
   });
   ctx.effect(() => ctx.llm.registerAdapter([PROVIDER], new AntigravityAcpAdapter(engine)), 'antigravity-acp: adapter');

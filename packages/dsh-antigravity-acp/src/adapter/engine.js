@@ -15,6 +15,23 @@ async function closeLate(resource) {
 }
 
 
+// The official CLI reports upstream failures as assistant text instead of an
+// ACP error. Every non-empty line of such a dump starts with a warning marker
+// and carries a status name, so a real answer is never mistaken for one.
+const CLI_ERROR_LINE=/^\u26a0\s*(?:API error \(attempt \d+\):\s*)?([A-Z][A-Z0-9_]*)\s*(?:\(code (\d+)\))?/u;
+export function cliErrorStatus(text) {
+  const lines=String(text).split('\n').map(line=>line.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  let status=null;
+  for (const line of lines) {
+    if (!line.startsWith('\u26a0')) return null;
+    const match=CLI_ERROR_LINE.exec(line);
+    if (!match) return null;
+    status ??= match[1];
+  }
+  return status;
+}
+
 export class AcpEngine {
   constructor({subprocess,config={},readImage,fileRequestText,inspect=inspectCli,start=startAgyRuntime,bridge=createToolBridge,createGateway=createSanitizingGateway,isConversation=()=>false}) {
     Object.assign(this,{subprocess,readImage,fileRequestText,inspect,start,bridge,createGateway,isConversation});
@@ -96,7 +113,7 @@ export class AcpEngine {
       let unit;
       try {
         unit = await this.newUnit();
-        this.catalog = unit.catalog.models.map(model => ({...model,inputModalities:['text'],badge:{text:'经本地网关净化 · 原生工具不外发',tone:'info'}}));
+        this.catalog = unit.catalog.models.map(model => ({...model,inputModalities:['text','image'],badge:{text:'经本地网关净化 · 原生工具不外发',tone:'info'}}));
         this.status.modelCount = this.catalog.length; this.status.phase = 'idle';
         return this.catalog;
       } catch(error) { const safe=failure(error); this.status.phase='error'; this.status.error=safe; this.catalogTask=undefined; throw new AcpError(safe.code,safe.message); }
@@ -146,13 +163,16 @@ export class AcpEngine {
     let release,unit,key,keep=false,completed=false,continuable=false;
     const blocks=[]; let open,index=0;
     const flush=() => { if (!open) return []; const event={type:'block-end',index:open.index,block:open.block}; blocks.push(open.block); open=undefined; return [event]; };
+    // The official CLI renders upstream failures as ordinary assistant text
+    // ("⚠ API error (attempt N): RESOURCE_EXHAUSTED (code 429): ..."). Holding
+    // the leading chunk keeps such a dump from being reported as a real answer.
+    let hold='';
     try {
       if (this.disposed) throw new AcpError('ACP_DISPOSED','插件已经停用。');
       continuable = Boolean(options.sessionId) && this.isConversation(options);
       options = {...options,signal:options.signal ? AbortSignal.any([options.signal,this.lifecycle.signal]) : this.lifecycle.signal};
       if (options.provider !== PROVIDER) throw new AcpError('ACP_PROVIDER_INVALID','请求的 provider 不属于此适配器。');
       aborted(options.signal);
-      if (options.messages?.some(message => message.content?.some(block => block.type === 'image'))) throw new AcpError('ACP_IMAGE_UNVERIFIED','当前版本尚未核验所选 CLI 模型的图片能力；未读取或发送图片。');
       for (const field of ['maxTokens','temperature','stop']) if (options[field] !== undefined) throw new AcpError('ACP_CONTROL_UNSUPPORTED',`当前 ACP 尚不能保证 ${field} 生效。`);
       if (options.reasoningEffort !== undefined) throw new AcpError('ACP_CONTROL_UNSUPPORTED','当前 ACP 尚未核验独立思考档位。');
       release = await this.gate.acquire(options.signal);
@@ -205,7 +225,28 @@ export class AcpEngine {
       }
       this.status.phase='generating'; this.status.activeSessions=this.units.size;
       while (true) {
-        const event = await unit.queue.next(options.signal);
+        let event = await (unit.gateway?.failure
+          ? Promise.race([unit.queue.next(options.signal), unit.gateway.failure.then(failure => ({ type: 'upstream-failure', failure }))])
+          : unit.queue.next(options.signal));
+        if (event.type === 'upstream-failure') {
+          const { status, attempts } = event.failure ?? {};
+          throw new AcpError(status === 429 ? 'ACP_UPSTREAM_QUOTA' : 'ACP_UPSTREAM_ERROR', `官方 CLI 上游连续返回 HTTP ${status ?? '错误'}（已重试 ${attempts ?? 2} 次）；本次不产生消息，请稍后重试或改用其它模型。`);
+        }
+        if (event.type === 'text' && hold !== null) {
+          hold += event.text;
+          const trimmed = hold.trimStart();
+          if (trimmed === '' || trimmed.startsWith('\u26a0')) {
+            // A repeated upstream failure will not recover inside this turn; stop
+            // instead of waiting out every CLI-side retry against a dead endpoint.
+            const attempt=[...hold.matchAll(/API error \(attempt (\d+)\)/g)].at(-1);
+            if (attempt && Number(attempt[1]) >= 2) {
+              const upstream=cliErrorStatus(hold) ?? 'RESOURCE_EXHAUSTED';
+              throw new AcpError(upstream === 'RESOURCE_EXHAUSTED' ? 'ACP_UPSTREAM_QUOTA' : 'ACP_UPSTREAM_ERROR',`官方 CLI 上游连续返回 ${upstream}（已重试 ${attempt[1]} 次）；本次不产生消息，请稍后重试或改用其它模型。`);
+            }
+            if (hold.length < 16384) continue;
+          }
+          event = {type:'text',text:hold}; hold=null;
+        }
         if (event.type === 'text' || event.type === 'reasoning') {
           if (!event.text) continue;
           if (open?.block.type !== event.type) {
@@ -216,6 +257,14 @@ export class AcpEngine {
           yield {type:event.type === 'text' ? 'text-delta' : 'reasoning-delta',index:open.index,text:event.text};
         } else if (event.type === 'tool') {
           if (!continuable) throw new AcpError('ACP_AUXILIARY_TOOL','非 DSH Agent Loop 请求不能等待工具续轮。');
+          if (hold !== null) {
+            const held=hold; hold=null;
+            const upstream=cliErrorStatus(held);
+            if (upstream) throw new AcpError(upstream === 'RESOURCE_EXHAUSTED' ? 'ACP_UPSTREAM_QUOTA' : 'ACP_UPSTREAM_ERROR',`官方 CLI 上游返回 ${upstream}；CLI 已内部重试仍无回答。本次不产生消息，请稍后重试或改用其它模型。`);
+            if (open?.block.type !== 'text') { yield* flush(); open={index:index++,block:{type:'text',text:''}}; yield {type:'block-start',index:open.index,blockType:'text'}; }
+            open.block.text += held;
+            yield {type:'text-delta',index:open.index,text:held};
+          }
           this.attest(unit);
           yield* flush(); const block={type:'tool-call',...event.call};
           yield {type:'block-start',index,blockType:'tool-call'};
@@ -226,6 +275,14 @@ export class AcpEngine {
           keep=true; completed=true; this.status.phase='waiting-tools';
           yield {type:'finish',reason:{kind:'tool-calls'}}; return;
         } else if (event.type === 'done') {
+          if (hold !== null) {
+            const held=hold; hold=null;
+            const upstream=cliErrorStatus(held);
+            if (upstream) throw new AcpError(upstream === 'RESOURCE_EXHAUSTED' ? 'ACP_UPSTREAM_QUOTA' : 'ACP_UPSTREAM_ERROR',`官方 CLI 上游返回 ${upstream}；CLI 已内部重试仍无回答。本次不产生消息，请稍后重试或改用其它模型。`);
+            if (open?.block.type !== 'text') { yield* flush(); open={index:index++,block:{type:'text',text:''}}; yield {type:'block-start',index:open.index,blockType:'text'}; }
+            open.block.text += held;
+            yield {type:'text-delta',index:open.index,text:held};
+          }
           yield* flush(); unit.active=false;
           const stop = event.result?.stopReason;
           if (!['end_turn','max_tokens'].includes(stop)) throw new AcpError(stop === 'cancelled' ? 'ACP_ABORTED' : 'ACP_STOP_UNSUPPORTED','ACP 生成未正常完成；未自动重试。');

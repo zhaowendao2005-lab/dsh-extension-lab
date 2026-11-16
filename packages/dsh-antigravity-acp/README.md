@@ -49,4 +49,4 @@ CLI 子进程默认使用当前操作系统用户的主目录复用已有登录�
 
 包名为 `dsh-antigravity-acp`，provider ID 为 `antigravity-acp`；旧研究中的 `dsh-agy-acp` 只是早期暂名。
 
-本包内 `pnpm build` 生成 `lib/`；`pnpm probe` 仅报告离线状态；离线测试命令及已验证范围见[实现状态](docs/STATUS.md)。生成已可通过净化的出口运行；图片、`maxTokens` 等控制项仍显式拒绝而不是假装生效。
+本包内 `pnpm build` 生成 `lib/`；`pnpm probe` 仅报告离线状态；离线测试命令及已验证范围见[实现状态](docs/STATUS.md)。生成已可通过净化的出口运行，文本与图片输入均可直传；`maxTokens`、温度等控制项仍显式拒绝（`ACP_CONTROL_UNSUPPORTED`）而不是假装生效。上游连续拒绝（如 429）会变成明确的错误，不会退化成一条假回答。

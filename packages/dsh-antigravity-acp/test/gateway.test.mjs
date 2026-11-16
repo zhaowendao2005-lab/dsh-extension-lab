@@ -108,3 +108,29 @@ test('gateway strips tools from the title utility request without rewriting its 
   assert.equal(gateway.attested().sanitizedAgentRequests, 0);
   assert.equal(gateway.attested().generationRequests, 1);
 });
+
+test('gateway reports a repeated agent-turn refusal so the engine can stop waiting', async (t) => {
+  const seen = [];
+  const server = createServer((req, res) => {
+    const chunks = []; req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      seen.push(req.url);
+      const payload = JSON.stringify({ error: { code: 429, message: 'Resource has been exhausted (e.g. check quota).', status: 'RESOURCE_EXHAUSTED' } });
+      res.writeHead(429, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) });
+      res.end(payload);
+    });
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const gateway = await createSanitizingGateway({ upstream: `http://127.0.0.1:${server.address().port}`, systemInstruction: 'DSH system' });
+  t.after(async () => { await gateway.close(); await new Promise(resolve => server.close(resolve)); });
+  const url = `${gateway.endpoint}v1internal:streamGenerateContent?alt=sse`;
+  // The first refusal alone is not enough: the CLI is allowed one retry.
+  await post(url, agentBody(declarations('mcp_dsh-bridge_dsh_echo')));
+  let settled = false; void gateway.failure.then(() => { settled = true; });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(settled, false);
+  await post(url, agentBody(declarations('mcp_dsh-bridge_dsh_echo')));
+  assert.deepEqual(await gateway.failure, { status: 429, attempts: 2 });
+  // A checkpoint retry never trips it: title generation is not the agent turn.
+  assert.equal(seen.length, 2);
+});

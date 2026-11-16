@@ -63,12 +63,22 @@ export async function createSanitizingGateway({ upstream = DEFAULT_UPSTREAM, sys
   const prefix = `/${token}/`;
   const sockets = new Set();
   const state = { requests: 0, generationRequests: 0, sanitizedAgentRequests: 0, forwardedDeclarations: 0, strippedDeclarations: 0, systemRewritten: 0, refusals: 0, lastStripped: [] };
+  // The CLI retries an upstream refusal in-process and reports it as text only
+  // after every attempt. A repeated agent-turn refusal is surfaced immediately so
+  // a dead request does not hold the turn for minutes.
+  let resolveFailure;
+  const failure = new Promise((resolve) => { resolveFailure = resolve; });
+  let agentFailures = 0; let notified = false;
 
-  const forward = (req, res, body, path) => {
+  const forward = (req, res, body, path, agentTurn = false) => {
     const headers = {};
     for (const [key, value] of Object.entries(req.headers)) if (!REQUEST_HEADERS_DROPPED.has(key) && value !== undefined) headers[key] = value;
     const options = { hostname: target.hostname, port: target.port || undefined, method: req.method, path, headers, timeout: timeoutMs };
     const upstream = transport(options, (answer) => {
+      if (agentTurn && answer.statusCode === 429) {
+        agentFailures += 1;
+        if (agentFailures >= 2 && !notified) { notified = true; resolveFailure({ status: 429, attempts: agentFailures }); }
+      }
       const responseHeaders = {};
       for (const [key, value] of Object.entries(answer.headers)) if (!RESPONSE_HEADERS_DROPPED.has(key) && value !== undefined) responseHeaders[key] = value;
       res.writeHead(answer.statusCode ?? 502, responseHeaders);
@@ -85,7 +95,7 @@ export async function createSanitizingGateway({ upstream = DEFAULT_UPSTREAM, sys
     upstream.end(body);
   };
 
-  const sanitize = (req, res, body) => {
+  const sanitize = (req, res, body, turn = {}) => {
     let payload;
     try { payload = JSON.parse(body.toString('utf8')); }
     catch { throw new GatewayError('ACP_GATEWAY_UNPARSEABLE_REQUEST', 'The agent request is not JSON.'); }
@@ -93,6 +103,7 @@ export async function createSanitizingGateway({ upstream = DEFAULT_UPSTREAM, sys
     const request = payload.request;
     const requestType = typeof payload.requestType === 'string' ? payload.requestType : 'agent';
     const agentTurn = requestType !== 'checkpoint';
+    turn.agent = agentTurn;
     let stripped = [];
     if (request.tools !== undefined) {
       if (!Array.isArray(request.tools)) throw new GatewayError('ACP_GATEWAY_TOOLS_MALFORMED', 'The tool list is not an array.');
@@ -132,7 +143,8 @@ export async function createSanitizingGateway({ upstream = DEFAULT_UPSTREAM, sys
       const body = Buffer.concat(chunks);
       try {
         if (!GENERATION_PATH.test(path)) return forward(req, res, body, path);
-        forward(req, res, sanitize(req, res, body), path);
+        const turn = { agent: false };
+        forward(req, res, sanitize(req, res, body, turn), path, turn.agent);
       } catch (error) {
         state.refusals += 1;
         if (res.writableEnded || res.destroyed) return;
@@ -156,6 +168,7 @@ export async function createSanitizingGateway({ upstream = DEFAULT_UPSTREAM, sys
   return Object.freeze({
     endpoint: `http://127.0.0.1:${port}${prefix}`,
     systemInstruction,
+    failure,
     attested() { return { ...state, lastStripped: [...state.lastStripped] }; },
     close() {
       closed ??= (async () => {
