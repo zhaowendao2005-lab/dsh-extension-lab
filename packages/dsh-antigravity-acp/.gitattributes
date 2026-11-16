@@ -1,0 +1,3 @@
+# Keep historical Markdown hard line breaks and recorded archive hashes intact.
+# All runtime code and non-archival documents keep the normal whitespace checks.
+docs/archive/**/*.md whitespace=-blank-at-eol

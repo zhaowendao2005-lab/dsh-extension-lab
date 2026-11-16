@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Antigravity ACP（开发预览）",
+    "description": "通过本机官方 agy CLI 接入 ACP，使用 CLI 当前登录。隔离运行目录，由 DSH 执行工具；原生工具不可见性尚未核验，当前阻止模型生成。未安装到当前配置，未宣称等价直连。"
+  }
+}

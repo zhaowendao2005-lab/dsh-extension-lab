@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "archivedOn": "2026-11-15",
+  "timezone": "Asia/Shanghai",
+  "note": "Hashes identify source snapshots, not proof that historical conclusions are correct. Originals were not moved or modified.",
+  "entries": [
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/ACP-REARCHITECTURE-RESEARCH.md",
+      "destination": "docs/archive/acp/ACP-REARCHITECTURE-RESEARCH.md",
+      "sourceSha256": "79c3a8d594b8f4d2775bd12de2d4788ebb3e5bbda5ad742bf3dd4c196b8f5131",
+      "archivedSha256": "bb3f001e20cf8972ad28b11c48f6563dce4f4ff551f5986c329efebbba2409df",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/DSH-AGY-ACP-PLAN.md",
+      "destination": "docs/archive/acp/DSH-AGY-ACP-PLAN.md",
+      "sourceSha256": "1090d613bd3c5f6f2f176ecb13177036e3e781286f33361c4b0823754654910e",
+      "archivedSha256": "50d07c95a3ec036537adcc6c4f763d9c8fa104671e098d200b84c95d92fd896c",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/AGY-ACP-ISOLATED-TOOL-TEST-2026-11-15.md",
+      "destination": "docs/archive/acp/AGY-ACP-ISOLATED-TOOL-TEST-2026-11-15.md",
+      "sourceSha256": "2fa0b3dc61c4c55a48d4d1c70b2abf0a5a22515db150396280cc32616b4db0c8",
+      "archivedSha256": "a5fb4b08b312e4ea51b20af1f08069b9c9a511f1f7b757f90b9538b9c18c2581",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/AGY-ACP-GATING-RESEARCH.md",
+      "destination": "docs/archive/acp/AGY-ACP-GATING-RESEARCH.md",
+      "sourceSha256": "30022f21dfc4e066748fad71fc2dd6d68ac628527896fd29c8e489e9fe8f83be",
+      "archivedSha256": "16ebfcbcb35bfaf2663d1b3d24de2f3e093cc0bd4e2460b6bd70a75f19df37d3",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/AGY-ACP-CLEAN-SHELL.md",
+      "destination": "docs/archive/acp/AGY-ACP-CLEAN-SHELL.md",
+      "sourceSha256": "649ee0894e8bd0518395a0e5f995b43ab4294f398fc34ab437169b15b8643ba2",
+      "archivedSha256": "60659f881b2369811a007463d82de6eaba3380e61366d14b28a0b553141dc200",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/ANTIGRAVITY-DIRECT-REMEDIATION-PLAN.md",
+      "destination": "docs/archive/direct-background/ANTIGRAVITY-DIRECT-REMEDIATION-PLAN.md",
+      "sourceSha256": "333be586e6c334f6f12531136205435e7f498a8e8bb34e63b3601031e4024313",
+      "archivedSha256": "56ab9e7d54b442c391a1c85eee7d6b2511447da42907a15ec0283cd74f8c59b2",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/ANTIGRAVITY-REQUEST-DIFF.md",
+      "destination": "docs/archive/direct-background/ANTIGRAVITY-REQUEST-DIFF.md",
+      "sourceSha256": "34f3596fc5de40de0819c93eff511494cd6a8635bd763748efd80961db168d49",
+      "archivedSha256": "e3b9da20fbbbb6957bb8c0ae70e8a1189ef68053758c5d5af486019efb4f32d0",
+      "transformations": [
+        "archive warning header",
+        "email redaction"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/ANTIGRAVITY-PLUGIN-SURVEY.md",
+      "destination": "docs/archive/direct-background/ANTIGRAVITY-PLUGIN-SURVEY.md",
+      "sourceSha256": "c2391c7dde462508134be942b79ee9faa3f1a56bf8a1e5a2a1229b9a635df5ab",
+      "archivedSha256": "3efb138d29590b12a25608eb5b8815a65d48e66c3684ea5751dbbbd95da41ec9",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/ANTIGRAVITY-PLUGIN-ANALYSIS.md",
+      "destination": "docs/archive/direct-background/ANTIGRAVITY-PLUGIN-ANALYSIS.md",
+      "sourceSha256": "54f4c7693a215d2906c11f3411bfb09e8d86bc117ede40296755a61b29a7000e",
+      "archivedSha256": "1d824c5404d0c857feb3313f97d803cf31eeab58fd9f32ca0a4eb5995f7ebc97",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "historical-document",
+      "source": "packages/dsh-antigravity/docs/REPORT-DIFF.md",
+      "destination": "docs/archive/direct-background/REPORT-DIFF.md",
+      "sourceSha256": "b77600493ae8c3bd0f64a154e2633f3f141e35206ee6acb5db47e01c2d005fb6",
+      "archivedSha256": "3a203e1d494ab13d310a9e88d2e7e361490f94a1c910ef9ea1f9b628787b9437",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "user-supplied-report",
+      "source": "~/.gemini/antigravity-cli/brain/7da00050-627c-438c-a507-4d5fc431468d/AGY-ACP-FEASIBILITY-REPORT.md",
+      "destination": "docs/archive/acp/AGY-ACP-FEASIBILITY-REPORT.md",
+      "sourceSha256": "407e0d09837a95c15c9b20ac4456ffa2968fee138fb81dcb942314507e953952",
+      "archivedSha256": "c191d15643aade0b2cbca8e10c049baf75ae133fb4a49ff20203c6e5f33b36b0",
+      "transformations": [
+        "archive warning header"
+      ]
+    },
+    {
+      "kind": "allowlisted-case-summary",
+      "source": "/tmp/dsh-agy-isolation.MuAigf/results.json",
+      "destination": "docs/evidence/round-1.json",
+      "sourceSha256": "0702627a801c3a5acf7e08bed5d3ffc70c4535bf5908a15d256b4aa849be79b1",
+      "archivedSha256": "124fd65f8ad0f1ae3f1d2832381edd16482fb3ba7526a6f12f61d77af7edd7f3",
+      "caseCount": 4,
+      "transformations": [
+        "allowlist reconstruction, see destination metadata"
+      ]
+    },
+    {
+      "kind": "allowlisted-case-summary",
+      "source": "/tmp/dsh-agy-isolation.MuAigf/round2-results.json",
+      "destination": "docs/evidence/round-2.json",
+      "sourceSha256": "5ce50605050aac31f459557e6ebdabced47ee673214d4ad3c04b014aaf33cacd",
+      "archivedSha256": "f17d4e44a61c45cdc05cdf0da8c43eded52eb076694070bbba8e6ea1ced47c8f",
+      "caseCount": 5,
+      "transformations": [
+        "allowlist reconstruction, see destination metadata"
+      ]
+    },
+    {
+      "kind": "allowlisted-case-summary",
+      "source": "/tmp/dsh-agy-isolation.MuAigf/clean-shell-results.json",
+      "destination": "docs/evidence/round-3.json",
+      "sourceSha256": "89658d168edfdef9cfe5a5207842935fa4b46cdca2ebfbaedd24a4069ec64878",
+      "archivedSha256": "f0fcb0def60ebef6578f2b612e71587441c132d843e5e62af5af0bc4a87ba128",
+      "caseCount": 8,
+      "transformations": [
+        "allowlist reconstruction, see destination metadata"
+      ]
+    },
+    {
+      "kind": "non-executable-probe-snapshot",
+      "source": "/tmp/dsh-agy-isolation.MuAigf/probe9.mjs",
+      "destination": "docs/evidence/probe9.mjs.txt",
+      "sourceSha256": "38461504cc0403ccd56b9d4225ba65200bdd432f04adaa872cbe8cb84db1cb50",
+      "archivedSha256": "551bc42882db45061f51fe8804a1609c4dfca288a4e190e65dd3ca06e128645c",
+      "transformations": [
+        "warning comments",
+        "local binary path placeholder"
+      ]
+    },
+    {
+      "kind": "non-executable-probe-snapshot",
+      "source": "/tmp/dsh-agy-isolation.MuAigf/probe10.mjs",
+      "destination": "docs/evidence/probe10.mjs.txt",
+      "sourceSha256": "3ffa3f8c85a923e955acadb5c23bf7f8e0315c615371e97e03deae708a592299",
+      "archivedSha256": "e6ecd48ac228d31559e8cee8e54fff0b6a993e3e8a1649af71b5b02f926cc1d9",
+      "transformations": [
+        "warning comments",
+        "local binary path placeholder"
+      ]
+    }
+  ]
+}

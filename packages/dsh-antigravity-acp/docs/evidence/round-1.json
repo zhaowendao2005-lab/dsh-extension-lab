@@ -1,0 +1,332 @@
+{
+  "schemaVersion": 1,
+  "sourceFile": "results.json",
+  "scope": "Retained case summaries, not a complete request ledger or upstream declaration capture.",
+  "transform": "Allowlist projection; removed answer, diagnostics, titles, arguments, account tier and personal paths.",
+  "cases": [
+    {
+      "name": "strict-deny",
+      "agent": false,
+      "promptSent": true,
+      "sessionCreated": true,
+      "configIds": [
+        "model",
+        "thought_level",
+        "mode"
+      ],
+      "stopReason": "end_turn",
+      "secretRevealed": false,
+      "receiptRevealed": false,
+      "authViaKeyring": true,
+      "productionSettingsUnchanged": true,
+      "availableCommands": [
+        "agy-customizations",
+        "antigravity-guide",
+        "boost",
+        "browser",
+        "compact",
+        "goal",
+        "grill-me",
+        "learn",
+        "plan",
+        "run-workflow",
+        "schedule",
+        "swarm",
+        "teamwork"
+      ],
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "settings": {
+        "toolPermission": "strict",
+        "allowNonWorkspaceAccess": false,
+        "permissions": {
+          "ask": [
+            "mcp(*)"
+          ],
+          "deny": [
+            "read_file(*)",
+            "write_file(*)",
+            "command(*)",
+            "read_url(*)",
+            "execute_url(*)"
+          ]
+        }
+      },
+      "meta": {},
+      "toolEvents": [
+        {
+          "type": "tool_call",
+          "kind": "read",
+          "status": "in_progress"
+        },
+        {
+          "type": "tool_call_update",
+          "kind": "read",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call_update",
+          "kind": "read",
+          "status": "in_progress"
+        },
+        {
+          "type": "tool_call_update",
+          "kind": "read",
+          "status": "failed"
+        }
+      ],
+      "permissions": [
+        {
+          "name": "read_file",
+          "bridge": false,
+          "optionKinds": [
+            "allow_once",
+            "reject_once"
+          ]
+        }
+      ],
+      "bridgeEvents": [
+        {
+          "method": "server/discover"
+        },
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "notifications/initialized"
+        },
+        {
+          "method": "tools/list"
+        },
+        {
+          "method": "notifications/roots/list_changed"
+        }
+      ]
+    },
+    {
+      "name": "meta-enabled-empty",
+      "agent": false,
+      "promptSent": true,
+      "sessionCreated": true,
+      "configIds": [
+        "model",
+        "thought_level",
+        "mode"
+      ],
+      "stopReason": "end_turn",
+      "secretRevealed": true,
+      "receiptRevealed": true,
+      "authViaKeyring": true,
+      "productionSettingsUnchanged": true,
+      "availableCommands": [
+        "agy-customizations",
+        "antigravity-guide",
+        "boost",
+        "browser",
+        "compact",
+        "goal",
+        "grill-me",
+        "learn",
+        "plan",
+        "run-workflow",
+        "schedule",
+        "swarm",
+        "teamwork"
+      ],
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "settings": {},
+      "meta": {
+        "enabledTools": []
+      },
+      "toolEvents": [
+        {
+          "type": "tool_call",
+          "kind": "read",
+          "status": "in_progress"
+        },
+        {
+          "type": "tool_call_update",
+          "kind": "read",
+          "status": "completed"
+        },
+        {
+          "type": "tool_call",
+          "kind": "other",
+          "status": "in_progress"
+        },
+        {
+          "type": "tool_call_update",
+          "kind": "other",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call_update",
+          "kind": "other",
+          "status": "in_progress"
+        },
+        {
+          "type": "tool_call_update",
+          "kind": "other",
+          "status": "completed"
+        }
+      ],
+      "permissions": [
+        {
+          "name": "mcp_dsh-bridge_dsh_echo",
+          "bridge": true,
+          "optionKinds": [
+            "allow_once",
+            "reject_once"
+          ]
+        }
+      ],
+      "bridgeEvents": [
+        {
+          "method": "server/discover"
+        },
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "notifications/initialized"
+        },
+        {
+          "method": "tools/list"
+        },
+        {
+          "method": "notifications/roots/list_changed"
+        },
+        {
+          "method": "tools/call",
+          "name": "dsh_echo"
+        }
+      ]
+    },
+    {
+      "name": "custom-agent-empty",
+      "agent": true,
+      "promptSent": true,
+      "sessionCreated": true,
+      "configIds": [
+        "model",
+        "thought_level",
+        "mode"
+      ],
+      "stopReason": "end_turn",
+      "secretRevealed": false,
+      "receiptRevealed": false,
+      "authViaKeyring": true,
+      "productionSettingsUnchanged": true,
+      "availableCommands": [
+        "grill-me",
+        "learn",
+        "plan"
+      ],
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "settings": {
+        "toolPermission": "strict",
+        "allowNonWorkspaceAccess": false,
+        "permissions": {
+          "ask": [
+            "mcp(*)"
+          ],
+          "deny": [
+            "read_file(*)",
+            "write_file(*)",
+            "command(*)",
+            "read_url(*)",
+            "execute_url(*)"
+          ]
+        }
+      },
+      "meta": {},
+      "toolEvents": [],
+      "permissions": [],
+      "bridgeEvents": [
+        {
+          "method": "server/discover"
+        },
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "notifications/initialized"
+        },
+        {
+          "method": "tools/list"
+        },
+        {
+          "method": "notifications/roots/list_changed"
+        }
+      ]
+    },
+    {
+      "name": "custom-agent-bridge",
+      "agent": true,
+      "promptSent": true,
+      "sessionCreated": true,
+      "configIds": [
+        "model",
+        "thought_level",
+        "mode"
+      ],
+      "stopReason": "end_turn",
+      "secretRevealed": false,
+      "receiptRevealed": false,
+      "authViaKeyring": true,
+      "productionSettingsUnchanged": true,
+      "availableCommands": [
+        "grill-me",
+        "learn",
+        "plan"
+      ],
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "settings": {
+        "toolPermission": "strict",
+        "permissions": {
+          "ask": [
+            "mcp(*)"
+          ],
+          "deny": [
+            "read_file(*)",
+            "write_file(*)",
+            "command(*)",
+            "read_url(*)",
+            "execute_url(*)"
+          ]
+        }
+      },
+      "meta": {},
+      "toolEvents": [],
+      "permissions": [],
+      "bridgeEvents": [
+        {
+          "method": "server/discover"
+        },
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "notifications/initialized"
+        },
+        {
+          "method": "tools/list"
+        },
+        {
+          "method": "notifications/roots/list_changed"
+        }
+      ]
+    }
+  ]
+}

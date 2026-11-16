@@ -1,0 +1,3 @@
+# Keep dependency resolution local to this package and declare test peers explicitly.
+packages: []
+autoInstallPeers: false

@@ -1,0 +1,88 @@
+// 历史探针文本快照，非可执行测试或插件源码。
+// 保留 tools:null 判断错误、启动后写配置、弱权限匹配等缺陷供审查；不得直接运行。
+import {spawn} from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import http from 'node:http';
+
+const ROOT=path.dirname(new URL(import.meta.url).pathname);
+const BIN='<本机官方agy绝对路径>';
+const CASE=process.argv[2]??'exit-clean';
+const TOOLS=JSON.parse(process.argv[3]??'["call_mcp_tool"]');
+const EAGER=process.argv[4]==='eager';
+const DENY=process.argv[5]!=='nodeny';
+const WSMCP=process.argv[6]==='wsmcp';
+const nonce=()=>crypto.randomBytes(12).toString('hex');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const dir=path.join(ROOT,CASE);fs.mkdirSync(dir,{recursive:true,mode:0o700});
+const gemini=path.join(dir,'gemini'),work=path.join(dir,'workspace'),data=path.join(gemini,'dsh-acp-test');
+fs.mkdirSync(work,{recursive:true});fs.mkdirSync(data,{recursive:true});
+const settings={toolPermission:'strict',allowNonWorkspaceAccess:false,permissions:{ask:['mcp(*)']}};
+if(DENY)settings.permissions.deny=['read_file(*)','write_file(*)','command(*)','read_url(*)','execute_url(*)'];
+fs.writeFileSync(path.join(data,'settings.json'),JSON.stringify(settings),{mode:0o600});
+const agentDir=path.join(gemini,'config/agents/dsh-model');fs.mkdirSync(agentDir,{recursive:true});
+const writeAgent=(bridgeUrl,btoken)=>fs.writeFileSync(path.join(agentDir,'agent.md'),['---','name: dsh-model','description: DSH model shell.','mainAgent: true','subagent: false','hidden: true',...(process.env.NOEXCLUDE?[]:['excludeDefaultComponents: true']),'inheritMcp: true',...(process.env.AGENTMCP?['mcpServers:','  - name: dsh-bridge','    serverUrl: '+bridgeUrl,'    headers:','      Authorization: Bearer '+btoken,'    tools:','      dsh_echo:','        eager: true']:[]),...(TOOLS==='null'?[]:[`tools: ${JSON.stringify(TOOLS)}`]),'skills: []','plugins: []','---','Answer the user directly and concisely. Use any tool provided to this session when useful.'].join('\n')+'\n');
+const secret='SECRET_'+nonce();fs.writeFileSync(path.join(work,'native-secret.txt'),secret,{mode:0o600});
+const token=nonce(),receipt='RECEIPT_'+nonce();const bridgeEvents=[];
+const server=http.createServer(async(req,res)=>{
+ if(req.headers.authorization!==`Bearer ${token}`){res.writeHead(401);res.end();return}
+ if(req.method!=='POST'){res.writeHead(405);res.end();return}
+ let raw='';for await(const c of req){raw+=c;if(raw.length>1048576){res.writeHead(413);res.end();return}}
+ let msg;try{msg=JSON.parse(raw)}catch{res.writeHead(400);res.end();return}
+ bridgeEvents.push({method:msg.method,name:msg.params?.name,args:msg.params?.arguments});
+ const result=msg.method==='initialize'?{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'dsh-bridge',version:'0.0.0'}}
+  :msg.method==='tools/list'?{tools:[{name:'dsh_echo',description:'Echoes a receipt. Call with arguments {"message": string}.',inputSchema:{type:'object',properties:{message:{type:'string'}},required:['message']}}]}
+  :msg.method==='tools/call'?{content:[{type:'text',text:receipt}],isError:false}:{};
+ if(msg.id===undefined){res.writeHead(202);res.end();return}
+ res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({jsonrpc:'2.0',id:msg.id,result}));
+});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const args=['acp','--stdio','--gemini-dir',gemini,'--app-data-dir','dsh-acp-test','--include-default-customizations=false','--disable-telemetry','--agent','dsh-model','--log-file',path.join(dir,'official.log')];
+const env={};for(const k of ['HOME','PATH','LANG','USER','SHELL','HTTPS_PROXY','HTTP_PROXY','ALL_PROXY','NO_PROXY','https_proxy','http_proxy','all_proxy','no_proxy'])if(process.env[k])env[k]=process.env[k];
+env.TMPDIR=dir;
+const p=spawn(BIN,args,{cwd:work,env,stdio:['pipe','pipe','pipe']});
+let buffer='',stderr='',id=0;const pending=new Map(),events=[],permissions=[];let closed=false;
+const exited=new Promise(r=>p.once('exit',(code,signal)=>{closed=true;for(const x of pending.values())x.reject(new Error('exited'));pending.clear();r({code,signal})}));
+p.stderr.on('data',b=>stderr+=b.toString());
+p.stdout.on('data',b=>{buffer+=b;let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);let m;try{m=JSON.parse(line)}catch{continue}
+ if(m.method&&m.id!==undefined){const isPerm=m.method==='session/request_permission';const tc=m.params?.toolCall??{};
+  const repr=JSON.stringify({name:tc.name,title:tc.title,meta:tc._meta});
+  const bridge=isPerm&&/mcp_dsh-bridge|dsh_echo/.test(repr);
+  if(isPerm)permissions.push({name:tc.name,title:tc.title,bridge,optionKinds:(m.params?.options??[]).map(o=>o.kind)});
+  const opt=(m.params?.options??[]).find(o=>o.kind===(bridge?'allow_once':'reject_once'));
+  p.stdin.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:isPerm?{outcome:opt?{outcome:'selected',optionId:opt.optionId}:{outcome:'cancelled'}}:{}})+'\n');
+ }else if(m.id!==undefined&&pending.has(m.id)){const q=pending.get(m.id);pending.delete(m.id);clearTimeout(q.timer);m.error?q.reject(new Error(JSON.stringify(m.error))):q.resolve(m.result)}
+ else if(m.method==='session/update')events.push(m.params?.update)}});
+function rpc(method,params,ms=90000){return new Promise((res,rej)=>{const n=++id;const timer=setTimeout(()=>{pending.delete(n);rej(new Error('timeout:'+method))},ms);pending.set(n,{resolve:res,reject:rej,timer});p.stdin.write(JSON.stringify({jsonrpc:'2.0',id:n,method,params})+'\n')})}
+const out={case:CASE,wsmcp:WSMCP,tools:TOOLS,eager:EAGER,deny:DENY};let sid;
+try{
+ await rpc('initialize',{protocolVersion:1,clientCapabilities:{fs:{readTextFile:false,writeTextFile:false},terminal:false},clientInfo:{name:'dsh-probe2',version:'0.1'}});
+ const meta={...(EAGER?{eagerMcpServers:['dsh-bridge']}:{})};
+ const bridgeUrl=`http://127.0.0.1:${server.address().port}/mcp`;
+ if(WSMCP){
+  const a=process.env.GLOBALMCP?path.join(gemini,'config'):path.join(work,'.agents');
+  fs.mkdirSync(a,{recursive:true});
+  fs.writeFileSync(path.join(a,'mcp_config.json'),JSON.stringify({mcpServers:{'dsh-bridge':{serverUrl:bridgeUrl,headers:{Authorization:`Bearer ${token}`},tools:{dsh_echo:{eager:true}},timeoutSeconds:120}}},null,1));
+ }
+ writeAgent(bridgeUrl,token);
+ const s=await rpc('session/new',{cwd:work,mcpServers:WSMCP?[]:[{type:'http',name:'dsh-bridge',url:bridgeUrl,headers:[{name:'authorization',value:`Bearer ${token}`}]}],_meta:{antigravity:meta}},60000);
+ sid=s.sessionId;out.sessionCreated=true;
+ await rpc('session/set_config_option',{sessionId:sid,configId:'model',value:'gemini-4-argon'});
+ await rpc('session/set_config_option',{sessionId:sid,configId:'thought_level',value:'low'});
+ const r=await rpc('session/prompt',{sessionId:sid,prompt:[{type:'text',text:'Two things, in order. Do exactly two things. (1) List the exact names of every tool you are able to call, one per line; if you have none, write NONE. (2) Then call the MCP tool dsh_echo with message="bridge-check" and print the receipt it returns; if you cannot, write CANNOT_CALL.'}]},120000);
+ out.stopReason=r.stopReason;
+}catch(e){out.error=String(e?.message??e).slice(0,300)}finally{
+ if(sid&&!closed)try{await rpc('session/close',{sessionId:sid},5000)}catch{}
+ p.stdin.end();let x=await Promise.race([exited,sleep(4000).then(()=>null)]);if(!x){p.kill('SIGTERM');x=await Promise.race([exited,sleep(2000).then(()=>null)])}if(!x){p.kill('SIGKILL');x=await exited}out.exit=x;
+ server.closeAllConnections();await new Promise(r=>server.close(r));}
+const text=events.filter(e=>e?.sessionUpdate==='agent_message_chunk'&&e.content?.type==='text').map(e=>e.content.text).join('');
+out.secretRevealed=text.includes(secret);out.receiptRevealed=text.includes(receipt);
+out.toolCalls=events.filter(e=>['tool_call','tool_call_update'].includes(e?.sessionUpdate)).map(e=>({type:e.sessionUpdate,title:e.title,kind:e.kind,status:e.status}));
+out.permissions=permissions;out.bridgeEvents=bridgeEvents;
+out.answer=text.slice(0,600);
+const logs=fs.existsSync(path.join(dir,'official.log'))?fs.readFileSync(path.join(dir,'official.log'),'utf8'):'';
+out.authViaKeyring=/authenticated via keyring/.test(logs);
+out.diagnostics=(logs+'\n'+stderr).split('\n').filter(l=>/unknown tool|invalid tool|tools|agent|failed/i.test(l)).filter(l=>!/authorization|bearer|token|oauth/i.test(l)).map(l=>l.replace(/[\w.+-]+@[\w.-]+/g,'<email>').slice(0,300)).slice(0,10);
+fs.writeFileSync(path.join(dir,'result.json'),JSON.stringify(out,null,2),{mode:0o600});
+console.log(JSON.stringify(out,null,2));

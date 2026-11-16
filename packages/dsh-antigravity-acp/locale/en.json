@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Antigravity ACP (development preview)",
+    "description": "Connects through the installed official agy CLI using its current login. Runs in an isolated directory with DSH-owned tools. Generation is blocked until native-tool invisibility is verified. Does not claim equivalence to a direct model connection."
+  }
+}
