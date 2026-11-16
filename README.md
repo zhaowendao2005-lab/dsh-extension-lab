@@ -42,6 +42,8 @@ pnpm release --package dsh-ui-enhancements --version 2.0.0
 
 首次登记新包时，在包内准备 `marketplace-entry.json`，只包含本地化的 `title`、`description` 和 `metadata`（`keywords` / `labels` / `sortKeys`）。预检和正式命令均显式追加 `--init-marketplace`；包名来自 manifest，首个版本由正式命令在包提交后写入市场。没有该选项时缺少市场条目仍然失败，已有条目则拒绝该选项。开发版本无法自动递增，首次稳定版本须同时传入 `--version`。
 
+已有条目的包若仍保留 `marketplace-entry.json`，每次发布都用它刷新市场条目的 `title` / `description` / `metadata`，版本列表照旧追加，因此文案改动随包一起发布，不需要手改 `marketplace.json`。没有该文件的包维持原条目文案不变。
+
 ```bash
 pnpm release --package dsh-antigravity-acp --version 0.1.0 --init-marketplace --dry-run
 pnpm release --package dsh-antigravity-acp --version 0.1.0 --init-marketplace --yes

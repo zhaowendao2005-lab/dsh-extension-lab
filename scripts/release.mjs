@@ -78,8 +78,10 @@ function getNextVersion(current, requested) {
   return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
 }
 
-function readInitialMarketplaceEntry(packagePath, pkg) {
-  const template = readJson(path.join(ROOT, packagePath, 'marketplace-entry.json'));
+function readMarketplaceEntryTemplate(packagePath, pkg, { required }) {
+  const file = path.join(ROOT, packagePath, 'marketplace-entry.json');
+  if (!required && !existsSync(file)) return undefined;
+  const template = readJson(file);
   const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   const localized = (value) => object(value) && typeof value.en === 'string' && value.en.trim() && Object.values(value).every((item) => typeof item === 'string' && item.trim());
   const strings = (value) => Array.isArray(value) && value.every((item) => typeof item === 'string' && item.trim());
@@ -87,6 +89,22 @@ function readInitialMarketplaceEntry(packagePath, pkg) {
   const metadata = template.metadata;
   if (!object(metadata) || Object.keys(metadata).sort().join(',') !== 'keywords,labels,sortKeys' || !strings(metadata.keywords) || !strings(metadata.labels) || !object(metadata.sortKeys) || !Object.values(metadata.sortKeys).every((value) => typeof value === 'number' && Number.isFinite(value))) fail('Initial marketplace metadata must contain keywords[], labels[], and numeric sortKeys{}');
   return { name: pkg.name, ...template, versions: [] };
+}
+
+function readInitialMarketplaceEntry(packagePath, pkg) {
+  return readMarketplaceEntryTemplate(packagePath, pkg, { required: true });
+}
+
+function readPublishedMarketplaceEntry(packagePath, pkg) {
+  return readMarketplaceEntryTemplate(packagePath, pkg, { required: false });
+}
+
+function applyEntryTemplate(entry, template) {
+  if (!template) return entry;
+  entry.title = structuredClone(template.title);
+  entry.description = structuredClone(template.description);
+  entry.metadata = structuredClone(template.metadata);
+  return entry;
 }
 
 function validateMarketplace(doc) {
@@ -130,7 +148,7 @@ function verifyStagedPaths(expected, label) {
   }
 }
 
-function verifyMarketplaceChange(before, after, packageName, packagePath, version, packageCommit, timestamp, pkg, initialEntry) {
+function verifyMarketplaceChange(before, after, packageName, packagePath, version, packageCommit, timestamp, pkg, initialEntry, template) {
   const oldEntries = before.plugins;
   const newEntries = after.plugins;
   if (JSON.stringify(oldEntries.filter((item) => item.name !== packageName)) !== JSON.stringify(newEntries.filter((item) => item.name !== packageName))) {
@@ -139,7 +157,7 @@ function verifyMarketplaceChange(before, after, packageName, packagePath, versio
   const oldTarget = oldEntries.find((item) => item.name === packageName);
   const newTarget = newEntries.find((item) => item.name === packageName);
   if (!newTarget || (!oldTarget && !initialEntry)) fail('Marketplace target entry is missing');
-  const expectedTarget = structuredClone(oldTarget || initialEntry);
+  const expectedTarget = applyEntryTemplate(structuredClone(oldTarget || initialEntry), template);
   expectedTarget.versions.unshift({
     version,
     publishTimestamp: timestamp,
@@ -274,6 +292,7 @@ async function main() {
   if (entry && options.initMarketplace) fail(`Marketplace entry already exists for ${pkg.name}; omit --init-marketplace`);
   if (!entry && !options.initMarketplace) fail(`No marketplace entry found for ${pkg.name}; first publication requires --init-marketplace and a reviewed marketplace-entry.json`);
   const initialEntry = options.initMarketplace ? readInitialMarketplaceEntry(packagePath, pkg) : undefined;
+  const entryTemplate = initialEntry ?? readPublishedMarketplaceEntry(packagePath, pkg);
   ensureUniqueVersion(entry, version);
   if (version === pkg.version) fail(`Target version equals current version ${pkg.version}`);
   const tag = `${pkg.name}-v${version}`;
@@ -284,6 +303,7 @@ async function main() {
 
   console.log(`Package: ${pkg.name}\nCurrent: ${pkg.version}\nTarget: ${version}\nPath: ${packagePath}\nBuild: pnpm --dir ${packagePath} run build\nTag: ${tag}\nMarketplace: marketplace.json`);
   if (initialEntry) console.log(`Initial marketplace entry: ${JSON.stringify(initialEntry)}`);
+  else if (entryTemplate) console.log('Marketplace metadata: title/description/metadata will be refreshed from marketplace-entry.json');
   if (options.dryRun) {
     console.log(`Dry-run: no files changed, no build, commit, tag, or push executed.\nWorking-tree changes outside target package are preserved.\nMarketplace source.commit will point to the package commit; push target: ${state.upstream}.`);
     return;
@@ -298,6 +318,7 @@ async function main() {
     const pkgAfterBuild = readJson(packageJsonPath);
     if (pkgAfterBuild.version !== pkg.version) fail('Build modified package.json version unexpectedly');
     if (initialEntry && JSON.stringify(readInitialMarketplaceEntry(packagePath, pkgAfterBuild)) !== JSON.stringify(initialEntry)) fail('Build changed the reviewed initial marketplace template');
+    if (!initialEntry && entryTemplate && JSON.stringify(readPublishedMarketplaceEntry(packagePath, pkgAfterBuild)) !== JSON.stringify(entryTemplate)) fail('Build changed the marketplace metadata template');
     trackFile(backups, packageJsonPath);
     updatePackageVersion(packageJsonPath, pkgAfterBuild, version);
 
@@ -318,10 +339,11 @@ async function main() {
       marketAfterCommit.plugins.push(entryAfterCommit);
     }
     if (!entryAfterCommit) fail(`Marketplace entry for ${pkg.name} disappeared during release`);
+    if (!initialEntry) applyEntryTemplate(entryAfterCommit, entryTemplate);
     ensureUniqueVersion(entryAfterCommit, version);
     trackFile(backups, MARKET_FILE);
     updateMarketplace(marketAfterCommit, entryAfterCommit, pkgAfterBuild, version, packagePath, packageCommit, timestamp);
-    verifyMarketplaceChange(marketBeforeUpdate, marketAfterCommit, pkg.name, packagePath, version, packageCommit, timestamp, pkgAfterBuild, initialEntry);
+    verifyMarketplaceChange(marketBeforeUpdate, marketAfterCommit, pkg.name, packagePath, version, packageCommit, timestamp, pkgAfterBuild, initialEntry, entryTemplate);
     run('git', ['add', '--', 'marketplace.json']);
     verifyStagedPaths(['marketplace.json'], 'Marketplace commit');
     run('git', ['diff', '--cached', '--check']);
