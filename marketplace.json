@@ -289,6 +289,19 @@
       },
       "versions": [
         {
+          "version": "3.0.2",
+          "publishTimestamp": 1794811340,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "d1d7f99cd81c269541e32e11164caec1d9785e09",
+            "path": "packages/model-intelligence-test"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+          }
+        },
+        {
           "version": "3.0.1",
           "publishTimestamp": 1794802781,
           "source": {
