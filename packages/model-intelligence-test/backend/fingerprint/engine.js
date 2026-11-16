@@ -144,7 +144,7 @@ export class FingerprintEngine {
     }
   }
 
-  async start(models, options, a6api = null) {
+  async start(models, options, a6api = null, executionContext = {}) {
     if (this.disposed) throw new FingerprintError('disposed', '插件正在卸载');
     if (!Array.isArray(models) || models.length < 1 || models.length > 64 || models.some(m => !m || typeof m.provider !== 'string' || typeof m.id !== 'string')) {
       throw new FingerprintError('invalid-models', '请选择 1–64 个有效模型');
@@ -199,7 +199,7 @@ export class FingerprintEngine {
         id: `fp-${randomUUID()}`, revision: 1, status: 'running', createdAt: Date.now(), finishedAt: null,
         controller: new AbortController(), detector: reference.detector,
         reference: { builtAt: reference.builtAt, source: 'lmfpd-sdk', sdk: 'lmfpd-sdk@0.2.0' }, challenges,
-        concurrency: a6api ? a6api.slots.length : limits.concurrency, timeoutMs: limits.timeoutMs, a6api,
+        concurrency: a6api ? a6api.slots.length : limits.concurrency, timeoutMs: limits.timeoutMs, a6api, executionContext,
         runs, pending: [...runs], active: new Map(), settled: 0, wake: undefined, loop: null,
       };
       this.jobs.set(job.id, job);
@@ -435,10 +435,13 @@ export class FingerprintEngine {
           run.slotTokenId = slot.tokenId;
           const queued = run.samples.filter(sample => sample.state === 'queued');
           if (!queued.length) continue;
-          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId };
+          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId, a6api: job.a6api };
           let attemptedPin = false;
           try {
             run.routing = 'pinning'; this.touch(job);
+            if (signal.aborted) break;
+            // Check under the token lock, before claiming cleanup ownership of its pin.
+            await this.hooks.a6.assertSlot?.(slot.tokenId, job.a6api);
             if (signal.aborted) break;
             attemptedPin = true;
             const pinned = await this.hooks.a6.pin(target);
@@ -555,14 +558,25 @@ export class FingerprintEngine {
     this.armTimeout(sample);
     this.refreshStage(run); this.touch(job);
     let truncated = false, failure = null, rawFailure = null, failureSource = 'prepare';
+    const ledger = this.hooks.ledger;
+    let execution = null, observedUsage = {};
     try {
       const prompt = job.challenges[sample.index].prompt;
       let source;
       if (run.relay) {
         // a6api lane: the channel is already pinned for this token, so no provider routing applies.
         if (!key) throw new FingerprintError('key-unavailable', '测试令牌密钥不可用');
+        signal.throwIfAborted();
+        if (ledger && job.executionContext?.attemptId) {
+          execution = await ledger.begin({ ...job.executionContext, jobId: job.id, provider: run.provider, model: run.model,
+            challengeIndex: sample.index, siteOrigin: job.a6api?.siteOrigin, accountId: job.a6api?.accountId,
+            tokenId: run.slotTokenId, intendedChannelId: run.relay.channelId });
+          if (!execution) throw new FingerprintError('ledger-unavailable', '请求记录或账号已变更，未发送采样请求');
+        }
+        signal.throwIfAborted();
         // The seam exists so tests can prove scheduling without spending real requests.
-        source = (this.hooks.openStream ?? openChannelStream)({ key, model: run.model, prompt, api: run.relay.api, signal });
+        source = (this.hooks.openStream ?? openChannelStream)({ key, model: run.model, prompt, api: run.relay.api, signal,
+          onDispatch: () => ledger?.dispatch(execution), onMetadata: metadata => ledger?.metadata(execution, metadata), onUsage: usage => { observedUsage = { ...observedUsage, ...usage }; } });
       } else {
         const prepared = await llm.prepareCall({ provider: run.callProvider ?? run.provider, model: run.model }, signal);
         signal.throwIfAborted();
@@ -575,6 +589,7 @@ export class FingerprintEngine {
       for await (const chunk of source) {
         // Cancellation already publishes a terminal snapshot; do not consume late responses.
         if (signal.aborted) break;
+        if (chunk.type === 'usage') observedUsage = { ...observedUsage, ...chunk.usage };
         const timed = events.push({ time: Date.now(), chunk });
         assembler.push(timed.chunk);
         this.projectResponse(sample, assembler);
@@ -611,7 +626,15 @@ export class FingerprintEngine {
     } catch (error) {
       // Breaking a locally capped stream may make its iterator throw during cleanup.
       if (!textLimitController.signal.aborted) { failure = requestFailure(error?.failure ?? error); rawFailure = error; }
-    } finally { clearTimeout(sample.timer); sample.timer = undefined; sample.timeout = undefined; }
+    } finally {
+      clearTimeout(sample.timer); sample.timer = undefined; sample.timeout = undefined;
+      // Cancelling sampling does not cancel settlement of an already dispatched request.
+      if (execution) {
+        try { await ledger.finish(execution, { state: job.controller.signal.aborted ? 'cancelled' : timeoutController.signal.aborted ? 'timeout' : failure ? 'failed' : 'ended',
+          finishKind: textLimitController.signal.aborted ? 'text-limit' : sample.finish, streamUsage: observedUsage }); }
+        catch { /* billing persistence cannot resurrect a cancelled sample */ }
+      }
+    }
     // cancel() already published the terminal snapshot; late chunks cannot resurrect it.
     if (job.controller.signal.aborted) return;
     const firstTokenAt = assistantStreamFirstTokenTime(events.snapshot());

@@ -7,6 +7,7 @@ import { createPresetsDomain } from './presets.stores';
 import { createEvaluationsDomain } from './evaluations.stores';
 import { createPresentationDomain } from './presentation.stores';
 import { createA6Domain } from './a6api.stores';
+import { createA6InsightsDomain } from './a6insights.stores';
 import { createNoticeStore } from './notice.stores';
 
 let sequence = 0;
@@ -24,6 +25,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   const presetsDomain = createPresetsDomain();
   const evaluationsDomain = createEvaluationsDomain(transport);
   const presentationDomain = createPresentationDomain();
+  const insightsDomain = createA6InsightsDomain(transport);
   const a6Domain = createA6Domain(transport, {
     open(selectionId) {
       const id = `a6:${selectionId}`;
@@ -34,6 +36,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   });
   const stores = {
     workbench: createStore<WorkbenchState>(() => ({ tabs: [{ id: 'draft', title: '新建测试', type: 'draft' }], activeTab: 'draft', sidebarCollapsed: false, navigation: {} })),
+    a6Insights: insightsDomain.store,
     draft, models: modelsDomain.store, presets: presetsDomain.store, evaluations: evaluationsDomain.store, presentation: presentationDomain.store, a6: a6Domain.store, notice: createNoticeStore(),
   };
   const { workbench, models, presets, evaluations, notice } = stores;
@@ -198,7 +201,17 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     saveA6Config() { void a6Domain.saveConfig(); },
     rotateA6Intake() { void a6Domain.rotateIntake(); },
     copyA6Intake() { void a6Domain.copyIntake(); },
-    rerunRecord(id) { attempt('再次请求失败', evaluationsDomain.rerun(id)); },
+    toggleA6Providers: insightsDomain.toggleManager,
+    setA6ProviderQuery: insightsDomain.setQuery,
+    toggleA6Provider: insightsDomain.toggleProvider,
+    saveA6Providers() { void insightsDomain.configure(); },
+    refreshA6Providers: insightsDomain.refresh,
+    setA6TargetQuery: insightsDomain.setTargetQuery,
+    saveA6Target(recordId, model, target) { void insightsDomain.save(recordId, model, target); },
+    a6ResultAction(input) { void insightsDomain.action(input); },
+    setA6LedgerScope: insightsDomain.scope,
+    refreshA6Ledger: insightsDomain.refreshLedger,
+    rerunRecord(id) { attempt('再次测试失败', evaluationsDomain.rerun(id)); },
     selectAttempt(recordId, attemptId) {
       evaluationsDomain.selectAttempt(recordId, attemptId);
       const tabId = `record:${recordId}`;
@@ -277,6 +290,16 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   presetsDomain.load();
   refreshModels();
   const unwatch = workbench.subscribe(syncWatch);
+  const syncInsights = (): void => {
+    const ids = new Set(workbench.getState().tabs.flatMap(tab => tab.recordId ? [tab.recordId] : []));
+    const config = a6Domain.store.getState().config;
+    insightsDomain.watch(evaluations.getState().records.filter(record => ids.has(record.id)), config?.userId ?? '', JSON.stringify([config?.configured,config?.userId,config?.mask]));
+  };
+  const unwatchInsights = workbench.subscribe(syncInsights);
+  const unevalInsights = evaluations.subscribe(syncInsights);
+  const unaccountInsights = a6Domain.store.subscribe(syncInsights);
+  syncInsights();
+  insightsDomain.start();
   // Tabs whose record disappeared (deleted elsewhere) close themselves.
   const unprune = evaluations.subscribe(() => {
     const state = evaluations.getState();
@@ -284,5 +307,5 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     const ids = new Set(state.records.map(record => record.id));
     for (const tab of workbench.getState().tabs) if (tab.recordId && !ids.has(tab.recordId)) removeTab(tab.id);
   });
-  return { sessionId, ...stores, actions: guardedActions, dispose() { if (disposed) return; disposed = true; unwatch(); unprune(); modelsDomain.dispose(); evaluationsDomain.dispose(); a6Domain.dispose(); noticeAnswer = undefined; notice.setState(null, true); } };
+  return { sessionId, ...stores, actions: guardedActions, dispose() { if (disposed) return; disposed = true; unwatch(); unwatchInsights(); unevalInsights(); unaccountInsights(); unprune(); insightsDomain.dispose(); modelsDomain.dispose(); evaluationsDomain.dispose(); a6Domain.dispose(); noticeAnswer = undefined; notice.setState(null, true); } };
 }

@@ -24,4 +24,7 @@ export class TokenSlots {
     this.busy.add(id); entry.resolve(true);
   }
 }
-export function tokenIdentity(meta, tokenId) { return `${meta.siteOrigin}:${meta.accountId}:${tokenId}`; }
+export function tokenIdentity(meta, tokenId) {
+  const origin = meta.siteOrigin === 'https://www.a6api.vip' ? 'https://a6api.vip' : meta.siteOrigin;
+  return `${origin}:${meta.accountId}:${tokenId}`;
+}

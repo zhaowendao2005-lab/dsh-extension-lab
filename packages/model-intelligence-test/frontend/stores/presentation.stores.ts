@@ -3,7 +3,7 @@ import type { PresentationState } from '../types';
 import { COLUMN_LABELS } from '../types';
 
 export function createPresentationDomain() {
-  const store = createStore<PresentationState>(() => ({ columns: ['stage', 'input', 'output', 'ttft', 'e2e', 'generation', 'cost', 'match', 'round'], widths: {}, expanded: {}, followLatest: true, columnsOpen: false, viewOpen: false, configOpen: false, filter: '' }));
+  const store = createStore<PresentationState>(() => ({ columns: ['stage', 'input', 'output', 'ttft', 'e2e', 'generation', 'cost', 'price', 'cache24h', 'target', 'match', 'round'], widths: {}, expanded: {}, followLatest: true, columnsOpen: false, viewOpen: false, configOpen: false, filter: '' }));
   return {
     store,
     toggleColumn(id: string): void { if (Object.hasOwn(COLUMN_LABELS, id)) store.setState(state => ({ columns: state.columns.includes(id) ? state.columns.filter(item => item !== id) : [...state.columns, id] })); },

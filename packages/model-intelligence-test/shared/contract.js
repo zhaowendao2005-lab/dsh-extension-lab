@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info';
+import { marketSchema } from './market.js';
 
 const catalogSchema = z.object({ providers: z.array(z.object({
   id: z.string(), name: z.string(), models: z.array(z.object({ id: z.string(), name: z.string(), description: z.string().optional() })), error: z.string().optional(),
@@ -13,7 +14,7 @@ const relayApi = z.enum(['chat', 'responses', 'messages']);
 const relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), model: id(256), api: relayApi, listingId: z.number().int().min(0).optional(), supplierId: z.number().int().min(0).optional() });
 const modelRef = z.strictObject({ provider: id(128), id: id(256) });
 const recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional() });
-const a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional() });
+const a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional(), market: marketSchema.optional() });
 // A slot is one test token: the Host pins it to a channel, so no provider mapping is involved.
 const a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1);
 const options = z.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
@@ -37,6 +38,11 @@ const schemas = {
   a6Selections: z.strictObject({ revision: z.number().int().nonnegative().optional() }),
   a6Create: z.strictObject({ selectionId: id(), name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
   a6Action: z.strictObject({ selectionId: id(), tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive(), operation: z.enum(['pin', 'restore']) }),
+  a6ProviderState: z.strictObject({ refresh: z.boolean().optional(), scan: z.boolean().optional() }),
+  a6ProviderConfigure: z.strictObject({ providerIds: z.array(id(128)).max(256) }),
+  a6TargetSave: z.strictObject({ recordId: id(), model: id(256), tokenId: z.number().int().positive(), providerId: id(128).optional() }),
+  a6ResultAction: z.strictObject({ recordId: id(), model: id(256), channelId: z.number().int().positive(), tokenId: z.number().int().positive(), providerId: id(128).optional(), operation: z.enum(['pin', 'route', 'restore']) }),
+  a6LedgerView: z.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z.boolean().optional() }).refine(value => value.attemptId || value.recordId, '缺少测试记录或轮次 ID'),
 };
 
 const DESCRIPTIONS = {
@@ -57,7 +63,12 @@ const DESCRIPTIONS = {
   a6Tokens: 'List the account test tokens from a6api (id and name only, no key material).',
   a6Selections: 'Read selections sent by the a6api userscript. Does not start inference.',
   a6Create: 'Create an a6api-specific fingerprint attempt using user-selected test token slots (real inference).',
-  a6Action: 'Pin, route or restore one explicit channel for a selected test token, using the stored access token.',
+  a6Action: 'Pin or restore one explicit channel for a selected test token, using the stored access token.',
+  a6ProviderState: 'Read account-scoped cached token metadata and configured-provider matching progress. No keys are returned.',
+  a6ProviderConfigure: 'Persist selected local provider identities and start background account-key matching without modifying providers.',
+  a6TargetSave: 'Save the account/model target token and optional matched local provider for a recorded channel.',
+  a6ResultAction: 'Explicitly pin, add a route or restore a recorded channel for the saved target; serializes with active test slots.',
+  a6LedgerView: 'Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference.',
 };
 
 const json = (symbol) => ({ mode: 'strict', typeSymbol: `model-intelligence-test#${symbol}`, create: () => z.json() });

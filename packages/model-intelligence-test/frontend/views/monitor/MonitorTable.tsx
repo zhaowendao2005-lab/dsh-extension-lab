@@ -5,10 +5,16 @@ import { Empty,formatMetric,Icon,StageBadge } from '../../components/common';
 import { endedRunIds,isEndedStage } from '../results/runOrder';
 import { useDismissablePopover } from '../../components/useDismissablePopover';
 import { modelLabel,providerLabel } from '../results/modelLabel';
+import {MarketPrice,MarketCache} from '../a6/MarketSnapshot';
+import {ResultTarget} from '../a6/ResultTarget';
+import {ActualCost} from '../a6/LedgerOverview';
 import { FINGERPRINT_DECISIONS,formatRankingScore,hasCalibratedProbability,isSampleEnded } from '../results/fingerprintPresentation';
 
 // Keep in sync with `.mit-table .mit-sticky-match { right: ... }` in styles.css.
 const ACTION_COLUMN_WIDTH=144;
+const A6_COLUMNS = new Set(['price','cache24h','target']);
+const defaultWidth = (column: string): number => column === 'target' ? 320 : column === 'price' ? 228 : 144;
+const supportsColumn = (column: string,record: Evaluation): boolean => column in COLUMN_LABELS && (record.kind === 'custom' || column !== 'round') && (Boolean(record.a6api) || !A6_COLUMNS.has(column));
 
 function columnLabel(column: string,custom: boolean): string {
   if(column==='cost')
@@ -17,11 +23,17 @@ function columnLabel(column: string,custom: boolean): string {
     return custom? '最高匹配（Mock）':'最高匹配';
   return COLUMN_LABELS[column];
 }
-function CellValue({ run,column,custom }: {
+function CellValue({ run,column,custom,store,record }: {
+  store: Workbench;
+  record: Evaluation;
   run: Run;
   column: string;
   custom: boolean;
 }) {
+  if(column==='price') return <MarketPrice market={run.model.a6api?.market} />;
+  if(column==='cache24h') return <MarketCache market={run.model.a6api?.market} />;
+  if(column==='target') return <ResultTarget store={store} record={record} run={run} />;
+  if(column==='cost' && record.a6api) return <ActualCost store={store} record={record} run={run} />;
   if(column==='stage') {
     if(custom)
       return <div className="mit-monitor-state"><StageBadge stage={run.stage} /></div>;
@@ -82,7 +94,7 @@ function RunRow({ store,record,id,columns,custom }: {
       </button>
     </th>
     {columns.map(column => <td key={column} className={column==='match'? 'mit-sticky-match':''}>
-      <CellValue run={run} column={column} custom={custom} />
+      <CellValue run={run} column={column} custom={custom} store={store} record={record} />
     </td>)}
     <td className="mit-sticky-actions">
       <div className="mit-row-actions">
@@ -116,7 +128,7 @@ export function MonitorTable({ store,record,results=false }: {
   results?: boolean;
 }) {
   const presentation=useStore(store.presentation,value => value);
-  const columns=presentation.columns.filter(column => column in COLUMN_LABELS&&(record.kind==='custom'||column!=='round'));
+  const columns=presentation.columns.filter(column => supportsColumn(column,record));
   const rowIds=useStore(store.evaluations,state => {
     const filtered=record.runIds.filter(id => {
       const run=state.runs[id];
@@ -141,7 +153,7 @@ export function MonitorTable({ store,record,results=false }: {
           <Icon name="settings" />显示列
         </button>
         {presentation.columnsOpen&&<div className="mit-column-menu mit-frosted" id={`${store.sessionId}-mit-columns`}>
-          {Object.keys(COLUMN_LABELS).filter(id => record.kind==='custom'||id!=='round').map(id => <label key={id}>
+          {Object.keys(COLUMN_LABELS).filter(id => supportsColumn(id,record)).map(id => <label key={id}>
             <input type="checkbox" checked={presentation.columns.includes(id)} onChange={() => store.actions.toggleColumn(id)} />
             {columnLabel(id,record.kind==='custom')}
           </label>)}
@@ -158,10 +170,10 @@ export function MonitorTable({ store,record,results=false }: {
       </span>
     </div>}
     <div className="mit-table-scroll">
-      <table className="mit-table" style={{ width: (presentation.widths.model||224)+columns.reduce((sum,id) => sum+(presentation.widths[id]||144),0)+ACTION_COLUMN_WIDTH }}>
+      <table className="mit-table" style={{ width: (presentation.widths.model||224)+columns.reduce((sum,id) => sum+(presentation.widths[id]||defaultWidth(id)),0)+ACTION_COLUMN_WIDTH }}>
         <colgroup>
           <col style={{ width: presentation.widths.model||224 }} />
-          {columns.map(id => <col key={id} style={{ width: presentation.widths[id]||144 }} />)}
+          {columns.map(id => <col key={id} style={{ width: presentation.widths[id]||defaultWidth(id) }} />)}
           <col style={{ width: ACTION_COLUMN_WIDTH }} />
         </colgroup>
         <thead>
@@ -171,7 +183,7 @@ export function MonitorTable({ store,record,results=false }: {
             </th>
             {columns.map(id => <th scope="col" key={id} className={id==='match'? 'mit-sticky-match':''}>
               {columnLabel(id,record.kind==='custom')}
-              <ResizeHandle store={store} column={id} width={presentation.widths[id]||144} label={columnLabel(id,record.kind==='custom')} />
+              <ResizeHandle store={store} column={id} width={presentation.widths[id]||defaultWidth(id)} label={columnLabel(id,record.kind==='custom')} />
             </th>)}
             <th scope="col" className="mit-sticky-actions">操作
             </th>

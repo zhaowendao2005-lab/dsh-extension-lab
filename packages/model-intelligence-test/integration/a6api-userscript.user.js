@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a6api · 模型智能测试 v3
 // @namespace    dsh.model-intelligence-test
-// @version      3.1.0
+// @version      3.2.0
 // @description  在市场与令牌表格中提供勾选列，把所选渠道与测试令牌一次性发送给本机 DSH；不执行站点写操作，不读取或导出 API 密钥。
 // @match        https://a6api.vip/*
 // @match        https://www.a6api.vip/*
@@ -39,6 +39,7 @@
   const pageId = crypto.randomUUID(); // 本页稳定 id：同一页面内多次发送保持一致。
   const selectedModels = new Map(); // model + listing + channel + supplier, across pagination.
   const modelCache = new Map();
+  let displayExchangeRate; // Public /api/status usd_exchange_rate; never channel-ratio FX.
   const tokenCache = new Map();
   const siteRequests = new Set();
   let selectedTokens = new Map();
@@ -103,6 +104,22 @@
     try { saveStored(storageKey('fold'), { expanded: foldState.expanded === true }); }
     catch { status = '折叠状态保存失败，本次仅在本页生效'; }
   }
+  function marketOf(value) {
+    const number = input => input !== undefined && input !== null && input !== '' && Number.isFinite(Number(input)) && Number(input) >= 0 ? Number(input) : undefined;
+    const market = {
+      capturedAt: Date.now(), chargeType: label(value.charge_type, 40),
+      currency: label(value.pricing_currency, 12), unit: label(value.pricing_unit, 40),
+    };
+    for (const [field, source] of Object.entries({ inputPriceMicros: 'input_price_micros', outputPriceMicros: 'output_price_micros', cacheReadPriceMicros: 'cache_read_price_micros', cacheWritePriceMicros: 'cache_write_price_micros', perRequestPriceMicros: 'per_request_price_micros' })) {
+      const amount = number(value[source]);
+      if (amount !== undefined) market[field] = amount;
+    }
+    if (displayExchangeRate > 0) market.exchangeRate = displayExchangeRate;
+    const cacheRate = number(value.cache_hit_rate_24h);
+    if (cacheRate !== undefined && cacheRate <= 10000) market.cacheHitRate24h = cacheRate;
+    if (typeof value.cache_hit_state === 'string') market.cacheHitState = label(value.cache_hit_state, 40);
+    return market;
+  }
   function modelOf(value) {
     const model = label(value?.model_name ?? value?.model);
     const channelId = positiveId(value?.channel_id ?? value?.channelId);
@@ -113,6 +130,7 @@
       listingId, channelId, supplierId, model,
       brand: label(value.brand), channelName: label(value.channel_name ?? value.channelName),
       supplierName: label(value.supplier_name ?? value.supplierName),
+      market: marketOf(value),
     };
   }
   function modelKey(row) {
@@ -187,13 +205,27 @@
     try {
       const parsed = new URL(url, siteOrigin);
       if (parsed.origin !== siteOrigin || String(method || 'GET').toUpperCase() !== 'GET') return '';
+      if (parsed.pathname === '/api/status') return 'status';
       if (/^\/api\/marketplace\/(?:public\/)?channels(?:\/search)?\/?$/.test(parsed.pathname)) return 'model';
       if (/^\/api\/token(?:\/search)?\/?$/.test(parsed.pathname)) return 'token';
     } catch { /* Ignore non-site requests. */ }
     return '';
   }
   function cacheResponse(kind, body, generation) {
-    if (disposed || generation !== epoch || !accountId) return;
+    if (disposed || generation !== epoch) return;
+    if (kind === 'status') {
+      const rate = Number((body?.data ?? body)?.usd_exchange_rate);
+      if (Number.isFinite(rate) && rate > 0) {
+        displayExchangeRate = rate;
+        for (const [key, row] of modelCache) {
+          const next = { ...row, market: { ...row.market, exchangeRate: rate } };
+          modelCache.set(key, next);
+          if (selectedModels.has(key)) selectedModels.set(key, next);
+        }
+      }
+      return;
+    }
+    if (!accountId) return;
     let rows;
     try { rows = listOf(body); } catch { return; }
     for (const value of rows) {
@@ -201,6 +233,7 @@
       if (!row) continue;
       const cache = kind === 'model' ? modelCache : tokenCache;
       cache.set(kind === 'model' ? modelKey(row) : row.id, row);
+      if (kind === 'model' && selectedModels.has(modelKey(row))) selectedModels.set(modelKey(row), row);
       if (cache.size > 5000) cache.delete(cache.keys().next().value);
     }
     scheduleScan();

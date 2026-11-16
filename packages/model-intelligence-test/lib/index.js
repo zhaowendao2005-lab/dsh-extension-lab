@@ -1,45 +1,75 @@
 // shared/contract.js
-import { z } from "zod";
+import { z as z2 } from "zod";
 import { createTypertRemoteInfo } from "@deepseek-ai/dsh-typert-protocol/remote-info";
-var catalogSchema = z.object({ providers: z.array(z.object({
-  id: z.string(),
-  name: z.string(),
-  models: z.array(z.object({ id: z.string(), name: z.string(), description: z.string().optional() })),
-  error: z.string().optional()
+
+// shared/market.js
+import { z } from "zod";
+var amount = z.number().finite().nonnegative();
+var marketSchema = z.strictObject({
+  capturedAt: z.number().int().nonnegative(),
+  chargeType: z.string().max(40),
+  currency: z.string().max(12),
+  unit: z.string().max(40),
+  inputPriceMicros: amount.optional(),
+  outputPriceMicros: amount.optional(),
+  cacheReadPriceMicros: amount.optional(),
+  cacheWritePriceMicros: amount.optional(),
+  perRequestPriceMicros: amount.optional(),
+  exchangeRate: z.number().finite().positive().optional(),
+  cacheHitRate24h: z.number().finite().min(0).max(1e4).optional(),
+  cacheHitState: z.string().max(40).optional()
+});
+function marketOf(value) {
+  if (!value || typeof value !== "object") return void 0;
+  const parsed = marketSchema.safeParse(value);
+  return parsed.success ? parsed.data : void 0;
+}
+
+// shared/contract.js
+var catalogSchema = z2.object({ providers: z2.array(z2.object({
+  id: z2.string(),
+  name: z2.string(),
+  models: z2.array(z2.object({ id: z2.string(), name: z2.string(), description: z2.string().optional() })),
+  error: z2.string().optional()
 })) });
-var id = (max = 128) => z.string().min(1).max(max);
+var id = (max = 128) => z2.string().min(1).max(max);
 var siteId = id(64);
-var concurrency = z.number().int().min(1).max(6);
-var timeoutMs = z.number().int().min(3e4).max(18e5);
-var relayApi = z.enum(["chat", "responses", "messages"]);
-var relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), model: id(256), api: relayApi, listingId: z.number().int().min(0).optional(), supplierId: z.number().int().min(0).optional() });
-var modelRef = z.strictObject({ provider: id(128), id: id(256) });
-var recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional() });
-var a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional() });
-var a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1);
-var options = z.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
+var concurrency = z2.number().int().min(1).max(6);
+var timeoutMs = z2.number().int().min(3e4).max(18e5);
+var relayApi = z2.enum(["chat", "responses", "messages"]);
+var relayRef = z2.strictObject({ siteId, channelId: z2.number().int().min(1), model: id(256), api: relayApi, listingId: z2.number().int().min(0).optional(), supplierId: z2.number().int().min(0).optional() });
+var modelRef = z2.strictObject({ provider: id(128), id: id(256) });
+var recordModel = z2.strictObject({ provider: id(128), id: id(256), name: z2.string().max(256).optional(), relay: relayRef.optional() });
+var a6Channel = z2.strictObject({ listingId: z2.number().int().nonnegative(), channelId: z2.number().int().positive(), supplierId: z2.number().int().nonnegative(), model: id(256), supplierName: z2.string().max(256).optional(), channelName: z2.string().max(256).optional(), brand: z2.string().max(256).optional(), market: marketSchema.optional() });
+var a6Slots = z2.array(z2.strictObject({ tokenId: z2.number().int().positive() })).min(1);
+var options = z2.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
 var schemas = {
-  recordsList: z.strictObject({ revision: z.number().int().min(0).optional() }),
-  recordCreate: z.strictObject({
-    kind: z.enum(["fingerprint", "custom"]),
-    name: z.string().max(120),
-    models: z.array(recordModel).min(1).max(64),
+  recordsList: z2.strictObject({ revision: z2.number().int().min(0).optional() }),
+  recordCreate: z2.strictObject({
+    kind: z2.enum(["fingerprint", "custom"]),
+    name: z2.string().max(120),
+    models: z2.array(recordModel).min(1).max(64),
     options: options.optional(),
-    prompt: z.string().max(2e5).optional(),
-    footerVersion: z.string().max(40).optional(),
-    preset: z.strictObject({ id: z.string().max(128), name: z.string().max(120), body: z.string().max(2e5) }).nullable().optional()
+    prompt: z2.string().max(2e5).optional(),
+    footerVersion: z2.string().max(40).optional(),
+    preset: z2.strictObject({ id: z2.string().max(128), name: z2.string().max(120), body: z2.string().max(2e5) }).nullable().optional()
   }),
-  recordRerun: z.strictObject({ recordId: id() }),
-  recordDelete: z.strictObject({ recordId: id() }),
-  attemptView: z.strictObject({ attemptId: id(), revision: z.number().int().min(0).optional() }),
-  attemptCancel: z.strictObject({ attemptId: id() }),
-  attemptConfigure: z.strictObject({ attemptId: id(), concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() }),
-  attemptRetry: z.strictObject({ attemptId: id(), model: modelRef }),
-  customSave: z.strictObject({ recordId: id(), snapshot: z.strictObject({ ended: z.boolean(), runs: z.array(z.json()).max(64) }) }),
-  a6ConfigSave: z.strictObject({ accessToken: z.string().max(512).optional(), userId: z.string().max(40).optional() }),
-  a6Selections: z.strictObject({ revision: z.number().int().nonnegative().optional() }),
-  a6Create: z.strictObject({ selectionId: id(), name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
-  a6Action: z.strictObject({ selectionId: id(), tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive(), operation: z.enum(["pin", "restore"]) })
+  recordRerun: z2.strictObject({ recordId: id() }),
+  recordDelete: z2.strictObject({ recordId: id() }),
+  attemptView: z2.strictObject({ attemptId: id(), revision: z2.number().int().min(0).optional() }),
+  attemptCancel: z2.strictObject({ attemptId: id() }),
+  attemptConfigure: z2.strictObject({ attemptId: id(), concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() }),
+  attemptRetry: z2.strictObject({ attemptId: id(), model: modelRef }),
+  customSave: z2.strictObject({ recordId: id(), snapshot: z2.strictObject({ ended: z2.boolean(), runs: z2.array(z2.json()).max(64) }) }),
+  a6ConfigSave: z2.strictObject({ accessToken: z2.string().max(512).optional(), userId: z2.string().max(40).optional() }),
+  a6Selections: z2.strictObject({ revision: z2.number().int().nonnegative().optional() }),
+  a6Create: z2.strictObject({ selectionId: id(), name: z2.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z2.array(a6Channel).min(1).max(64).optional() }),
+  a6Action: z2.strictObject({ selectionId: id(), tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive(), operation: z2.enum(["pin", "restore"]) }),
+  a6ProviderState: z2.strictObject({ refresh: z2.boolean().optional(), scan: z2.boolean().optional() }),
+  a6ProviderConfigure: z2.strictObject({ providerIds: z2.array(id(128)).max(256) }),
+  a6TargetSave: z2.strictObject({ recordId: id(), model: id(256), tokenId: z2.number().int().positive(), providerId: id(128).optional() }),
+  a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), providerId: id(128).optional(), operation: z2.enum(["pin", "route", "restore"]) }),
+  a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID")
 };
 var DESCRIPTIONS = {
   catalog: "Read configured provider/model metadata; does not invoke inference or endpoint discovery.",
@@ -59,9 +89,14 @@ var DESCRIPTIONS = {
   a6Tokens: "List the account test tokens from a6api (id and name only, no key material).",
   a6Selections: "Read selections sent by the a6api userscript. Does not start inference.",
   a6Create: "Create an a6api-specific fingerprint attempt using user-selected test token slots (real inference).",
-  a6Action: "Pin, route or restore one explicit channel for a selected test token, using the stored access token."
+  a6Action: "Pin or restore one explicit channel for a selected test token, using the stored access token.",
+  a6ProviderState: "Read account-scoped cached token metadata and configured-provider matching progress. No keys are returned.",
+  a6ProviderConfigure: "Persist selected local provider identities and start background account-key matching without modifying providers.",
+  a6TargetSave: "Save the account/model target token and optional matched local provider for a recorded channel.",
+  a6ResultAction: "Explicitly pin, add a route or restore a recorded channel for the saved target; serializes with active test slots.",
+  a6LedgerView: "Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference."
 };
-var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z.json() });
+var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z2.json() });
 var input = (symbol, schema) => {
   const codec = { mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => schema };
   return [{ name: "request", source: "json", codec, strictCodec: codec }];
@@ -77,7 +112,7 @@ for (const [name2, description] of Object.entries(DESCRIPTIONS)) {
   };
 }
 var REMOTE_METHOD_NAMES = Object.keys(DESCRIPTIONS);
-var remoteInfo = createTypertRemoteInfo({ package: "model-intelligence-test", methods }, z);
+var remoteInfo = createTypertRemoteInfo({ package: "model-intelligence-test", methods }, z2);
 var hostContribution = { package: remoteInfo.package, face: "host", schemas: [], invocations: remoteInfo.descriptors, model: { symbols: [], exports: [], relations: [] } };
 
 // backend/fingerprint/engine.js
@@ -120,7 +155,8 @@ var TokenSlots = class {
   }
 };
 function tokenIdentity(meta, tokenId) {
-  return `${meta.siteOrigin}:${meta.accountId}:${tokenId}`;
+  const origin = meta.siteOrigin === "https://www.a6api.vip" ? "https://a6api.vip" : meta.siteOrigin;
+  return `${origin}:${meta.accountId}:${tokenId}`;
 }
 
 // backend/fingerprint/engine.js
@@ -194,26 +230,33 @@ function stopReason(value) {
 function usageOf(payload, api) {
   const raw = api === "messages" ? payload?.usage ?? payload?.message?.usage : payload?.usage;
   if (!raw) return null;
-  const inputTokens = Number(raw.input_tokens ?? raw.prompt_tokens ?? 0);
-  const outputTokens = Number(raw.output_tokens ?? raw.completion_tokens ?? 0);
-  if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) return null;
-  const cacheReadTokens = Number(raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens ?? 0);
-  const reasoningTokens = Number(raw.output_tokens_details?.reasoning_tokens ?? 0);
-  return {
-    inputTokens,
-    outputTokens,
-    ...cacheReadTokens > 0 ? { cacheReadTokens } : {},
-    ...reasoningTokens > 0 ? { reasoningTokens } : {}
-  };
+  const amount2 = (value) => value === void 0 || value === null ? NaN : Number(value);
+  const inputTokens = amount2(raw.input_tokens ?? raw.prompt_tokens);
+  const outputTokens = amount2(raw.output_tokens ?? raw.completion_tokens);
+  const cacheReadTokens = amount2(raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens);
+  const reasoningTokens = amount2(raw.output_tokens_details?.reasoning_tokens);
+  const usage = Object.fromEntries(Object.entries({ inputTokens, outputTokens, cacheReadTokens, reasoningTokens }).filter(([, value]) => Number.isFinite(value) && value >= 0));
+  return Object.keys(usage).length ? usage : null;
 }
-async function* openChannelStream({ key, model, prompt, api = "chat", signal }) {
+async function* openChannelStream({ key, model, prompt, api = "chat", signal, onDispatch, onMetadata, onUsage, fetchImpl = globalThis.fetch }) {
   const spec = build(api, { key, model, prompt });
   let response;
   try {
-    response = await fetch(spec.url, { method: "POST", headers: spec.headers, body: JSON.stringify(spec.body), signal });
+    signal?.throwIfAborted();
+    await onDispatch?.();
+    response = await fetchImpl(spec.url, { method: "POST", headers: spec.headers, body: JSON.stringify(spec.body), signal });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new ChannelError("\u65E0\u6CD5\u8FDE\u63A5 a6api", { message: error?.message ?? "network error", code: "network", status: void 0 });
+  }
+  try {
+    await onMetadata?.({ requestId: response.headers?.get?.("X-Oneapi-Request-Id") || null, httpStatus: response.status });
+  } catch (error) {
+    try {
+      await response.body?.cancel?.();
+    } catch {
+    }
+    throw error;
   }
   if (!response.ok || !response.body) {
     let body = "";
@@ -255,7 +298,11 @@ async function* openChannelStream({ key, model, prompt, api = "chat", signal }) 
       } else if (payload.type === "error") {
         failure2 = { message: String(payload.error?.message ?? "stream error").slice(0, 300), code: String(payload.error?.type ?? "stream_error") };
       }
-      usage = usageOf(payload, "messages") ?? usage;
+      const partial2 = usageOf(payload, "messages");
+      if (partial2) {
+        usage = { ...usage, ...partial2 };
+        onUsage?.(usage);
+      }
       continue;
     }
     if (payload.error) {
@@ -270,7 +317,11 @@ async function* openChannelStream({ key, model, prompt, api = "chat", signal }) 
       yield { type: "text-delta", index: TEXT, text: choice.delta.content };
     }
     if (choice?.finish_reason) reason = stopReason(choice.finish_reason);
-    usage = usageOf(payload, "chat") ?? usage;
+    const partial = usageOf(payload, "chat");
+    if (partial) {
+      usage = { ...usage, ...partial };
+      onUsage?.(usage);
+    }
   }
   if (usage) yield { type: "usage", usage };
   yield { type: "finish", reason: failure2 ? { kind: "error", failure: failure2 } : { kind: reason } };
@@ -336,9 +387,9 @@ var SECRET_PATTERNS = [
   /\b(?:api[-_]?key|authorization|x-api-key|token)["'\s:=]{1,4}[^\s"',}]+/gi,
   /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi
 ];
-function redact(text3) {
-  if (typeof text3 !== "string" || !text3) return null;
-  return SECRET_PATTERNS.reduce((value, pattern) => value.replace(pattern, (match) => /^bearer/i.test(match) ? "Bearer [redacted]" : match.length > 12 ? `${match.slice(0, 6)}\u2026[redacted]` : "[redacted]"), text3).slice(0, 8e3);
+function redact(text4) {
+  if (typeof text4 !== "string" || !text4) return null;
+  return SECRET_PATTERNS.reduce((value, pattern) => value.replace(pattern, (match) => /^bearer/i.test(match) ? "Bearer [redacted]" : match.length > 12 ? `${match.slice(0, 6)}\u2026[redacted]` : "[redacted]"), text4).slice(0, 8e3);
 }
 function failureDetail(failure2, source) {
   const facts = failure2?.failure ?? failure2;
@@ -426,7 +477,7 @@ var FingerprintEngine = class {
       throw new FingerprintError("reference-unavailable", "\u65E0\u6CD5\u52A0\u8F7D\u6307\u7EB9\u53C2\u8003\u5E93\uFF0C\u4E14\u6CA1\u6709\u53EF\u7528\u7F13\u5B58\u3002\u8BF7\u68C0\u67E5\u7F51\u7EDC\u540E\u91CD\u65B0\u521B\u5EFA\u6D4B\u8BD5\u3002");
     }
   }
-  async start(models, options2, a6api = null) {
+  async start(models, options2, a6api = null, executionContext = {}) {
     if (this.disposed) throw new FingerprintError("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
     if (!Array.isArray(models) || models.length < 1 || models.length > 64 || models.some((m) => !m || typeof m.provider !== "string" || typeof m.id !== "string")) {
       throw new FingerprintError("invalid-models", "\u8BF7\u9009\u62E9 1\u201364 \u4E2A\u6709\u6548\u6A21\u578B");
@@ -517,6 +568,7 @@ var FingerprintEngine = class {
         concurrency: a6api ? a6api.slots.length : limits.concurrency,
         timeoutMs: limits.timeoutMs,
         a6api,
+        executionContext,
         runs,
         pending: [...runs],
         active: /* @__PURE__ */ new Map(),
@@ -777,8 +829,8 @@ var FingerprintEngine = class {
     const { signal } = job.controller;
     const llm = this.ctx.get("llm");
     const workers = job.a6api.slots.slice(0, job.pending.length).map(async (slot) => {
-      const identity = tokenIdentity(job.a6api, slot.tokenId);
-      if (!await this.tokenSlots.acquire(identity, signal)) return;
+      const identity2 = tokenIdentity(job.a6api, slot.tokenId);
+      if (!await this.tokenSlots.acquire(identity2, signal)) return;
       try {
         let key;
         try {
@@ -792,11 +844,13 @@ var FingerprintEngine = class {
           run.slotTokenId = slot.tokenId;
           const queued = run.samples.filter((sample) => sample.state === "queued");
           if (!queued.length) continue;
-          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId };
+          const target = { tokenId: slot.tokenId, model: run.model, channelId: run.a6api.channelId, a6api: job.a6api };
           let attemptedPin = false;
           try {
             run.routing = "pinning";
             this.touch(job);
+            if (signal.aborted) break;
+            await this.hooks.a6.assertSlot?.(slot.tokenId, job.a6api);
             if (signal.aborted) break;
             attemptedPin = true;
             const pinned = await this.hooks.a6.pin(target);
@@ -833,7 +887,7 @@ var FingerprintEngine = class {
           if (!signal.aborted) this.maybeAnalyze(job, run);
         }
       } finally {
-        this.tokenSlots.release(identity);
+        this.tokenSlots.release(identity2);
       }
     });
     await Promise.allSettled(workers);
@@ -928,12 +982,41 @@ var FingerprintEngine = class {
     this.refreshStage(run);
     this.touch(job);
     let truncated = false, failure2 = null, rawFailure = null, failureSource = "prepare";
+    const ledger = this.hooks.ledger;
+    let execution = null, observedUsage = {};
     try {
       const prompt = job.challenges[sample.index].prompt;
       let source;
       if (run.relay) {
         if (!key) throw new FingerprintError("key-unavailable", "\u6D4B\u8BD5\u4EE4\u724C\u5BC6\u94A5\u4E0D\u53EF\u7528");
-        source = (this.hooks.openStream ?? openChannelStream)({ key, model: run.model, prompt, api: run.relay.api, signal });
+        signal.throwIfAborted();
+        if (ledger && job.executionContext?.attemptId) {
+          execution = await ledger.begin({
+            ...job.executionContext,
+            jobId: job.id,
+            provider: run.provider,
+            model: run.model,
+            challengeIndex: sample.index,
+            siteOrigin: job.a6api?.siteOrigin,
+            accountId: job.a6api?.accountId,
+            tokenId: run.slotTokenId,
+            intendedChannelId: run.relay.channelId
+          });
+          if (!execution) throw new FingerprintError("ledger-unavailable", "\u8BF7\u6C42\u8BB0\u5F55\u6216\u8D26\u53F7\u5DF2\u53D8\u66F4\uFF0C\u672A\u53D1\u9001\u91C7\u6837\u8BF7\u6C42");
+        }
+        signal.throwIfAborted();
+        source = (this.hooks.openStream ?? openChannelStream)({
+          key,
+          model: run.model,
+          prompt,
+          api: run.relay.api,
+          signal,
+          onDispatch: () => ledger?.dispatch(execution),
+          onMetadata: (metadata) => ledger?.metadata(execution, metadata),
+          onUsage: (usage) => {
+            observedUsage = { ...observedUsage, ...usage };
+          }
+        });
       } else {
         const prepared = await llm.prepareCall({ provider: run.callProvider ?? run.provider, model: run.model }, signal);
         signal.throwIfAborted();
@@ -946,6 +1029,7 @@ var FingerprintEngine = class {
       failureSource = "stream";
       for await (const chunk of source) {
         if (signal.aborted) break;
+        if (chunk.type === "usage") observedUsage = { ...observedUsage, ...chunk.usage };
         const timed = events.push({ time: Date.now(), chunk });
         assembler.push(timed.chunk);
         this.projectResponse(sample, assembler);
@@ -990,6 +1074,16 @@ var FingerprintEngine = class {
       clearTimeout(sample.timer);
       sample.timer = void 0;
       sample.timeout = void 0;
+      if (execution) {
+        try {
+          await ledger.finish(execution, {
+            state: job.controller.signal.aborted ? "cancelled" : timeoutController.signal.aborted ? "timeout" : failure2 ? "failed" : "ended",
+            finishKind: textLimitController.signal.aborted ? "text-limit" : sample.finish,
+            streamUsage: observedUsage
+          });
+        } catch {
+        }
+      }
     }
     if (job.controller.signal.aborted) return;
     const firstTokenAt = assistantStreamFirstTokenTime(events.snapshot());
@@ -1125,6 +1219,7 @@ var ModelIntelligenceService = class extends Service {
     this.engine = deps.engine;
     this.records = deps.records;
     this.a6 = deps.a6;
+    this.ledger = deps.ledger;
     this.typertRemote = bindTypertRemote(this, "modelIntelligence");
     for (const initialize of remoteInitializers) initialize.call(this);
   }
@@ -1147,10 +1242,10 @@ var ModelIntelligenceService = class extends Service {
     return this.guard(() => this.records.rerun(request.recordId));
   }
   recordDelete(request) {
-    return this.guard(() => this.records.remove(request.recordId));
+    return this.guard(() => this.a6.removeRecord(request.recordId));
   }
   recordsClear() {
-    return this.guard(() => this.records.clear());
+    return this.guard(() => this.a6.clearRecords());
   }
   attemptView(request) {
     return this.guard(() => this.records.attempt(request.attemptId, request.revision));
@@ -1188,6 +1283,30 @@ var ModelIntelligenceService = class extends Service {
   }
   a6Action(request) {
     return this.guard(() => this.a6.action(request));
+  }
+  a6ProviderState(request) {
+    return this.guard(async () => {
+      await this.a6.config();
+      return this.a6.providerState(request ?? {});
+    });
+  }
+  a6ProviderConfigure(request) {
+    return this.guard(async () => {
+      await this.a6.config();
+      return this.a6.providerConfigure(request);
+    });
+  }
+  a6TargetSave(request) {
+    return this.guard(() => this.a6.targetSave(request));
+  }
+  a6ResultAction(request) {
+    return this.guard(() => this.a6.resultAction(request));
+  }
+  a6LedgerView(request) {
+    return this.guard(async () => {
+      await this.a6.config();
+      return this.ledger.view(request);
+    });
   }
   // ---- DSH model catalog ---------------------------------------------------------------------
   async catalog() {
@@ -1242,7 +1361,12 @@ var REMOTE_METHODS = [
   "a6Tokens",
   "a6Selections",
   "a6Create",
-  "a6Action"
+  "a6Action",
+  "a6ProviderState",
+  "a6ProviderConfigure",
+  "a6TargetSave",
+  "a6ResultAction",
+  "a6LedgerView"
 ];
 var remoteInitializers = [];
 for (const name2 of REMOTE_METHODS) {
@@ -1258,17 +1382,18 @@ for (const name2 of REMOTE_METHODS) {
 }
 
 // backend/records/domain.js
-import { z as z2 } from "zod";
+import { z as z3 } from "zod";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
-var identified = z2.object({ id: z2.string().min(1) }).passthrough();
+var identified = z3.object({ id: z3.string().min(1) }).passthrough();
 var recordsDomain = defineDomain({
   name: "model_intelligence_test",
   version: 1,
   layout: "per-record",
-  global: { schema: z2.record(z2.string(), z2.unknown()), initial: {} },
+  global: { schema: z3.record(z3.string(), z3.unknown()), initial: {} },
   tables: {
     records: domainTable(identified),
-    attempts: domainTable(z2.object({ id: z2.string().min(1), recordId: z2.string().min(1) }).passthrough())
+    attempts: domainTable(z3.object({ id: z3.string().min(1), recordId: z3.string().min(1) }).passthrough()),
+    executions: domainTable(z3.object({ id: z3.string().min(1), recordId: z3.string().min(1), attemptId: z3.string().min(1) }).passthrough())
   }
 });
 var settingsDomain = defineDomain({
@@ -1277,7 +1402,7 @@ var settingsDomain = defineDomain({
   layout: "per-record",
   tables: {
     // Account-scoped preferences and lease records; no test API key is stored by this flow.
-    auth: domainTable(z2.object({ siteId: z2.string().min(1) }).passthrough())
+    auth: domainTable(z3.object({ siteId: z3.string().min(1) }).passthrough())
   }
 });
 var PluginStorage = class {
@@ -1319,7 +1444,7 @@ var ACTIVE = /* @__PURE__ */ new Set(["queued", "running"]);
 var END_SAMPLE = /* @__PURE__ */ new Set(["complete", "truncated", "failed", "cancelled"]);
 var END_STAGE = /* @__PURE__ */ new Set(["completed", "failed", "timeout", "cancelled"]);
 var clean = (value) => JSON.parse(JSON.stringify(value ?? null));
-var short = (text3, max) => String(text3 ?? "").trim().slice(0, max);
+var short = (text4, max) => String(text4 ?? "").trim().slice(0, max);
 function interrupt(view) {
   if (!view) return view;
   const copy = clean(view);
@@ -1348,10 +1473,13 @@ function summaryOf(view) {
   };
 }
 var RecordsService = class {
-  constructor(ctx, storage, engine) {
+  constructor(ctx, storage, engine, { ledger = engine.hooks?.ledger } = {}) {
     this.ctx = ctx;
     this.storage = storage;
     this.engine = engine;
+    this.ledger = ledger;
+    this.removing = /* @__PURE__ */ new Set();
+    this.writes = /* @__PURE__ */ new Map();
     this.revision = 1;
     this.byJob = /* @__PURE__ */ new Map();
     this.timers = /* @__PURE__ */ new Map();
@@ -1376,6 +1504,23 @@ var RecordsService = class {
   bump() {
     this.revision += 1;
   }
+  async put(domain, table, id2, value) {
+    const recordId = table === "records" ? id2 : value.recordId;
+    if (this.disposed || this.removing.has(recordId)) return;
+    const writes = this.writes.get(recordId) ?? /* @__PURE__ */ new Set();
+    this.writes.set(recordId, writes);
+    const work = Promise.resolve().then(() => {
+      if (this.disposed || this.removing.has(recordId)) return;
+      return domain.table(table).put(id2, value);
+    });
+    writes.add(work);
+    try {
+      return await work;
+    } finally {
+      writes.delete(work);
+      if (!writes.size && this.writes.get(recordId) === writes) this.writes.delete(recordId);
+    }
+  }
   // ---- engine hooks -------------------------------------------------------------------------
   onTouch(job) {
     const attemptId = this.byJob.get(job.id);
@@ -1399,7 +1544,7 @@ var RecordsService = class {
     const domain = await this.ready;
     const table = domain.table("attempts");
     const attempt = table.get(attemptId);
-    if (!attempt) return;
+    if (!attempt || this.disposed || this.removing.has(attempt.recordId)) return;
     let view;
     try {
       view = this.engine.status(jobId);
@@ -1407,7 +1552,7 @@ var RecordsService = class {
       return;
     }
     const status = settled ? view.status === "cancelled" ? "cancelled" : view.status === "failed" ? "failed" : "done" : "running";
-    await table.put(attemptId, { ...attempt, status, view, finishedAt: settled ? view.finishedAt ?? Date.now() : null });
+    await this.put(domain, "attempts", attemptId, { ...attempt, status, view, finishedAt: settled ? view.finishedAt ?? Date.now() : null });
     this.bump();
   }
   // ---- queries --------------------------------------------------------------------------------
@@ -1478,7 +1623,7 @@ var RecordsService = class {
       preset: input2.preset ? clean(input2.preset) : null,
       ...input2.a6api ? { a6api: clean(input2.a6api) } : {}
     };
-    await records.put(record.id, record);
+    await this.put(domain, "records", record.id, record);
     this.bump();
     const attempt = kind === "fingerprint" ? await this.launch(record) : null;
     return { record, attemptId: attempt?.id ?? null };
@@ -1496,10 +1641,22 @@ var RecordsService = class {
     const domain = await this.ready;
     const attempts = domain.table("attempts");
     const existing = [...attempts.entries()].map(([, item]) => item).filter((item) => item.recordId === record.id);
-    const number = existing.reduce((max, item) => Math.max(max, item.number), 0) + 1;
+    const number3 = existing.reduce((max, item) => Math.max(max, item.number), 0) + 1;
     const busy = existing.some((item) => ACTIVE.has(item.status));
-    const attempt = { id: `att-${randomUUID2()}`, recordId: record.id, number, status: "queued", createdAt: Date.now(), startedAt: null, finishedAt: null, jobId: null, view: null, error: null };
-    await attempts.put(attempt.id, attempt);
+    const attempt = {
+      id: `att-${randomUUID2()}`,
+      recordId: record.id,
+      number: number3,
+      status: "queued",
+      createdAt: Date.now(),
+      startedAt: null,
+      finishedAt: null,
+      jobId: null,
+      view: null,
+      error: null,
+      ...this.ledger && record.a6api ? { ledgerVersion: 1 } : {}
+    };
+    await this.put(domain, "attempts", attempt.id, attempt);
     this.bump();
     if (!busy) await this.begin(attempt.id);
     return attempts.get(attempt.id);
@@ -1509,14 +1666,19 @@ var RecordsService = class {
     const attempts = domain.table("attempts");
     const attempt = attempts.get(attemptId);
     const record = attempt && domain.table("records").get(attempt.recordId);
-    if (!attempt || !record || attempt.status !== "queued") return;
+    if (!attempt || !record || attempt.status !== "queued" || this.disposed || this.removing.has(record.id)) return;
     try {
-      const view = await this.engine.start(record.models.map((model) => ({ provider: model.provider, id: model.id, ...model.relay ? { relay: model.relay } : {}, ...model.a6api ? { a6api: model.a6api } : {} })), record.options, record.a6api ?? null);
+      const view = await this.engine.start(record.models.map((model) => ({ provider: model.provider, id: model.id, ...model.relay ? { relay: model.relay } : {}, ...model.a6api ? { a6api: model.a6api } : {} })), record.options, record.a6api ?? null, { recordId: record.id, attemptId });
+      if (this.disposed || this.removing.has(record.id) || !attempts.get(attemptId) || !domain.table("records").get(record.id) || attempts.get(attemptId).status !== "queued") {
+        if (this.engine.has(view.id)) this.engine.cancel(view.id);
+        return;
+      }
       this.byJob.set(view.id, attemptId);
-      await attempts.put(attemptId, { ...attempts.get(attemptId), status: "running", jobId: view.id, startedAt: Date.now(), view });
+      await this.put(domain, "attempts", attemptId, { ...attempts.get(attemptId), status: "running", jobId: view.id, startedAt: Date.now(), view });
     } catch (error) {
+      if (this.disposed || this.removing.has(record.id) || !attempts.get(attemptId) || attempts.get(attemptId).status !== "queued") return;
       const message = error instanceof FingerprintError ? error.message : "\u6307\u7EB9\u670D\u52A1\u6267\u884C\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002";
-      await attempts.put(attemptId, { ...attempts.get(attemptId), status: "failed", finishedAt: Date.now(), error: message });
+      await this.put(domain, "attempts", attemptId, { ...attempts.get(attemptId), status: "failed", finishedAt: Date.now(), error: message });
       void this.startNextQueued(attemptId);
     }
     this.bump();
@@ -1525,7 +1687,7 @@ var RecordsService = class {
     if (this.disposed) return;
     const domain = await this.ready;
     const recordId = domain.table("attempts").get(attemptId)?.recordId;
-    if (!recordId) return;
+    if (!recordId || this.disposed || this.removing.has(recordId)) return;
     const all = [...domain.table("attempts").entries()].map(([, item]) => item).filter((item) => item.recordId === recordId);
     if (all.some((item) => item.status === "running")) return;
     const next = all.filter((item) => item.status === "queued").sort((a, b) => a.number - b.number)[0];
@@ -1541,7 +1703,7 @@ var RecordsService = class {
     const attempt = await this.liveJob(attemptId);
     const domain = await this.ready;
     if (attempt.status === "queued") {
-      await domain.table("attempts").put(attemptId, { ...attempt, status: "cancelled", finishedAt: Date.now() });
+      await this.put(domain, "attempts", attemptId, { ...attempt, status: "cancelled", finishedAt: Date.now() });
       this.bump();
     } else if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.cancel(attempt.jobId);
     return this.attempt(attemptId);
@@ -1551,7 +1713,7 @@ var RecordsService = class {
     const domain = await this.ready;
     const records = domain.table("records");
     const record = records.get(attempt.recordId);
-    if (record) await records.put(record.id, { ...record, options: { ...record.options, ...clean(options2) } });
+    if (record) await this.put(domain, "records", record.id, { ...record, options: { ...record.options, ...clean(options2) } });
     if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.configure(attempt.jobId, options2);
     this.bump();
     return this.attempt(attemptId);
@@ -1561,14 +1723,22 @@ var RecordsService = class {
     if (!attempt.jobId || !this.engine.has(attempt.jobId)) throw new FingerprintError("expired", "\u8BE5\u8BF7\u6C42\u5DF2\u4E0D\u5728\u5185\u5B58\u4E2D\uFF08\u8FD0\u884C\u65F6\u91CD\u542F\u6216\u5DF2\u8FC7\u671F\uFF09\uFF0C\u8BF7\u4F7F\u7528\u300C\u518D\u6B21\u8BF7\u6C42\u300D");
     this.engine.retry(attempt.jobId, model);
     const domain = await this.ready;
-    await domain.table("attempts").put(attemptId, { ...domain.table("attempts").get(attemptId), status: "running", finishedAt: null });
+    await this.put(domain, "attempts", attemptId, { ...domain.table("attempts").get(attemptId), status: "running", finishedAt: null });
     this.bump();
     return this.attempt(attemptId);
   }
   async remove(recordId) {
     const domain = await this.domain();
+    this.removing.add(recordId);
+    await Promise.allSettled([...this.writes.get(recordId) ?? []]);
     const attempts = [...domain.table("attempts").entries()].map(([, item]) => item).filter((item) => item.recordId === recordId);
-    for (const attempt of attempts) if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.cancel(attempt.jobId);
+    await this.ledger?.removeRecord(recordId);
+    for (const attempt of attempts) {
+      clearTimeout(this.timers.get(attempt.id));
+      this.timers.delete(attempt.id);
+      if (attempt.jobId) this.byJob.delete(attempt.jobId);
+      if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.cancel(attempt.jobId);
+    }
     await domain.table("attempts").deleteMany(attempts.map((item) => item.id));
     await domain.table("records").delete(recordId);
     this.bump();
@@ -1588,14 +1758,15 @@ var RecordsService = class {
     const existing = [...attempts.entries()].map(([, item]) => item).find((item) => item.recordId === recordId);
     const attempt = existing ?? { id: `att-${randomUUID2()}`, recordId, number: 1, createdAt: Date.now(), startedAt: Date.now(), jobId: null, view: null, error: null };
     const runs = Array.isArray(snapshot?.runs) ? clean(snapshot.runs).slice(0, 64) : [];
-    await attempts.put(attempt.id, { ...attempt, status: snapshot?.ended ? "done" : "running", finishedAt: snapshot?.ended ? Date.now() : null, custom: { runs } });
+    await this.put(domain, "attempts", attempt.id, { ...attempt, status: snapshot?.ended ? "done" : "running", finishedAt: snapshot?.ended ? Date.now() : null, custom: { runs } });
     this.bump();
     return { attemptId: attempt.id };
   }
-  dispose() {
+  async dispose() {
     this.disposed = true;
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    await Promise.allSettled([...this.writes.values()].flatMap((writes) => [...writes]));
   }
 };
 
@@ -1603,122 +1774,179 @@ var RecordsService = class {
 var SITE_ORIGIN = "https://a6api.vip";
 var TIMEOUT_MS = 25e3;
 var text = (value, max = 300) => typeof value === "string" ? value.slice(0, max) : "";
+var rowsOf = (payload) => Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.data?.items) ? payload.data.items : Array.isArray(payload) ? payload : [];
+var number = (value) => value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : void 0;
+var wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function failure(status, payload) {
   const code = text(payload?.code ?? payload?.error?.code, 80);
   const message = text(payload?.message ?? payload?.error?.message, 300);
-  if (status === 401 || status === 403) {
-    if (code === "dashboard_auth_user_id_missing") return new A6Error("auth-user-id-missing", "\u8BBF\u95EE\u4EE4\u724C\u7F3A\u5C11\u7528\u6237 ID\uFF1A\u8BF7\u540C\u65F6\u586B\u5199\u8BBF\u95EE\u4EE4\u724C\u4E0E\u7528\u6237 ID\u3002");
-    return new A6Error("auth-invalid", "\u8BBF\u95EE\u4EE4\u724C\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u5728 a6api \u8BBE\u7F6E\u9875\u91CD\u65B0\u751F\u6210\u3002");
-  }
+  if (status === 401 || status === 403) return new A6Error(code === "dashboard_auth_user_id_missing" ? "auth-user-id-missing" : "auth-invalid", code === "dashboard_auth_user_id_missing" ? "\u8BBF\u95EE\u4EE4\u724C\u7F3A\u5C11\u7528\u6237 ID\uFF0C\u8BF7\u540C\u65F6\u586B\u5199\u3002" : "\u8BBF\u95EE\u4EE4\u724C\u65E0\u6548\u6216\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u914D\u7F6E\u3002");
   if (status === 429) return new A6Error("rate-limited", "a6api \u63A5\u53E3\u9650\u6D41\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002");
   return new A6Error(`http-${status}`, message || `a6api \u8FD4\u56DE HTTP ${status}`);
 }
+function retryDelay(headers) {
+  const value = headers.get("retry-after");
+  const seconds = value !== null && value.trim() !== "" ? Number(value) : NaN;
+  const reset = Number(headers.get("x-ratelimit-reset"));
+  if (Number.isFinite(seconds)) return Math.max(1e3, seconds * 1e3);
+  const date = value ? Date.parse(value) : NaN;
+  if (Number.isFinite(date)) return Math.max(1e3, date - Date.now());
+  if (Number.isFinite(reset) && reset > 0) return reset > 1e9 ? Math.max(1e3, reset * 1e3 - Date.now()) : reset * 1e3;
+  return 5e3;
+}
 var A6Site = class {
   constructor({ fetchImpl = globalThis.fetch } = {}) {
-    this.fetchImpl = fetchImpl;
-    this.accessToken = "";
-    this.userId = "";
+    Object.assign(this, { fetchImpl, accessToken: "", userId: "", generation: 0, active: 0, cooldownUntil: 0 });
+    this.controller = new AbortController();
   }
-  /** Tokens are account-wide, so only the tail is ever echoed back to the UI. */
   configure({ accessToken, userId }) {
     this.accessToken = typeof accessToken === "string" ? accessToken.trim() : "";
     this.userId = userId === void 0 || userId === null ? "" : String(userId).trim();
+    this.generation += 1;
+    this.onConfigure?.({ siteOrigin: SITE_ORIGIN, accountId: this.userId });
     if (this.accessToken && !this.userId) throw new A6Error("auth-user-id-missing", "\u8BF7\u540C\u65F6\u586B\u5199\u8BBF\u95EE\u4EE4\u724C\u4E0E\u7528\u6237 ID\u3002");
   }
   get configured() {
     return Boolean(this.accessToken && this.userId);
   }
   get mask() {
-    if (!this.accessToken) return "";
-    return this.accessToken.length <= 8 ? "\u2022\u2022\u2022\u2022" : `${this.accessToken.slice(0, 3)}\u2022\u2022\u2022\u2022${this.accessToken.slice(-4)}`;
+    return !this.accessToken ? "" : this.accessToken.length <= 8 ? "\u2022\u2022\u2022\u2022" : `${this.accessToken.slice(0, 3)}\u2022\u2022\u2022\u2022${this.accessToken.slice(-4)}`;
   }
   headers() {
     if (!this.configured) throw new A6Error("auth-missing", "\u5C1A\u672A\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C\u3002");
     return { authorization: this.accessToken, "new-api-user": this.userId, accept: "application/json" };
   }
-  async request(path, { method = "GET", query, body } = {}) {
-    const url = new URL(path, SITE_ORIGIN);
-    for (const [key, value] of Object.entries(query ?? {})) {
-      if (value !== void 0 && value !== null) url.searchParams.set(key, String(value));
-    }
+  /** Shared bounded control-plane budget; model inference does not consume this queue. */
+  async request(path, { method = "GET", query, body, timeoutMs: timeoutMs2 = TIMEOUT_MS } = {}) {
+    const generation = this.generation;
     const headers = this.headers();
-    if (body !== void 0) headers["content-type"] = "application/json";
-    let response;
-    try {
-      response = await this.fetchImpl(url, {
-        method,
-        headers,
-        body: body === void 0 ? void 0 : JSON.stringify(body),
-        signal: AbortSignal.timeout(TIMEOUT_MS)
-      });
-    } catch (error) {
-      throw new A6Error("network", `\u65E0\u6CD5\u8FDE\u63A5 a6api\uFF1A${text(error?.message, 160) || "\u7F51\u7EDC\u9519\u8BEF"}`);
+    while (this.active >= 2 || Date.now() < this.cooldownUntil) {
+      if (this.controller.signal.aborted) throw new A6Error("disposed", "\u670D\u52A1\u5DF2\u5173\u95ED");
+      if (generation !== this.generation) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u8BD5");
+      await wait(Math.min(250, Math.max(20, this.cooldownUntil - Date.now())));
     }
-    const raw = await response.text();
-    let payload = null;
+    if (generation !== this.generation) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u8BD5");
+    if (this.controller.signal.aborted) throw new A6Error("disposed", "\u670D\u52A1\u5DF2\u5173\u95ED");
+    this.active += 1;
     try {
-      payload = raw ? JSON.parse(raw) : null;
-    } catch {
+      const url = new URL(path, SITE_ORIGIN);
+      for (const [key, value] of Object.entries(query ?? {})) if (value !== void 0 && value !== null) url.searchParams.set(key, String(value));
+      if (body !== void 0) headers["content-type"] = "application/json";
+      let response;
+      try {
+        response = await this.fetchImpl(url, { method, headers, body: body === void 0 ? void 0 : JSON.stringify(body), signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(timeoutMs2)]) });
+      } catch {
+        throw new A6Error("network", "\u65E0\u6CD5\u8FDE\u63A5 a6api\uFF0C\u8FDE\u63A5\u8D85\u65F6\u6216\u8BF7\u6C42\u5DF2\u4E2D\u6B62\u3002");
+      }
+      const raw = await response.text();
+      let payload;
+      try {
+        payload = raw ? JSON.parse(raw) : null;
+      } catch {
+        payload = null;
+      }
+      if (generation !== this.generation) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u53D8\u5316\uFF0C\u5DF2\u5FFD\u7565\u65E7\u54CD\u5E94");
+      if (!response.ok || payload?.success === false) {
+        const error = failure(response.status, payload);
+        if (response.status === 429) {
+          error.retryAfterMs = Math.min(3e5, retryDelay(response.headers));
+          this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + error.retryAfterMs);
+        }
+        throw error;
+      }
+      return payload;
+    } finally {
+      this.active -= 1;
     }
-    if (!response.ok) throw failure(response.status, payload);
-    if (payload && payload.success === false) throw failure(response.status, payload);
-    return payload;
   }
   async self() {
     const payload = await this.request("/api/user/self");
     const data = payload?.data ?? payload;
-    return { id: data?.id ?? Number(this.userId), name: text(data?.display_name ?? data?.username, 120), quota: Number(data?.quota ?? 0) };
+    return { id: data?.id ?? Number(this.userId), name: text(data?.display_name ?? data?.username, 120), quota: number(data?.quota) };
   }
-  /** Probe the credential pair and report what it can see. */
   async verify() {
     const account = await this.self();
-    const pins = await this.pins();
-    return { account, pins: pins.length };
+    if (String(account.id) !== this.userId) throw new A6Error("wrong-account", "\u7528\u6237 ID \u4E0E\u8BBF\u95EE\u4EE4\u724C\u7684\u8D26\u53F7\u4E0D\u4E00\u81F4");
+    return { account, pins: (await this.pins()).length };
   }
   async tokens() {
-    const payload = await this.request("/api/token/search", { query: { p: 1, page_size: 100 } });
-    const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.data?.items) ? payload.data.items : [];
-    return rows.map((row) => ({
-      id: Number(row.id),
-      name: text(row.name, 120) || `\u4EE4\u724C ${row.id}`,
-      maskedKey: text(row.key, 80),
-      unlimited: Boolean(row.unlimited_quota),
-      remainQuota: Number(row.remain_quota ?? 0)
-    })).filter((token) => Number.isInteger(token.id) && token.id > 0);
+    const found = /* @__PURE__ */ new Map();
+    let previous = "";
+    for (let p = 1; p <= 1e3; p += 1) {
+      const payload = await this.request("/api/token/search", { query: { p, page_size: 100 } });
+      const rows = rowsOf(payload);
+      const signature = rows.map((row) => row.id).join(",");
+      if (rows.length && signature === previous) throw new A6Error("pagination-incomplete", "\u4EE4\u724C\u5206\u9875\u91CD\u590D\uFF0C\u672A\u80FD\u786E\u8BA4\u5B8C\u6574\u5217\u8868\uFF0C\u8BF7\u5237\u65B0");
+      previous = signature;
+      for (const row of rows) {
+        const id2 = Number(row.id);
+        if (Number.isSafeInteger(id2) && id2 > 0) found.set(id2, { id: id2, name: text(row.name, 120) || `\u4EE4\u724C ${id2}`, maskedKey: text(row.key, 120), status: number(row.status), expiredTime: number(row.expired_time), unlimited: Boolean(row.unlimited_quota), remainQuota: number(row.remain_quota) });
+      }
+      const total = number(payload?.data?.total ?? payload?.total);
+      if (!rows.length || (total !== void 0 ? found.size >= total : rows.length < 100)) return [...found.values()];
+    }
+    throw new A6Error("pagination-incomplete", "\u4EE4\u724C\u6570\u91CF\u8D85\u51FA\u5355\u6B21\u540C\u6B65\u9884\u7B97\uFF0C\u8BF7\u7A0D\u540E\u5237\u65B0");
   }
-  /** Plaintext test key. Host-only; never persisted and never sent to the client. */
   async tokenKey(tokenId) {
-    const payload = await this.request(`/api/token/${Number(tokenId)}/key`, { method: "POST", body: {} });
+    const payload = await this.request(`/api/token/${Number(tokenId)}/key`, { method: "POST", body: {}, timeoutMs: 1e4 });
     const key = payload?.data?.key ?? payload?.key;
     if (typeof key !== "string" || !key) throw new A6Error("key-unavailable", `\u4EE4\u724C ${tokenId} \u6CA1\u6709\u53EF\u7528\u7684\u5BC6\u94A5`);
     return key;
   }
   async pins() {
-    const payload = await this.request("/api/marketplace/pins");
-    const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
-    return rows.filter((row) => row && Number(row.token_id) > 0).map((row) => ({
-      tokenId: Number(row.token_id),
-      channelId: Number(row.channel_id),
-      supplierId: Number(row.supplier_id ?? 0),
-      model: text(row.model_name, 256),
-      status: text(row.status, 40)
-    }));
+    return rowsOf(await this.request("/api/marketplace/pins")).filter((row) => Number(row?.token_id) > 0).map((row) => ({ tokenId: Number(row.token_id), channelId: Number(row.channel_id), supplierId: Number(row.supplier_id ?? 0), model: text(row.model_name, 256), status: text(row.status, 40), fallback: typeof row.fallback_to_smart_routing === "boolean" ? row.fallback_to_smart_routing : void 0, routeEffective: row.route_effective === true }));
   }
-  /** Pin (token, model) to one channel. Returns false when the site refuses to route there. */
   async pin({ tokenId, model, channelId, fallback = false }) {
-    const payload = await this.request("/api/marketplace/pin", {
-      method: "POST",
-      body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId), fallback_to_smart_routing: Boolean(fallback) }
-    });
-    const data = payload?.data ?? payload;
-    return { routeEffective: data?.route_effective !== false, supplierId: Number(data?.supplier_id ?? 0) };
+    await this.request("/api/marketplace/pin", { method: "POST", body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId), fallback_to_smart_routing: Boolean(fallback) } });
+    const current = (await this.pins()).find((row) => row.tokenId === Number(tokenId) && row.model === model);
+    return { routeEffective: current?.channelId === Number(channelId) && current?.routeEffective === true, supplierId: current?.supplierId ?? 0 };
   }
   async unpin({ tokenId, model, channelId }) {
-    await this.request("/api/marketplace/unpin", {
-      method: "POST",
-      body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId) }
-    });
+    await this.request("/api/marketplace/unpin", { method: "POST", body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId) } });
     return { ok: true };
+  }
+  async billingSettings() {
+    const payload = await this.request("/api/status");
+    const data = payload?.data ?? payload;
+    return { quotaPerUnit: number(data?.quota_per_unit), usdExchangeRate: number(data?.usd_exchange_rate) };
+  }
+  async requestLogs(requestId) {
+    const rows = [];
+    let previous = "";
+    for (let p = 1; p <= 20; p += 1) {
+      const payload = await this.request("/api/log/self", { query: { request_id: requestId, p, page_size: 100 } });
+      const page = rowsOf(payload);
+      const signature = JSON.stringify(page);
+      if (page.length && signature === previous) return { rows, complete: false };
+      previous = signature;
+      rows.push(...page);
+      const total = number(payload?.data?.total ?? payload?.total);
+      if (!page.length || (total !== void 0 ? rows.length >= total : page.length < 100)) return { rows, complete: payload?.data?.total_capped !== true };
+    }
+    return { rows, complete: false };
+  }
+  async subscriptions() {
+    const payload = await this.request("/api/subscriptions");
+    return rowsOf(payload);
+  }
+  async addRoute({ tokenId, model, channelId }) {
+    const read = async () => (await this.subscriptions()).find((row) => Number(row.token_id) === Number(tokenId) && (row.model_name ?? row.model) === model);
+    const has = (row) => Array.isArray(row?.channels) && row.channels.some((item) => Number(typeof item === "number" ? item : item.channel_id ?? item.id) === Number(channelId));
+    const existing = await read();
+    if (!has(existing)) {
+      if (existing) {
+        if (!existing.id) throw new A6Error("route-unverified", "\u8DEF\u7531\u6C60\u7F3A\u5C11\u53EF\u9A8C\u8BC1\u7684 ID");
+        await this.request(`/api/subscriptions/${existing.id}/channels`, { method: "PATCH", body: { channel_id: Number(channelId) } });
+      } else {
+        await this.request("/api/subscriptions", { method: "POST", body: { token_id: Number(tokenId), model_name: model, channels: [{ channel_id: Number(channelId) }], caps: { input_price_micros: 0, output_price_micros: 0, cache_read_price_micros: 0, cache_write_price_micros: 0, per_request_price_micros: 0 }, sort_strategy: "price_asc" } });
+      }
+    }
+    const observed = await read();
+    if (!has(observed)) throw new A6Error("route-unverified", "\u672A\u80FD\u8BFB\u56DE\u52A0\u5165\u8DEF\u7531\u7ED3\u679C\uFF0C\u8BF7\u68C0\u67E5\u7AD9\u70B9\u72B6\u6001");
+    return { verified: true, tokenId: Number(tokenId), model, channelId: Number(channelId), subscriptionId: observed.id };
+  }
+  dispose() {
+    this.controller.abort();
   }
 };
 
@@ -1750,7 +1978,8 @@ function channelOf(item) {
     })(),
     supplierName: text2(item?.supplierName),
     channelName: text2(item?.channelName),
-    brand: text2(item?.brand)
+    brand: text2(item?.brand),
+    ...marketOf(item?.market) ? { market: marketOf(item.market) } : {}
   };
 }
 function channelKey(item) {
@@ -1877,6 +2106,317 @@ var A6Intake = class {
   }
 };
 
+// backend/a6/providers.js
+import { credentialRef } from "@deepseek-ai/dsh-credentials";
+var TTL_MS = 5 * 6e4;
+var clone = (value) => JSON.parse(JSON.stringify(value));
+var fail = (code, message) => new A6Error(code, message);
+var mask = (value) => typeof value !== "string" ? "" : /[*•]/u.test(value) ? value.slice(0, 100) : value.length > 12 ? `${value.slice(0, 3)}\u2022\u2022\u2022\u2022${value.slice(-4)}` : value ? "\u2022\u2022\u2022\u2022" : "";
+var publicToken = (token) => ({
+  id: Number(token.id),
+  name: String(token.name ?? `\u4EE4\u724C ${token.id}`).slice(0, 120),
+  maskedKey: mask(token.maskedKey),
+  ...token.status === void 0 ? {} : { status: token.status },
+  ...token.expiredTime === void 0 ? {} : { expiredTime: token.expiredTime }
+});
+function assertUsableToken(token) {
+  if (!token) throw fail("token-not-found", "\u8BE5\u4EE4\u724C\u5DF2\u4E0D\u5C5E\u4E8E\u5F53\u524D\u8D26\u53F7\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u9009");
+  if (token.status !== void 0 && ![1, "1", "enabled", "active"].includes(token.status)) {
+    throw fail("token-unavailable", "\u8BE5\u4EE4\u724C\u5DF2\u505C\u7528\u3001\u8FC7\u671F\u6216\u989D\u5EA6\u4E0D\u8DB3");
+  }
+  if (Number(token.expiredTime) > 0 && Number(token.expiredTime) * 1e3 <= Date.now()) {
+    throw fail("token-expired", "\u8BE5\u4EE4\u724C\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
+  }
+}
+var A6Providers = class {
+  constructor(service) {
+    this.service = service;
+    this.revision = 1;
+    this.epoch = 0;
+    this.account = null;
+    this.loading = null;
+    this.scan = null;
+    this.writeTail = Promise.resolve();
+    this.reveals = /* @__PURE__ */ new Map();
+    this.revealActive = 0;
+    this.revealWaiters = [];
+    this.disposed = false;
+  }
+  directory() {
+    const llm = this.service.ctx.get("llm");
+    const providers = llm?.listProviders?.() ?? [];
+    return providers.filter((row) => row && typeof row.id === "string" && typeof row.name === "string").map(({ id: id2, name: name2 }) => ({ id: id2, name: name2 }));
+  }
+  /** Only explicit API-key references have a known authentication contract in this version. */
+  reference(providerId) {
+    const ctx = this.service.ctx;
+    try {
+      const declaration = ctx.get("llm")?.listConfigurableProviders?.().find((row) => row.provider === providerId);
+      if (!declaration || declaration.error || !Array.isArray(declaration.settingsPath)) return null;
+      const descriptor = ctx.get("settings")?.describe?.({ redactSecrets: true }).find((row) => row.ns === declaration.settingsNs);
+      let section = descriptor?.value;
+      for (const part of declaration.settingsPath) section = section?.[part];
+      const secretOverride = descriptor?.secrets?.some((secret) => secret.set && declaration.settingsPath.every((part, index) => secret.path[index] === part) && ["apiKey", "headers", "auth", "apiKeys"].includes(secret.path[declaration.settingsPath.length]));
+      if (!section || typeof section !== "object" || secretOverride || section.apiKey || section.auth || section.apiKeys || section.headers && Object.keys(section.headers).length) return null;
+      if (typeof section.apiKeyEnv !== "string" || !section.apiKeyEnv.trim()) return null;
+      return { ref: credentialRef(section.apiKeyEnv.trim()), stamp: JSON.stringify([
+        declaration.settingsNs,
+        declaration.settingsPath,
+        section.apiKeyEnv,
+        section.baseURL ?? declaration.defaultBaseURL,
+        section.api,
+        section.auth,
+        descriptor.revision
+      ]) };
+    } catch {
+      return null;
+    }
+  }
+  async resolve(providerId) {
+    if (!this.directory().some((row) => row.id === providerId)) throw fail("provider-not-found", "\u6B64\u63D0\u4F9B\u5546\u5DF2\u4ECE DSH \u79FB\u9664");
+    const reference = this.reference(providerId);
+    if (!reference) throw fail("provider-unsupported", "\u6B64\u63D0\u4F9B\u5546\u6CA1\u6709\u53EF\u5B89\u5168\u89E3\u6790\u7684\u663E\u5F0F API Key \u5F15\u7528");
+    const credentials = this.service.ctx.get("credentials");
+    if (!credentials) throw fail("credentials-unavailable", "Host \u51ED\u636E\u670D\u52A1\u4E0D\u53EF\u7528");
+    let resolved;
+    try {
+      resolved = await credentials.resolve(reference.ref);
+    } catch {
+      throw fail("provider-credential-error", "\u65E0\u6CD5\u8BFB\u53D6\u6B64\u63D0\u4F9B\u5546\u5F53\u524D\u51ED\u636E");
+    }
+    if (typeof resolved?.value !== "string" || !resolved.value) throw fail("provider-key-missing", "\u6B64\u63D0\u4F9B\u5546\u5F53\u524D\u6CA1\u6709\u53EF\u7528\u7684 API Key");
+    return { value: resolved.value, stamp: reference.stamp };
+  }
+  invalidate() {
+    this.epoch += 1;
+    if (this.account) this.account.observedAt = 0;
+    this.scan = null;
+    if (this.account) for (const row of Object.values(this.account.matches)) {
+      row.state = row.tokenIds?.length ? "stale" : "pending";
+    }
+    this.revision += 1;
+  }
+  reset() {
+    this.invalidate();
+    this.account = null;
+    this.loading = null;
+  }
+  async ensure() {
+    this.service.assertAvailable();
+    await this.service.config();
+    this.service.assertAvailable();
+    if (this.disposed) throw fail("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
+    const identity2 = this.service.accountIdentity();
+    if (this.account?.identity === identity2) return this.account;
+    if (!this.loading || this.loading.identity !== identity2) {
+      const generation = this.service.generation;
+      const task = (async () => {
+        const table = await this.service.table();
+        const stored = table.get(`a6-providers:${identity2}`);
+        if (this.disposed || generation !== this.service.generation) throw fail("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5");
+        const matches = clone(stored?.matches ?? {});
+        for (const row of Object.values(matches)) row.state = row.tokenIds?.length ? "stale" : "pending";
+        this.account = {
+          identity: identity2,
+          accountId: this.service.site.configured ? String(this.service.site.userId) : "",
+          selectedProviderIds: Array.isArray(stored?.selectedProviderIds) ? stored.selectedProviderIds : [],
+          tokens: Array.isArray(stored?.tokens) ? stored.tokens.map(publicToken) : [],
+          targets: stored?.targets ?? {},
+          matches,
+          observedAt: 0,
+          error: void 0
+        };
+        return this.account;
+      })();
+      this.loading = { identity: identity2, task };
+    }
+    return this.loading.task;
+  }
+  valid(account, epoch) {
+    return !this.disposed && !this.service.configSaving && this.account === account && this.epoch === epoch && account.identity === this.service.accountIdentity();
+  }
+  async persist(account) {
+    const task = this.writeTail.catch(() => {
+    }).then(async () => {
+      if (this.disposed || this.account !== account || account.identity !== this.service.accountIdentity()) return;
+      const table = await this.service.table();
+      if (this.disposed || this.account !== account || account.identity !== this.service.accountIdentity()) return;
+      await table.put(`a6-providers:${account.identity}`, {
+        siteId: "a6-providers",
+        selectedProviderIds: [...account.selectedProviderIds],
+        tokens: account.tokens.map(publicToken),
+        targets: clone(account.targets),
+        matches: clone(account.matches)
+      });
+    });
+    this.writeTail = task;
+    await task;
+  }
+  snapshot(account) {
+    return {
+      accountId: account.accountId,
+      revision: this.revision,
+      providers: this.directory().map((provider) => {
+        const row = account.matches[provider.id];
+        return { ...provider, state: row?.state ?? "pending", tokenIds: [...row?.tokenIds ?? []], ...row?.error ? { error: row.error } : {} };
+      }),
+      tokens: account.tokens.map(publicToken),
+      selectedProviderIds: [...account.selectedProviderIds],
+      targets: clone(account.targets),
+      scanning: Boolean(this.scan),
+      ...account.error ? { error: account.error } : {}
+    };
+  }
+  async state({ refresh = false, scan = false } = {}) {
+    const account = await this.ensure();
+    const ttl = account.error || Object.values(account.matches).some((row) => ["unmatched", "error"].includes(row.state)) ? 45e3 : TTL_MS;
+    if (!account.accountId) account.error = "\u8BF7\u5148\u914D\u7F6E a6api \u8D26\u53F7";
+    else if (refresh || scan || !account.observedAt || Date.now() - account.observedAt > ttl) this.start(account, { full: scan || refresh });
+    return this.snapshot(account);
+  }
+  async configure({ providerIds } = {}) {
+    const account = await this.ensure();
+    if (!account.accountId) throw fail("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8D26\u53F7");
+    const allowed = new Set(this.directory().map((row) => row.id));
+    if (!Array.isArray(providerIds) || providerIds.length > 256 || providerIds.some((id2) => !allowed.has(id2))) {
+      throw fail("invalid-providers", "\u63D0\u4F9B\u5546\u9009\u62E9\u65E0\u6548\uFF0C\u8BF7\u5237\u65B0 DSH \u76EE\u5F55");
+    }
+    this.invalidate();
+    account.selectedProviderIds = [...new Set(providerIds)];
+    await this.persist(account);
+    this.start(account, { full: true });
+    return this.snapshot(account);
+  }
+  start(account, { full }) {
+    if (this.disposed) return;
+    if (this.scan) {
+      if (full && !this.scan.full) this.scan.followupFull = true;
+      return;
+    }
+    const epoch = this.epoch;
+    const handle = { full, followupFull: false };
+    this.scan = handle;
+    this.revision += 1;
+    handle.promise = this.discover(account, epoch, full).catch(async () => {
+      if (!this.valid(account, epoch)) return;
+      account.error = "\u63D0\u4F9B\u5546\u6838\u5BF9\u672A\u5B8C\u6210\uFF0C\u8BF7\u7A0D\u540E\u5237\u65B0";
+      account.observedAt = Date.now();
+      this.revision += 1;
+      await this.persist(account);
+    }).catch(() => {
+    }).finally(() => {
+      if (this.scan === handle) {
+        this.scan = null;
+        this.revision += 1;
+        if (handle.followupFull && this.valid(account, epoch)) this.start(account, { full: true });
+      }
+    });
+  }
+  /** Pending-only single flight, shared by discovery and explicit target checks. */
+  reveal(tokenId, account) {
+    const generation = this.service.generation;
+    const identity2 = `${account.identity}:${generation}:${tokenId}`;
+    if (!this.reveals.has(identity2)) {
+      const operation = (async () => {
+        if (this.revealActive >= 2) await new Promise((resolve) => this.revealWaiters.push(resolve));
+        else this.revealActive += 1;
+        try {
+          this.service.assertAvailable();
+          if (generation !== this.service.generation || this.account !== account) throw fail("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362");
+          return await this.service.site.tokenKey(tokenId);
+        } finally {
+          const next = this.revealWaiters.shift();
+          if (next) next();
+          else this.revealActive -= 1;
+        }
+      })().finally(() => this.reveals.delete(identity2));
+      this.reveals.set(identity2, operation);
+    }
+    return this.reveals.get(identity2);
+  }
+  async discover(account, epoch, full) {
+    const tokens2 = await this.service.site.tokens();
+    if (!this.valid(account, epoch)) return;
+    account.tokens = tokens2.map(publicToken);
+    account.error = void 0;
+    const selected = account.selectedProviderIds.filter((id2) => this.directory().some((row) => row.id === id2));
+    const locals = [];
+    for (const id2 of selected) {
+      const old = account.matches[id2];
+      try {
+        const local = await this.resolve(id2);
+        if (!this.valid(account, epoch)) return;
+        locals.push({ id: id2, ...local, tokenIds: [], failed: false, previous: old?.tokenIds ?? [] });
+        account.matches[id2] = { state: old?.tokenIds?.length ? "stale" : "pending", tokenIds: old?.tokenIds ?? [] };
+      } catch (error) {
+        if (!this.valid(account, epoch)) return;
+        account.matches[id2] = { state: error.code === "provider-unsupported" ? "unsupported" : "error", tokenIds: old?.tokenIds ?? [], error: error instanceof A6Error ? error.message : "\u63D0\u4F9B\u5546\u914D\u7F6E\u8BFB\u53D6\u5931\u8D25" };
+      }
+    }
+    const revealIds = full || locals.some((local) => !local.previous.length) ? tokens2.map((token) => token.id) : [...new Set(locals.flatMap((local) => local.previous))].filter((id2) => tokens2.some((token) => token.id === id2));
+    const queue = [...revealIds];
+    const worker = async () => {
+      while (queue.length && this.valid(account, epoch)) {
+        const id2 = queue.shift();
+        try {
+          const key = await this.reveal(id2, account);
+          if (!this.valid(account, epoch)) return;
+          for (const local of locals) if (local.value === key) local.tokenIds.push(id2);
+        } catch {
+          for (const local of locals) local.failed = true;
+        }
+      }
+    };
+    if (locals.length) await Promise.all([worker(), worker()]);
+    if (!this.valid(account, epoch)) return;
+    for (const local of locals) {
+      if (this.reference(local.id)?.stamp !== local.stamp) {
+        account.matches[local.id] = { state: "stale", tokenIds: local.previous };
+        continue;
+      }
+      const ids = [...new Set(local.tokenIds)];
+      account.matches[local.id] = {
+        state: ids.length > 1 ? "ambiguous" : ids.length === 1 ? "exact" : local.failed ? "error" : full ? "unmatched" : "stale",
+        tokenIds: ids.length ? ids : local.failed ? local.previous : [],
+        ...local.failed ? { error: "\u90E8\u5206\u4EE4\u724C\u5BC6\u94A5\u672A\u80FD\u6838\u5BF9\uFF0C\u8BF7\u5237\u65B0\u7EE7\u7EED\u53D1\u73B0" } : {}
+      };
+    }
+    account.observedAt = Date.now();
+    this.revision += 1;
+    await this.persist(account);
+  }
+  async verifyTarget({ tokenId, providerId }, account) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw fail("invalid-token", "\u4EE4\u724C ID \u65E0\u6548");
+    const epoch = this.epoch;
+    const tokens2 = await this.service.site.tokens();
+    if (!this.valid(account, epoch)) throw fail("account-changed", "\u8D26\u53F7\u6216\u63D0\u4F9B\u5546\u914D\u7F6E\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
+    const token = tokens2.find((row) => row.id === tokenId);
+    assertUsableToken(token);
+    if (providerId !== void 0) {
+      if (!account.selectedProviderIds.includes(providerId)) throw fail("provider-not-selected", "\u8BF7\u5148\u5728\u7BA1\u7406\u9762\u677F\u9009\u62E9\u6B64\u63D0\u4F9B\u5546");
+      const local = await this.resolve(providerId);
+      const remote = await this.reveal(tokenId, account);
+      if (!this.valid(account, epoch) || this.reference(providerId)?.stamp !== local.stamp) throw fail("provider-changed", "\u63D0\u4F9B\u5546\u914D\u7F6E\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9");
+      if (local.value !== remote) {
+        account.matches[providerId] = { state: "stale", tokenIds: [], error: "\u5F53\u524D\u51ED\u636E\u4E0E\u6B64\u4EE4\u724C\u4E0D\u5339\u914D" };
+        this.revision += 1;
+        await this.persist(account);
+        throw fail("provider-mismatch", "\u5F53\u524D\u63D0\u4F9B\u5546\u51ED\u636E\u4E0E\u6240\u9009\u4EE4\u724C\u4E0D\u5339\u914D");
+      }
+      const old = account.matches[providerId];
+      const tokenIds = ["exact", "ambiguous"].includes(old?.state) ? [.../* @__PURE__ */ new Set([...old.tokenIds ?? [], tokenId])] : [tokenId];
+      account.matches[providerId] = { state: tokenIds.length > 1 ? "ambiguous" : "exact", tokenIds };
+      this.revision += 1;
+      await this.persist(account);
+    }
+    return token;
+  }
+  dispose() {
+    this.disposed = true;
+    this.invalidate();
+  }
+};
+
 // backend/a6/service.js
 var CONFIG_KEY = "a6-site";
 var KEY_TTL_MS = 10 * 6e4;
@@ -1884,7 +2424,15 @@ var A6Service = class {
   constructor({ ctx, storage, records, intake, site, engine }) {
     Object.assign(this, { ctx, storage, records, intake, site, engine });
     this.manualLeases = /* @__PURE__ */ new Map();
+    this.deletingRecords = /* @__PURE__ */ new Set();
+    this.clearInProgress = false;
     this.keyCache = /* @__PURE__ */ new Map();
+    this.keyFlights = /* @__PURE__ */ new Map();
+    this.generation = 0;
+    this.configSaving = false;
+    this.creating = 0;
+    this.disposed = false;
+    this.providers = new A6Providers(this);
   }
   async table() {
     const domain = await this.storage.managed();
@@ -1905,40 +2453,162 @@ var A6Service = class {
     };
   }
   async saveConfig({ accessToken, userId }) {
+    await this.config();
+    if (this.configSaving || this.creating || this.engine.starting || this.engine.tokenSlots.busy.size || [...this.engine.jobs.values()].some((job) => job.a6api && job.status === "running")) {
+      throw new A6Error("account-busy", "\u4E13\u9879\u4EFB\u52A1\u6216\u4EE4\u724C\u64CD\u4F5C\u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u7ED3\u675F\u540E\u518D\u5207\u6362\u8D26\u53F7\u51ED\u636E");
+    }
+    const previous = { accessToken: this.site.accessToken, userId: this.site.userId };
     const next = {
-      accessToken: typeof accessToken === "string" && accessToken.trim() ? accessToken.trim() : this.site.accessToken,
-      userId: userId === void 0 ? this.site.userId : String(userId ?? "").trim()
+      accessToken: typeof accessToken === "string" && accessToken.trim() ? accessToken.trim() : previous.accessToken,
+      userId: userId === void 0 ? previous.userId : String(userId ?? "").trim()
     };
     if (!next.accessToken) throw new A6Error("auth-missing", "\u8BF7\u586B\u5199 a6api \u8BBF\u95EE\u4EE4\u724C");
     if (!next.userId) throw new A6Error("auth-user-id-missing", "\u8BF7\u586B\u5199 a6api \u7528\u6237 ID");
-    this.site.configure(next);
-    let verified;
+    this.configSaving = true;
+    this.generation += 1;
+    this.keyCache.clear();
+    this.keyFlights.clear();
+    this.providers.reset();
     try {
-      verified = await this.site.verify();
+      this.site.configure(next);
+      const verified = await this.site.verify();
+      if (String(verified.account?.id) !== next.userId) throw new A6Error("account-mismatch", "\u8BBF\u95EE\u4EE4\u724C\u4E0E\u7528\u6237 ID \u4E0D\u4E00\u81F4");
+      await (await this.table()).put(CONFIG_KEY, { siteId: CONFIG_KEY, ...next });
+      return { ok: true, ...await this.config(), account: verified.account, pins: verified.pins };
     } catch (error) {
-      this.site.configure({ accessToken: "", userId: "" });
+      this.site.configure(previous);
+      this.generation += 1;
+      this.providers.reset();
       throw error;
+    } finally {
+      this.configSaving = false;
     }
-    await (await this.table()).put(CONFIG_KEY, { siteId: CONFIG_KEY, ...next });
-    return { ok: true, ...await this.config(), account: verified.account, pins: verified.pins };
   }
   async rotateIntake() {
     await this.intake.rotate();
     return this.config();
   }
   // ---- test keys -----------------------------------------------------------------------------
-  /** Plaintext key for one token, cached briefly so a whole run reuses one lookup. */
+  accountIdentity() {
+    return `${SITE_ORIGIN}:${this.site.configured ? this.site.userId : ""}`;
+  }
+  assertAvailable() {
+    if (this.disposed) throw new A6Error("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
+    if (this.configSaving) throw new A6Error("account-busy", "\u8D26\u53F7\u51ED\u636E\u6B63\u5728\u5207\u6362\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+  }
+  /** Account/generation-scoped cache for the automatic sampling lane only. */
   async key(tokenId) {
-    const cached = this.keyCache.get(tokenId);
+    this.assertAvailable();
+    const generation = this.generation;
+    const identity2 = `${this.accountIdentity()}:${generation}:${tokenId}`;
+    const cached = this.keyCache.get(identity2);
     if (cached && cached.until > Date.now()) return cached.key;
-    const key = await this.site.tokenKey(tokenId);
-    this.keyCache.set(tokenId, { key, until: Date.now() + KEY_TTL_MS });
-    return key;
+    if (!this.keyFlights.has(identity2)) {
+      const flight = this.site.tokenKey(tokenId).then((key) => {
+        if (generation !== this.generation || this.disposed) throw new A6Error("account-changed", "\u8D26\u53F7\u51ED\u636E\u5DF2\u5207\u6362");
+        this.keyCache.set(identity2, { key, until: Date.now() + KEY_TTL_MS });
+        return key;
+      }).finally(() => this.keyFlights.delete(identity2));
+      this.keyFlights.set(identity2, flight);
+    }
+    return this.keyFlights.get(identity2);
   }
   async tokens() {
     if (!this.site.configured) await this.config();
+    this.assertAvailable();
     if (!this.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
-    return { tokens: await this.site.tokens() };
+    return { tokens: (await this.site.tokens()).map(publicToken) };
+  }
+  providerState(input2) {
+    return this.providers.state(input2);
+  }
+  providerConfigure(input2) {
+    return this.providers.configure(input2);
+  }
+  invalidateProviders() {
+    this.providers.invalidate();
+  }
+  assertRecordActive(recordId) {
+    if (this.clearInProgress) throw new A6Error("records-clearing", "\u8BB0\u5F55\u6B63\u5728\u6E05\u7A7A\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+    if (this.deletingRecords.has(recordId)) throw new A6Error("record-deleting", "\u6B64\u8BB0\u5F55\u6B63\u5728\u5220\u9664\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+  }
+  /** Keep a record reachable until every daily pin associated with it is restored. */
+  async removeRecord(recordId) {
+    this.assertRecordActive(recordId);
+    this.deletingRecords.add(recordId);
+    try {
+      const domain = await this.records.domain();
+      const record = domain.table("records").get(recordId);
+      if (record?.a6api) {
+        await this.loadLeases();
+        if ([...this.manualLeases.values()].some((lease) => lease.recordId === recordId)) {
+          throw new A6Error("record-has-lease", "\u6B64\u8BB0\u5F55\u4ECD\u6709\u65E5\u5E38\u56FA\u5B9A\u6216\u5F85\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D\u540E\u518D\u5220\u9664");
+        }
+        if (this.engine.tokenSlots.busy.size) {
+          throw new A6Error("record-busy", "\u4EE4\u724C\u69FD\u4F4D\u4ECD\u5728\u6267\u884C\u64CD\u4F5C\uFF0C\u8BF7\u7ED3\u675F\u6216\u6062\u590D\u540E\u518D\u5220\u9664\u4E13\u9879\u8BB0\u5F55");
+        }
+      }
+      return await this.records.remove(recordId);
+    } finally {
+      this.deletingRecords.delete(recordId);
+    }
+  }
+  async clearRecords() {
+    this.assertRecordActive();
+    if (this.deletingRecords.size || this.creating) throw new A6Error("records-busy", "\u8BB0\u5F55\u6B63\u5728\u521B\u5EFA\u6216\u5220\u9664\uFF0C\u8BF7\u7A0D\u540E\u6E05\u7A7A");
+    this.clearInProgress = true;
+    try {
+      const domain = await this.records.domain();
+      const entries = [...domain.table("records").entries()];
+      const ids = new Set(entries.map(([id2]) => id2));
+      await this.loadLeases();
+      if ([...this.manualLeases.values()].some((lease) => ids.has(lease.recordId))) {
+        throw new A6Error("records-have-leases", "\u8BB0\u5F55\u4E2D\u4ECD\u6709\u65E5\u5E38\u56FA\u5B9A\u6216\u5F85\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D\u540E\u518D\u6E05\u7A7A");
+      }
+      if (entries.some(([, record]) => record?.a6api) && this.engine.tokenSlots.busy.size) {
+        throw new A6Error("records-busy", "\u4EE4\u724C\u69FD\u4F4D\u4ECD\u5728\u6267\u884C\u64CD\u4F5C\uFF0C\u8BF7\u7ED3\u675F\u6216\u6062\u590D\u540E\u518D\u6E05\u7A7A\u4E13\u9879\u8BB0\u5F55");
+      }
+      return await this.records.clear();
+    } finally {
+      this.clearInProgress = false;
+    }
+  }
+  async recordTarget(input2) {
+    this.assertRecordActive(input2.recordId);
+    this.assertAvailable();
+    await this.config();
+    this.assertAvailable();
+    const domain = await this.records.domain();
+    const record = domain.table("records").get(input2.recordId);
+    this.assertRecordActive(input2.recordId);
+    if (!record?.a6api) throw new A6Error("record-not-found", "\u4E13\u9879\u8BB0\u5F55\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
+    this.assertAccount(record.a6api);
+    if (!record.models.some((row) => row.id === input2.model && row.a6api?.model === input2.model && (input2.channelId === void 0 || row.a6api.channelId === input2.channelId))) {
+      throw new A6Error("invalid-selection", "\u6A21\u578B\u6216\u6E20\u9053\u4E0D\u5C5E\u4E8E\u6B64\u4E13\u9879\u8BB0\u5F55");
+    }
+    return record;
+  }
+  assertAccount(meta) {
+    if (!this.site.configured || String(meta.accountId) !== String(this.site.userId) || ![SITE_ORIGIN, "https://www.a6api.vip"].includes(meta.siteOrigin)) {
+      throw new A6Error("account-mismatch", "\u5F53\u524D a6api \u8D26\u53F7\u4E0E\u8BB0\u5F55\u6765\u6E90\u4E0D\u540C\uFF0C\u8BF7\u5207\u6362\u5230\u539F\u8D26\u53F7");
+    }
+  }
+  async targetSave(input2) {
+    await this.recordTarget(input2);
+    const account = await this.providers.ensure();
+    const generation = this.generation;
+    const epoch = this.providers.epoch;
+    this.targetVersions ??= /* @__PURE__ */ new Map();
+    const id2 = `${account.identity}:${input2.model}`;
+    const version = (this.targetVersions.get(id2) ?? 0) + 1;
+    this.targetVersions.set(id2, version);
+    await this.providers.verifyTarget(input2, account);
+    await this.recordTarget(input2);
+    if (generation !== this.generation || epoch !== this.providers.epoch || this.targetVersions.get(id2) !== version) throw new A6Error("target-superseded", "\u76EE\u6807\u9009\u62E9\u5DF2\u66F4\u65B0\uFF0C\u8BF7\u5237\u65B0");
+    account.targets[input2.model] = { tokenId: input2.tokenId, ...input2.providerId === void 0 ? {} : { providerId: input2.providerId } };
+    this.providers.revision += 1;
+    await this.providers.persist(account);
+    return this.providers.snapshot(account);
   }
   // ---- selections ----------------------------------------------------------------------------
   selections(request) {
@@ -1958,78 +2628,529 @@ var A6Service = class {
     });
   }
   async create(input2) {
+    this.assertRecordActive();
+    this.assertAvailable();
+    await this.config();
+    this.assertRecordActive();
+    this.assertAvailable();
     const selection = this.selection(input2.selectionId);
-    const slots = this.slots(selection, input2.slots);
-    const allowed = new Set(selection.models.map(channelKey));
-    const channels = input2.models ? input2.models.map(channelOf) : selection.models;
-    if (!channels.length || channels.length > 64 || channels.some((model) => !allowed.has(channelKey(model)))) {
-      throw new A6Error("invalid-selection", "\u5F85\u6D4B\u9879\u4E0D\u5C5E\u4E8E\u7F51\u9875\u9009\u62E9\u6216\u6570\u91CF\u65E0\u6548");
+    this.assertAccount(selection);
+    this.creating += 1;
+    try {
+      const slots = this.slots(selection, input2.slots);
+      const allowed = new Map(selection.models.map((channel) => [channelKey(channel), channel]));
+      const requested = input2.models ? input2.models.map(channelOf) : selection.models;
+      if (!requested.length || requested.length > 64 || requested.some((model) => !allowed.has(channelKey(model)))) {
+        throw new A6Error("invalid-selection", "\u5F85\u6D4B\u9879\u4E0D\u5C5E\u4E8E\u7F51\u9875\u9009\u62E9\u6216\u6570\u91CF\u65E0\u6548");
+      }
+      const channels = requested.map((model) => allowed.get(channelKey(model)));
+      if (new Set(channels.map(channelKey)).size !== channels.length) throw new A6Error("invalid-selection", "\u5F85\u6D4B\u6E05\u5355\u91CD\u590D");
+      await this.releaseManual(selection, slots);
+      this.assertRecordActive();
+      const a6api = { selectionId: selection.id, accountId: selection.accountId, siteOrigin: SITE_ORIGIN, slots };
+      return await this.records.create({
+        kind: "fingerprint",
+        name: input2.name || "a6api \u4E13\u9879\u6307\u7EB9",
+        a6api,
+        options: { timeoutMs: input2.timeoutMs ?? 18e4, concurrency: slots.length },
+        models: channels.map((channel) => ({
+          // Stable identity is the tested channel, not the worker that happens to claim it.
+          provider: `a6api:${channel.channelId}:${channel.supplierId}`,
+          id: channel.model,
+          name: channel.model,
+          a6api: channel,
+          relay: { siteId: "a6api", channelId: channel.channelId, supplierId: channel.supplierId, listingId: channel.listingId, model: channel.model, api: channel.model && /claude|anthropic/i.test(`${channel.brand} ${channel.model}`) ? "messages" : "chat" }
+        }))
+      });
+    } finally {
+      this.creating -= 1;
     }
-    if (new Set(channels.map(channelKey)).size !== channels.length) throw new A6Error("invalid-selection", "\u5F85\u6D4B\u6E05\u5355\u91CD\u590D");
-    await this.releaseManual(selection, slots);
-    const a6api = { selectionId: selection.id, accountId: selection.accountId, siteOrigin: selection.siteOrigin, slots };
-    return this.records.create({
-      kind: "fingerprint",
-      name: input2.name || "a6api \u4E13\u9879\u6307\u7EB9",
-      a6api,
-      options: { timeoutMs: input2.timeoutMs ?? 18e4, concurrency: slots.length },
-      models: channels.map((channel) => ({
-        // Stable identity is the tested channel, not the worker that happens to claim it.
-        provider: `a6api:${channel.channelId}:${channel.supplierId}`,
-        id: channel.model,
-        name: channel.model,
-        a6api: channel,
-        relay: { siteId: "a6api", channelId: channel.channelId, supplierId: channel.supplierId, listingId: channel.listingId, model: channel.model, api: channel.model && /claude|anthropic/i.test(`${channel.brand} ${channel.model}`) ? "messages" : "chat" }
-      }))
-    });
+  }
+  async loadLeases() {
+    if (!this.leasesReady) this.leasesReady = (async () => {
+      const table = await this.table();
+      for (const [key, lease] of table.entries()) {
+        if (key.startsWith("a6-lease:") && lease?.identity && lease?.model) this.manualLeases.set(key.slice("a6-lease:".length), lease);
+      }
+    })();
+    return this.leasesReady;
+  }
+  async putLease(key, lease) {
+    await (await this.table()).put(`a6-lease:${key}`, { ...lease, siteId: "a6-lease" });
+    this.manualLeases.set(key, lease);
+  }
+  async deleteLease(key) {
+    await (await this.table()).delete(`a6-lease:${key}`);
+    this.manualLeases.delete(key);
   }
   async releaseManual(selection, slots) {
-    for (const slot of slots) {
-      const identity = tokenIdentity(selection, slot.tokenId);
-      const held = [...this.manualLeases.entries()].filter(([key]) => key.startsWith(`${identity}:`));
-      if (!held.length) continue;
-      if (this.engine.tokenSlots.busy.has(identity)) throw new A6Error("slot-busy", "\u6B64\u6D4B\u8BD5\u4EE4\u724C\u6B63\u5728\u6267\u884C\u4EFB\u52A1");
-      await this.engine.tokenSlots.acquire(identity, new AbortController().signal);
-      try {
-        for (const [key, lease] of held) {
-          await this.site.unpin({ tokenId: slot.tokenId, model: lease.model, channelId: lease.channelId });
-          this.manualLeases.delete(key);
-        }
-      } finally {
-        this.engine.tokenSlots.release(identity);
-      }
+    await this.loadLeases();
+    const identities = new Set(slots.map((slot) => tokenIdentity({ ...selection, siteOrigin: SITE_ORIGIN }, slot.tokenId)));
+    if ([...this.manualLeases.values()].some((lease) => identities.has(lease.identity))) {
+      throw new A6Error("lease-held", "\u6D4B\u8BD5\u4EE4\u724C\u4ECD\u6709\u65E5\u5E38\u56FA\u5B9A\u6216\u5F85\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u663E\u5F0F\u6062\u590D\uFF0C\u6216\u6539\u7528\u4E13\u7528\u6D4B\u8BD5\u4EE4\u724C");
+    }
+    const pins = await this.site.pins();
+    if (pins.some((pin) => slots.some((slot) => slot.tokenId === pin.tokenId))) {
+      throw new A6Error("pin-conflict", "\u6D4B\u8BD5\u4EE4\u724C\u5DF2\u6709\u7AD9\u70B9\u56FA\u5B9A\uFF0C\u8BF7\u5148\u5728\u539F\u5904\u6062\u590D\uFF0C\u6216\u9009\u62E9\u4E13\u7528\u6D4B\u8BD5\u4EE4\u724C");
     }
   }
+  /** Called by the engine under its token lock, including retries of historical records. */
+  async assertTestSlot(tokenId, meta) {
+    this.assertRecordActive();
+    this.assertAvailable();
+    await this.config();
+    this.assertAvailable();
+    if (!meta) throw new A6Error("account-missing", "\u6D4B\u8BD5\u69FD\u4F4D\u7F3A\u5C11\u8D26\u53F7\u8EAB\u4EFD\uFF0C\u62D2\u7EDD\u4FEE\u6539\u56FA\u5B9A");
+    this.assertAccount(meta);
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error("invalid-token", "\u6D4B\u8BD5\u4EE4\u724C ID \u65E0\u6548");
+    await this.releaseManual(meta, [{ tokenId }]);
+  }
+  async resultAction(input2) {
+    const record = await this.recordTarget(input2);
+    if (input2.operation === "restore") {
+      await this.loadLeases();
+      const candidates = [...this.manualLeases.values()].filter((lease) => lease.accountId === String(record.a6api.accountId) && lease.siteOrigin === SITE_ORIGIN && lease.recordId === input2.recordId && lease.model === input2.model && lease.channelId === input2.channelId);
+      const original = candidates.find((lease) => lease.tokenId === input2.tokenId) ?? (candidates.length === 1 ? candidates[0] : null);
+      if (!original && candidates.length > 1) throw new A6Error("lease-ambiguous", "\u6B64\u7ED3\u679C\u6709\u591A\u4E2A\u5F85\u6062\u590D\u76EE\u6807\uFF0C\u8BF7\u9009\u62E9\u539F\u4EE4\u724C\u540E\u6062\u590D");
+      if (original) input2 = { ...input2, tokenId: original.tokenId };
+    }
+    return this.performAction(input2, record.a6api, async () => {
+      await this.recordTarget(input2);
+      if (input2.operation === "restore") return;
+      const account = await this.providers.ensure();
+      const target = account.targets[input2.model];
+      if (!target || target.tokenId !== input2.tokenId || target.providerId !== input2.providerId) {
+        throw new A6Error("target-changed", "\u6B64\u6A21\u578B\u7684\u4F7F\u7528\u76EE\u6807\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
+      }
+      await this.providers.verifyTarget(input2, account);
+      await this.recordTarget(input2);
+    });
+  }
+  async performAction(input2, meta, validate) {
+    if (!["pin", "route", "restore"].includes(input2.operation)) throw new A6Error("invalid-operation", "\u53EA\u652F\u6301\u56FA\u5B9A\u3001\u52A0\u5165\u8DEF\u7531\u4E0E\u6062\u590D");
+    this.assertAvailable();
+    this.assertRecordActive(input2.recordId);
+    this.assertAccount(meta);
+    if (this.creating) throw new A6Error("slot-busy", "\u4E13\u9879\u4EFB\u52A1\u6B63\u5728\u521B\u5EFA\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+    const generation = this.generation;
+    const identity2 = tokenIdentity({ ...meta, siteOrigin: SITE_ORIGIN }, input2.tokenId);
+    if (this.engine.tokenSlots.busy.has(identity2)) throw new A6Error("slot-busy", "\u8BE5\u4EE4\u724C\u6B63\u5728\u6267\u884C\u4EFB\u52A1\uFF0C\u8BF7\u7B49\u69FD\u4F4D\u7A7A\u95F2\u540E\u518D\u64CD\u4F5C");
+    await this.engine.tokenSlots.acquire(identity2, new AbortController().signal);
+    const key = `${identity2}:${input2.model}`;
+    const targetId = `${this.accountIdentity()}:${input2.model}`;
+    const targetVersion = this.targetVersions?.get(targetId);
+    const providerEpoch = this.providers.epoch;
+    const assertCurrent = () => {
+      this.assertAvailable();
+      this.assertRecordActive(input2.recordId);
+      if (input2.recordId && input2.operation !== "restore" && (targetVersion !== this.targetVersions?.get(targetId) || providerEpoch !== this.providers.epoch)) {
+        throw new A6Error("target-changed", "\u76EE\u6807\u6216\u63D0\u4F9B\u5546\u914D\u7F6E\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
+      }
+    };
+    try {
+      await this.loadLeases();
+      await validate();
+      assertCurrent();
+      if (generation !== this.generation) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0");
+      const lease = this.manualLeases.get(key);
+      if (input2.operation === "restore") {
+        if (!lease) return { ok: true, result: { skipped: true, operation: "restore" } };
+        if (lease.channelId !== input2.channelId) throw new A6Error("lease-conflict", "\u5F53\u524D\u56FA\u5B9A\u79DF\u7EA6\u5C5E\u4E8E\u5176\u4ED6\u6E20\u9053\uFF0C\u8BF7\u5148\u6062\u590D\u539F\u76EE\u6807");
+        return await this.restoreLease(key, lease);
+      }
+      if (input2.operation === "route") {
+        assertCurrent();
+        const outcome2 = await this.site.addRoute({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
+        if (outcome2?.verified !== true) throw new A6Error("route-unverified", "\u672A\u80FD\u8BFB\u56DE\u8DEF\u7531\u65B0\u589E\u7ED3\u679C");
+        return { ok: true, result: outcome2 };
+      }
+      if (lease) throw new A6Error("already-pinned", "\u6B64\u76EE\u6807\u5C1A\u6709\u56FA\u5B9A\u6216\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D");
+      const current = (await this.site.pins()).filter((pin) => pin.tokenId === input2.tokenId && pin.model === input2.model);
+      if (current.length > 1) throw new A6Error("pin-conflict", "\u7AD9\u70B9\u56FA\u5B9A\u5173\u7CFB\u4E0D\u552F\u4E00\uFF0C\u8BF7\u5148\u5728\u7AD9\u70B9\u5904\u7406");
+      const previous = current[0] ?? null;
+      if (previous && typeof previous.fallback !== "boolean") {
+        throw new A6Error("pin-conflict", "\u65E0\u6CD5\u786E\u8BA4\u5DF2\u6709\u56FA\u5B9A\u7684\u667A\u80FD\u515C\u5E95\u8BBE\u7F6E\uFF0C\u672A\u8986\u76D6\u73B0\u6709\u56FA\u5B9A");
+      }
+      const target = {
+        identity: identity2,
+        accountId: String(meta.accountId),
+        siteOrigin: SITE_ORIGIN,
+        tokenId: input2.tokenId,
+        model: input2.model,
+        channelId: input2.channelId,
+        recordId: input2.recordId ?? null,
+        previous,
+        fallback: false,
+        stage: "preparing",
+        createdAt: Date.now()
+      };
+      await this.putLease(key, target);
+      const before = (await this.site.pins()).filter((pin) => pin.tokenId === input2.tokenId && pin.model === input2.model);
+      if (previous ? before.length !== 1 || !this.samePin(before[0], previous) : before.length !== 0) {
+        throw new A6Error("pin-conflict", "\u56FA\u5B9A\u51C6\u5907\u671F\u95F4\u7AD9\u70B9\u5173\u7CFB\u5DF2\u53D8\u5316\uFF0C\u672A\u6267\u884C\u8986\u76D6\u4E14\u4FDD\u7559\u79DF\u7EA6");
+      }
+      assertCurrent();
+      const outcome = await this.site.pin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, fallback: false });
+      if (!outcome.routeEffective) throw new A6Error("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u751F\u6548\uFF1B\u5DF2\u4FDD\u7559\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D");
+      const observed = (await this.site.pins()).filter((pin) => pin.tokenId === input2.tokenId && pin.model === input2.model);
+      const pinned = observed[0];
+      if (observed.length !== 1 || pinned.channelId !== input2.channelId || pinned.fallback !== false || pinned.routeEffective !== true) {
+        throw new A6Error("pin-unverified", "\u56FA\u5B9A\u8BFB\u56DE\u672A\u786E\u8BA4\uFF0C\u5DF2\u4FDD\u7559\u6062\u590D\u79DF\u7EA6");
+      }
+      await this.putLease(key, { ...target, stage: "pinned", supplierId: pinned.supplierId });
+      return { ok: true, result: { verified: true, operation: "pin", tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, target: { tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, supplierId: pinned.supplierId } } };
+    } finally {
+      this.engine.tokenSlots.release(identity2);
+    }
+  }
+  samePin(actual, expected) {
+    return Boolean(actual && expected && actual.channelId === expected.channelId && (expected.supplierId === void 0 || actual.supplierId === expected.supplierId) && (expected.fallback === void 0 || actual.fallback === expected.fallback));
+  }
+  async restoreLease(key, lease) {
+    const pins = (await this.site.pins()).filter((pin) => pin.tokenId === lease.tokenId && pin.model === lease.model);
+    if (pins.length > 1) throw new A6Error("lease-conflict", "\u7AD9\u70B9\u56FA\u5B9A\u5173\u7CFB\u4E0D\u552F\u4E00\uFF0C\u4FDD\u7559\u6062\u590D\u79DF\u7EA6");
+    const current = pins[0] ?? null;
+    if (!current && !lease.previous || this.samePin(current, lease.previous)) {
+      await this.deleteLease(key);
+      return { ok: true, result: { restored: true, operation: "restore", tokenId: lease.tokenId, model: lease.model, channelId: lease.channelId } };
+    }
+    if (!this.samePin(current, lease)) throw new A6Error("lease-conflict", "\u7AD9\u70B9\u56FA\u5B9A\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539\uFF0C\u672A\u8986\u76D6\u4FEE\u6539\u4E14\u4FDD\u7559\u6062\u590D\u79DF\u7EA6");
+    if (lease.previous) {
+      const outcome = await this.site.pin({ tokenId: lease.tokenId, model: lease.model, channelId: lease.previous.channelId, fallback: lease.previous.fallback });
+      if (!outcome.routeEffective) throw new A6Error("restore-unverified", "\u539F\u56FA\u5B9A\u6062\u590D\u672A\u751F\u6548\uFF0C\u4FDD\u7559\u79DF\u7EA6");
+    } else {
+      await this.site.unpin({ tokenId: lease.tokenId, model: lease.model, channelId: lease.channelId });
+    }
+    const after = (await this.site.pins()).filter((pin) => pin.tokenId === lease.tokenId && pin.model === lease.model);
+    if (lease.previous ? after.length !== 1 || !this.samePin(after[0], lease.previous) : after.length !== 0) {
+      throw new A6Error("restore-unverified", "\u6062\u590D\u8BFB\u56DE\u4E0D\u4E00\u81F4\uFF0C\u4FDD\u7559\u79DF\u7EA6");
+    }
+    await this.deleteLease(key);
+    return { ok: true, result: { restored: true, operation: "restore", tokenId: lease.tokenId, model: lease.model, channelId: lease.channelId } };
+  }
   async action(input2) {
+    await this.config();
+    this.assertAvailable();
     const selection = this.selection(input2.selectionId);
+    this.assertAccount(selection);
     if (!selection.tokens.some((token) => token.id === input2.tokenId)) throw new A6Error("token-not-selected", "\u53EA\u80FD\u64CD\u4F5C\u4F60\u9009\u62E9\u7684\u6D4B\u8BD5\u4EE4\u724C");
     if (!selection.models.some((channel) => channel.model === input2.model && channel.channelId === input2.channelId)) {
       throw new A6Error("invalid-selection", "\u76EE\u6807\u4E0D\u5C5E\u4E8E\u5F53\u524D\u5F85\u6D4B\u6E05\u5355");
     }
-    const identity = tokenIdentity(selection, input2.tokenId);
-    if (this.engine.tokenSlots.busy.has(identity)) throw new A6Error("slot-busy", "\u8BE5\u6D4B\u8BD5\u4EE4\u724C\u6B63\u5728\u6267\u884C\u4EFB\u52A1\uFF0C\u8BF7\u7B49\u69FD\u4F4D\u7A7A\u95F2\u540E\u518D\u64CD\u4F5C");
-    await this.engine.tokenSlots.acquire(identity, new AbortController().signal);
-    const key = `${identity}:${input2.model}`;
+    return this.performAction(input2, selection, async () => this.assertAccount(selection));
+  }
+  dispose() {
+    this.disposed = true;
+    this.generation += 1;
+    this.keyCache.clear();
+    this.keyFlights.clear();
+    this.providers.dispose();
+  }
+};
+
+// backend/a6/ledger.js
+import { randomUUID as randomUUID3 } from "node:crypto";
+var DELAYS = [2e3, 5e3, 15e3, 3e4, 6e4, 12e4];
+var number2 = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+var nonnegative = (value) => number2(value) !== null && value >= 0 ? value : null;
+var text3 = (value, max = 256) => typeof value === "string" ? value.slice(0, max) : "";
+var terminalBilling = /* @__PURE__ */ new Set(["reconciled", "ambiguous", "unattributed"]);
+var identity = (origin, account) => JSON.stringify([origin || "https://a6api.vip", String(account ?? "")]);
+var usageOf2 = (usage) => Object.fromEntries(["inputTokens", "outputTokens", "cacheReadTokens"].filter((key) => nonnegative(usage?.[key]) !== null).map((key) => [key, usage[key]]));
+var confirmedBilling = (row) => ["observed", "reconciled"].includes(row.billingState) ? row.billing : null;
+var A6Ledger = class {
+  constructor({ storage, site, onChange } = {}) {
+    this.storage = storage;
+    this.site = site;
+    this.onChange = onChange;
+    this.generation = 0;
+    this.account = null;
+    this.disposed = false;
+    this.authPaused = false;
+    this.timers = /* @__PURE__ */ new Map();
+    this.pending = /* @__PURE__ */ new Map();
+    this.queues = /* @__PURE__ */ new Map();
+    this.removed = /* @__PURE__ */ new Set();
+    this.creating = /* @__PURE__ */ new Set();
+    this.ready = storage.records();
+    this.ready.catch(() => {
+    });
+  }
+  configure({ siteOrigin = "https://a6api.vip", accountId = this.site?.userId } = {}) {
+    this.generation += 1;
+    this.authPaused = false;
+    this.account = identity(siteOrigin, accountId);
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
+    const generation = this.generation;
+    void this.ready.then(async (domain) => {
+      for (const [, row] of domain.table("executions").entries()) {
+        if (!this.current(row, generation)) continue;
+        if (row.state === "dispatching" || row.state === "response-received") await this.change(row.id, generation, (item) => ({ ...item, state: "unknown", finishedAt: item.finishedAt ?? Date.now() }));
+        if (row.requestId && !terminalBilling.has(row.billingState)) this.schedule(row.id, 0, generation);
+      }
+    }).catch(() => {
+    });
+  }
+  current(row, generation = this.generation) {
+    return !this.disposed && generation === this.generation && !this.removed.has(row.recordId) && identity(row.siteOrigin, row.accountId) === (this.account ?? identity(row.siteOrigin, this.site?.userId)) && String(row.accountId) === String(this.site?.userId ?? "");
+  }
+  async change(id2, generation, mutate) {
+    const previous = this.queues.get(id2) ?? Promise.resolve();
+    const next = previous.catch(() => {
+    }).then(async () => {
+      const domain = await this.ready, table = domain.table("executions"), row = table.get(id2);
+      if (!row || !this.current(row, generation) || !domain.table("records").get(row.recordId) || !domain.table("attempts").get(row.attemptId)) return null;
+      const updated = mutate(row);
+      if (!updated) return null;
+      await table.put(id2, updated);
+      try {
+        this.onChange?.(updated);
+      } catch {
+      }
+      return updated;
+    });
+    this.queues.set(id2, next);
     try {
-      const lease = this.manualLeases.get(key);
-      if (input2.operation === "restore") {
-        if (!lease) return { ok: true, result: { skipped: true } };
-        await this.site.unpin({ tokenId: input2.tokenId, model: lease.model, channelId: lease.channelId });
-        this.manualLeases.delete(key);
-        return { ok: true, result: { restored: true, target: lease } };
-      }
-      if (lease) throw new A6Error("already-pinned", "\u8BF7\u5148\u6062\u590D\u672C\u6B21\u624B\u52A8\u56FA\u5B9A\uFF0C\u518D\u9009\u62E9\u5176\u4ED6\u76EE\u6807");
-      if (input2.operation === "pin") {
-        const outcome = await this.site.pin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
-        if (!outcome.routeEffective) throw new A6Error("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u751F\u6548\uFF0C\u8BF7\u68C0\u67E5\u8BE5\u6E20\u9053\u662F\u5426\u53EF\u7528");
-        const target = { tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, supplierId: outcome.supplierId };
-        this.manualLeases.set(key, target);
-        return { ok: true, result: { verified: true, target } };
-      }
-      throw new A6Error("invalid-operation", "\u53EA\u652F\u6301\u56FA\u5B9A\u4E0E\u6062\u590D");
+      return await next;
     } finally {
-      this.engine.tokenSlots.release(identity);
+      if (this.queues.get(id2) === next) this.queues.delete(id2);
     }
+  }
+  async begin(input2) {
+    const generation = this.generation;
+    const domain = await this.ready;
+    const row = {
+      id: `exe-${randomUUID3()}`,
+      recordId: input2.recordId,
+      attemptId: input2.attemptId,
+      jobId: text3(input2.jobId),
+      siteOrigin: input2.siteOrigin || "https://a6api.vip",
+      accountId: String(input2.accountId ?? ""),
+      provider: text3(input2.provider),
+      model: text3(input2.model),
+      tokenId: input2.tokenId,
+      intendedChannelId: input2.intendedChannelId,
+      challengeIndex: input2.challengeIndex,
+      createdAt: Date.now(),
+      dispatchStartedAt: null,
+      finishedAt: null,
+      state: "prepared",
+      requestId: null,
+      httpStatus: null,
+      streamUsage: {},
+      usageState: "missing",
+      billingState: "pending",
+      billing: null,
+      generation
+    };
+    if (!this.current(row, generation) || !domain.table("records").get(row.recordId) || !domain.table("attempts").get(row.attemptId)) return null;
+    row.retryOrdinal = [...domain.table("executions").entries()].filter(([, item]) => item.attemptId === row.attemptId && item.provider === row.provider && item.model === row.model && item.challengeIndex === row.challengeIndex).length;
+    const work = (async () => {
+      await domain.table("executions").put(row.id, row);
+      if (!this.current(row, generation) || !domain.table("records").get(row.recordId) || !domain.table("attempts").get(row.attemptId)) {
+        await domain.table("executions").delete(row.id);
+        return null;
+      }
+      try {
+        this.onChange?.(row);
+      } catch {
+      }
+      return { id: row.id, generation };
+    })();
+    this.creating.add(work);
+    try {
+      return await work;
+    } finally {
+      this.creating.delete(work);
+    }
+  }
+  async dispatch(handle) {
+    if (!handle) return;
+    const row = await this.change(handle.id, handle.generation, (item) => ({ ...item, state: "dispatching", dispatchStartedAt: Date.now() }));
+    if (!row) throw new Error("\u8BF7\u6C42\u8BB0\u5F55\u6216\u8D26\u53F7\u5DF2\u53D8\u66F4\uFF0C\u672A\u53D1\u9001\u91C7\u6837\u8BF7\u6C42");
+  }
+  async metadata(handle, metadata) {
+    if (!handle) return;
+    const updated = await this.change(handle.id, handle.generation, (row) => ({
+      ...row,
+      requestId: text3(metadata.requestId) || null,
+      httpStatus: Number.isInteger(metadata.httpStatus) ? metadata.httpStatus : null,
+      responseReceivedAt: Date.now(),
+      state: "response-received"
+    }));
+    if (!updated?.requestId) return;
+    const domain = await this.ready;
+    const duplicates = [...domain.table("executions").entries()].map(([, row]) => row).filter((row) => row.requestId === updated.requestId && identity(row.siteOrigin, row.accountId) === identity(updated.siteOrigin, updated.accountId));
+    if (duplicates.length > 1) for (const duplicate of duplicates) {
+      await this.change(duplicate.id, handle.generation, (row) => ({ ...row, billingState: "ambiguous", requestIdCollision: true }));
+      clearTimeout(this.timers.get(duplicate.id));
+      this.timers.delete(duplicate.id);
+    }
+  }
+  async finish(handle, { state, finishKind, streamUsage } = {}) {
+    if (!handle) return;
+    const usage = usageOf2(streamUsage);
+    const row = await this.change(handle.id, handle.generation, (item) => ({
+      ...item,
+      state: item.dispatchStartedAt ? state || "ended" : "not-sent",
+      finishKind: text3(finishKind, 80),
+      finishedAt: Date.now(),
+      streamUsage: usage,
+      usageState: Object.keys(usage).length ? "stream" : "missing",
+      billingState: item.requestIdCollision ? "ambiguous" : !item.dispatchStartedAt ? "not-sent" : item.requestId ? "pending" : "unattributed"
+    }));
+    if (row?.requestId && !row.requestIdCollision) this.schedule(row.id, 0, handle.generation);
+  }
+  schedule(id2, index, generation = this.generation, delay = DELAYS[index]) {
+    if (this.disposed || this.authPaused || generation !== this.generation || this.timers.has(id2)) return;
+    if (index >= DELAYS.length) return;
+    const timer = setTimeout(() => {
+      this.timers.delete(id2);
+      void this.reconcile(id2, generation, index).catch(() => {
+      });
+    }, delay);
+    timer.unref?.();
+    this.timers.set(id2, timer);
+  }
+  reconcile(id2, generation = this.generation, index = 0) {
+    const key = `${generation}:${id2}`;
+    if (this.pending.has(key)) return this.pending.get(key);
+    const work = this.query(id2, generation, index).finally(() => {
+      if (this.pending.get(key) === work) this.pending.delete(key);
+    });
+    this.pending.set(key, work);
+    return work;
+  }
+  async query(id2, generation, index) {
+    if (this.authPaused || generation !== this.generation || this.disposed) return;
+    let row = await this.change(id2, generation, (item) => item.requestId && !item.requestIdCollision ? { ...item, billingState: "querying" } : null);
+    if (!row) return;
+    try {
+      const [result, settings] = await Promise.all([this.site.requestLogs(row.requestId), this.site.billingSettings()]);
+      if (!this.current(row, generation)) return;
+      const matching = (result.rows ?? []).filter((log2) => log2.request_id === row.requestId);
+      const relevant = matching.filter((log2) => Number(log2.type) === 2 || Number(log2.type) === 6);
+      const mismatch = matching.some((log2) => String(log2.token_id) !== String(row.tokenId) || log2.model_name !== row.model);
+      const ambiguous = mismatch || relevant.length > 1 || relevant.some((log2) => Number(log2.type) === 6) || result.complete !== true;
+      const log = relevant.length === 1 && Number(relevant[0].type) === 2 && !ambiguous ? relevant[0] : null;
+      let other = log?.other;
+      if (typeof other === "string") {
+        try {
+          other = JSON.parse(other);
+        } catch {
+          other = {};
+        }
+      }
+      const quota = nonnegative(log?.quota), quotaPerUnit = nonnegative(settings?.quotaPerUnit), usdExchangeRate = nonnegative(settings?.usdExchangeRate);
+      const settled = other?.settle_phase === "request_settled";
+      const billing = log ? {
+        quota,
+        quotaPerUnit: quotaPerUnit > 0 ? quotaPerUnit : null,
+        usdExchangeRate,
+        costCny: quota !== null && quotaPerUnit > 0 && usdExchangeRate > 0 ? quota / quotaPerUnit * usdExchangeRate : null,
+        inputTokens: nonnegative(log.prompt_tokens),
+        outputTokens: nonnegative(log.completion_tokens),
+        cacheReadTokens: nonnegative(other?.cache_tokens),
+        actualChannelId: nonnegative(other?.actual_channel_id) ?? nonnegative(log.channel),
+        billedChannelId: nonnegative(other?.billed_channel_id),
+        settlePhase: text3(other?.settle_phase, 80),
+        observedAt: Date.now(),
+        source: "site-log"
+      } : null;
+      row = await this.change(id2, generation, (item) => ({
+        ...item,
+        billingState: item.requestIdCollision || ambiguous ? "ambiguous" : billing ? settled ? "reconciled" : "observed" : index + 1 >= DELAYS.length ? "deferred" : "not-found-yet",
+        ...billing ? { billing: item.billing?.quotaPerUnit > 0 && item.billing?.usdExchangeRate > 0 ? {
+          ...billing,
+          quotaPerUnit: item.billing.quotaPerUnit,
+          usdExchangeRate: item.billing.usdExchangeRate,
+          costCny: billing.quota !== null ? billing.quota / item.billing.quotaPerUnit * item.billing.usdExchangeRate : null
+        } : billing } : {},
+        billingCheckedAt: Date.now(),
+        billingError: null,
+        channelMismatch: billing?.actualChannelId != null ? billing.actualChannelId !== item.intendedChannelId : item.channelMismatch ?? false
+      }));
+      if (row && !terminalBilling.has(row.billingState)) this.schedule(id2, index + 1, generation);
+    } catch (error) {
+      const auth = /auth|401|403/.test(String(error?.code ?? ""));
+      if (auth && this.current(row, generation)) {
+        this.authPaused = true;
+        for (const timer of this.timers.values()) clearTimeout(timer);
+        this.timers.clear();
+      }
+      row = await this.change(id2, generation, (item) => ({ ...item, billingState: item.requestIdCollision ? "ambiguous" : auth ? "unavailable" : index + 1 >= DELAYS.length ? "deferred" : "not-found-yet", billingError: auth ? "auth" : "query-failed", billingCheckedAt: Date.now() }));
+      if (row && !auth && !terminalBilling.has(row.billingState)) this.schedule(id2, index + 1, generation, Math.max(DELAYS[index + 1] ?? 0, nonnegative(error?.retryAfterMs) ?? 0));
+    }
+  }
+  async view({ attemptId, recordId, refresh = false } = {}) {
+    const domain = await this.ready;
+    const attempts = [...domain.table("attempts").entries()].map(([, item]) => item).filter((item) => (!attemptId || item.id === attemptId) && (!recordId || item.recordId === recordId));
+    const ids = new Set(attempts.map((item) => item.id));
+    const rows = [...domain.table("executions").entries()].map(([, item]) => item).filter((row) => ids.has(row.attemptId) && row.dispatchStartedAt != null);
+    if (refresh) {
+      for (const row of rows) if (this.current(row) && row.requestId && !row.requestIdCollision) {
+        clearTimeout(this.timers.get(row.id));
+        this.timers.delete(row.id);
+        void this.reconcile(row.id).catch(() => {
+        });
+      }
+    }
+    const legacy = attempts.some((attempt) => attempt.ledgerVersion !== 1);
+    const billed = rows.filter((row) => row.billing?.costCny != null && ["observed", "reconciled"].includes(row.billingState));
+    const tokenRows = rows.map((row) => ({ input: confirmedBilling(row)?.inputTokens ?? row.streamUsage?.inputTokens, output: confirmedBilling(row)?.outputTokens ?? row.streamUsage?.outputTokens }));
+    const sum = (key) => {
+      const known = tokenRows.map((row) => nonnegative(row[key])).filter((value) => value !== null);
+      return known.length ? known.reduce((a, b) => a + b, 0) : null;
+    };
+    return {
+      executions: rows.map(({ generation, ...row }) => ({
+        ...row,
+        inputTokens: confirmedBilling(row)?.inputTokens ?? row.streamUsage?.inputTokens ?? null,
+        outputTokens: confirmedBilling(row)?.outputTokens ?? row.streamUsage?.outputTokens ?? null,
+        costCny: confirmedBilling(row)?.costCny ?? null,
+        usageState: confirmedBilling(row) ? "billing" : row.usageState,
+        accountState: this.current(row) ? "current" : "historical"
+      })),
+      summary: {
+        requestCount: legacy && !rows.length ? null : rows.length,
+        knownCostCny: billed.length ? billed.reduce((sum2, row) => sum2 + row.billing.costCny, 0) : null,
+        billedCount: billed.length,
+        pendingCount: rows.length - rows.filter((row) => row.billingState === "reconciled").length,
+        inputTokens: sum("input"),
+        outputTokens: sum("output"),
+        coverage: {
+          legacy,
+          requestIdCount: rows.filter((row) => row.requestId).length,
+          billingCompleteCount: rows.filter((row) => row.billingState === "reconciled").length,
+          usageCount: tokenRows.filter((row) => nonnegative(row.input) !== null && nonnegative(row.output) !== null).length,
+          inputCount: tokenRows.filter((row) => nonnegative(row.input) !== null).length,
+          outputCount: tokenRows.filter((row) => nonnegative(row.output) !== null).length,
+          unattributedCount: rows.filter((row) => !row.requestId).length,
+          ambiguousCount: rows.filter((row) => row.billingState === "ambiguous").length
+        }
+      }
+    };
+  }
+  async removeRecord(recordId) {
+    this.removed.add(recordId);
+    await Promise.allSettled([...this.creating]);
+    const domain = await this.ready;
+    const ids = [...domain.table("executions").entries()].filter(([, row]) => row.recordId === recordId).map(([id2]) => id2);
+    for (const id2 of ids) {
+      clearTimeout(this.timers.get(id2));
+      this.timers.delete(id2);
+    }
+    await Promise.allSettled(ids.map((id2) => this.queues.get(id2)));
+    await domain.table("executions").deleteMany(ids);
+  }
+  async dispose() {
+    this.disposed = true;
+    this.generation += 1;
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
+    await Promise.allSettled([...this.creating, ...this.queues.values(), ...this.pending.values()]);
+    this.pending.clear();
   }
 };
 
@@ -2044,24 +3165,35 @@ function apply(ctx) {
   ctx.effect(() => intake.mount(ctx.webServer), "model-intelligence.a6-intake");
   let records;
   let a6;
+  const ledger = new A6Ledger({ storage, site, onChange: () => records?.bump() });
+  site.onConfigure = (meta) => {
+    ledger.configure(meta);
+    a6?.invalidateProviders();
+  };
   const engine = new FingerprintEngine(ctx, {
+    ledger,
     onTouch: (job) => records?.onTouch(job),
     onSettled: (job) => records?.onSettled(job),
     // The engine talks to a6api through these three calls only; it never sees credential storage.
     a6: {
+      assertSlot: (tokenId, meta) => a6.assertTestSlot(tokenId, meta),
       pin: (target) => a6.site.pin(target),
       unpin: (target) => a6.site.unpin(target),
       key: (tokenId) => a6.key(tokenId)
     }
   });
-  records = new RecordsService(ctx, storage, engine);
+  records = new RecordsService(ctx, storage, engine, { ledger });
   a6 = new A6Service({ ctx, storage, intake, site, records, engine });
+  for (const event of ["llm/adapters-updated", "credentials/reference-updated", "settings/document-updated"]) {
+    ctx.on(event, () => a6.invalidateProviders());
+  }
   ctx.effect(() => () => {
-    records.dispose();
+    a6.dispose();
     engine.dispose();
-    void storage.close();
+    site.dispose();
+    void Promise.all([records.dispose(), ledger.dispose()]).finally(() => storage.close());
   }, "model-intelligence.lifecycle");
-  new ModelIntelligenceService(ctx, { engine, records, a6 });
+  new ModelIntelligenceService(ctx, { engine, records, a6, ledger });
   ctx.effect(() => ctx.typert.register(hostContribution), "model-intelligence.remote-contract");
 }
 export {

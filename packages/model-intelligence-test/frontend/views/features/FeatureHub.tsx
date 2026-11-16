@@ -1,6 +1,7 @@
 import React,{ useStore } from '../../runtime';
 import type { Workbench } from '../../types';
 import { Icon } from '../../components/common';
+import {ProviderManager} from '../a6/ProviderManager';
 
 /** Credential setup for a6api. Everything here runs on the Host; the browser only sends selections. */
 export function FeatureHub({ store }: { store: Workbench }) {
@@ -21,6 +22,7 @@ export function FeatureHub({ store }: { store: Workbench }) {
         {config?.configured&&<p className="mit-muted" role="status">已连接：账号 {config.userId} · 访问令牌 {config.mask}</p>}
         {a6.configError&&<p className="mit-error" role="alert">{a6.configError}</p>}
         {a6.configFeedback&&<p className="mit-muted" role="status">{a6.configFeedback}</p>}
+        <ProviderManager store={store} />
         <div className="mit-a6-intake">
           <div className="mit-label-row"><strong>油猴接入</strong><button type="button" className="mit-text-button" disabled={a6.rotating} onClick={store.actions.rotateA6Intake}>{a6.rotating? '更换中…':'更换导入口令'}</button></div>
           <p className="mit-muted">点下面的链接，油猴会自己记住接入点并从地址栏抹掉口令；之后在 a6api 页面勾选渠道直接发送即可。</p>

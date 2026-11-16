@@ -11,6 +11,7 @@
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { A6Error } from './errors.js';
+import { marketOf } from '../../shared/market.js';
 
 const PATH = '/mit-a6/select';
 const SITE_ORIGINS = new Set(['https://a6api.vip', 'https://www.a6api.vip']);
@@ -39,6 +40,7 @@ export function channelOf(item) {
     supplierName: text(item?.supplierName),
     channelName: text(item?.channelName),
     brand: text(item?.brand),
+    ...(marketOf(item?.market) ? { market: marketOf(item.market) } : {}),
   };
 }
 export function channelKey(item) {

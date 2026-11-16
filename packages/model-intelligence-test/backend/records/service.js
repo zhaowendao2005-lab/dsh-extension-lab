@@ -45,10 +45,13 @@ function summaryOf(view) {
 }
 
 export class RecordsService {
-  constructor(ctx, storage, engine) {
+  constructor(ctx, storage, engine, { ledger = engine.hooks?.ledger } = {}) {
     this.ctx = ctx;
     this.storage = storage;
     this.engine = engine;
+    this.ledger = ledger;
+    this.removing = new Set();
+    this.writes = new Map();
     this.revision = 1;
     this.byJob = new Map();     // jobId -> attemptId
     this.timers = new Map();    // attemptId -> persistence timer
@@ -74,6 +77,22 @@ export class RecordsService {
   }
   bump() { this.revision += 1; }
 
+  async put(domain, table, id, value) {
+    const recordId = table === 'records' ? id : value.recordId;
+    if (this.disposed || this.removing.has(recordId)) return;
+    const writes = this.writes.get(recordId) ?? new Set();
+    this.writes.set(recordId, writes);
+    const work = Promise.resolve().then(() => {
+      if (this.disposed || this.removing.has(recordId)) return;
+      return domain.table(table).put(id, value);
+    });
+    writes.add(work);
+    try { return await work; } finally {
+      writes.delete(work);
+      if (!writes.size && this.writes.get(recordId) === writes) this.writes.delete(recordId);
+    }
+  }
+
   // ---- engine hooks -------------------------------------------------------------------------
   onTouch(job) {
     const attemptId = this.byJob.get(job.id);
@@ -94,11 +113,11 @@ export class RecordsService {
     const domain = await this.ready;
     const table = domain.table('attempts');
     const attempt = table.get(attemptId);
-    if (!attempt) return;
+    if (!attempt || this.disposed || this.removing.has(attempt.recordId)) return;
     let view;
     try { view = this.engine.status(jobId); } catch { return; }
     const status = settled ? (view.status === 'cancelled' ? 'cancelled' : view.status === 'failed' ? 'failed' : 'done') : 'running';
-    await table.put(attemptId, { ...attempt, status, view, finishedAt: settled ? view.finishedAt ?? Date.now() : null });
+    await this.put(domain, 'attempts', attemptId, { ...attempt, status, view, finishedAt: settled ? view.finishedAt ?? Date.now() : null });
     this.bump();
   }
 
@@ -155,7 +174,7 @@ export class RecordsService {
       footerVersion: short(input.footerVersion, 40), preset: input.preset ? clean(input.preset) : null,
       ...(input.a6api ? { a6api: clean(input.a6api) } : {}),
     };
-    await records.put(record.id, record);
+    await this.put(domain, 'records', record.id, record);
     this.bump();
     const attempt = kind === 'fingerprint' ? await this.launch(record) : null;
     return { record, attemptId: attempt?.id ?? null };
@@ -177,8 +196,9 @@ export class RecordsService {
     const existing = [...attempts.entries()].map(([, item]) => item).filter(item => item.recordId === record.id);
     const number = existing.reduce((max, item) => Math.max(max, item.number), 0) + 1;
     const busy = existing.some(item => ACTIVE.has(item.status));
-    const attempt = { id: `att-${randomUUID()}`, recordId: record.id, number, status: 'queued', createdAt: Date.now(), startedAt: null, finishedAt: null, jobId: null, view: null, error: null };
-    await attempts.put(attempt.id, attempt);
+    const attempt = { id: `att-${randomUUID()}`, recordId: record.id, number, status: 'queued', createdAt: Date.now(), startedAt: null, finishedAt: null, jobId: null, view: null, error: null,
+      ...(this.ledger && record.a6api ? { ledgerVersion: 1 } : {}) };
+    await this.put(domain, 'attempts', attempt.id, attempt);
     this.bump();
     if (!busy) await this.begin(attempt.id);
     return attempts.get(attempt.id);
@@ -189,14 +209,19 @@ export class RecordsService {
     const attempts = domain.table('attempts');
     const attempt = attempts.get(attemptId);
     const record = attempt && domain.table('records').get(attempt.recordId);
-    if (!attempt || !record || attempt.status !== 'queued') return;
+    if (!attempt || !record || attempt.status !== 'queued' || this.disposed || this.removing.has(record.id)) return;
     try {
-      const view = await this.engine.start(record.models.map(model => ({ provider: model.provider, id: model.id, ...(model.relay ? { relay: model.relay } : {}), ...(model.a6api ? { a6api: model.a6api } : {}) })), record.options, record.a6api ?? null);
+      const view = await this.engine.start(record.models.map(model => ({ provider: model.provider, id: model.id, ...(model.relay ? { relay: model.relay } : {}), ...(model.a6api ? { a6api: model.a6api } : {}) })), record.options, record.a6api ?? null, { recordId: record.id, attemptId });
+      if (this.disposed || this.removing.has(record.id) || !attempts.get(attemptId) || !domain.table('records').get(record.id) || attempts.get(attemptId).status !== 'queued') {
+        if (this.engine.has(view.id)) this.engine.cancel(view.id);
+        return;
+      }
       this.byJob.set(view.id, attemptId);
-      await attempts.put(attemptId, { ...attempts.get(attemptId), status: 'running', jobId: view.id, startedAt: Date.now(), view });
+      await this.put(domain, 'attempts', attemptId, { ...attempts.get(attemptId), status: 'running', jobId: view.id, startedAt: Date.now(), view });
     } catch (error) {
+      if (this.disposed || this.removing.has(record.id) || !attempts.get(attemptId) || attempts.get(attemptId).status !== 'queued') return;
       const message = error instanceof FingerprintError ? error.message : '指纹服务执行失败，请稍后重试。';
-      await attempts.put(attemptId, { ...attempts.get(attemptId), status: 'failed', finishedAt: Date.now(), error: message });
+      await this.put(domain, 'attempts', attemptId, { ...attempts.get(attemptId), status: 'failed', finishedAt: Date.now(), error: message });
       void this.startNextQueued(attemptId);
     }
     this.bump();
@@ -206,7 +231,7 @@ export class RecordsService {
     if (this.disposed) return;
     const domain = await this.ready;
     const recordId = domain.table('attempts').get(attemptId)?.recordId;
-    if (!recordId) return;
+    if (!recordId || this.disposed || this.removing.has(recordId)) return;
     const all = [...domain.table('attempts').entries()].map(([, item]) => item).filter(item => item.recordId === recordId);
     if (all.some(item => item.status === 'running')) return;
     const next = all.filter(item => item.status === 'queued').sort((a, b) => a.number - b.number)[0];
@@ -224,7 +249,7 @@ export class RecordsService {
     const attempt = await this.liveJob(attemptId);
     const domain = await this.ready;
     if (attempt.status === 'queued') {
-      await domain.table('attempts').put(attemptId, { ...attempt, status: 'cancelled', finishedAt: Date.now() });
+      await this.put(domain, 'attempts', attemptId, { ...attempt, status: 'cancelled', finishedAt: Date.now() });
       this.bump();
     } else if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.cancel(attempt.jobId);
     return this.attempt(attemptId);
@@ -235,7 +260,7 @@ export class RecordsService {
     const records = domain.table('records');
     const record = records.get(attempt.recordId);
     // Options are a record-level setting: future re-requests inherit the latest values.
-    if (record) await records.put(record.id, { ...record, options: { ...record.options, ...clean(options) } });
+    if (record) await this.put(domain, 'records', record.id, { ...record, options: { ...record.options, ...clean(options) } });
     if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.configure(attempt.jobId, options);
     this.bump();
     return this.attempt(attemptId);
@@ -245,15 +270,23 @@ export class RecordsService {
     if (!attempt.jobId || !this.engine.has(attempt.jobId)) throw new FingerprintError('expired', '该请求已不在内存中（运行时重启或已过期），请使用「再次请求」');
     this.engine.retry(attempt.jobId, model);
     const domain = await this.ready;
-    await domain.table('attempts').put(attemptId, { ...domain.table('attempts').get(attemptId), status: 'running', finishedAt: null });
+    await this.put(domain, 'attempts', attemptId, { ...domain.table('attempts').get(attemptId), status: 'running', finishedAt: null });
     this.bump();
     return this.attempt(attemptId);
   }
 
   async remove(recordId) {
     const domain = await this.domain();
+    this.removing.add(recordId);
+    await Promise.allSettled([...(this.writes.get(recordId) ?? [])]);
     const attempts = [...domain.table('attempts').entries()].map(([, item]) => item).filter(item => item.recordId === recordId);
-    for (const attempt of attempts) if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.cancel(attempt.jobId);
+    // Invalidate billing before aborting sampling, so its finally/late HTTP callbacks cannot write.
+    await this.ledger?.removeRecord(recordId);
+    for (const attempt of attempts) {
+      clearTimeout(this.timers.get(attempt.id)); this.timers.delete(attempt.id);
+      if (attempt.jobId) this.byJob.delete(attempt.jobId);
+      if (attempt.jobId && this.engine.has(attempt.jobId)) this.engine.cancel(attempt.jobId);
+    }
     await domain.table('attempts').deleteMany(attempts.map(item => item.id));
     await domain.table('records').delete(recordId);
     this.bump();
@@ -274,14 +307,15 @@ export class RecordsService {
     const existing = [...attempts.entries()].map(([, item]) => item).find(item => item.recordId === recordId);
     const attempt = existing ?? { id: `att-${randomUUID()}`, recordId, number: 1, createdAt: Date.now(), startedAt: Date.now(), jobId: null, view: null, error: null };
     const runs = Array.isArray(snapshot?.runs) ? clean(snapshot.runs).slice(0, 64) : [];
-    await attempts.put(attempt.id, { ...attempt, status: snapshot?.ended ? 'done' : 'running', finishedAt: snapshot?.ended ? Date.now() : null, custom: { runs } });
+    await this.put(domain, 'attempts', attempt.id, { ...attempt, status: snapshot?.ended ? 'done' : 'running', finishedAt: snapshot?.ended ? Date.now() : null, custom: { runs } });
     this.bump();
     return { attemptId: attempt.id };
   }
 
-  dispose() {
+  async dispose() {
     this.disposed = true;
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    await Promise.allSettled([...this.writes.values()].flatMap(writes => [...writes]));
   }
 }

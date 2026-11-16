@@ -86,30 +86,36 @@ function stopReason(value) {
 function usageOf(payload, api) {
   const raw = api === 'messages' ? payload?.usage ?? payload?.message?.usage : payload?.usage;
   if (!raw) return null;
-  const inputTokens = Number(raw.input_tokens ?? raw.prompt_tokens ?? 0);
-  const outputTokens = Number(raw.output_tokens ?? raw.completion_tokens ?? 0);
-  if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) return null;
-  const cacheReadTokens = Number(raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens ?? 0);
-  const reasoningTokens = Number(raw.output_tokens_details?.reasoning_tokens ?? 0);
-  return {
-    inputTokens, outputTokens,
-    ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
-    ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
-  };
+  const amount = value => value === undefined || value === null ? NaN : Number(value);
+  const inputTokens = amount(raw.input_tokens ?? raw.prompt_tokens);
+  const outputTokens = amount(raw.output_tokens ?? raw.completion_tokens);
+  const cacheReadTokens = amount(raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens);
+  const reasoningTokens = amount(raw.output_tokens_details?.reasoning_tokens);
+  const usage = Object.fromEntries(Object.entries({ inputTokens, outputTokens, cacheReadTokens, reasoningTokens })
+    .filter(([, value]) => Number.isFinite(value) && value >= 0));
+  return Object.keys(usage).length ? usage : null;
 }
 
 /**
  * Stream one prompt and yield DSH chunks. HTTP and transport failures throw {@link ChannelError};
  * provider-reported stream errors arrive as a `finish` chunk with `reason.failure`.
  */
-export async function* openChannelStream({ key, model, prompt, api = 'chat', signal }) {
+export async function* openChannelStream({ key, model, prompt, api = 'chat', signal, onDispatch, onMetadata, onUsage, fetchImpl = globalThis.fetch }) {
   const spec = build(api, { key, model, prompt });
   let response;
   try {
-    response = await fetch(spec.url, { method: 'POST', headers: spec.headers, body: JSON.stringify(spec.body), signal });
+    signal?.throwIfAborted();
+    await onDispatch?.();
+    response = await fetchImpl(spec.url, { method: 'POST', headers: spec.headers, body: JSON.stringify(spec.body), signal });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new ChannelError('无法连接 a6api', { message: error?.message ?? 'network error', code: 'network', status: undefined });
+  }
+  // Persist response identity before inspecting an HTTP error or consuming the stream.
+  try { await onMetadata?.({ requestId: response.headers?.get?.('X-Oneapi-Request-Id') || null, httpStatus: response.status }); }
+  catch (error) {
+    try { await response.body?.cancel?.(); } catch { /* drain ownership ends even if the peer has closed */ }
+    throw error;
   }
   if (!response.ok || !response.body) {
     let body = '';
@@ -137,7 +143,8 @@ export async function* openChannelStream({ key, model, prompt, api = 'chat', sig
       } else if (payload.type === 'error') {
         failure = { message: String(payload.error?.message ?? 'stream error').slice(0, 300), code: String(payload.error?.type ?? 'stream_error') };
       }
-      usage = usageOf(payload, 'messages') ?? usage;
+      const partial = usageOf(payload, 'messages');
+      if (partial) { usage = { ...usage, ...partial }; onUsage?.(usage); }
       continue;
     }
     if (payload.error) { failure = { message: String(payload.error.message ?? 'stream error').slice(0, 300), code: String(payload.error.code ?? payload.error.type ?? 'stream_error') }; continue; }
@@ -146,7 +153,8 @@ export async function* openChannelStream({ key, model, prompt, api = 'chat', sig
     if (typeof reasoning === 'string' && reasoning) yield { type: 'reasoning-delta', index: REASONING, text: reasoning };
     if (typeof choice?.delta?.content === 'string' && choice.delta.content) { sawText = true; yield { type: 'text-delta', index: TEXT, text: choice.delta.content }; }
     if (choice?.finish_reason) reason = stopReason(choice.finish_reason);
-    usage = usageOf(payload, 'chat') ?? usage;
+    const partial = usageOf(payload, 'chat');
+    if (partial) { usage = { ...usage, ...partial }; onUsage?.(usage); }
   }
   if (usage) yield { type: 'usage', usage };
   yield { type: 'finish', reason: failure ? { kind: 'error', failure } : { kind: reason } };

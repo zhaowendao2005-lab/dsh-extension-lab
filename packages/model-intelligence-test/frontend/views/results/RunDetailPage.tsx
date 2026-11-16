@@ -32,7 +32,7 @@ export function RunDetailPage({ store,recordId,runId }: {
       </button>
       {attempt&&<>
         <Icon name="chevron" size={12} />
-        <button type="button" className="mit-text-button mit-tabular" onClick={back}>请求 #{attempt.number}
+        <button type="button" className="mit-text-button mit-tabular" onClick={back}>测试轮次 #{attempt.number}
         </button>
       </>}
       <Icon name="chevron" size={12} />
@@ -46,14 +46,14 @@ export function RunDetailPage({ store,recordId,runId }: {
           {model}
         </h2>
         <p className="mit-muted">
-          {provider} · {record.a6api? 'a6api 专项 · DSH 提供商调用':run.model.relay? `${run.model.relay.api} 接口 · 历史渠道记录`:run.model.id}
-          {attempt? ` · 请求 #${attempt.number}`:''}
+          {provider} · {record.a6api? 'a6api 专项 · Host 直连采样':run.model.relay? `${run.model.relay.api} 接口 · 历史渠道记录`:run.model.id}
+          {attempt? ` · 测试轮次 #${attempt.number}`:''}
         </p>
       </div>
       <button type="button" className="mit-text-button" onClick={back}>返回模型列表
       </button>
     </header>
-    {attempt?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，请求已中断。</p>}
+    {attempt?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，测试轮次已中断。</p>}
     {record.a6api&&<p className="mit-attempt-note" role="status">
       {run.slotTokenId? `测试令牌 #${run.slotTokenId}`:'等待槽位分配'}
       {run.callProvider? ` · DSH 提供商 ${run.callProvider}`:''}

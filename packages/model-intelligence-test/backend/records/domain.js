@@ -16,6 +16,7 @@ export const recordsDomain = defineDomain({
   tables: {
     records: domainTable(identified),
     attempts: domainTable(z.object({ id: z.string().min(1), recordId: z.string().min(1) }).passthrough()),
+    executions: domainTable(z.object({ id: z.string().min(1), recordId: z.string().min(1), attemptId: z.string().min(1) }).passthrough()),
   },
 });
 

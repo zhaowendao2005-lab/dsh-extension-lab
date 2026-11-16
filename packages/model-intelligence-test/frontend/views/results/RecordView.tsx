@@ -5,6 +5,8 @@ import { MenuSelect } from '../../components/MenuSelect';
 import type { MenuOption } from '../../components/MenuSelect';
 import { FingerprintConfigPanel } from './FingerprintConfigPanel';
 import { MonitorTable } from '../monitor/MonitorTable';
+import {LedgerOverview} from '../a6/LedgerOverview';
+import {ProviderManager} from '../a6/ProviderManager';
 import { endedRunIds,isEndedStage } from './runOrder';
 import { ATTEMPT_STATUS_LABELS,currentAttempt,modelLabel,providerLabel } from './modelLabel';
 
@@ -67,7 +69,7 @@ function Breadcrumb({ record }: {
     </span>
     {attempt&&<>
       <Icon name="chevron" size={12} />
-      <span aria-current="page" className="mit-tabular">请求 #{attempt.number}</span>
+      <span aria-current="page" className="mit-tabular">测试轮次 #{attempt.number}</span>
     </>}
   </nav>;
 }
@@ -80,23 +82,23 @@ function AttemptBar({ store,record }: {
   const busy=attempts.some(attempt => attempt.status==='running'||attempt.status==='queued');
   const custom=record.kind==='custom';
   return <div className="mit-attempt-bar">
-    <span className="mit-attempt-label">请求</span>
-    <div className="mit-attempt-chips" role="tablist" aria-label="请求记录">
+    <span className="mit-attempt-label">测试轮次</span>
+    <div className="mit-attempt-chips" role="tablist" aria-label="测试轮次记录">
       {attempts.map(attempt => {
         const active=attempt.id===selected?.id;
         const summary=attempt.summary;
-        return <button key={attempt.id} type="button" role="tab" aria-selected={active} className={`mit-attempt-chip is-${attempt.status}${active? ' is-active':''}`} title={attempt.error??`请求 #${attempt.number} · ${ATTEMPT_STATUS_LABELS[attempt.status]}`} onClick={() => store.actions.selectAttempt(record.id,attempt.id)}>
+        return <button key={attempt.id} type="button" role="tab" aria-selected={active} className={`mit-attempt-chip is-${attempt.status}${active? ' is-active':''}`} title={attempt.error??`测试轮次 #${attempt.number} · ${ATTEMPT_STATUS_LABELS[attempt.status]}`} onClick={() => store.actions.selectAttempt(record.id,attempt.id)}>
           <strong className="mit-tabular">#{attempt.number}</strong>
           <span className="mit-attempt-status">{ATTEMPT_STATUS_LABELS[attempt.status]}</span>
           {summary&&<small className="mit-tabular">{summary.ended}/{summary.total}{summary.failed? ` · ${summary.failed} 失败`:''}</small>}
         </button>;
       })}
-      {!attempts.length&&<span className="mit-muted">暂无请求</span>}
+      {!attempts.length&&<span className="mit-muted">暂无测试轮次</span>}
     </div>
     <div className="mit-attempt-actions">
-      {busy&&!custom&&<span className="mit-muted">将排队，在当前请求结束后开始</span>}
-      <button type="button" className="mit-button" disabled={custom} title={custom? '自定义 Mock 测试不支持再次请求':'使用相同模型集合再次请求'} onClick={() => store.actions.rerunRecord(record.id)}>
-        <Icon name="refresh" size={14} />再次请求
+      {busy&&!custom&&<span className="mit-muted">将排队，在当前测试轮次结束后开始</span>}
+      <button type="button" className="mit-button" disabled={custom} title={custom? '自定义 Mock 测试不支持再次测试':'使用相同模型集合再次测试'} onClick={() => store.actions.rerunRecord(record.id)}>
+        <Icon name="refresh" size={14} />再次测试
       </button>
     </div>
   </div>;
@@ -184,17 +186,18 @@ export function RecordView({ store,id }: {
       </div>
       <Breadcrumb record={record} />
       <AttemptBar store={store} record={record} />
-      {currentAttempt(record.attempts??[],record.attemptId)?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，请求已中断。</p>}
+      {currentAttempt(record.attempts??[],record.attemptId)?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，测试轮次已中断。</p>}
       <RecordSummary store={store} record={record} />
       {record.kind==='fingerprint'&&<div className="mit-reference-meta">
         <dl>
           <div><dt>任务状态</dt><dd>{record.fingerprint? ({ starting: '准备参考库与挑战',running: '真实采样中',done: '任务已结束',cancelled: '已取消',failed: '任务失败' }[record.fingerprint.status]):'指纹元数据不可用'}</dd></div>
           <div><dt>参考库版本</dt><dd>{record.fingerprint?.reference?.builtAt||'尚未取得'}</dd></div>
           <div><dt>分析 SDK</dt><dd>{record.fingerprint?.reference?.sdk||'等待加载 lmfpd-sdk'}</dd></div>
-          <div><dt>共享挑战</dt><dd>{record.fingerprint?.challenges.length??0}/3 条 · 每模型 3 次真实请求</dd></div>
+          <div><dt>共享挑战</dt><dd>{record.fingerprint?.challenges.length??0}/3 条 · 每模型 3 条并行挑战{record.a6api? '（实际请求数见台账）':''}</dd></div>
         </dl>
         {record.fingerprint?.error&&<div className="mit-error-box" role="alert"><strong>任务或连接信息</strong><p>{record.fingerprint.error}</p></div>}
       </div>}
+      {record.a6api&&<><LedgerOverview store={store} record={record} /><ProviderManager store={store} /></>}
       <div className="mit-record-toolbar">
         <div className="mit-record-controls">
           <MenuSelect label="查看" value={mode} options={VIEW_OPTIONS} open={viewOpen} onToggle={store.actions.toggleView} onClose={store.actions.toggleView} onChange={value => store.actions.navigate({ mode: value })} />

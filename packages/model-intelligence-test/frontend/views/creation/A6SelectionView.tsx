@@ -2,6 +2,7 @@ import React,{ useStore } from '../../runtime';
 import type { Workbench } from '../../types';
 import { a6ChannelKey } from '../../stores/a6api.stores';
 import { Empty,Icon } from '../../components/common';
+import {MarketPrice,MarketCache} from '../a6/MarketSnapshot';
 
 /** Opened from a selection the userscript pushed; the Host owns every a6api call from here on. */
 export function A6SelectionView({store,selectionId}: {store: Workbench; selectionId: string}) {
@@ -31,13 +32,14 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
         {count>64&&<p className="mit-error" role="alert">清单超过 64 项，请移除多余渠道后开始。</p>}
         <div className="mit-a6-channel-list">{draft.models.map(row => <div className="mit-a6-channel-row" key={a6ChannelKey(row)}>
           <div><strong>{row.model}</strong><span className="mit-muted">{row.supplierName||`供应商 #${row.supplierId}`} · {row.channelName||`渠道 #${row.channelId}`}{row.channelName? ` (#${row.channelId})`:''}{row.brand? ` · ${row.brand}`:''}</span></div>
+          <div className="mit-a6-channel-market"><MarketPrice market={row.market} /><MarketCache market={row.market} /></div>
           <button type="button" className="mit-icon-button" disabled={busy} aria-label={`移除 ${row.model} 渠道 ${row.channelId}`} onClick={() => store.actions.removeA6Model(selectionId,a6ChannelKey(row))}><Icon name="close" size={14} /></button>
         </div>)}</div>
         {!count&&<p className="mit-muted">清单已清空。请从 a6api 网页发送新的选择。</p>}
       </section>
       <section className="mit-a6-section" aria-labelledby={`${base}-slots`}>
         <div className="mit-label-row"><h3 id={`${base}-slots`}>测试令牌与并发槽</h3><span className="mit-muted">{slots} 槽</span></div>
-        <p className="mit-muted">每个勾选的令牌是一个并发槽位，同一时刻只会固定一个渠道；令牌密钥由 Host 直接向 a6api 换取，页面与浏览器都拿不到。</p>
+        <p className="mit-muted">每个勾选的令牌是一个并发槽位，同一时刻只会固定一个渠道。请使用专用测试令牌；若已有日常固定或本插件手动固定，先解除固定或改选其他令牌再开始。</p>
         <div className="mit-a6-slots">{selection.tokens.map(token => {
           const checked=draft.tokens.includes(token.id);
           const order=draft.tokens.indexOf(token.id);

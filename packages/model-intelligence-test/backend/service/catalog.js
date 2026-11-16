@@ -26,6 +26,7 @@ export class ModelIntelligenceService extends Service {
     this.engine = deps.engine;
     this.records = deps.records;
     this.a6 = deps.a6;
+    this.ledger = deps.ledger;
     this.typertRemote = bindTypertRemote(this, 'modelIntelligence');
     for (const initialize of remoteInitializers) initialize.call(this);
   }
@@ -38,8 +39,8 @@ export class ModelIntelligenceService extends Service {
   recordsList(request) { return this.guard(() => this.records.list(request?.revision)); }
   recordCreate(request) { return this.guard(() => this.records.create(request)); }
   recordRerun(request) { return this.guard(() => this.records.rerun(request.recordId)); }
-  recordDelete(request) { return this.guard(() => this.records.remove(request.recordId)); }
-  recordsClear() { return this.guard(() => this.records.clear()); }
+  recordDelete(request) { return this.guard(() => this.a6.removeRecord(request.recordId)); }
+  recordsClear() { return this.guard(() => this.a6.clearRecords()); }
   attemptView(request) { return this.guard(() => this.records.attempt(request.attemptId, request.revision)); }
   attemptCancel(request) { return this.guard(() => this.records.cancel(request.attemptId)); }
   attemptConfigure(request) { return this.guard(() => this.records.configure(request.attemptId, { concurrency: request.concurrency, timeoutMs: request.timeoutMs })); }
@@ -54,6 +55,14 @@ export class ModelIntelligenceService extends Service {
   a6Selections(request) { return this.guard(() => this.a6.selections(request)); }
   a6Create(request) { return this.guard(() => this.a6.create(request)); }
   a6Action(request) { return this.guard(() => this.a6.action(request)); }
+  a6ProviderState(request) { return this.guard(async () => { await this.a6.config(); return this.a6.providerState(request ?? {}); }); }
+  a6ProviderConfigure(request) { return this.guard(async () => { await this.a6.config(); return this.a6.providerConfigure(request); }); }
+  a6TargetSave(request) { return this.guard(() => this.a6.targetSave(request)); }
+  a6ResultAction(request) { return this.guard(() => this.a6.resultAction(request)); }
+  a6LedgerView(request) { return this.guard(async () => {
+    await this.a6.config();
+    return this.ledger.view(request);
+  }); }
 
   // ---- DSH model catalog ---------------------------------------------------------------------
   async catalog() {
@@ -94,6 +103,7 @@ export const REMOTE_METHODS = [
   'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear',
   'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
   'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6Action',
+  'a6ProviderState', 'a6ProviderConfigure', 'a6TargetSave', 'a6ResultAction', 'a6LedgerView',
 ];
 const remoteInitializers = [];
 for (const name of REMOTE_METHODS) {

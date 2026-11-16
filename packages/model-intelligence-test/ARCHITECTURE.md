@@ -55,7 +55,7 @@ Client apply 生命周期
 
 待测项用模型、listing/channel/supplier 复合身份；记录和 run 的稳定 provider 是 `a6api:<channelId>:<supplierId>`，不是动态领取该项的 worker。实际用的是哪个测试令牌记为 `slotTokenId`，路由阶段记为 `routing`。同模型不同渠道不能合并。
 
-槽位就是测试令牌本身（1–8 个），用户勾选为准，不做 key 指纹比对、不改 DSH 提供商配置。
+槽位数量以用户勾选为准，自动采样只使用专用测试令牌，不改 DSH 提供商配置。日常提供商匹配是独立 Host 域，按明确凭据引用解析本地 Key，并与站点令牌精确比较；Client 只收到 title、掩码和关联状态。
 
 ## 动态槽位与原子性
 
@@ -74,6 +74,16 @@ Client apply 生命周期
 `model_intelligence_test` 保留 records/attempts，版本不改以保留历史；`model_intelligence_settings` 的 auth 表保存 a6api 凭据（`a6-site`）与导入口令。运行时启动把旧 queued/running attempt 标为 interrupted，不自动重发推理。
 
 Cordis effect 管理 web 路由、UI 注册、样式与 store。Client dispose 停止轮询与监听；油猴 pagehide 撤销 hooks/observer/列与计时器，BFCache pageshow 重建。Host dispose 中止采样。关闭内部页签不取消任务；显式取消/删除/清空才中止。
+
+## 快照、提供商匹配与请求账本
+
+`shared/market.js` 严格投影网页报价白名单。油猴只从列表响应取价格／缓存字段，从公开 status 取 USD 展示汇率；Host 创建记录时使用原 selection 中的快照，Client 仅筛选身份。
+
+`backend/a6/providers.js` 保存按账号隔离的令牌元数据、DSH 提供商关联和模型使用目标。快照先返回，后台两路 single-flight 核对 Key；冷启动关系为 stale。明文只在操作内使用，不存入持久匹配缓存；每次操作重新解析本地凭据并定向复核。凭据、配置、提供商事件触发失效，事件不是 Key revision 的替代品。特殊认证不猜测。
+
+`backend/a6/ledger.js` 将每次数据面发送独立记入 additive `executions` 表，保留重试历史。发送前登记，HTTP 检查前捕获 request ID，结束后按 ID 异步查消费日志。只有精确归属、无多事件歧义的账单才展示费用；退款等未确认语义保留 ambiguous。额度与汇率首个有效基准冻结，已观察金额和完整结算分开。无 ID 与旧轮次不估算费用。
+
+结果行固定使用持久租约，并和自动采样共用 token 锁；删除和清空记录前检查租约，防止丢失恢复入口。自动采样的旧固定检查发生在 pin 清理责任标记之前；自动采样中断后需站点核对固定，不能承诺崩溃时自动补偿。Client insights 域通过 service → datasource → store 维护提供商、目标与轮次／记录账本镜像。
 
 ## 构建约束
 

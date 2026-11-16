@@ -31,6 +31,7 @@ const ID = 'model-intelligence-test';
 const METHODS = [
  'catalog', 'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear', 'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
  'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6Action',
+ 'a6ProviderState', 'a6ProviderConfigure', 'a6TargetSave', 'a6ResultAction', 'a6LedgerView',
 ] as const satisfies readonly (keyof ModelIntelligenceTransport)[];
 function transportOf(remote: Record<string, (request?: unknown) => Promise<unknown>>): ModelIntelligenceTransport {
  const entries = METHODS.map(name => [name, async (request?: unknown) => unwrapRemote(await (request === undefined ? remote[name]() : remote[name](request)))]);
