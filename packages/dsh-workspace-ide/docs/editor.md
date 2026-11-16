@@ -317,7 +317,7 @@ export function sidesFromHunks(hunks, rawPatchText) {     // frontend/service/di
 
 ## 10. 键盘与快捷键
 
-> **现行策略（2026-11）**：本插件不为任何命令声明默认键位（`defaults: {}`）。下表是历史设计意图与"推荐的键位"，键位本身由用户在宿主「设置 → 通用 → 编辑快捷键」（`Mod + /`）里分配；插件不自带录制 UI。见 `docs/ui-spec.md` §13.2–§13.4。
+> **现行策略（2026-11）**：本插件不为任何命令声明默认键位（`defaults: {}`）。下表是历史设计意图与"推荐的键位"，键位本身由用户在 DSH 设置页「工作台」分区里录制；插件不自带默认键，也不自建键位存储。见 `docs/ui-spec.md` §13.2–§13.4。
 >
 > 键位表唯一出处是 [`docs/ui-spec.md`](./ui-spec.md)；本节只列编辑器子集，改动须两处同步（AGENTS「文档同步」）。宿主已占：`Mod-p`（`workspace.files`）、`Mod-t`（`browser.new`）、`Mod-b`/`Mod-Alt-b`（侧栏）、`Mod-,`、`Mod-/`、`Ctrl-\``；`Mod-w`/`Mod-n`/`Mod-q` 属浏览器/Electron 保留（web 关标签页、desktop 关窗，`preventDefault` 拦不住）。
 

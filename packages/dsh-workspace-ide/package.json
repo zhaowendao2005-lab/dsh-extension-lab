@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-ide",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "type": "module",
   "description": "DSH 右栏工作台：文件树 / SCM / 提交图谱 + 编辑器与 diff + 真 PTY 终端",

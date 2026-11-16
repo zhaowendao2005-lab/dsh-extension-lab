@@ -26,20 +26,31 @@ export function Toolbar({ stores }) {
   const branchInfo = scm.status?.branch;
   const branch = branchInfo ? (branchInfo.detached ? 'HEAD@' + String(branchInfo.sha ?? '').slice(0, 7) : branchInfo.name || 'HEAD') : null;
 
+  // The recent-folder list used to live in the in-panel settings page; it belongs with the
+  // workspace switcher because it is per-session state, not a browser-global preference.
+  const recentItems = (workspace.recents ?? []).slice(0, 5).map((root, index) => ({
+    label: '最近 ' + (index + 1) + '：' + (root.replace(/\/+$/, '').split('/').pop() || root),
+    title: root,
+    run: () => void stores.actions.openRoot(root),
+  }));
+
   const workspaceItems = [
     { label: '打开文件夹…', run: () => void stores.actions.pickRoot() },
     { label: '恢复会话默认工作区', run: () => void stores.actions.useSessionRoot() },
+    ...(recentItems.length ? [{ separator: true }, ...recentItems] : []),
     { separator: true },
     { label: '刷新', run: () => void stores.actions.refreshWorkspace() },
     { separator: true },
     { label: '收起/展开左侧会话栏', run: () => stores.host?.toggleSidebar?.() },
-    { label: '设置', run: () => stores.actions.openSettings() },
   ];
 
   const moreItems = [
     { label: '仓库', run: () => stores.actions.openRepositories() },
     { label: '命令', run: () => stores.actions.openCommands() },
-    { label: '设置', run: () => stores.actions.openSettings() },
+    {
+      label: '设置…',
+      run: () => stores.actions.notify('info', 'IDE 设置已移到 DSH 设置页：左侧栏底部「设置」→「工作台」。'),
+    },
     { label: '关闭所有分栏', run: () => void stores.actions.closeAllTabs() },
     { label: ui.sidebarCollapsed ? '展开文件栏' : '收起文件栏', hint: hintOf('workspace-ide.nav'), run: () => stores.actions.toggleSidebar() },
     { separator: true },
@@ -112,9 +123,6 @@ export function Toolbar({ stores }) {
       >
         <Icon name={fullView.open ? 'collapseFull' : 'expand'} size={14} />
       </button>
-      <button type="button" className="wid-icon-button wid-toolbar__optional" title="设置" aria-label="设置" onClick={() => stores.actions.openSettings()}>
-        <Icon name="settings" size={14} />
-      </button>
       <button type="button" className="wid-icon-button" title="更多" aria-label="更多" onClick={() => stores.actions.toggleMenu('more')}>
         <Icon name="collapse" size={14} />
       </button>
@@ -157,6 +165,7 @@ function ToolbarMenu({ items, align, onClose }) {
           type="button"
           role="menuitem"
           className="wid-toolbar__item"
+          title={item.title}
           onClick={() => {
             onClose();
             item.run();

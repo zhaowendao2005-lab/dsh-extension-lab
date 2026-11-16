@@ -12,6 +12,10 @@ import { createStores } from './stores/workbench.stores.js';
 import { createStore } from './store.js';
 import { WorkbenchHost } from './views/WorkbenchHost.jsx';
 import { FullViewHost } from './views/FullViewHost.jsx';
+import { createPreferences } from './stores/preferences.stores.js';
+import { createShortcutEditor } from './stores/shortcut-editor.stores.js';
+import { IdeSettingsSection } from './views/settings/IdeSettingsSection.jsx';
+import { IdeSettingsIcon } from './views/settings/IdeSettingsIcon.jsx';
 
 const ID = 'dsh-workspace-ide';
 const KIND = WORKBENCH_PANEL_ID;
@@ -24,6 +28,39 @@ window.__ModuleLoader__.load({
     setReact(require('react'));
 
     async function apply(ctx) {
+      // Browser-global preferences are independent of any session, the remote contribution and
+      // the right-column tab: the Host settings page must keep working even when the panel is
+      // closed or the remote failed to mount.
+      const preferences = createPreferences();
+      ctx.effect(() => () => preferences.actions.dispose(), 'workspace-ide.preferences');
+
+      // Shortcut state is shared between the workbench (which registers the commands) and the
+      // settings page (which only displays the Host catalog), so both live at plugin scope.
+      const shortcutCatalog = createStore([]);
+      const shortcutStatus = createStore({ available: false, failed: [], error: null });
+      // The settings page edits Host-owned bindings in place; this store owns the recording
+      // state (which command is waiting for a key press, last error/notice) for that page.
+      const shortcutEditor = createShortcutEditor();
+      ctx.effect(() => () => shortcutEditor.actions.dispose(), 'workspace-ide.shortcut-editor');
+
+      // IDE preferences belong to the Host settings panel (Settings → 工作台). The workbench no
+      // longer owns an in-panel settings page.
+      try {
+        ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: ID,
+          order: 30,
+          label: () => TITLE,
+          inject: () => ({ preferences, shortcutCatalog, shortcutStatus, shortcutEditor }),
+        }, IdeSettingsSection)), 'workspace-ide.settings-section');
+        ctx.effect(() => ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+          name: 'settings.section.icon',
+          id: ID,
+        }, IdeSettingsIcon)), 'workspace-ide.settings-icon');
+      } catch (error) {
+        console.warn('[workspace-ide] settings section unavailable', error);
+      }
+
       let unmount;
       try {
         unmount = await ctx.remote.$mount(remoteInfo);
@@ -99,8 +136,8 @@ window.__ModuleLoader__.load({
           fullView,
           toggleFullView,
           closeFullView,
-          shortcutCatalog: createStore([]),
-          shortcutStatus: createStore({ available: false, failed: [], error: null }),
+          shortcutCatalog,
+          shortcutStatus,
         };
 
         /** One runtime per session: its own client (sessionId stamped on every request) and stores. */
@@ -110,7 +147,7 @@ window.__ModuleLoader__.load({
           let runtime = runtimes.get(key);
           if (!runtime) {
             const client = createClient((request) => service.execute(request), () => sessionId);
-            const stores = createStores({ client, sessionId, host });
+            const stores = createStores({ client, sessionId, host, preferences });
             try {
               stores.actions.restoreLayout();
             } catch (error) {
@@ -233,7 +270,7 @@ window.__ModuleLoader__.load({
           if (!shortcuts?.register) return;
           const shortcutDisposers = [];
           const failed = [];
-          host.shortcutStatus.set({ available: true, failed: [], error: null });
+          shortcutStatus.set({ available: true, failed: [], error: null });
           const commands = [
             ['workspace-ide.explorer', '工作台：文件栏', () => withSession((stores) => stores.actions.setActivity('files'))],
             ['workspace-ide.search', '工作台：工作区搜索', () => withSession((stores) => stores.actions.setActivity('search'))],
@@ -278,19 +315,23 @@ window.__ModuleLoader__.load({
           }
           const syncCatalog = () => {
             try {
-              host.shortcutCatalog.set(shortcuts.catalog.getSnapshot());
-              host.shortcutStatus.set({ available: true, failed: [...failed], error: null });
+              shortcutCatalog.set(shortcuts.catalog.getSnapshot());
+              shortcutStatus.set({ available: true, failed: [...failed], error: null });
             } catch (error) {
-              host.shortcutStatus.set({ available: true, failed: [...failed], error: String(error?.message ?? error) });
+              shortcutStatus.set({ available: true, failed: [...failed], error: String(error?.message ?? error) });
               console.error('[workspace-ide] shortcut catalog failed', error);
             }
           };
           syncCatalog();
           if (shortcuts.catalog?.subscribe) shortcutDisposers.push(shortcuts.catalog.subscribe(syncCatalog));
+          // Hand the settings page the service it edits through: describeBinding validates a
+          // candidate, edit() is revision-checked, recording() releases native accelerators.
+          shortcutEditor.actions.attach({ shortcuts, catalog: () => shortcutCatalog.getSnapshot() });
           shortcutCtx.effect(() => () => {
+            shortcutEditor.actions.detach();
             for (const dispose of shortcutDisposers.splice(0)) dispose();
-            host.shortcutCatalog.set([]);
-            host.shortcutStatus.set({ available: false, failed: [], error: null });
+            shortcutCatalog.set([]);
+            shortcutStatus.set({ available: false, failed: [], error: null });
           }, 'workspace-ide.shortcuts');
         });
       });

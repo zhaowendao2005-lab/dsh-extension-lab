@@ -100,11 +100,11 @@ shared/contract.js + shared/languages.generated.js   ← 两端唯一共享面�
 | --- | --- |
 | 渲染面 | `sidebar.right.pane.tab` keyed slot（session 作用域）承载右栏工作台；`shell.overlay` list 席位承载 frame 级 80% 全视图；两者共享同一会话 runtime。不注册 `main`、不调用 `selectPanel` |
 | 可见性 | 每个 runtime 维护 surface 集合（`sidebar` / `overlay`）：任一可见即保持 activate；全部不可见才停 watch/轮询。关闭宿主 tab 只移除 `sidebar`，不暂停仍打开的全视图 |
-| 入口 | `ctx.sidebarRightTabs.register` 的 `guide` 卡片（右栏开始页）；**没有** `sidebar.panellist` 左栏图标，也**不绑默认快捷键**（命令以 `defaults:{}` 注册，键位交给宿主设置面板） |
+| 入口 | `ctx.sidebarRightTabs.register` 的 `guide` 卡片（右栏开始页）；**没有** `sidebar.panellist` 左栏图标，也**不绑默认快捷键**（命令以 `defaults:{}` 注册，键位在设置页「工作台」分区内录制） |
 | 根目录 | 按会话解析：该会话手动选择 > `session.header.cwd` > lastRoot；Host 决策，wire 不放任意路径。每个 Remote 请求在 Service 入口绑定 `{sessionId, root}` 并跑在 `AsyncLocalStorage` 里，files/git/terminal/watch 只读活动上下文，不共享可变 `current` |
 | 主题 | 只用 `--dsw-alias-*` / `--dsw-*` token；禁硬编码色值（构建期扫描）；明暗两套都要过 |
 | 顶栏/左缘 | 右栏 body 不在窗口顶/左缘，**不**吃 `--dsh-frame-top-clearance` / `--dsh-frame-leading-clearance`；宿主 tab 条已经处理 |
-| 字号与缩放 | 编辑器 / Diff 共用 10–20px 字号偏好；正文 / 终端沿用宿主 token。整个 `.wid-root` 的 uiScale 为 80/90/100/110/125/150，独立于编辑器字号；浮层与拖拽坐标先换算为逻辑像素 |
+| 字号与缩放 | 编辑器 / Diff 共用 10–20px 字号偏好；正文 / 终端沿用宿主 token。整个 `.wid-root` 的 uiScale 是 50–200 之间手填的整数百分比（默认 100），独立于编辑器字号；这些偏好与快捷键录制都由宿主设置页的 `settings.section`（`dsh-workspace-ide`，label「工作台」，order 30）承载，浮层与拖拽坐标先换算为逻辑像素 |
 | 外部依赖 | 不 require 任何 `@deepseek-ai/*` client 包；`react`/`react-dom` 由宿主提供（external） |
 | 资源 | 不打包独立 CSS 文件（内联进 JS 后运行时注入 `<style id="dsh-workspace-ide/css">`）；不依赖图片资源路由 |
 | 卸载 | 所有注册（slot、remote mount、listener、定时器、CM6/xterm 实例、Host 侧终端与 git 队列）都挂在 `ctx.effect` 的 disposer 上 |

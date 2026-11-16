@@ -31,10 +31,8 @@ export function WelcomeView({ stores }) {
         <button type="button" className="wid-button" onClick={() => stores.actions.openGraph()}>
           提交图谱
         </button>
-        <button type="button" className="wid-button" onClick={() => stores.actions.openSettings()}>
-          设置
-        </button>
       </div>
+      <div className="wid-hint">缩放、编辑器字号与快捷键在 DSH 设置页的「工作台」分区调整（左侧栏底部「设置」）。</div>
       {workspace.root && (
         <div className="wid-welcome__root wid-mono" title={workspace.root}>{workspace.root}</div>
       )}

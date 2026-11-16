@@ -2,7 +2,7 @@
 
 布局基准：`MINI-VSCODE-PLAN.md` §2 与 `README.md` 的 ASCII 图；状态所有权见 `ARCHITECTURE.md`；动作名与字段见 `docs/remote-contract.md`；禁色规则见 `docs/build.md` §3。约定：颜色只能取 `--dsw-alias-*`；尺寸用本包自有 `--wid-*`（纯长度）；类名 `.wid-` 前缀；CSS 内联进 `lib/client.js` 后注入 `<style id="dsh-workspace-ide/css">`。
 
-当前实现新增仓库 / 命令内部标签和整体缩放，详见本文末尾「仓库、命令与缩放」。工作区无信任状态、信任提示条或信任入口。
+当前实现新增仓库 / 命令内部标签和整体缩放，详见本文末尾「仓库、命令与缩放」。工作台没有内部设置页，缩放、编辑器与快捷键配置在 DSH 设置页的「工作台」分区。工作区无信任状态、信任提示条或信任入口。
 
 ## 1 设计原则
 
@@ -355,15 +355,16 @@ ctx.inject(['shortcuts'], (c) => c.effect(() => ctx.shortcuts.register({
 | `workspace-ide.closeTab` | 无 | 标签 `×`、中键、标签右键菜单 |
 | `workspace-ide.fullview` | 无 | 工具栏「全视图」按钮 |
 
-### 13.3 改键一律走官方设置面板
+### 13.3 改键在「工作台」设置分区内完成
 
-插件**不再自带录制器**（原 `view:shortcuts` 标签已删除）。改键入口是宿主自己的面板：
+键位数据仍归宿主管，但入口不跳去宿主的公共快捷键面板：DSH 设置页的「工作台」分区（`settings.section`）直接列出这 11 条命令并原地录制。
 
-- 从 DSH 主左侧栏底部「设置」（或账号 / 更多菜单）进入「通用 → 编辑快捷键」，搜索“工作台：”。`Mod + /` 直接开关宿主快捷键弹窗，并非打开通用设置；macOS 的 Mod 为 ⌘，其他平台为 Ctrl。
-- 面板列出所有已注册命令，含本插件 11 条未绑定命令；选中行按组合键即写入。
-- 存储位置由宿主决定：Web 端 `localStorage['dsh.keybindings.v1']`，桌面端 `userData/keybindings.json`。
-- 工作台「设置」页只做**只读映射**：区分快捷键服务不可用、读取失败、命令注册失败、命令未注册、已注册未绑定和实际键位。由宿主 catalog 同步到稳定的响应式 store，注入迟到或卸载时同样更新；工具栏 / 右键菜单无键位时不渲染提示。
-- 插件侧不调用 `shortcuts.edit`：`Shortcuts` 接口没有 `invoke`/`openSettings`，唯一合法路径是用户自己在面板里改。
+- 每行显示短标签、「已修改」标记、当前绑定（`kbd` 芯片）或状态文案，以及「设置 / 修改」「清除」「默认」按钮；服务不可用时按钮禁用并说明原因。
+- 点「设置 / 修改」进入录制：读取 `keydown` 的 `event.code` 与 Ctrl/Alt/Shift/Meta 生成候选 binding，交给宿主 `shortcuts.describeBinding` 校验 `issue` 与 `conflicts`（过滤自身 id）。Esc 取消录制；捕获监听挂在 `window` capture 阶段并 `stopImmediatePropagation`，所以按下的组合不会先触发旧命令或宿主快捷键。
+- 保存调用宿主 `shortcuts.edit({ type:'set', id, binding }, revision)`；`binding:null` 表示显式清除，「默认」发 `{ type:'reset', id }` 撤掉覆盖。每次保存前读 `config.getSnapshot().revision`，遇到 `stale` 用新 revision 重试一次；`not-ready` / `unreadable` / `write-failed` / `conflict` 分别给出中文原因。
+- 录制期间调用宿主 `recording(true)` 让 Desktop 抑制原生加速键，结束或页面卸载时 `recording(false)`；Web 端该接口是 no-op，调用需容错。
+- 存储位置由宿主决定：Web 端 `localStorage['dsh.keybindings.v1']`，桌面端 `userData/keybindings.json`；插件不自己持久化键位。
+- 工具栏 / 右键菜单的按键提示仍从宿主 catalog 的响应式镜像读取；未绑定时不渲染提示。
 
 ### 13.4 其它约束
 
@@ -503,7 +504,6 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 | 冲突 | `view:conflict` | 是 | 冲突行的三栏视图 |
 | 提交图谱 | `view:graph` | 是 | 工具栏 ⑂、状态栏分支、欢迎页 |
 | 当前改动 | `view:changes` | 是 | 工具栏 ±、状态栏变更数、欢迎页 |
-| 设置 | `view:settings` | 是 | 工具栏「⋯」 |
 
 - 同一 id 全工作区只存在一份；打开已存在的标签只聚焦，不复制。
 - 每组有 `active`；组获得焦点（pointerdown）时成为 `activeGroup`，新打开的标签落在活动组。
@@ -522,7 +522,7 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ### 18.3 空组与欢迎页
 
-空组显示工作区名/根路径 + 「打开文件… / 查看改动 / 提交图谱 / 设置」；首次打开只有欢迎页，不自动打开改动或图谱。
+空组显示工作区名/根路径 + 「打开文件… / 仓库 / 命令 / 查看改动 / 提交图谱」，以及指向 DSH 设置页的缩放 / 字号提示；首次打开只有欢迎页，不自动打开改动或图谱。
 
 ### 18.4 双层 tab 的视觉区分
 
@@ -545,7 +545,7 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ### 19.2 全视图
 
-- 入口：工具栏「全视图」按钮（主入口）；命令 `workspace-ide.fullview` 默认不绑键，需要键位请在宿主「设置 → 通用 → 编辑快捷键」里自行分配。
+- 入口：工具栏「全视图」按钮（主入口）；命令 `workspace-ide.fullview` 默认不绑键，需要键位请在 DSH 设置页「工作台」分区里就地设置。
 - 打开时关闭右栏的宿主「工作台」tab，把同一份会话工作台显示为 frame 级 `shell.overlay` 对话框。
 - 对话框宽高各 80%，位于 `shell.overlay` 内（绝对定位，不用 `fixed`）；点击外部、Esc、关闭按钮或再按快捷键关闭。
 - 右栏与全视图共享同一 runtime 与内部标签/分栏；切换展示位置不重建编辑器、不丢未保存内容。
@@ -553,12 +553,14 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 ### 19.3 设置与快捷键入口
 
-- 工具栏有「设置」与「全视图」入口，窄栏通过「⋯」保留次要入口。
-- 「设置」是内部标签 `view:settings`：完整可换行根路径与切换入口、最近打开、编辑器偏好和生效上限。快捷键区提供宿主入口说明，并区分未注册 / 未绑定 / 服务不可用等状态。
+- 工具栏保留「全视图」入口，窄栏通过「⋯」保留次要入口；没有「设置」按钮，「⋯ → 设置…」只弹出提示，把用户指向宿主设置页。
+- 工作台配置全部在宿主设置页的 `settings.section` 里：id `dsh-workspace-ide`、label「工作台」、order 30、explorer 图标，位于 DSH 左侧栏底部「设置」（或账号 / 更多菜单）。页面分四区：界面尺寸（整体缩放输入框 + 编辑器字号 / Tab 显示宽度 / 缩进空格数 + 自动换行）、快捷键（11 条命令原地录制 / 清除 / 恢复默认，区分命令未注册 / 已注册未绑定 / 服务不可用）、恢复全部默认值，以及每项的生效范围说明。
+- 缩放是 50–200 的整数百分比输入框，接受 `125` 或 `125%`；Enter 或失焦提交、Esc 取消。越界与非数字就地提示并标 `aria-invalid`，不覆盖已存值。
+- 最近打开与切换工作区入口在工具栏的工作区菜单里，不在设置分区。
 - 宿主没有真实目录选择器时，工作台复用内部输入对话框，输入运行 DSH 的主机上的绝对路径，提交后由 `workspace.open` 在 Host 侧校验；取消不切换工作区。
 - 字号 10–20、Tab 显示宽度与缩进空格数 1–8，共用即时规范化与恢复逻辑。当前编辑器 / 差异视图立即更新，隐藏文件切回沿用；不重写文档内容。自动换行上限为 2000 行且最长行 500 字符，超限时编辑器显示原因。
 - 按钮 reset 使用低优先级 `:where`，文字 / 图标操作均有 1px 主题边框；组件控制间距、主次 / 危险 / 禁用 / 聚焦状态，不用 `!important` 覆盖。
-- 插件不自带录制 UI；设置页说明宿主「设置 → 通用 → 编辑快捷键」入口，不调用不存在的打开设置接口。
+- 快捷键录制器就在这个分区里（状态见 §13.3），不把用户导去宿主公共快捷键面板；插件不自己存键位，只调用宿主的 `describeBinding` / `edit` / `recording`。
 
 ## 20 仓库、命令与缩放
 
@@ -572,10 +574,12 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 命令树固定只有两个顶层根：`package.json` 与 `Scripts`。包根保留清单真实路径层级；选中清单后只刷新 Scripts 根的内容。脚本行显示名称、完整命令预览与播放图标；没有包、没有 scripts、扫描受限、读取失败和启动失败均有明确状态。播放按钮禁用到对应终端创建完成，随后允许再次启动新的终端。
 
+命令树按 VS Code 探索器风格排版：22px 行高、无逐行边框与分隔线、按真实目录深度缩进、悬停行高亮；播放按钮在 hover / focus-within 时出现（触屏常显），选中包使用 `--dsw-alias-interactive-bg-active`，浅色主题下也不会与面板底色重合。
+
 每次播放调用 `terminal.runScript`，Host 重新读清单并验证脚本名。新终端 cwd 为清单所在包目录，使用系统默认 shell 与用户正常 profile；按 packageManager 或祖先锁文件选择 npm / pnpm / yarn / bun，最终兜底 npm。输出留在新终端标签，自动展开并选中该终端；不占用现有会话。
 
 ### 20.3 整体缩放与文件图标
 
-设置提供 80% / 90% / 100% / 110% / 125% / 150%，默认 100%。`uiScale` 保存在工作台布局偏好中，只缩放工作台根，不改变宿主界面；编辑器 10–20px 字号是独立值。菜单、快速打开、拖拽与分隔条使用 `.wid-root` 的缩放比换算逻辑坐标，限制浮层在工作台内，终端尺寸随容器重新适配。
+整体缩放由 DSH 设置页「工作台」分区的输入框提供，取值 50–200 的整数百分比，默认 100。`uiScale` 保存在工作台布局偏好中，只缩放工作台根，不改变宿主界面；编辑器 10–20px 字号是独立值。菜单、快速打开、拖拽与分隔条使用 `.wid-root` 的缩放比换算逻辑坐标，限制浮层在工作台内，终端尺寸随容器重新适配。
 
 文件树、SCM 与命令包节点共用 `FileIcon`：完整文件名和工具配置变体优先于扩展名。包清单、npm / pnpm / yarn / bun 锁文件、Git 点文件、tsconfig / jsconfig、Vite / webpack / Rollup、ESLint / Prettier、Docker / Compose、环境文件、README / LICENSE 等有专用内联 SVG；未知文件使用通用图标。SVG 形状来自静态代码，颜色取 currentColor，Git 状态不混入文件图标。

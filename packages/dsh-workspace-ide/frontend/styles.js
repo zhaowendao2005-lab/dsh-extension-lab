@@ -15,5 +15,6 @@ import terminal from './styles/terminal.css';
 import xtermCss from '@xterm/xterm/css/xterm.css';
 import repositories from './styles/repositories.css';
 import commands from './styles/commands.css';
+import settings from './styles/settings.css';
 
-export const CSS = [base, explorer, editor, scm, search, graph, diff, quickopen, conflict, terminal, xtermCss, repositories, commands].join('\n');
+export const CSS = [base, explorer, editor, scm, search, graph, diff, quickopen, conflict, terminal, xtermCss, repositories, commands, settings].join('\n');

@@ -7,11 +7,12 @@ import { createStore } from '../store.js';
 import { LIMITS } from '../../shared/contract.js';
 import { IdeError } from '../service/client.js';
 import {
-  DEFAULT_EDITOR_PREFS, loadLayout, loadWorkbench, normalizeEditorPrefs, readEditorPrefs, saveLayout, saveWorkbench,
+  DEFAULT_EDITOR_PREFS, loadLayout, loadWorkbench, readEditorPrefs, saveLayout, saveWorkbench,
 } from '../service/layout.js';
+import { normalizeUiScale } from './preferences.stores.js';
 import { createLayoutStore } from './layout.stores.js';
 import {
-  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, SETTINGS_TAB, REPOSITORIES_TAB, COMMANDS_TAB, fileTabId,
+  CHANGES_TAB, CONFLICT_TAB, DIFF_TAB, GRAPH_TAB, REPOSITORIES_TAB, COMMANDS_TAB, fileTabId,
 } from '../service/tabs.js';
 import { createTerminalController } from './terminal.stores.js';
 import { createEditorDomain } from './editor.stores.js';
@@ -24,7 +25,13 @@ import { createCommandsDomain } from './commands.stores.js';
 
 const EMPTY_LIMITS = LIMITS;
 
-export function createStores({ client, sessionId, host }) {
+/**
+ * `preferences` (from stores/preferences.stores.js) is the single owner of the browser-global
+ * editor preferences and the whole-surface scale, because the Host settings page edits them
+ * while no workbench is mounted. Without it (unit tests, older entry) the store keeps a local
+ * copy in `ui` and persists it itself.
+ */
+export function createStores({ client, sessionId, host, preferences = null }) {
   let repositoryEpoch = 0;
   const transport = client;
   client = { async call(action, payload, scope) {
@@ -46,10 +53,11 @@ export function createStores({ client, sessionId, host }) {
     }
     return result;
   } };
+  const preferenceSnapshot = preferences?.store?.getSnapshot?.() ?? null;
   const ui = createStore({
     activityView: 'files',
     sidebarWidth: 260,
-    uiScale: 100,
+    uiScale: preferenceSnapshot?.uiScale ?? 100,
     panelHeight: 220,
     sidebarCollapsed: false,
     navManual: false,
@@ -58,12 +66,21 @@ export function createStores({ client, sessionId, host }) {
     menu: null,
     tabMenu: null,
     diffRatio: 0.5,
-    editor: { ...DEFAULT_EDITOR_PREFS },
+    editor: { ...(preferenceSnapshot?.editor ?? DEFAULT_EDITOR_PREFS) },
     modal: null,
     quickOpen: false,
     quickQuery: '',
     quickActive: 0,
   });
+
+  // The preferences store is global: every session runtime mirrors it rather than owning a copy,
+  // so a change made in the Host settings page reaches an already mounted workbench immediately.
+  const detachPreferences = preferences?.store?.subscribe
+    ? preferences.store.subscribe(() => {
+      const next = preferences.store.getSnapshot();
+      ui.patch({ uiScale: next.uiScale, editor: { ...next.editor } });
+    })
+    : null;
 
   // Internal tabs, groups and the split tree. Its onChange feeds the per-session
   // localStorage snapshot; the store itself stays free of browser APIs.
@@ -206,27 +223,33 @@ export function createStores({ client, sessionId, host }) {
 
   function restoreLayout(state = ui.getSnapshot()) {
     const persisted = loadLayout();
-    ui.patch({
+    const patch = {
       sidebarWidth: clamp(persisted.sidebarWidth ?? state.sidebarWidth, 160, 360),
       panelHeight: clamp(persisted.panelHeight ?? state.panelHeight, 120, 600),
       sidebarCollapsed: Boolean(persisted.sidebarCollapsed),
       panelCollapsed: Boolean(persisted.panelCollapsed),
       activityView: persisted.activityView === 'search' ? 'search' : 'files',
-      editor: readEditorPrefs(persisted),
-      uiScale: normalizeUiScale(persisted.uiScale),
-    });
+    };
+    // With a preferences store the editor settings and the scale were restored when it was
+    // created; re-applying them here would race a settings-page edit made before mount.
+    if (!preferences) {
+      patch.editor = readEditorPrefs(persisted);
+      patch.uiScale = normalizeUiScale(persisted.uiScale);
+    }
+    ui.patch(patch);
   }
 
   function persistLayout() {
     const state = ui.getSnapshot();
+    const global = preferences?.store?.getSnapshot?.() ?? state;
     saveLayout({
       sidebarWidth: state.sidebarWidth,
       panelHeight: state.panelHeight,
       sidebarCollapsed: state.sidebarCollapsed,
       panelCollapsed: state.panelCollapsed,
       activityView: state.activityView,
-      editor: state.editor,
-      uiScale: state.uiScale,
+      editor: global.editor,
+      uiScale: global.uiScale,
     });
   }
 
@@ -359,12 +382,12 @@ export function createStores({ client, sessionId, host }) {
     },
 
     setUiScale(value) {
+      if (preferences) {
+        preferences.actions.setUiScale(value);
+        return;
+      }
       ui.patch({ uiScale: normalizeUiScale(value) });
       persistLayout();
-    },
-
-    toggleSettings() {
-      return actions.openSettings();
     },
 
     /** Apply one workspace.resolve/state payload without inventing fields. */
@@ -790,10 +813,6 @@ export function createStores({ client, sessionId, host }) {
       return actions.openFile(repository === '.' ? path : joinPath(repository, path));
     },
 
-    openSettings() {
-      return layoutModel.actions.open({ id: SETTINGS_TAB, kind: 'settings' });
-    },
-
     toggleFullView() {
       return host?.toggleFullView?.() ?? false;
     },
@@ -922,6 +941,10 @@ export function createStores({ client, sessionId, host }) {
     },
 
     setEditorPref(key, value) {
+      if (preferences) {
+        preferences.actions.setEditorPref(key, value);
+        return;
+      }
       ui.patch({ editor: normalizeEditorPrefs({ [key]: value }, ui.getSnapshot().editor) });
       persistLayout();
     },
@@ -1218,6 +1241,7 @@ export function createStores({ client, sessionId, host }) {
       setCommitMessage: (text) => scm.patch({ message: text }),
       dispose() {
         disposed = true;
+        detachPreferences?.();
         if (workbenchTimer) clearTimeout(workbenchTimer);
         workbenchTimer = null;
         actions.stopScmPoll();
@@ -1247,8 +1271,4 @@ function clamp(value, min, max) {
 function basename(path) {
   const index = String(path ?? '').lastIndexOf('/');
   return index === -1 ? String(path ?? '') : String(path ?? '').slice(index + 1);
-}
-
-function normalizeUiScale(value) {
-  return [80, 90, 100, 110, 125, 150].includes(Number(value)) ? Number(value) : 100;
 }

@@ -1,3 +1,5 @@
+/* VS Code explorer density: 22px rows, no per-row chrome, hover/focus highlight,
+   a quiet secondary column and a play action revealed on hover/focus. */
 .wid-commands {
   display: flex;
   flex: 1 1 auto;
@@ -11,62 +13,139 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 30px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px 0 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
 }
-.wid-commands button {
-  color: inherit;
-  font: inherit;
-  background: transparent;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dsw-radius-xs);
-  cursor: pointer;
-}
-.wid-commands button:hover { background: var(--dsw-alias-bg-layer-2); }
-.wid-commands button:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: -2px;
-}
-.wid-commands button:disabled { opacity: .5; cursor: default; }
-.wid-commands__refresh, .wid-commands__play {
+.wid-commands__refresh {
   display: inline-flex;
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
   align-items: center;
   justify-content: center;
-  padding: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
+.wid-commands__refresh:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.wid-commands__refresh:disabled { opacity: .45; cursor: default; }
 .wid-commands__tree, .wid-commands__tree ul { list-style: none; margin: 0; padding: 0; }
-.wid-commands__tree { padding: 4px; }
-.wid-commands__tree ul { padding-left: 12px; }
-.wid-commands__tree > li { margin-bottom: 4px; }
-.wid-commands__root, .wid-commands__path {
+.wid-commands__tree { padding: 0 0 8px; }
+.wid-commands__tree > li + li { margin-top: 4px; }
+.wid-commands__row {
   display: flex;
   align-items: center;
   gap: 5px;
   width: 100%;
-  min-height: 28px;
-  margin: 1px 0;
-  padding: 3px 5px;
+  height: 22px;
+  padding: 0 6px 0 calc(var(--wid-row-base, 6px) + var(--wid-depth, 0) * var(--wid-row-step, 10px));
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 22px;
   text-align: left;
+  user-select: none;
 }
-.wid-commands__root { font-weight: 600 !important; }
-.wid-commands__path[aria-current="true"] {
-  color: var(--dsw-alias-brand-primary);
-  background: var(--dsw-alias-bg-layer-2);
-  border-color: var(--dsw-alias-brand-primary);
+button.wid-commands__row { cursor: pointer; }
+.wid-commands__row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.wid-commands__row:focus-visible {
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
 }
-.wid-commands__label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wid-commands__meta { flex: 0 1 45%; min-width: 0; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wid-commands__count { color: var(--dsw-alias-label-secondary); font-size: 11px; }
-.wid-commands__indent { width: 14px; flex: 0 0 14px; }
-.wid-commands__path > svg, .wid-commands__script-line > svg { flex-shrink: 0; }
-.wid-commands__selected { margin: 4px 5px; overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); }
-.wid-commands__script { margin: 4px 0; padding: 3px 5px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
-.wid-commands__script-line { display: flex; align-items: center; gap: 6px; min-height: 28px; }
-.wid-commands__preview { margin: 3px 0 6px 20px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; color: var(--dsw-alias-label-secondary); user-select: text; }
-.wid-commands__hint, .wid-commands__error { padding: 5px 8px; margin: 0; overflow-wrap: anywhere; }
+/* The selected package uses the platform's active-interaction tint: bg-layer-2
+   resolves to the panel colour itself in the light theme, which would hide it. */
+.wid-commands__row--selected,
+.wid-commands__row--selected:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.wid-commands__row > svg { flex: 0 0 auto; }
+.wid-commands__chev {
+  display: inline-flex;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-secondary);
+}
+.wid-commands__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wid-commands__meta {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wid-commands__meta--command { max-width: 50%; font-family: var(--dsw-font-mono, monospace); }
+.wid-commands__count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+.wid-commands__row--script { cursor: default; }
+.wid-commands__play {
+  display: none;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.wid-commands__row:hover .wid-commands__play,
+.wid-commands__row:focus-within .wid-commands__play { display: inline-flex; }
+@media (hover: none), (pointer: coarse) {
+  .wid-commands__play { display: inline-flex; }
+}
+.wid-commands__play:hover { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-brand-primary); }
+.wid-commands__play:disabled { opacity: .4; cursor: default; }
+.wid-commands__play:focus-visible {
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+.wid-commands__context {
+  height: 22px;
+  padding: 0 6px 0 28px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wid-commands__hint, .wid-commands__error {
+  padding: 3px 10px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 18px;
+}
 .wid-commands__hint { color: var(--dsw-alias-label-secondary); }
 .wid-commands__error { color: var(--dsw-alias-state-error-primary); }

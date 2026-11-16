@@ -99,7 +99,7 @@
 | 构建参数/依赖/体积预算 | `docs/build.md` |
 | 里程碑任务状态 | `docs/milestones.md` |
 
-**快捷键**：不要给命令加默认键位。11 条命令一律 `defaults: {}` 注册，键位由用户在宿主「设置 → 通用 → 编辑快捷键」（`Mod + /`）里分配；插件不得自带录制 UI，也不得调用 `shortcuts.edit`。详见 `docs/ui-spec.md` §13.2–§13.4。
+**快捷键**：不要给命令加默认键位。11 条命令一律 `defaults: {}` 注册，键位在 DSH 设置页「工作台」分区（`settings.section`）里原地录制 / 清除 / 恢复默认，通过宿主 `shortcuts.describeBinding` / `shortcuts.edit` / `shortcuts.recording` 完成；不要自建键位存储，也不要把用户导去公共快捷键面板。详见 `docs/ui-spec.md` §13.2–§13.4。
 
 ## 纪律
 

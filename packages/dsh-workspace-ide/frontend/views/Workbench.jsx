@@ -29,7 +29,9 @@ export function Workbench({ stores, visible }) {
   const navOpen = !ui.sidebarCollapsed;
   const panelOpen = !ui.panelCollapsed;
   const drag = layout.drag;
-  const scalePercent = [80, 90, 100, 110, 125, 150].includes(ui.uiScale) ? ui.uiScale : 100;
+  // The scale is a free 50–200 percentage now; the preferences store already normalised it,
+  // but a stale snapshot must never reach CSS as NaN or 0.
+  const scalePercent = Number.isFinite(Number(ui.uiScale)) && Number(ui.uiScale) > 0 ? Number(ui.uiScale) : 100;
   const scale = scalePercent / 100;
 
   // The right column's width (not the window's) decides compact vs regular.

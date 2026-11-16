@@ -1,0 +1,252 @@
+/* Host settings page (Settings → 工作台). Rendered inside the Host settings modal, outside
+   .wid-root, so it only uses Host theme tokens and cannot rely on workbench-local variables.
+   Row rhythm follows the Host's own settings sections: 40px rows, 0.5px separators. */
+.wid-ide-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+  padding: 8px 0 24px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 22px;
+}
+.wid-ide-settings__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wid-ide-settings__heading {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.wid-ide-settings__intro {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.wid-ide-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 16px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+.wid-ide-settings__section:first-of-type {
+  padding-top: 8px;
+  border-top: 0;
+}
+.wid-ide-settings__title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.wid-ide-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+  padding: 6px 0;
+  box-sizing: border-box;
+}
+.wid-ide-settings__label { flex: 0 0 auto; }
+.wid-ide-settings__control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wid-ide-settings__unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md, 6px);
+  background: var(--dsw-alias-bg-layer-2);
+  box-sizing: border-box;
+}
+.wid-ide-settings__unit:focus-within {
+  border-color: var(--dsw-alias-brand-primary);
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+.wid-ide-settings__unit--invalid { border-color: var(--dsw-alias-state-error-primary); }
+.wid-ide-settings__number {
+  width: 52px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: end;
+  outline: none;
+}
+.wid-ide-settings__unit-suffix {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+.wid-ide-settings__select {
+  height: 32px;
+  min-width: 92px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md, 6px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.wid-ide-settings__select:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.wid-ide-settings__select:focus-visible {
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+.wid-ide-settings__checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
+.wid-ide-settings__checkbox:focus-visible {
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+.wid-ide-settings__button {
+  height: 32px;
+  padding: 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md, 6px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.wid-ide-settings__button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.wid-ide-settings__button:focus-visible {
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+.wid-ide-settings__hint {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.wid-ide-settings__error {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.wid-ide-settings__warning {
+  margin: 0;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-state-warn-primary);
+  border-radius: var(--dsw-radius-md, 6px);
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+.wid-ide-settings__keys {
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.wid-ide-settings__key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 32px;
+  padding: 4px 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+.wid-ide-settings__key-row:first-child { border-top: 0; }
+.wid-ide-settings__key-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wid-ide-settings__key-value {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+.wid-ide-settings__key-state {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.wid-ide-settings__key-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.wid-ide-settings__key-tag {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+.wid-ide-settings__key-row[data-recording='true'] {
+  margin-inline: -6px;
+  padding-inline: 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.wid-ide-settings__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.wid-ide-settings__chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1;
+  box-sizing: border-box;
+}
+.wid-ide-settings__recording {
+  color: var(--dsw-alias-brand-primary);
+  font-size: 12px;
+}
+.wid-ide-settings__button--sm {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.wid-ide-settings__button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

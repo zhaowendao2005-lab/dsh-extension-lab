@@ -249,7 +249,7 @@ pnpm --dir packages/dsh-workspace-ide run build -- --check
 | Host 侧日志 | 宿主进程的 stdout / stderr（`plugin_dev status` 的最近输出、或桌面端日志目录） | `backend/**` 里的 `console.log` 直接进 Host 进程输出，不进浏览器 Console。生产态只允许 `console.warn/error` + `{ action, code }`，禁止打路径以外的用户内容 |
 | CM6 内容/选区不对 | Console：`__widDebug.view` | mount 时挂 `globalThis.__widDebug = { view }`；`view.state.doc.toString()`、`view.state.selection.main`、`view.dispatch({ changes })`。注意 `views` 里只能用 `useRef` 持 view，**不许**把 view 放进 React state |
 | xterm 黑屏/不刷新 | Console：`__widDebug.term` 与 `terminal.poll` 的 offset | `__widDebug.term.onData(d => console.log(d))` 看输出方向；`poll` 返回的 `offset` 是**字符**偏移（不是字节），offset 不前进说明 Host 缓冲没写入或 `resize` 尺寸为 0（面板 `display:none` 时 `fit()` 会算成 0 列） |
-| 快捷键没反应 | 宿主「快捷键」面板（`Cmd+/`）看是否注册成功 | 注册被拒（id 重复或键位重叠）会走错误条；`regions` 漏了 `editable` 则在编辑器里不触发 |
+| 快捷键没反应 | DSH 设置页「工作台」分区看是否已绑定、命令是否注册成功 | 注册被拒（id 重复或键位重叠）会走错误条；`regions` 漏了 `editable` 则在编辑器里不触发 |
 
 ## 6 版本与发布
 
