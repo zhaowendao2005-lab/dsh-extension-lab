@@ -8,6 +8,8 @@ export function FeatureHub({ store }: { store: Workbench }) {
   const records=useStore(store.evaluations,state => state.records);
   const a6=useStore(store.a6,state => state);
   const config=a6.config;
+  const userscript=config?.userscript;
+  const recentScript=userscript?.recent;
   const { accessToken, userId }=a6.form;
   return <div className="mit-feature-hub">
     <div className="mit-feature-head"><p className="mit-kicker">FEATURES</p><h1>功能中心</h1><p className="mit-muted">真实模型指纹、自定义任务评测与 a6api 渠道测试。</p></div>
@@ -25,7 +27,12 @@ export function FeatureHub({ store }: { store: Workbench }) {
         <ProviderManager store={store} />
         <div className="mit-a6-intake">
           <div className="mit-label-row"><strong>油猴接入</strong><button type="button" className="mit-text-button" disabled={a6.rotating} onClick={store.actions.rotateA6Intake}>{a6.rotating? '更换中…':'更换导入口令'}</button></div>
-          <p className="mit-muted">点下面的链接，油猴会自己记住接入点并从地址栏抹掉口令；之后在 a6api 页面勾选渠道直接发送即可。</p>
+          <p className="mit-muted">包内脚本：{userscript? `v${userscript.version} · 协议 ${userscript.protocolVersion}`:'等待 Host 报告包内版本'}</p>
+          <p className="mit-muted" role="status">{recentScript? `最近报告：v${recentScript.version} · 协议 ${recentScript.protocolVersion??'未知'} · 账号 ${recentScript.accountId||'未知'} · ${Number.isFinite(recentScript.seenAt)? new Date(recentScript.seenAt).toLocaleString('zh-CN'):'时间未知'}${userscript&&recentScript.version!==userscript.version? ' · 与当前包内版本不同':''}`:'尚未收到脚本报告；请在 a6api 页面运行脚本后再查看。'}</p>
+          <button type="button" className="mit-text-button" disabled={a6.configLoading} onClick={store.actions.loadA6Config}>{a6.configLoading? '刷新中…':'刷新脚本状态'}</button>
+          {userscript?.installUrl? <a className="mit-button" href={userscript.installUrl} target="_blank" rel="noreferrer">安装 / 更新包内油猴脚本</a>:<span className="mit-muted">等待 Host 提供脚本安装地址</span>}
+          <p className="mit-muted">打开安装页后需在 Tampermonkey 中确认。脚本随当前插件包提供；Host 持续运行且接入端口固定时，Tampermonkey 才能检查并获取包内更新。旧版脚本首次需从此入口手动安装迁移；降级也需手动安装。</p>
+          <p className="mit-muted">安装后点下面的连接链接，油猴会自己记住接入点并从地址栏抹掉口令；之后在 a6api 页面勾选渠道直接发送即可。</p>
           {config?.link? <a className="mit-button" href={config.link} target="_blank" rel="noreferrer">一键连接 a6api 页面</a> : <span className="mit-muted">等待 Host 报告接入点</span>}
           <details className="mit-a6-manual"><summary className="mit-muted">手动填写（可选）</summary>
             <code className="mit-a6-origin">{config?.origin? `${config.origin}/mit-a6/select`:'等待 Host 报告接入点'}</code>

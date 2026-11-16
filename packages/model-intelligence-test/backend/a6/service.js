@@ -46,6 +46,7 @@ export class A6Service {
       userId: this.site.userId,
       intakeToken: this.intake.token,
       origin: this.intake.origin ?? '',
+      userscript: await this.intake.scriptInfo(),
     };
   }
 

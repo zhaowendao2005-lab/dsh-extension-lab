@@ -9,6 +9,7 @@
  * Host check. That is deliberately weaker than the old pairing handshake, because this endpoint can
  * no longer mutate the account — it only records which channels to test.
  */
+import { readFile } from 'node:fs/promises';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { A6Error } from './errors.js';
 import { marketOf } from '../../shared/market.js';
@@ -65,7 +66,10 @@ function tokensOf(input) {
 }
 
 export class A6Intake {
-  constructor() {
+  constructor({ scriptUrl } = {}) {
+    this.scriptUrl = scriptUrl;
+    this.script = null;
+    this.recent = null;
     this.token = '';
     this.selections = new Map();
     this.revision = 0;
@@ -84,6 +88,7 @@ export class A6Intake {
     if (!domain) return;
     const table = domain.table('auth');
     const row = table.get(KEY);
+    this.recent = table.get('a6-script-report')?.recent ?? null;
     if (row?.token) { this.token = row.token; return; }
     this.token = randomBytes(24).toString('base64url');
     await table.put(KEY, { siteId: KEY, token: this.token });
@@ -128,14 +133,64 @@ export class A6Intake {
     return { ok: true, selectionId: selection.id, revision: this.revision, models: selection.models.length, tokens: selection.tokens.length };
   }
 
+  async scriptInfo() {
+    await this.ready;
+    if (!this.script) {
+      const source = await readFile(this.scriptUrl, 'utf8');
+      const version = /^\/\/\s*@version\s+(\S+)/m.exec(source)?.[1];
+      if (!version || !source.includes('// ==/UserScript==')) throw new Error('包内油猴脚本元数据无效');
+      this.script = { source, version };
+    }
+    return { version: this.script.version, protocolVersion: 1,
+      installUrl: this.origin ? `${this.origin}/mit-a6/userscript/install.user.js` : '',
+      updateUrl: this.origin ? `${this.origin}/mit-a6/userscript/update.meta.js` : '',
+      ...(this.recent ? { recent: this.recent } : {}) };
+  }
+
+  async report(input) {
+    const siteOrigin = text(input?.siteOrigin, 120);
+    const accountId = text(input?.accountId, 40);
+    const version = text(input?.scriptVersion, 40);
+    if (!SITE_ORIGINS.has(siteOrigin) || !accountId || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) {
+      throw new A6Error('invalid-input', '脚本报告格式无效');
+    }
+    const recent = { version, protocolVersion: Number.isSafeInteger(input?.protocolVersion) ? input.protocolVersion : null, seenAt: Date.now(), accountId };
+    const domain = await this.storage?.managed();
+    await domain?.table('auth').put('a6-script-report', { siteId: 'a6-script-report', recent });
+    this.recent = recent;
+    return { ok: true };
+  }
+
   mount(webServer) {
     this.origin = webServer.getOrigin();
     const url = new URL(this.origin);
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw new A6Error('loopback-required', '选择导入口仅允许本机 DSH 服务');
-    return webServer.register({ kind: 'prefix', path: PATH, handler: (req, res) => this.handle(req, res) });
+    const disposers = [];
+    try {
+      disposers.push(webServer.register({ kind: 'exact', path: PATH, handler: (req, res) => this.handle(req, res) }));
+      disposers.push(webServer.register({ kind: 'exact', path: '/mit-a6/report', handler: (req, res) => this.handle(req, res, true) }));
+      for (const path of ['/mit-a6/userscript/install.user.js', '/mit-a6/userscript/update.meta.js']) {
+        disposers.push(webServer.register({ kind: 'exact', path, handler: async (req, res) => {
+          res.setHeader('Cache-Control', 'no-store');
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          if (!['GET', 'HEAD'].includes(req.method)) { res.statusCode = 405; res.setHeader('Allow', 'GET, HEAD'); res.end(); return; }
+          try {
+            const host = new URL(`http://${req.headers.host ?? ''}`).hostname;
+            if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) { res.statusCode = 403; res.end(); return; }
+            const info = await this.scriptInfo();
+            const source = this.script.source.replace(/^\/\/\s*@(updateURL|downloadURL)\s+.*\r?\n/gm, '');
+            const rendered = source.replace('// ==/UserScript==', `// @updateURL ${info.updateUrl}\n// @downloadURL ${info.installUrl}\n// ==/UserScript==`);
+            const body = path.endsWith('.meta.js') ? rendered.slice(0, rendered.indexOf('// ==/UserScript==') + '// ==/UserScript=='.length) + '\n' : rendered;
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+            res.end(req.method === 'HEAD' ? undefined : body);
+          } catch { res.statusCode = 503; res.end('Package userscript unavailable'); }
+        } }));
+      }
+    } catch (error) { for (const dispose of disposers.reverse()) dispose(); throw error; }
+    return () => { for (const dispose of disposers.reverse()) dispose(); };
   }
 
-  async handle(req, res) {
+  async handle(req, res, reporting = false) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -158,7 +213,12 @@ export class A6Intake {
         chunks.push(chunk);
       }
       const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      res.end(JSON.stringify(this.submit(input)));
+      if (reporting) res.end(JSON.stringify(await this.report(input)));
+      else {
+        const result = this.submit(input);
+        if (input?.scriptVersion) { try { await this.report(input); } catch { /* Optional reporting never rejects an accepted selection. */ } }
+        res.end(JSON.stringify(result));
+      }
     } catch (error) {
       res.statusCode = error?.code === 'not-paired' || error?.code === 'wrong-host' || error?.code === 'wrong-site' ? 403 : 400;
       res.end(JSON.stringify({ error: error instanceof A6Error ? error.message : '请求格式无效', code: error?.code ?? 'invalid-input' }));

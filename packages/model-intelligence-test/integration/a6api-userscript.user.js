@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a6api · 模型智能测试 v3
 // @namespace    dsh.model-intelligence-test
-// @version      3.2.0
+// @version      3.2.1
 // @description  在市场与令牌表格中提供勾选列，把所选渠道与测试令牌一次性发送给本机 DSH；不执行站点写操作，不读取或导出 API 密钥。
 // @match        https://a6api.vip/*
 // @match        https://www.a6api.vip/*
@@ -32,6 +32,7 @@
   // Only these response fields enter the cache. Never observe key/reveal/copy endpoints,
   // React internals, authorization headers, or complete token objects.
   const SESSION_KEY = 'a6api_session_user_id';
+  const SCRIPT_VERSION = '3.2.1';
   const PREFIX = 'mit-a6-v3:';
   const CONFIG_KEY = 'mit-a6-config-v3';
   const SEND_TIMEOUT_MS = 12000;
@@ -568,6 +569,15 @@
     if (!intake || /[^\x21-\x7e]/.test(intake)) throw new Error('导入口令为空或包含空格/非 ASCII 字符');
     return { origin: url.origin, intake };
   }
+  function reportVersion() {
+    if (!config || !accountId || disposed) return;
+    GM_xmlhttpRequest({
+      method: 'POST', url: `${config.origin}/mit-a6/report`, timeout: SEND_TIMEOUT_MS, anonymous: true,
+      headers: { 'content-type': 'application/json', 'x-mit-intake': config.intake },
+      data: JSON.stringify({siteOrigin, accountId, scriptVersion: SCRIPT_VERSION, protocolVersion: 1}),
+      onload() {}, onerror() {}, ontimeout() {},
+    });
+  }
   function postSelection(body, target) {
     // Exactly one HTTP round trip. No retry and no polling: the user sends again on failure.
     return new Promise((resolve, reject) => {
@@ -601,10 +611,10 @@
     const target = config;
     const generation = epoch;
     const body = {
-      siteOrigin, accountId, pageId,
+      siteOrigin, accountId, pageId, scriptVersion: SCRIPT_VERSION, protocolVersion: 1,
       models: [...selectedModels.values()].map(row => ({
         listingId: row.listingId, channelId: row.channelId, supplierId: row.supplierId, model: row.model,
-        supplierName: row.supplierName, channelName: row.channelName, brand: row.brand,
+        supplierName: row.supplierName, channelName: row.channelName, brand: row.brand, market: row.market,
       })),
       tokens: payloadTokens(),
     };
@@ -781,6 +791,7 @@
     ui('[data-intake]').value = config.intake;
     status = `连接设置就绪：${config.origin}；勾选后点击「发送到 DSH 测试」`;
   }
+  reportVersion();
   uiReady = true;
   applyLayout();
   render();

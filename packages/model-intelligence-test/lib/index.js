@@ -1951,6 +1951,7 @@ var A6Site = class {
 };
 
 // backend/a6/intake.js
+import { readFile } from "node:fs/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 var PATH = "/mit-a6/select";
 var SITE_ORIGINS = /* @__PURE__ */ new Set(["https://a6api.vip", "https://www.a6api.vip"]);
@@ -2005,7 +2006,10 @@ function tokensOf(input2) {
   });
 }
 var A6Intake = class {
-  constructor() {
+  constructor({ scriptUrl } = {}) {
+    this.scriptUrl = scriptUrl;
+    this.script = null;
+    this.recent = null;
     this.token = "";
     this.selections = /* @__PURE__ */ new Map();
     this.revision = 0;
@@ -2022,6 +2026,7 @@ var A6Intake = class {
     if (!domain) return;
     const table = domain.table("auth");
     const row = table.get(KEY);
+    this.recent = table.get("a6-script-report")?.recent ?? null;
     if (row?.token) {
       this.token = row.token;
       return;
@@ -2065,13 +2070,83 @@ var A6Intake = class {
     this.revision += 1;
     return { ok: true, selectionId: selection.id, revision: this.revision, models: selection.models.length, tokens: selection.tokens.length };
   }
+  async scriptInfo() {
+    await this.ready;
+    if (!this.script) {
+      const source = await readFile(this.scriptUrl, "utf8");
+      const version = /^\/\/\s*@version\s+(\S+)/m.exec(source)?.[1];
+      if (!version || !source.includes("// ==/UserScript==")) throw new Error("\u5305\u5185\u6CB9\u7334\u811A\u672C\u5143\u6570\u636E\u65E0\u6548");
+      this.script = { source, version };
+    }
+    return {
+      version: this.script.version,
+      protocolVersion: 1,
+      installUrl: this.origin ? `${this.origin}/mit-a6/userscript/install.user.js` : "",
+      updateUrl: this.origin ? `${this.origin}/mit-a6/userscript/update.meta.js` : "",
+      ...this.recent ? { recent: this.recent } : {}
+    };
+  }
+  async report(input2) {
+    const siteOrigin = text2(input2?.siteOrigin, 120);
+    const accountId = text2(input2?.accountId, 40);
+    const version = text2(input2?.scriptVersion, 40);
+    if (!SITE_ORIGINS.has(siteOrigin) || !accountId || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) {
+      throw new A6Error("invalid-input", "\u811A\u672C\u62A5\u544A\u683C\u5F0F\u65E0\u6548");
+    }
+    const recent = { version, protocolVersion: Number.isSafeInteger(input2?.protocolVersion) ? input2.protocolVersion : null, seenAt: Date.now(), accountId };
+    const domain = await this.storage?.managed();
+    await domain?.table("auth").put("a6-script-report", { siteId: "a6-script-report", recent });
+    this.recent = recent;
+    return { ok: true };
+  }
   mount(webServer) {
     this.origin = webServer.getOrigin();
     const url = new URL(this.origin);
     if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) throw new A6Error("loopback-required", "\u9009\u62E9\u5BFC\u5165\u53E3\u4EC5\u5141\u8BB8\u672C\u673A DSH \u670D\u52A1");
-    return webServer.register({ kind: "prefix", path: PATH, handler: (req, res) => this.handle(req, res) });
+    const disposers = [];
+    try {
+      disposers.push(webServer.register({ kind: "exact", path: PATH, handler: (req, res) => this.handle(req, res) }));
+      disposers.push(webServer.register({ kind: "exact", path: "/mit-a6/report", handler: (req, res) => this.handle(req, res, true) }));
+      for (const path of ["/mit-a6/userscript/install.user.js", "/mit-a6/userscript/update.meta.js"]) {
+        disposers.push(webServer.register({ kind: "exact", path, handler: async (req, res) => {
+          res.setHeader("Cache-Control", "no-store");
+          res.setHeader("X-Content-Type-Options", "nosniff");
+          if (!["GET", "HEAD"].includes(req.method)) {
+            res.statusCode = 405;
+            res.setHeader("Allow", "GET, HEAD");
+            res.end();
+            return;
+          }
+          try {
+            const host = new URL(`http://${req.headers.host ?? ""}`).hostname;
+            if (!["127.0.0.1", "localhost", "[::1]"].includes(host)) {
+              res.statusCode = 403;
+              res.end();
+              return;
+            }
+            const info = await this.scriptInfo();
+            const source = this.script.source.replace(/^\/\/\s*@(updateURL|downloadURL)\s+.*\r?\n/gm, "");
+            const rendered = source.replace("// ==/UserScript==", `// @updateURL ${info.updateUrl}
+// @downloadURL ${info.installUrl}
+// ==/UserScript==`);
+            const body = path.endsWith(".meta.js") ? rendered.slice(0, rendered.indexOf("// ==/UserScript==") + "// ==/UserScript==".length) + "\n" : rendered;
+            res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+            res.end(req.method === "HEAD" ? void 0 : body);
+          } catch {
+            res.statusCode = 503;
+            res.end("Package userscript unavailable");
+          }
+        } }));
+      }
+    } catch (error) {
+      for (const dispose of disposers.reverse()) dispose();
+      throw error;
+    }
+    return () => {
+      for (const dispose of disposers.reverse()) dispose();
+    };
   }
-  async handle(req, res) {
+  async handle(req, res, reporting = false) {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -2098,7 +2173,17 @@ var A6Intake = class {
         chunks.push(chunk);
       }
       const input2 = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      res.end(JSON.stringify(this.submit(input2)));
+      if (reporting) res.end(JSON.stringify(await this.report(input2)));
+      else {
+        const result = this.submit(input2);
+        if (input2?.scriptVersion) {
+          try {
+            await this.report(input2);
+          } catch {
+          }
+        }
+        res.end(JSON.stringify(result));
+      }
     } catch (error) {
       res.statusCode = error?.code === "not-paired" || error?.code === "wrong-host" || error?.code === "wrong-site" ? 403 : 400;
       res.end(JSON.stringify({ error: error instanceof A6Error ? error.message : "\u8BF7\u6C42\u683C\u5F0F\u65E0\u6548", code: error?.code ?? "invalid-input" }));
@@ -2449,7 +2534,8 @@ var A6Service = class {
       mask: this.site.mask,
       userId: this.site.userId,
       intakeToken: this.intake.token,
-      origin: this.intake.origin ?? ""
+      origin: this.intake.origin ?? "",
+      userscript: await this.intake.scriptInfo()
     };
   }
   async saveConfig({ accessToken, userId }) {
@@ -3160,7 +3246,7 @@ var inject = ["typert", "storageDomain", "webServer"];
 function apply(ctx) {
   const storage = new PluginStorage(ctx);
   const site = new A6Site();
-  const intake = new A6Intake();
+  const intake = new A6Intake({ scriptUrl: new URL("../integration/a6api-userscript.user.js", import.meta.url) });
   intake.attachStorage(storage);
   ctx.effect(() => intake.mount(ctx.webServer), "model-intelligence.a6-intake");
   let records;

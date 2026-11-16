@@ -14,7 +14,7 @@ export const inject = ['typert', 'storageDomain', 'webServer'];
 export function apply(ctx) {
   const storage = new PluginStorage(ctx);
   const site = new A6Site();
-  const intake = new A6Intake();
+  const intake = new A6Intake({ scriptUrl: new URL('../integration/a6api-userscript.user.js', import.meta.url) });
   intake.attachStorage(storage);
   ctx.effect(() => intake.mount(ctx.webServer), 'model-intelligence.a6-intake');
   let records;

@@ -36,7 +36,7 @@ export interface A6Token { id: number; name: string }
 export interface A6Slot { tokenId: number; name?: string }
 export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; models: A6Channel[]; tokens: A6Token[] }
 /** Credential state as the panel sees it: the access token itself never leaves Host storage. */
-export interface A6Config { configured: boolean; mask: string; userId: string; intakeToken: string; origin: string; link?: string }
+export interface A6Config { configured: boolean; mask: string; userId: string; intakeToken: string; origin: string; link?: string; userscript?: {version: string; protocolVersion: number; installUrl: string; updateUrl: string; recent?: {version: string; protocolVersion: number | null; seenAt: number; accountId: string}} }
 export type A6SelectionsView = {revision: number; selections: A6Selection[]} | {revision: number; unchanged: true};
 export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[] }
 export type A6Operation = 'pin' | 'restore';
