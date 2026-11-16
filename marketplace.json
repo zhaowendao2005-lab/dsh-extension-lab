@@ -430,6 +430,42 @@
           }
         }
       ]
+    },
+    {
+      "name": "dsh-antigravity-acp",
+      "title": {
+        "en": "Antigravity ACP · Development Preview",
+        "zh": "Antigravity ACP · 开发预览"
+      },
+      "description": {
+        "en": "Local official agy ACP adapter using the existing CLI login. Model discovery is available; generation remains blocked pending native-tool purity verification.",
+        "zh": "复用本机官方 agy 登录的 ACP 模型适配器。支持模型目录发现；原生工具纯净性未核验，真实生成仍阻断。"
+      },
+      "metadata": {
+        "keywords": [
+          "antigravity",
+          "acp",
+          "model",
+          "preview"
+        ],
+        "labels": [],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1794795475,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "be469f878aaddd81ba73150c628fe990dc5cecdf",
+            "path": "packages/dsh-antigravity-acp"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.3 <0.3.0-0"
+          }
+        }
+      ]
     }
   ]
 }
