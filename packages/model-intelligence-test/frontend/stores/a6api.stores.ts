@@ -102,7 +102,6 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
       const draft = store.getState().drafts[selectionId];
       if (!draft) return;
       const selected = draft.tokens.includes(tokenId);
-      if (!selected && draft.tokens.length >= 8) { patch(selectionId, { error: '最多 8 个测试槽位' }); return; }
       patch(selectionId, { tokens: selected ? draft.tokens.filter(id => id !== tokenId) : [...draft.tokens, tokenId], error: undefined, result: undefined });
     },
     async submit(selectionId: string): Promise<void> {
@@ -115,6 +114,7 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
         const { record, attemptId } = await createA6Record(transport, {
           selectionId, name: draft.name.trim() || 'a6api 专项指纹',
           slots: draft.tokens.map(tokenId => ({ tokenId })),
+          models: draft.models,
           ...(draft.timeoutMs !== undefined ? { timeoutMs: draft.timeoutMs } : {}),
         });
         patch(selectionId, { creating: false, feedback: `已开始：${draft.models.length} 项 × ${draft.tokens.length} 槽` });

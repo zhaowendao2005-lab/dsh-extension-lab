@@ -54,12 +54,12 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
   // ---- projection -------------------------------------------------------------------------------
   function attemptOf(record: StoredRecord): AttemptSummary | undefined {
     const chosen = selected.get(record.id);
-    const found = record.attempts.find(attempt => attempt.id === chosen);
+    const found = (record.attempts ?? []).find(attempt => attempt.id === chosen);
     if (found) return found;
     // A just-started custom simulation exists before the next list sync carries its attempt.
     const sim = sims.get(record.id);
     if (sim && sim.attemptId === chosen) return { id: sim.attemptId, recordId: record.id, number: 1, status: 'running', createdAt: Date.now(), startedAt: Date.now(), finishedAt: null, error: null, summary: null };
-    return record.attempts[record.attempts.length - 1];
+    return record.attempts?.at(-1);
   }
   function runIdsOf(record: StoredRecord, attempt?: AttemptSummary): string[] {
     const prefix = attempt?.id ?? `${record.id}:none`;
@@ -270,7 +270,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
       acceptedVersion++;
       selected.set(record.id, attemptId);
       watched.add(record.id);
-      stored = [record, ...stored.filter(item => item.id !== record.id)];
+      stored = [{ ...record, attempts: record.attempts ?? [] }, ...stored.filter(item => item.id !== record.id)];
       rebuild();
       refreshSoon();
     },

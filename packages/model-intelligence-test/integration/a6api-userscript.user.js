@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a6api · 模型智能测试 v3
 // @namespace    dsh.model-intelligence-test
-// @version      3.0.0
+// @version      3.1.0
 // @description  在市场与令牌表格中提供勾选列，把所选渠道与测试令牌一次性发送给本机 DSH；不执行站点写操作，不读取或导出 API 密钥。
 // @match        https://a6api.vip/*
 // @match        https://www.a6api.vip/*
@@ -42,6 +42,9 @@
   const tokenCache = new Map();
   const siteRequests = new Set();
   let selectedTokens = new Map();
+  // Whether the folded group of test tokens is open. Persisted per account: the fold is a view
+  // preference, and a different a6api account has a different test-token list.
+  let foldState = { expanded: false };
   let visibleCounts = { models: 0, tokens: 0 };
   let accountId = sessionId();
   let epoch = 0;
@@ -85,9 +88,20 @@
   function loadTokens() {
     const saved = readStored(storageKey('tokens'), []);
     selectedTokens = new Map((Array.isArray(saved) ? saved : []).map(tokenOf).filter(Boolean).map(t => [t.id, t]));
+    // The saved selection is also the strongest identity hint: it lets a freshly loaded page recognise
+    // its own test tokens before the site refetches the token list.
+    for (const token of selectedTokens.values()) if (!tokenCache.has(token.id)) tokenCache.set(token.id, token);
   }
   function persistTokens() {
     saveStored(storageKey('tokens'), [...selectedTokens.values()].map(({ id, name }) => ({ id, name })));
+  }
+  function loadFold() {
+    const saved = readStored(storageKey('fold'), null);
+    foldState = { expanded: saved?.expanded === true };
+  }
+  function persistFold() {
+    try { saveStored(storageKey('fold'), { expanded: foldState.expanded === true }); }
+    catch { status = '折叠状态保存失败，本次仅在本页生效'; }
   }
   function modelOf(value) {
     const model = label(value?.model_name ?? value?.model);
@@ -125,7 +139,8 @@
     tokenCache.clear();
     accountId = id;
     selectedTokens.clear();
-    if (accountId) loadTokens();
+    foldState = { expanded: false };
+    if (accountId) { loadTokens(); loadFold(); }
     status = accountId ? `当前账号 #${accountId}，勾选后发送` : '请先登录 a6api';
     scheduleScan();
     render();
@@ -257,7 +272,13 @@
     const headerRow = table.tHead?.rows[table.tHead.rows.length - 1];
     return headerRow ? nativeCells(headerRow).map(cellText) : [];
   }
-  function rowToken(tr, headers) {
+  /** The visible token name. Works even when the row carries no id the site exposes (production table). */
+  function rowTokenName(tr, headers) {
+    const nameIndex = headers.findIndex(text => /^(?:令牌名称|令牌名|名称|Token\s*Name|Name)$/i.test(text));
+    const cell = nameIndex >= 0 ? nativeCells(tr)[nameIndex] : null;
+    return label(tr.dataset.tokenName) || label(cell?.querySelector('.ct-name-main-title')?.textContent) || (cell ? cellText(cell) : '');
+  }
+  function rowToken(tr, headers, allowNameMatch = true) {
     const cells = nativeCells(tr);
     const idIndex = headers.findIndex(text => /^(?:令牌\s*)?ID$/i.test(text));
     const nameIndex = headers.findIndex(text => /^(?:令牌名称|令牌名|名称|Token\s*Name|Name)$/i.test(text));
@@ -273,7 +294,7 @@
       || (nameCell ? cellText(nameCell) : '');
     if (id && name) return { id, name };
     if (id && tokenCache.has(id)) return tokenCache.get(id);
-    if (name) {
+    if (name && allowNameMatch) {
       const matches = [...tokenCache.values()].filter(token => token.name === name);
       if (matches.length === 1) return matches[0];
     }
@@ -290,7 +311,9 @@
   function makeCell(tag, kind) {
     const cell = document.createElement(tag);
     cell.setAttribute('data-mit-a6-cell', kind);
-    cell.style.cssText = 'width:74px;min-width:74px;box-sizing:border-box;text-align:center;vertical-align:middle;padding:8px 6px;';
+    cell.style.cssText = 'width:74px;min-width:74px;box-sizing:border-box;text-align:center;vertical-align:middle;padding:8px 6px;'
+      + 'border-left:2px dashed #345dcc;background:#f4f7ff;';
+    if (tag === 'td') cell.title = '由「模型智能测试」插件注入，不影响站点数据';
     cell.addEventListener('click', event => event.stopPropagation());
     cell.addEventListener('pointerdown', event => event.stopPropagation());
     return cell;
@@ -322,7 +345,13 @@
       const cell = makeCell('th', kind);
       cell.scope = 'col';
       const caption = document.createElement('div');
-      caption.textContent = kind === 'model' ? '测试渠道' : '测试令牌';
+      const badge = document.createElement('span');
+      badge.textContent = '插件';
+      badge.style.cssText = 'display:block;font-size:10px;font-weight:700;letter-spacing:.04em;color:#fff;background:#345dcc;border-radius:4px;padding:1px 0;margin:0 0 3px;';
+      const name = document.createElement('span');
+      name.textContent = kind === 'model' ? '测试渠道' : '测试令牌';
+      name.style.cssText = 'display:block;font-size:11px;font-weight:600;color:#1f3a86;';
+      caption.append(badge, name);
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.title = '选择本页可测项；仅勾选不会更改站点配置';
@@ -334,10 +363,16 @@
     }
     const headers = headersOf(table);
     const rows = kind === 'model' ? table.querySelectorAll('tr.mp-channel-row') : table.querySelectorAll('tbody > tr');
+    const tokenNameCounts = new Map();
+    if (kind === 'token') for (const tr of rows) {
+      if (tr.closest('table') !== table || tr.closest('tbody[data-mit-a6-fold]')) continue;
+      const name = rowTokenName(tr, headers);
+      if (name) tokenNameCounts.set(name, (tokenNameCounts.get(name) || 0) + 1);
+    }
     for (const tr of rows) {
       if (tr.closest('table') !== table) continue;
       if (nativeCells(tr).length < 2 || nativeCells(tr).some(cell => cell.colSpan > 1)) continue;
-      const row = accountId ? (kind === 'model' ? rowModel(tr) : rowToken(tr, headers)) : null;
+      const row = accountId ? (kind === 'model' ? rowModel(tr) : rowToken(tr, headers, tokenNameCounts.get(rowTokenName(tr, headers)) === 1)) : null;
       let cell = [...tr.children].find(item => item.getAttribute('data-mit-a6-cell') === kind);
       if (!cell) {
         cell = makeCell('td', kind);
@@ -363,6 +398,10 @@
       }
       cell._mitRow = row;
       cell._mitEpoch = epoch;
+      if (kind === 'token') {
+        tr._mitTokenId = row ? row.id : undefined;
+        tr._mitTokenName = row?.name ?? (accountId ? rowTokenName(tr, headers) : undefined);
+      }
       const input = cell.querySelector('input');
       const checked = !!row && (kind === 'model' ? selectedModels.has(modelKey(row)) : selectedTokens.has(row.id));
       if (input.checked !== checked) input.checked = checked;
@@ -372,6 +411,7 @@
       if (input.title !== title) input.title = title;
       if (input.getAttribute('aria-label') !== title) input.setAttribute('aria-label', title);
     }
+    applyFold(table, kind);
     const pageCells = selectableCells(table, kind);
     const pageChecked = pageCells.filter(cell => cell.querySelector('input').checked).length;
     const headerInput = header?.querySelector(`th[data-mit-a6-cell="${kind}"] input`);
@@ -380,6 +420,76 @@
       headerInput.checked = !!pageCells.length && pageChecked === pageCells.length;
       headerInput.indeterminate = pageChecked > 0 && pageChecked < pageCells.length;
     }
+  }
+  /**
+   * Collapse every row that is a chosen test token into one summary line. Rows are hidden, never
+   * moved or cloned: the site's own React tree keeps reconciling them, so paging, sorting and the
+   * site's own checkboxes stay intact. The summary lives in its own tbody so it cannot disturb the
+   * real tbody's child list.
+   */
+  function applyFold(table, kind) {
+    if (kind !== 'token') return;
+    const rows = [...table.querySelectorAll('tbody > tr')]
+      .filter(tr => tr.closest('table') === table && !tr.closest('tbody[data-mit-a6-fold]'));
+    const nameCounts = new Map();
+    for (const token of tokenCache.values()) nameCounts.set(token.name, (nameCounts.get(token.name) || 0) + 1);
+    const rowNameCounts = new Map();
+    for (const tr of rows) if (tr._mitTokenName) rowNameCounts.set(tr._mitTokenName, (rowNameCounts.get(tr._mitTokenName) || 0) + 1);
+    const names = new Set([...selectedTokens.values()].map(token => token.name));
+    const isTest = tr => tr._mitTokenId
+      ? selectedTokens.has(tr._mitTokenId)
+      : !!tr._mitTokenName && names.has(tr._mitTokenName)
+        && nameCounts.get(tr._mitTokenName) === 1 && rowNameCounts.get(tr._mitTokenName) === 1;
+    const testRows = rows.filter(isTest);
+    const group = table.querySelector('tbody[data-mit-a6-fold]');
+    if (!testRows.length) {
+      if (group) group.remove();
+      for (const tr of rows) if (tr.hasAttribute('data-mit-a6-hidden')) { tr.style.display = ''; tr.removeAttribute('data-mit-a6-hidden'); }
+      return;
+    }
+    const hidden = foldState.expanded !== true;
+    for (const tr of rows) {
+      const folded = hidden && isTest(tr);
+      if (folded) { if (tr.style.display !== 'none') tr.style.display = 'none'; tr.setAttribute('data-mit-a6-hidden', '1'); }
+      else if (tr.hasAttribute('data-mit-a6-hidden')) { tr.style.display = ''; tr.removeAttribute('data-mit-a6-hidden'); }
+    }
+    let host2 = group;
+    if (!host2) {
+      host2 = document.createElement('tbody');
+      host2.setAttribute('data-mit-a6-fold', '1');
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = Math.max(1, table.tHead?.rows[table.tHead.rows.length - 1]?.children.length ?? 3);
+      cell.style.cssText = 'padding:7px 10px;border-top:1px dashed #345dcc;border-bottom:1px dashed #345dcc;background:#eef3ff;';
+      const line = document.createElement('div');
+      line.style.cssText = 'display:flex;align-items:center;gap:8px;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1f3a86;';
+      const badge = document.createElement('span');
+      badge.textContent = '插件';
+      badge.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.04em;color:#fff;background:#345dcc;border-radius:4px;padding:1px 5px;';
+      const text = document.createElement('span');
+      text.setAttribute('data-mit-a6-fold-text', '');
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.setAttribute('data-mit-a6-fold-toggle', '');
+      toggle.style.cssText = 'border:1px solid #345dcc;background:#fff;color:#1f3a86;border-radius:6px;padding:2px 8px;font:inherit;font-size:12px;cursor:pointer;';
+      toggle.addEventListener('click', event => {
+        event.preventDefault(); event.stopPropagation();
+        foldState.expanded = foldState.expanded !== true;
+        persistFold(); scan();
+      });
+      row.addEventListener('click', event => event.stopPropagation());
+      line.append(badge, text, toggle);
+      cell.appendChild(line);
+      row.appendChild(cell);
+      host2.appendChild(row);
+      table.appendChild(host2);
+    }
+    const text = host2.querySelector('[data-mit-a6-fold-text]');
+    const label = `${hidden ? '已折叠' : '已展开'} ${testRows.length} 个测试令牌`;
+    if (text.textContent !== label) text.textContent = label;
+    const toggle = host2.querySelector('[data-mit-a6-fold-toggle]');
+    const action = hidden ? '展开' : '收起';
+    if (toggle.textContent !== action) toggle.textContent = action;
   }
   function scan() {
     clearTimeout(scanTimer);
@@ -477,7 +587,7 @@
   // Install before the SPA captures fetch in its API client. A document-idle hook can never
   // observe calls made through an earlier captured reference, even after clicking Refresh.
   observeSiteRequests();
-  if (accountId) loadTokens();
+  if (accountId) { loadTokens(); loadFold(); }
   if (!document.body) await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
   if (document.getElementById('mit-a6-v3-card')) return;
 
@@ -503,6 +613,7 @@
       <p class="count" data-count></p>
       <p class="hint">先到令牌页选择测试令牌，再到市场选渠道。若行被禁选，请通过站点翻页或刷新列表建立响应缓存；只保存令牌 ID 与名称。</p>
       <div class="row"><button data-send class="primary" type="button">发送到 DSH 测试</button><button data-clear type="button">清空渠道选择</button></div>
+      <div class="row"><button data-fold type="button">折叠测试令牌</button></div>
       <p class="status" data-status role="status" aria-live="polite"></p>
       <details><summary>连接设置</summary>
         <small>DSH 地址填本机源地址；导入口令由 DSH 生成。两项仅保存在油猴存储，发送时一次性提交，不做轮询或重试。</small>
@@ -544,6 +655,9 @@
     if (ui('[data-status]').textContent !== status) ui('[data-status]').textContent = status;
     ui('[data-send]').disabled = busy;
     ui('[data-clear]').disabled = busy;
+    ui('[data-fold]').disabled = busy || !selectedTokens.size;
+    const foldLabel = foldState.expanded ? '收起测试令牌' : '展开测试令牌';
+    if (ui('[data-fold]').textContent !== foldLabel) ui('[data-fold]').textContent = foldLabel;
     ui('[data-save]').disabled = busy;
     const target = config ? `将发送到 ${config.origin}/mit-a6/select` : '尚未保存连接设置，发送按钮不会发出请求';
     if (ui('[data-target]').textContent !== target) ui('[data-target]').textContent = target;
@@ -551,6 +665,12 @@
   }
   ui('[data-collapse]').addEventListener('click', () => { layout.collapsed = !layout.collapsed; applyLayout(); saveLayout(); });
   ui('[data-send]').addEventListener('click', send);
+  ui('[data-fold]').addEventListener('click', () => {
+    foldState.expanded = foldState.expanded !== true;
+    persistFold();
+    scheduleScan();
+    render();
+  });
   ui('[data-clear]').addEventListener('click', () => { selectedModels.clear(); scheduleScan(); render(); });
   ui('[data-save]').addEventListener('click', () => {
     try {
@@ -593,6 +713,7 @@
   listen(window, 'storage', event => {
     if (event.key === SESSION_KEY) { checkAccount(true); return; }
     if (event.storageArea === localStorage && event.key === storageKey('tokens')) { loadTokens(); scheduleScan(); render(); }
+    if (event.storageArea === localStorage && event.key === storageKey('fold')) { loadFold(); scheduleScan(); render(); }
     if (event.key === layoutKey) {
       const next = readStored(layoutKey, {});
       layout = next && typeof next === 'object' ? next : {};
@@ -645,6 +766,8 @@
     for (const controller of siteRequests) controller.abort();
     for (const cleanup of cleanupHooks.reverse()) { try { cleanup(); } catch { /* Page is unloading. */ } }
     for (const cell of document.querySelectorAll('[data-mit-a6-cell]')) cell.remove();
+    for (const tr of document.querySelectorAll('tr[data-mit-a6-hidden]')) { tr.style.display = ''; tr.removeAttribute('data-mit-a6-hidden'); }
+    for (const node of document.querySelectorAll('tbody[data-mit-a6-fold]')) node.remove();
     host.remove();
     // BFCache restores the old JS heap; rebuild exactly once with fresh account/session state.
     if (event.persisted) addEventListener('pageshow', resumed => { if (resumed.persisted) boot(); }, { once: true });

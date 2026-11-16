@@ -15,7 +15,7 @@ const modelRef = z.strictObject({ provider: id(128), id: id(256) });
 const recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional() });
 const a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional() });
 // A slot is one test token: the Host pins it to a channel, so no provider mapping is involved.
-const a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1).max(8);
+const a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1);
 const options = z.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
 
 const schemas = {

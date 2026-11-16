@@ -16,7 +16,7 @@ var relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), mode
 var modelRef = z.strictObject({ provider: id(128), id: id(256) });
 var recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional() });
 var a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional() });
-var a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1).max(8);
+var a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1);
 var options = z.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
 var schemas = {
   recordsList: z.strictObject({ revision: z.number().int().min(0).optional() }),
@@ -776,7 +776,7 @@ var FingerprintEngine = class {
   async drainA6(job) {
     const { signal } = job.controller;
     const llm = this.ctx.get("llm");
-    const workers = job.a6api.slots.map(async (slot) => {
+    const workers = job.a6api.slots.slice(0, job.pending.length).map(async (slot) => {
       const identity = tokenIdentity(job.a6api, slot.tokenId);
       if (!await this.tokenSlots.acquire(identity, signal)) return;
       try {
@@ -1728,7 +1728,6 @@ var PATH = "/mit-a6/select";
 var SITE_ORIGINS = /* @__PURE__ */ new Set(["https://a6api.vip", "https://www.a6api.vip"]);
 var MAX_BODY = 256e3;
 var MAX_MODELS = 64;
-var MAX_TOKENS = 32;
 var MAX_SELECTIONS = 20;
 var KEY = "a6-intake";
 var equal = (left, right) => {
@@ -1768,7 +1767,7 @@ function modelsOf(input2) {
   });
 }
 function tokensOf(input2) {
-  if (!Array.isArray(input2) || !input2.length || input2.length > MAX_TOKENS) throw new A6Error("invalid-input", "\u6D4B\u8BD5\u4EE4\u724C\u5217\u8868\u4E3A\u7A7A\u6216\u6570\u91CF\u65E0\u6548");
+  if (!Array.isArray(input2) || !input2.length) throw new A6Error("invalid-input", "\u6D4B\u8BD5\u4EE4\u724C\u5217\u8868\u4E3A\u7A7A\u6216\u6570\u91CF\u65E0\u6548");
   const seen = /* @__PURE__ */ new Set();
   return input2.map((item) => ({ id: positive(item?.id, "\u6D4B\u8BD5\u4EE4\u724C ID"), name: text2(item?.name, 120) || `\u4EE4\u724C ${item.id}` })).filter((item) => {
     if (seen.has(item.id)) return false;
@@ -1949,7 +1948,7 @@ var A6Service = class {
     return this.intake.selection(id2);
   }
   slots(selection, input2) {
-    if (!Array.isArray(input2) || !input2.length || input2.length > 8) throw new A6Error("invalid-slots", "\u8BF7\u9009\u62E9 1\u20138 \u4E2A\u6D4B\u8BD5\u69FD\u4F4D");
+    if (!Array.isArray(input2) || !input2.length) throw new A6Error("invalid-slots", "\u8BF7\u81F3\u5C11\u9009\u62E9\u4E00\u4E2A\u6D4B\u8BD5\u69FD\u4F4D");
     const seen = /* @__PURE__ */ new Set();
     return input2.map((slot) => {
       const token = selection.tokens.find((item) => item.id === slot.tokenId);

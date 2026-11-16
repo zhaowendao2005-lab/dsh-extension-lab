@@ -16,7 +16,6 @@ const PATH = '/mit-a6/select';
 const SITE_ORIGINS = new Set(['https://a6api.vip', 'https://www.a6api.vip']);
 const MAX_BODY = 256_000;
 const MAX_MODELS = 64;
-const MAX_TOKENS = 32;
 const MAX_SELECTIONS = 20;
 const KEY = 'a6-intake';
 
@@ -57,7 +56,7 @@ function modelsOf(input) {
   });
 }
 function tokensOf(input) {
-  if (!Array.isArray(input) || !input.length || input.length > MAX_TOKENS) throw new A6Error('invalid-input', '测试令牌列表为空或数量无效');
+  if (!Array.isArray(input) || !input.length) throw new A6Error('invalid-input', '测试令牌列表为空或数量无效');
   const seen = new Set();
   return input.map(item => ({ id: positive(item?.id, '测试令牌 ID'), name: text(item?.name, 120) || `令牌 ${item.id}` }))
     .filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });

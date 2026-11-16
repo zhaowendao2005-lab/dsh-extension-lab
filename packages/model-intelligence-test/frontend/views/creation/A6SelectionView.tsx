@@ -12,7 +12,9 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
   const busy=draft.creating||Boolean(draft.pending);
   const count=draft.models.length;
   const slots=draft.tokens.length;
-  const canSubmit=count>0&&count<=64&&slots>0&&slots<=8&&!busy;
+  // Host shares a pool of 18 sampling requests across all jobs.
+  const maxRequests=Math.min(count,slots,6)*3;
+  const canSubmit=count>0&&count<=64&&slots>0&&!busy;
   const target=draft.models.find(row => a6ChannelKey(row)===draft.targetChannel);
   const targetToken=selection.tokens.find(token => token.id===draft.targetTokenId);
   const base=`${store.sessionId}-a6-${selectionId}`;
@@ -34,7 +36,7 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
         {!count&&<p className="mit-muted">清单已清空。请从 a6api 网页发送新的选择。</p>}
       </section>
       <section className="mit-a6-section" aria-labelledby={`${base}-slots`}>
-        <div className="mit-label-row"><h3 id={`${base}-slots`}>测试令牌与并发槽</h3><span className="mit-muted">{slots} / 8 槽</span></div>
+        <div className="mit-label-row"><h3 id={`${base}-slots`}>测试令牌与并发槽</h3><span className="mit-muted">{slots} 槽</span></div>
         <p className="mit-muted">每个勾选的令牌是一个并发槽位，同一时刻只会固定一个渠道；令牌密钥由 Host 直接向 a6api 换取，页面与浏览器都拿不到。</p>
         <div className="mit-a6-slots">{selection.tokens.map(token => {
           const checked=draft.tokens.includes(token.id);
@@ -58,10 +60,10 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
         <div className="mit-a6-actions">{(['pin','restore'] as const).map(operation => <button type="button" className="mit-button" key={operation} disabled={busy||!target||!targetToken} onClick={() => store.actions.a6Action(selectionId,operation)}>{draft.pending===operation? '执行中…':({pin: '固定到该渠道',restore: '解除固定'})[operation]}</button>)}</div>
         {draft.result&&<pre className="mit-a6-operation-result" role="status">{draft.result}</pre>}
       </section>
-      <div className="mit-info"><strong>真实请求：</strong>{count} 项 · {slots} 槽 · {count*3} 次计划请求 · 最多 {slots*3} 路并发。同一模型的 3 条挑战同时请求，每个槽位完成一项后领取下一项。每次换项前 Host 会先固定渠道、核对生效后才发采样请求，测完立刻恢复原固定。已发出的请求会产生费用。</div>
+      <div className="mit-info"><strong>真实请求：</strong>{count} 项 · {slots} 槽 · {count*3} 次计划请求 · 最多 {maxRequests} 路并发。同一模型的 3 条挑战同时请求，每个槽位完成一项后领取下一项。每次换项前 Host 会先固定渠道、核对生效后才发采样请求，测完立刻恢复原固定。已发出的请求会产生费用。</div>
     </div>
     <footer className="mit-draft-footer">
-      <div aria-live="polite">{draft.error? <p className="mit-error" role="alert">{draft.error}</p>:<p className="mit-muted">{draft.feedback||`${count} 项 · ${slots} 槽 · ${count*3} 请求 · 最多 ${slots*3} 并发`}</p>}</div>
+      <div aria-live="polite">{draft.error? <p className="mit-error" role="alert">{draft.error}</p>:<p className="mit-muted">{draft.feedback||`${count} 项 · ${slots} 槽 · ${count*3} 请求 · 最多 ${maxRequests} 并发（跨任务共用 18 路上限）`}</p>}</div>
       <button type="button" className="mit-button mit-primary" disabled={!canSubmit} onClick={() => store.actions.submitA6(selectionId)}><Icon name="play" />{draft.creating? '创建并启动中…':'开始专项指纹测试'}</button>
     </footer>
   </div>;

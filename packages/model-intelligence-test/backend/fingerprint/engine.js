@@ -422,7 +422,7 @@ export class FingerprintEngine {
   async drainA6(job) {
     const { signal } = job.controller;
     const llm = this.ctx.get('llm');
-    const workers = job.a6api.slots.map(async slot => {
+    const workers = job.a6api.slots.slice(0, job.pending.length).map(async slot => {
       const identity = tokenIdentity(job.a6api, slot.tokenId);
       if (!await this.tokenSlots.acquire(identity, signal)) return;
       try {

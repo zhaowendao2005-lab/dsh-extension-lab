@@ -85,7 +85,7 @@ export class A6Service {
   }
 
   slots(selection, input) {
-    if (!Array.isArray(input) || !input.length || input.length > 8) throw new A6Error('invalid-slots', '请选择 1–8 个测试槽位');
+    if (!Array.isArray(input) || !input.length) throw new A6Error('invalid-slots', '请至少选择一个测试槽位');
     const seen = new Set();
     return input.map(slot => {
       const token = selection.tokens.find(item => item.id === slot.tokenId);
