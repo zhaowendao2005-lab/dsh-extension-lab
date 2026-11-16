@@ -451,8 +451,8 @@
         "zh": "Antigravity ACP · 开发预览"
       },
       "description": {
-        "en": "Local official agy ACP adapter using the existing CLI login. Model discovery is available; generation remains blocked pending native-tool purity verification.",
-        "zh": "复用本机官方 agy 登录的 ACP 模型适配器。支持模型目录发现；原生工具纯净性未核验，真实生成仍阻断。"
+        "en": "Local official agy ACP adapter reusing the existing CLI login. Every model request is rerouted through a loopback sanitizing gateway that strips non-DSH tool declarations and rewrites the system prompt; malformed requests are never forwarded.",
+        "zh": "复用本机官方 agy 登录的 ACP 模型适配器。所有模型请求改道本机净化网关：删除非 DSH 工具声明、重写系统提示，解析失败即拒绝转发。"
       },
       "metadata": {
         "keywords": [
@@ -465,6 +465,19 @@
         "sortKeys": {}
       },
       "versions": [
+        {
+          "version": "0.1.2",
+          "publishTimestamp": 1794800375,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "dc814fd48878e55ebd2f103874c2f7c42979f18f",
+            "path": "packages/dsh-antigravity-acp"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.3 <0.3.0-0"
+          }
+        },
         {
           "version": "0.1.1",
           "publishTimestamp": 1794800036,
