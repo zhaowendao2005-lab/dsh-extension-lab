@@ -54,11 +54,19 @@ function readJson(file) {
 }
 
 function getGitStatus() {
-  return run('git', ['status', '--porcelain=v1', '--untracked-files=all']);
+  const result = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: ROOT, encoding: 'utf8' });
+  if (result.error) fail(`git failed: ${result.error.message}`);
+  if (result.status !== 0) fail(`git status failed${result.stderr ? `:\n${result.stderr.trim()}` : ''}`);
+  return result.stdout || '';
 }
 
 function changedPaths(status) {
-  return status.split('\n').filter(Boolean).map((line) => line.slice(3));
+  // Do not trim: a leading " M" line means the first character of the output is significant.
+  return status.split('\n').filter(Boolean).map((line) => {
+    const path = line.slice(3);
+    const arrow = path.indexOf(' -> ');
+    return arrow === -1 ? path : path.slice(arrow + 4);
+  });
 }
 
 function isInsidePackage(file, packagePath) {
