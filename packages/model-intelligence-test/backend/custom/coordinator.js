@@ -97,7 +97,7 @@ export class CustomCoordinator {
     data.revision += 1; data.summary.updatedAt = Date.now(); this.touch(job);
   }
   event(job, data, input) {
-    const event = { id: `event-${randomUUID()}`, at: Date.now(), type: input.type, role:input.role ?? null, delta:input.delta === true, phase:input.phase ?? null, name:input.name ?? null, callId:input.callId ?? null, executionId:input.executionId ?? null, text:typeof input.text === 'string' ? input.text.slice(0,32000) : null, ...(input.content !== undefined ? {content:JSON.stringify(input.content).slice(0,32000)} : {}), ...(input.arguments !== undefined ? {arguments:JSON.stringify(input.arguments).slice(0,32000)} : {}), isError:input.isError === true };
+    const event = { id: `event-${randomUUID()}`, at: Date.now(), type: input.type, role:input.role ?? null, delta:input.delta === true, phase:input.phase ?? null, name:input.name ?? null, callId:input.callId ?? null, executionId:input.executionId ?? null, text:typeof input.text === 'string' ? input.text.slice(0,32000) : (input.type === 'error' && typeof input.message === 'string' ? input.message.slice(0, 800) : null), ...(input.type === 'error' && typeof input.code === 'string' ? {code: input.code.slice(0, 64)} : {}), ...(input.content !== undefined ? {content:JSON.stringify(input.content).slice(0,32000)} : {}), ...(input.arguments !== undefined ? {arguments:JSON.stringify(input.arguments).slice(0,32000)} : {}), isError:input.isError === true || input.type === 'error' };
     // Keep bounded durable events; coalesce adjacent text deltas.
     if (typeof event.text === 'string') event.text = event.text.slice(0, 100_000);
     const previous = data.events.at(-1);

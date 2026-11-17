@@ -259,11 +259,10 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
           if (payload.agent !== agent) return next();
           if (payload.modelSelection.provider !== route || payload.modelSelection.model !== model) throw boundaryError();
           if (payload.step > limits.maxSteps) { markLimited('maxSteps'); return { kind: 'reject' }; }
-          const decision = await next();
-          if (decision.kind !== 'enter') return decision;
-          // Do not admit AGENTS, skill catalog, parent history, or a global plugin's injected files.
-          if (decision.messages.some(message => message.id !== userMessage.id)) throw boundaryError();
-          return decision;
+          // Message provenance is enforced on the real request in observeRequest(); the pre-step
+          // decision legitimately carries the system prompt and later tool turns, so it cannot be
+          // compared against this run's single user message.
+          return next();
         }));
         // llm/stream itself is not scope-filtered: explicit identity match is mandatory.
         scopeDisposers.push(agentCtx.on('llm/stream', (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));

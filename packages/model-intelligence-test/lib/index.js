@@ -4296,10 +4296,7 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
             markLimited("maxSteps");
             return { kind: "reject" };
           }
-          const decision = await next();
-          if (decision.kind !== "enter") return decision;
-          if (decision.messages.some((message) => message.id !== userMessage.id)) throw boundaryError();
-          return decision;
+          return next();
         }));
         scopeDisposers.push(agentCtx.on("llm/stream", (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));
         scopeDisposers.push(agentCtx.on("session/event", (session, event) => {
@@ -4881,7 +4878,7 @@ var CustomCoordinator = class {
     this.touch(job);
   }
   event(job, data, input2) {
-    const event = { id: `event-${randomUUID5()}`, at: Date.now(), type: input2.type, role: input2.role ?? null, delta: input2.delta === true, phase: input2.phase ?? null, name: input2.name ?? null, callId: input2.callId ?? null, executionId: input2.executionId ?? null, text: typeof input2.text === "string" ? input2.text.slice(0, 32e3) : null, ...input2.content !== void 0 ? { content: JSON.stringify(input2.content).slice(0, 32e3) } : {}, ...input2.arguments !== void 0 ? { arguments: JSON.stringify(input2.arguments).slice(0, 32e3) } : {}, isError: input2.isError === true };
+    const event = { id: `event-${randomUUID5()}`, at: Date.now(), type: input2.type, role: input2.role ?? null, delta: input2.delta === true, phase: input2.phase ?? null, name: input2.name ?? null, callId: input2.callId ?? null, executionId: input2.executionId ?? null, text: typeof input2.text === "string" ? input2.text.slice(0, 32e3) : input2.type === "error" && typeof input2.message === "string" ? input2.message.slice(0, 800) : null, ...input2.type === "error" && typeof input2.code === "string" ? { code: input2.code.slice(0, 64) } : {}, ...input2.content !== void 0 ? { content: JSON.stringify(input2.content).slice(0, 32e3) } : {}, ...input2.arguments !== void 0 ? { arguments: JSON.stringify(input2.arguments).slice(0, 32e3) } : {}, isError: input2.isError === true || input2.type === "error" };
     if (typeof event.text === "string") event.text = event.text.slice(0, 1e5);
     const previous = data.events.at(-1);
     if (event.delta && previous?.type === event.type && previous.role === event.role && (previous.text?.length ?? 0) < 1e5) previous.text = `${previous.text ?? ""}${event.text ?? ""}`.slice(0, 1e5);
