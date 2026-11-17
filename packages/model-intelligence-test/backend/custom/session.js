@@ -55,6 +55,8 @@ function boundaryError(where = 'unknown') { return new LlmError(`boundary:${wher
  * owned by this run. This also catches newly introduced required runtime
  * context that suppressRuntimeContext() is not allowed to remove.
  */
+/** Host-injected per-step clock context (see dsh-time-context); shape-matched, never content-trusted. */
+const AMBIENT_USER = /^Time sampled while preparing turn \d+, step \d+: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/u;
 function checkRequest(request, { route, model, promptText, userMessage, toolSchemas, toolCallNames, maxTokens }) {
   if (request.provider !== route || request.model !== model || request.system !== undefined
     || !Number.isSafeInteger(request.maxTokens) || request.maxTokens < 1 || request.maxTokens > maxTokens) throw boundaryError(`config(provider=${request.provider === route ? 'ok' : 'mismatch'},model=${request.model === model ? 'ok' : 'mismatch'},system=${request.system === undefined ? 'none' : 'set'},maxTokens=${request.maxTokens}/${maxTokens})`);
@@ -72,8 +74,15 @@ function checkRequest(request, { route, model, promptText, userMessage, toolSche
       continue;
     }
     if (message.role === 'user') {
-      if (++users !== 1 || message.id !== userMessage.id || message.content.some(block => block.type !== 'text')
-        || message.content.map(block => block.text).join('') !== userMessage.content[0].text) throw boundaryError(`user(count=${users},idMatch=${message.id === userMessage.id},chars=${message.content.map(block => block.text ?? '').join('').length}/${userMessage.content[0].text.length})`);
+      if (message.id === userMessage.id) {
+        if (++users !== 1 || message.content.some(block => block.type !== 'text')
+          || message.content.map(block => block.text).join('') !== userMessage.content[0].text) throw boundaryError(`user(count=${users},chars=${message.content.map(block => block.text ?? '').join('').length}/${userMessage.content[0].text.length})`);
+        continue;
+      }
+      // The Host's own time-context plugin prepends a per-step clock message to every session.
+      // It carries no task, file, or credential content, so it is tolerated by strict shape only.
+      const ambient = message.content.map(block => (block.type === 'text' ? block.text ?? '' : '\u0000')).join('');
+      if (!AMBIENT_USER.test(ambient)) throw boundaryError(`foreign-user(chars=${ambient.length})`);
       continue;
     }
     if (message.role === 'assistant') {
