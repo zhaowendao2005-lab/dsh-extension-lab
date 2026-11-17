@@ -101,7 +101,7 @@ function RunRow({ store,record,id,columns,custom,results }: {
         <button type="button" className="mit-text-button" onClick={() => store.actions.navigate({ runId: id,artifact: false })}>详情
           <Icon name="chevron" size={12} />
         </button>
-        {results&&record.kind==='fingerprint'&&run.model.a6api&&run.stage==='completed'&&<button type="button" className="mit-text-button mit-retry-button" title="以此指纹结果中的 a6api 渠道创建自定义测试" onClick={() => store.actions.beginCustomFromFingerprint(record.id,id)}>转为自定义</button>}
+        {record.kind==='fingerprint'&&run.model.a6api&&run.stage==='completed'&&<button type="button" className="mit-text-button mit-retry-button" title="以此指纹结果中的 a6api 渠道创建自定义测试" onClick={() => store.actions.beginCustomFromFingerprint(record.id,id)}>转为自定义</button>}
         {retryable&&<button type="button" className="mit-text-button mit-retry-button" title={retryTitle} disabled={Boolean(fingerprint?.busy)||!settled} onClick={() => store.actions.retryFailedSample(record.id,id)}>重试失败项</button>}
       </div>
     </td>
