@@ -82,7 +82,7 @@ function checkRequest(request, { route, model, promptText, userMessage, toolSche
       // The Host's own time-context plugin prepends a per-step clock message to every session.
       // It carries no task, file, or credential content, so it is tolerated by strict shape only.
       const ambient = message.content.map(block => (block.type === 'text' ? block.text ?? '' : '\u0000')).join('');
-      if (!AMBIENT_USER.test(ambient)) throw boundaryError(`foreign-user(chars=${ambient.length})`);
+      if (!AMBIENT_USER.test(ambient)) throw boundaryError(`foreign-user(chars=${ambient.length},head=${JSON.stringify(ambient.slice(0, 80))})`);
       continue;
     }
     if (message.role === 'assistant') {

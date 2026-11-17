@@ -4115,7 +4115,7 @@ function checkRequest(request, { route, model, promptText, userMessage, toolSche
         continue;
       }
       const ambient = message.content.map((block) => block.type === "text" ? block.text ?? "" : "\0").join("");
-      if (!AMBIENT_USER.test(ambient)) throw boundaryError(`foreign-user(chars=${ambient.length})`);
+      if (!AMBIENT_USER.test(ambient)) throw boundaryError(`foreign-user(chars=${ambient.length},head=${JSON.stringify(ambient.slice(0, 80))})`);
       continue;
     }
     if (message.role === "assistant") {
