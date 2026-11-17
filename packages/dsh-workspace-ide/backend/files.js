@@ -133,6 +133,8 @@ export function createFiles(ctx, workspace) {
           return await stat(payload);
         case 'files.read':
           return await read(payload);
+        case 'files.readMedia':
+          return await readMedia(payload);
         case 'files.write':
           return await write(payload);
         case 'files.create':
@@ -251,6 +253,47 @@ export function createFiles(ctx, workspace) {
       eol: detectEol(text),
       bom: text.charCodeAt(0) === 0xfeff,
       size: info.size,
+    };
+  }
+
+  async function readMedia({ path: relative, offset = 0, limit }) {
+    const ext = path.extname(relative).toLowerCase();
+    const mime = MEDIA_MIMES[ext];
+    if (!mime) throw ideError('E_UNSUPPORTED', '不支持预览该媒体格式', { path: relative });
+    const { absolute } = await workspace.resolvePath(relative);
+    const info = await readStat(absolute);
+    if (info.isDirectory()) throw ideError('E_NOT_DIR', '目标是目录', { path: relative });
+    const isVideo = mime.startsWith('video/');
+    const maxBytes = isVideo ? LIMITS.mediaVideoBytesMax : LIMITS.mediaImageBytesMax;
+    if (info.size > maxBytes) {
+      throw ideError('E_TOO_LARGE', '媒体文件过大，暂不支持预览', { path: relative, size: info.size, limit: maxBytes });
+    }
+    const chunkSize = Math.min(limit ?? LIMITS.mediaChunkBytes, 4 * 1024 * 1024);
+    const start = Math.max(0, Math.min(offset, info.size));
+    const toRead = Math.min(chunkSize, Math.max(0, info.size - start));
+    let base64 = '';
+    let bytesRead = 0;
+    if (toRead > 0) {
+      const handle = await fs.open(absolute, 'r');
+      try {
+        const buffer = Buffer.allocUnsafe(toRead);
+        const result = await handle.read(buffer, 0, toRead, start);
+        bytesRead = result.bytesRead;
+        base64 = buffer.subarray(0, bytesRead).toString('base64');
+      } finally {
+        await handle.close().catch(() => {});
+      }
+    }
+    const nextOffset = start + bytesRead;
+    return {
+      path: relative,
+      mime,
+      size: info.size,
+      offset: start,
+      length: bytesRead,
+      nextOffset,
+      eof: nextOffset >= info.size,
+      base64,
     };
   }
 
@@ -396,3 +439,20 @@ function compareEntries(left, right) {
   if (left.type !== right.type) return left.type === 'directory' ? -1 : 1;
   return left.name.localeCompare(right.name, 'en');
 }
+
+const MEDIA_MIMES = Object.freeze({
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/mp4',
+  '.ogv': 'video/ogg',
+});

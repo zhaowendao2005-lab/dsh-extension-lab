@@ -1,10 +1,248 @@
 import { useStore, useRef } from '../../runtime.js';
 import { visibleExplorerRows } from '../../service/explorer-selection.js';
 import { localPoint, workbenchRoot } from '../../service/geometry.js';
+import {
+  baseNameOf, canMoveToDir, createDragOverlayController, findChatDropTarget,
+  formatDropPathsForChat, insertTextIntoChatComposer, normalizeMoveTargets, parentDirOf,
+} from '../../service/explorer-drag.js';
+import { zoneAt } from '../../service/split.js';
 import { Icon } from '../common/Icon.jsx';
 import { FileIcon } from '../common/FileIcon.jsx';
 
 let nextMenuSurface = 0;
+let suppressNextRowClickAt = 0;
+
+function beginExplorerDrag(event, stores, path, entry) {
+  if (event.button !== 0) return;
+  if (event.target?.closest?.('button')) return;
+  const domain = stores.explorerSelectionActions;
+  const selection = domain.store.getSnapshot();
+  const selectedEntries = selection.selected.includes(path)
+    ? domain.selectedEntries()
+    : [{ path, type: entry.type }];
+  const sources = normalizeMoveTargets(selectedEntries.length ? selectedEntries : [{ path, type: entry.type }]);
+  if (!sources.length) return;
+
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const pointerId = event.pointerId;
+  const root = workbenchRoot(event.currentTarget);
+  const scopeRoot = root?.getRootNode?.() ?? document;
+  const overlay = createDragOverlayController(event.currentTarget);
+
+  let dragging = false;
+  let finished = false;
+  let raf = 0;
+  let pending = null;
+  let highlightedEl = null;
+  let expandTimer = 0;
+  let expandPath = null;
+  let dropState = null;
+
+  function setDropHighlight(el, status) {
+    if (highlightedEl && highlightedEl !== el) {
+      highlightedEl.removeAttribute('data-wid-drop-target');
+    }
+    highlightedEl = el ?? null;
+    if (highlightedEl && status) {
+      highlightedEl.setAttribute('data-wid-drop-target', status);
+    }
+  }
+
+  function clearExpandTimer() {
+    if (expandTimer) clearTimeout(expandTimer);
+    expandTimer = 0;
+    expandPath = null;
+  }
+
+  function scheduleExpand(dirPath) {
+    if (expandPath === dirPath) return;
+    clearExpandTimer();
+    if (!dirPath) return;
+    if (stores.files.getSnapshot().expanded.includes(dirPath)) return;
+    expandPath = dirPath;
+    expandTimer = setTimeout(() => {
+      expandTimer = 0;
+      if (!finished && dragging && !stores.files.getSnapshot().expanded.includes(dirPath)) {
+        stores.actions.toggleDir(dirPath);
+      }
+    }, 500);
+  }
+
+  function cleanup() {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onCancel);
+    window.removeEventListener('blur', onCancel);
+    window.removeEventListener('keydown', onKey, true);
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    pending = null;
+    clearExpandTimer();
+    setDropHighlight(null, null);
+    stores.actions.setExplorerDrop(null);
+    overlay.dispose();
+    if (root) delete root.dataset.widDragging;
+  }
+
+  function sourceSummary() {
+    if (sources.length === 1) return baseNameOf(sources[0].path);
+    return sources.length + ' 项';
+  }
+
+  function applyMove(moveEvent) {
+    const x = moveEvent.clientX;
+    const y = moveEvent.clientY;
+    if (!dragging) {
+      if (Math.hypot(x - startX, y - startY) < 4) return;
+      dragging = true;
+      suppressNextRowClickAt = Date.now();
+      if (root) root.dataset.widDragging = 'true';
+    }
+
+    const peeking = overlay.isFullView ? overlay.updatePeeking(x, y) : false;
+    const hit = !peeking && typeof scopeRoot?.elementFromPoint === 'function'
+      ? scopeRoot.elementFromPoint(x, y)
+      : null;
+    const insideWorkbench = Boolean(hit && root && workbenchRoot(hit) === root);
+
+    if (insideWorkbench) {
+      overlay.setChatTarget(null, '');
+      const row = hit.closest?.('[data-explorer-path]');
+      if (row) {
+        stores.actions.setExplorerDrop(null);
+        const rowPath = row.dataset.explorerPath;
+        const rowType = row.dataset.explorerType;
+        const targetDir = rowType === 'directory' ? rowPath : parentDirOf(rowPath);
+        if (rowType === 'directory') scheduleExpand(rowPath);
+        else clearExpandTimer();
+        const check = canMoveToDir(sources, targetDir);
+        const highlightNode = rowType === 'directory' ? row : row.closest('.wid-nav__body');
+        setDropHighlight(highlightNode, check.valid ? 'true' : 'invalid');
+        dropState = check.valid ? { kind: 'move', targetDir } : null;
+        overlay.updatePosition(
+          x,
+          y,
+          check.valid
+            ? '移动 ' + sourceSummary() + ' → ' + (targetDir || '根目录')
+            : (check.reason ?? '无法移动到此处'),
+          check.valid ? 'move' : 'invalid',
+        );
+        return;
+      }
+
+      clearExpandTimer();
+      const navBody = hit.closest?.('.wid-nav__body');
+      if (navBody) {
+        stores.actions.setExplorerDrop(null);
+        const check = canMoveToDir(sources, '');
+        setDropHighlight(navBody, check.valid ? 'true' : 'invalid');
+        dropState = check.valid ? { kind: 'move', targetDir: '' } : null;
+        overlay.updatePosition(
+          x,
+          y,
+          check.valid ? '移动 ' + sourceSummary() + ' → 根目录' : (check.reason ?? '已在根目录'),
+          check.valid ? 'move' : 'invalid',
+        );
+        return;
+      }
+
+      setDropHighlight(null, null);
+      const groupEl = hit.closest?.('[data-wid-group]');
+      const firstFile = sources.find((item) => item.type === 'file');
+      if (groupEl && firstFile) {
+        const groupId = groupEl.getAttribute('data-wid-group');
+        const body = groupEl.querySelector('.wid-group__body');
+        const rect = body?.getBoundingClientRect?.();
+        const zone = rect ? zoneAt(rect, x, y) : 'center';
+        const effectiveZone = zone && stores.actions.canDrop(groupId, zone) ? zone : 'center';
+        stores.actions.setExplorerDrop({ groupId, zone: effectiveZone });
+        dropState = { kind: 'open', groupId, zone: effectiveZone, files: sources.filter((item) => item.type === 'file').map((item) => item.path) };
+        overlay.updatePosition(x, y, '打开 ' + sourceSummary(), 'open');
+        return;
+      }
+
+      stores.actions.setExplorerDrop(null);
+      dropState = null;
+      overlay.updatePosition(x, y, sourceSummary(), 'neutral');
+      return;
+    }
+
+    // Outside workbench (or peeking outside FullView dialog): check Host chat / conversation area.
+    clearExpandTimer();
+    setDropHighlight(null, null);
+    stores.actions.setExplorerDrop(null);
+
+    const chatTarget = findChatDropTarget(x, y);
+    if (chatTarget) {
+      const hint = sources.length === 1 ? '@' + sources[0].path : '引用 ' + sources.length + ' 项';
+      overlay.setChatTarget(chatTarget, '松手添加到对话：' + hint);
+      dropState = { kind: 'chat', paths: sources.map((item) => item.path) };
+      overlay.updatePosition(x, y, '添加到对话：' + hint, 'chat');
+    } else {
+      overlay.setChatTarget(null, '');
+      dropState = null;
+      overlay.updatePosition(
+        x,
+        y,
+        peeking ? '拖到聊天输入区松手引用' : sourceSummary(),
+        'neutral',
+      );
+    }
+  }
+
+  function onMove(moveEvent) {
+    if (finished || moveEvent.pointerId !== pointerId) return;
+    pending = moveEvent;
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (!finished && pending) applyMove(pending);
+    });
+  }
+
+  function onUp(upEvent) {
+    if (finished || (upEvent && upEvent.pointerId !== pointerId)) return;
+    finished = true;
+    const action = dropState;
+    const wasFullView = overlay.isFullView;
+    cleanup();
+    if (!dragging || !action) return;
+    suppressNextRowClickAt = Date.now();
+    if (action.kind === 'move') {
+      void stores.actions.moveExplorerEntries(sources, action.targetDir);
+    } else if (action.kind === 'open') {
+      for (let i = 0; i < action.files.length; i += 1) {
+        void stores.actions.openFileInGroup(action.files[i], action.groupId, i === 0 ? action.zone : 'center');
+      }
+    } else if (action.kind === 'chat') {
+      const ok = insertTextIntoChatComposer(formatDropPathsForChat(action.paths));
+      if (ok && wasFullView) stores.host?.closeFullView?.();
+      if (!ok) stores.actions.notify('warn', '未找到可插入引用的对话输入框');
+    }
+  }
+
+  function onCancel(cancelEvent) {
+    if (finished || (cancelEvent && cancelEvent.pointerId !== undefined && cancelEvent.pointerId !== pointerId)) return;
+    finished = true;
+    cleanup();
+  }
+
+  function onKey(keyEvent) {
+    if (keyEvent.key !== 'Escape') return;
+    keyEvent.preventDefault();
+    keyEvent.stopPropagation();
+    if (finished) return;
+    finished = true;
+    cleanup();
+  }
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onCancel);
+  window.addEventListener('blur', onCancel);
+  window.addEventListener('keydown', onKey, true);
+}
 
 export function openExplorerMenu(stores, element, path, clientX, clientY) {
   const root = workbenchRoot(element);
@@ -125,12 +363,14 @@ function TreeRow({ stores, entry, path, depth, files, selection }) {
     openExplorerMenu(stores, event.currentTarget, path, event.clientX || rect.left, event.clientY || rect.bottom);
   }
   return <>
-    <div className="wid-tree__row" data-explorer-path={path} data-ignored={entry.ignored ? 'true' : undefined}
+    <div className="wid-tree__row" data-explorer-path={path} data-explorer-type={entry.type} data-ignored={entry.ignored ? 'true' : undefined}
       role="treeitem" aria-level={depth + 1} aria-label={entry.name} aria-expanded={isDir ? expanded : undefined}
       aria-selected={selected} tabIndex={selection.focused === path ? 0 : -1}
       style={{ paddingInlineStart: (8 + 12 * depth) + 'px' }} onContextMenu={menu}
+      onPointerDown={(event) => beginExplorerDrag(event, stores, path, entry)}
       onClick={(event) => {
         event.stopPropagation(); event.currentTarget.focus();
+        if (Date.now() - suppressNextRowClickAt < 250) return;
         const modified = event.metaKey || event.ctrlKey || event.shiftKey;
         domain.select(path, { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey });
         if (isDir && !modified) stores.actions.toggleDir(path);

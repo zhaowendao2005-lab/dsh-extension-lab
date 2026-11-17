@@ -3,7 +3,10 @@ import { Icon } from '../common/Icon.jsx';
 import { FileIcon } from '../common/FileIcon.jsx';
 import { workbenchRoot, localPoint } from '../../service/geometry.js';
 import { tabIcon, tabTitle } from '../../service/tabs.js';
-import { previewKindForPath } from '../../service/preview.js';
+import { isToggleablePreviewPath } from '../../service/preview.js';
+import {
+  createDragOverlayController, findChatDropTarget, formatDropPathsForChat, insertTextIntoChatComposer,
+} from '../../service/explorer-drag.js';
 import { zoneAt } from '../../service/split.js';
 
 const DRAG_THRESHOLD = 4;
@@ -71,19 +74,25 @@ export function TabStrip({ stores, groupId }) {
     const startY = event.clientY;
     const pointerId = event.pointerId;
     const root = workbenchRoot(event.currentTarget);
+    const draggedTab = stores.layout.getSnapshot().tabs[tabId];
+    const dragFilePath = draggedTab?.kind === 'file' ? draggedTab.path : null;
+    const overlay = dragFilePath ? createDragOverlayController(event.currentTarget) : null;
     let dragging = false;
     let finished = false;
     let raf = 0;
     let pending = null;
+    let chatDropTarget = null;
 
     function cleanup() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('blur', onCancel);
       window.removeEventListener('keydown', onKey, true);
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       pending = null;
+      overlay?.dispose();
       if (root) delete root.dataset.widDragging;
     }
 
@@ -105,23 +114,48 @@ export function TabStrip({ stores, groupId }) {
         if (root) root.dataset.widDragging = 'true';
         stores.actions.beginTabDrag(tabId, groupId, moveEvent.clientX, moveEvent.clientY);
       }
-      const groupElement = groupAt(moveEvent.clientX, moveEvent.clientY, root);
+      const x = moveEvent.clientX;
+      const y = moveEvent.clientY;
+      const peeking = overlay?.isFullView ? overlay.updatePeeking(x, y) : false;
+      const groupElement = !peeking ? groupAt(x, y, root) : null;
       let target = null;
       if (groupElement) {
         const targetGroupId = groupElement.getAttribute('data-wid-group');
         const body = groupElement.querySelector('.wid-group__body');
         const rect = body ? body.getBoundingClientRect() : null;
-        const zone = rect ? zoneAt(rect, moveEvent.clientX, moveEvent.clientY) : null;
+        const zone = rect ? zoneAt(rect, x, y) : null;
         if (targetGroupId && zone && stores.actions.canDrop(targetGroupId, zone)) {
           target = { groupId: targetGroupId, zone };
         }
       }
-      stores.actions.updateTabDrag(moveEvent.clientX, moveEvent.clientY, target);
+      stores.actions.updateTabDrag(x, y, target);
+
+      if (dragFilePath && overlay) {
+        const scopeRoot = root?.getRootNode?.() ?? document;
+        const hit = !peeking && typeof scopeRoot?.elementFromPoint === 'function' ? scopeRoot.elementFromPoint(x, y) : null;
+        const insideWorkbench = Boolean(hit && root && workbenchRoot(hit) === root);
+        if (!insideWorkbench) {
+          chatDropTarget = findChatDropTarget(x, y);
+          if (chatDropTarget) {
+            overlay.setChatTarget(chatDropTarget, '松手添加到对话：@' + dragFilePath);
+            overlay.updatePosition(x, y, '添加到对话：@' + dragFilePath, 'chat');
+          } else {
+            overlay.setChatTarget(null, '');
+            overlay.updatePosition(x, y, peeking ? '拖到聊天输入区松手引用' : dragFilePath.split('/').pop(), 'neutral');
+          }
+        } else {
+          chatDropTarget = null;
+          overlay.setChatTarget(null, '');
+          overlay.hideGhost();
+        }
+      }
     }
 
     function onUp(upEvent) {
       if (finished || (upEvent && upEvent.pointerId !== pointerId)) return;
       finished = true;
+      const droppedChat = chatDropTarget;
+      const wasFullView = overlay?.isFullView;
       cleanup();
       if (!dragging) return;
       const drag = stores.layout.getSnapshot().drag;
@@ -129,13 +163,17 @@ export function TabStrip({ stores, groupId }) {
       if (target) {
         if (target.zone === 'center') stores.actions.moveTab(tabId, target.groupId);
         else stores.actions.splitTab(tabId, target.groupId, target.zone);
+      } else if (droppedChat && dragFilePath) {
+        const ok = insertTextIntoChatComposer(formatDropPathsForChat([dragFilePath]));
+        if (ok && wasFullView) stores.host?.closeFullView?.();
+        if (!ok) stores.actions.notify('warn', '未找到可插入引用的对话输入框');
       }
       stores.actions.endTabDrag();
     }
 
     /** A cancelled pointer must never commit the pending split as if it were a drop. */
     function onCancel(cancelEvent) {
-      if (finished || (cancelEvent && cancelEvent.pointerId !== pointerId)) return;
+      if (finished || (cancelEvent && cancelEvent.pointerId !== undefined && cancelEvent.pointerId !== pointerId)) return;
       finished = true;
       cleanup();
       if (dragging) stores.actions.endTabDrag();
@@ -153,6 +191,7 @@ export function TabStrip({ stores, groupId }) {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('blur', onCancel);
     window.addEventListener('keydown', onKey, true);
   }
 
@@ -236,8 +275,8 @@ export function TabStrip({ stores, groupId }) {
       </div>
       {(() => {
         const activeTab = activeId ? layout.tabs[activeId] : null;
-        const previewKind = activeTab?.kind === 'file' ? previewKindForPath(activeTab.path) : null;
-        if (!previewKind) return null;
+        const canToggle = activeTab?.kind === 'file' && isToggleablePreviewPath(activeTab.path);
+        if (!canToggle) return null;
         const isPreview = Boolean((editor.previews ?? {})[activeTab.path]);
         return (
           <button

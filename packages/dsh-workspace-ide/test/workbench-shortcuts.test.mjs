@@ -12,8 +12,11 @@ import {
 } from '../frontend/service/shortcuts.js';
 import { createStore } from '../frontend/store.js';
 import { createExplorerSelectionDomain } from '../frontend/stores/explorer-selection.stores.js';
-import { previewKindForPath, defaultPreviewForPath } from '../frontend/service/preview.js';
+import { previewKindForPath, defaultPreviewForPath, isToggleablePreviewPath, formatMediaSize, base64ToBytes } from '../frontend/service/preview.js';
 import { DEFAULT_EDITOR_PREFS, normalizeEditorPrefs } from '../frontend/service/layout.js';
+import { canMoveToDir, formatDropPathsForChat, normalizeMoveTargets, parentDirOf } from '../frontend/service/explorer-drag.js';
+import { ACTIONS, READ_ONLY_ACTIONS } from '../shared/contract.js';
+import { payloadSchemas } from '../backend/contract.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -162,4 +165,50 @@ test('preview classification and default-render preferences default to false', (
   assert.equal(defaultPreviewForPath('index.html', enabled), true);
   assert.equal(defaultPreviewForPath('README.md', enabled), true);
   assert.equal(defaultPreviewForPath('src/app.ts', enabled), false);
+
+  // Image / Video preview detection & SVG toggleability
+  assert.equal(previewKindForPath('assets/logo.png'), 'image');
+  assert.equal(previewKindForPath('assets/photo.JPEG'), 'image');
+  assert.equal(previewKindForPath('assets/icon.svg'), 'image');
+  assert.equal(previewKindForPath('media/demo.mp4'), 'video');
+  assert.equal(previewKindForPath('media/clip.WebM'), 'video');
+  assert.equal(isToggleablePreviewPath('assets/icon.svg'), true);
+  assert.equal(isToggleablePreviewPath('assets/logo.png'), false);
+  assert.equal(isToggleablePreviewPath('media/demo.mp4'), false);
+  assert.equal(formatMediaSize(1536), '1.5 KB');
+  assert.deepEqual(Array.from(base64ToBytes(Buffer.from('PNG').toString('base64'))), [80, 78, 71]);
+
+  // Backend contract includes files.readMedia as read-only
+  assert.ok(ACTIONS.includes('files.readMedia'));
+  assert.ok(READ_ONLY_ACTIONS.has('files.readMedia'));
+  assert.ok(payloadSchemas['files.readMedia']);
+});
+
+test('explorer drag helpers validate move targets and format chat references', () => {
+  assert.equal(parentDirOf('a/b/c.ts'), 'a/b');
+  assert.equal(parentDirOf('root.ts'), '');
+
+  // Collapses descendants when ancestor directory is also selected
+  assert.deepEqual(
+    normalizeMoveTargets([
+      { path: 'src/a.ts', type: 'file' },
+      { path: 'src', type: 'directory' },
+      { path: 'README.md', type: 'file' },
+    ]),
+    [
+      { path: 'src', type: 'directory' },
+      { path: 'README.md', type: 'file' },
+    ],
+  );
+
+  // Valid move into another folder or root
+  assert.equal(canMoveToDir([{ path: 'src/a.ts', type: 'file' }], 'docs').valid, true);
+  assert.equal(canMoveToDir([{ path: 'src/a.ts', type: 'file' }], '').valid, true);
+
+  // Invalid moves: self, descendant, or already in target directory
+  assert.equal(canMoveToDir([{ path: 'src', type: 'directory' }], 'src').valid, false);
+  assert.equal(canMoveToDir([{ path: 'src', type: 'directory' }], 'src/nested').valid, false);
+  assert.equal(canMoveToDir([{ path: 'src/a.ts', type: 'file' }], 'src').valid, false);
+
+  assert.equal(formatDropPathsForChat(['src/a.ts', 'docs']), '@src/a.ts @docs ');
 });

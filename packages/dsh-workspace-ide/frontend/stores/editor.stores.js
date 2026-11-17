@@ -4,6 +4,7 @@
  */
 import { LIMITS } from '../../shared/contract.js';
 import { languageForPath } from '../service/language.js';
+import { mediaChunksToBlobUrl, previewKindForPath, revokeMediaUrl } from '../service/preview.js';
 
 const READ_CELLING = 8 * 1024 * 1024;
 const PAGE = LIMITS.readLinesDefault;
@@ -18,7 +19,13 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
   function patchTab(path, patch) {
     editor.set((state) => ({
       ...state,
-      tabs: state.tabs.map((tab) => (tab.path === path ? { ...tab, ...patch } : tab)),
+      tabs: state.tabs.map((tab) => {
+        if (tab.path !== path) return tab;
+        if ('mediaUrl' in patch && tab.mediaUrl && tab.mediaUrl !== patch.mediaUrl) {
+          revokeMediaUrl(tab.mediaUrl);
+        }
+        return { ...tab, ...patch };
+      }),
     }));
   }
 
@@ -26,10 +33,33 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
     return snapshot().tabs.find((tab) => tab.path === path) ?? null;
   }
 
+  async function readMedia(path, stat) {
+    const chunks = [];
+    let offset = 0;
+    let mime = '';
+    for (;;) {
+      const page = await client.call('files.readMedia', { path, offset, limit: LIMITS.mediaChunkBytes });
+      if (page.mime) mime = page.mime;
+      if (page.base64) chunks.push(page.base64);
+      if (page.eof || !page.length) break;
+      offset = page.nextOffset ?? (offset + page.length);
+    }
+    return {
+      stat,
+      media: true,
+      mime,
+      mediaUrl: mediaChunksToBlobUrl(chunks, mime),
+    };
+  }
+
   /** Read a whole text file in pages; the contract caps a single page, not the file. */
   async function readText(path) {
     const stat = await client.call('files.stat', { path });
     if (stat.type !== 'file') throw Object.assign(new Error('不是文件'), { code: 'E_INVALID_ARG' });
+    const kind = previewKindForPath(path);
+    if (stat.binary && (kind === 'image' || kind === 'video')) {
+      return await readMedia(path, stat);
+    }
     if (stat.binary) return { stat, binary: true, text: '' };
     if ((stat.size ?? 0) > READ_CELLING) return { stat, tooLarge: true, text: '' };
 
@@ -58,17 +88,32 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
       const tabs = existing ? state.tabs : [...state.tabs, { path, title: path.split('/').pop() ?? path, dirty: false, mode: 'loading' }];
       editor.patch({ tabs, activePath: path });
       files.patch({ selected: path });
-      if (existing && existing.mode === 'ready') return;
+      if (existing && (existing.mode === 'ready' || existing.mode === 'media')) return;
       if (pending.has(path)) return;
       const task = (async () => {
         try {
           const loaded = await readText(path);
+          if (loaded.media) {
+            patchTab(path, {
+              mode: 'media',
+              mediaKind: previewKindForPath(path),
+              mediaUrl: loaded.mediaUrl,
+              mediaMime: loaded.mime,
+              readOnly: true,
+              text: '',
+              version: loaded.stat.version,
+              size: loaded.stat.size,
+              dirty: false,
+              error: null,
+            });
+            return;
+          }
           if (loaded.binary) {
-            patchTab(path, { mode: 'binary', readOnly: true, error: '二进制文件不提供文本编辑' });
+            patchTab(path, { mode: 'binary', readOnly: true, mediaUrl: null, error: '二进制文件不提供文本编辑' });
             return;
           }
           if (loaded.tooLarge) {
-            patchTab(path, { mode: 'too-large', readOnly: true, text: '', error: '文件过大，未载入编辑器' });
+            patchTab(path, { mode: 'too-large', readOnly: true, text: '', mediaUrl: null, error: '文件过大，未载入编辑器' });
             return;
           }
           patchTab(path, {
@@ -138,11 +183,27 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
     async reload(path) {
       try {
         const loaded = await readText(path);
+        if (loaded.media) {
+          patchTab(path, {
+            mode: 'media',
+            mediaKind: previewKindForPath(path),
+            mediaUrl: loaded.mediaUrl,
+            mediaMime: loaded.mime,
+            readOnly: true,
+            text: '',
+            version: loaded.stat.version,
+            size: loaded.stat.size,
+            dirty: false,
+            error: null,
+          });
+          return;
+        }
         if (loaded.binary || loaded.tooLarge) {
           patchTab(path, {
             mode: loaded.binary ? 'binary' : 'too-large',
             readOnly: true,
             text: '',
+            mediaUrl: null,
             dirty: false,
             error: loaded.binary ? '二进制文件不提供文本编辑' : '文件过大，未载入编辑器',
           });
@@ -171,6 +232,7 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
       const tab = tabOf(path);
       if (!tab) return { closed: true };
       if (tab.dirty && !force) return { closed: false, reason: 'dirty', path };
+      revokeMediaUrl(tab.mediaUrl);
       const state = snapshot();
       const index = state.tabs.findIndex((item) => item.path === path);
       const tabs = state.tabs.filter((item) => item.path !== path);
@@ -205,8 +267,13 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
       const state = snapshot();
       const dirty = state.tabs.filter((tab) => tab.dirty);
       if (dirty.length) return { closed: false, reason: 'dirty', paths: dirty.map((tab) => tab.path) };
+      for (const tab of state.tabs) revokeMediaUrl(tab.mediaUrl);
       editor.patch({ tabs: [], activePath: null, conflicts: [] });
       return { closed: true };
+    },
+
+    dispose() {
+      for (const tab of snapshot().tabs) revokeMediaUrl(tab.mediaUrl);
     },
 
     resolveConflict(path) {

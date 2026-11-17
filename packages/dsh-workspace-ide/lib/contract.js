@@ -26,6 +26,11 @@ export const payloadSchemas = {
     limit: z.number().int().min(1).max(20000).optional(),
     expectedVersion: z.string().max(128).optional(),
   }),
+  'files.readMedia': z.strictObject({
+    path: z.string().min(1).max(4096),
+    offset: z.number().int().min(0).optional(),
+    limit: z.number().int().min(1).max(4 * 1024 * 1024).optional(),
+  }),
   'files.write': z.strictObject({
     path: z.string().min(1).max(4096),
     text: z.string(),

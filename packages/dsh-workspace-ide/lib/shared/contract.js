@@ -7,7 +7,7 @@
 /** Every Remote action. `P` marks the phase it becomes reachable in. */
 export const ACTIONS = [
   'workspace.resolve', 'workspace.open', 'workspace.state', 'workspace.scan', 'workspace.packageScripts', 'workspace.useSessionRoot',
-  'files.list', 'files.stat', 'files.read', 'files.write', 'files.create',
+  'files.list', 'files.stat', 'files.read', 'files.readMedia', 'files.write', 'files.create',
   'files.rename', 'files.delete', 'files.search', 'files.index',
   'git.status', 'git.refs', 'git.log', 'git.graph', 'git.graph.search', 'git.commit',
   'git.diff', 'git.stage', 'git.unstage', 'git.discard', 'git.commitCreate', 'git.checkout',
@@ -20,7 +20,7 @@ export const ACTIONS = [
 
 /** Actions that only read; the client may retry them freely. */
 export const READ_ONLY_ACTIONS = new Set([
-  'workspace.resolve', 'workspace.state', 'workspace.scan', 'workspace.packageScripts', 'files.list', 'files.stat', 'files.read', 'files.search',
+  'workspace.resolve', 'workspace.state', 'workspace.scan', 'workspace.packageScripts', 'files.list', 'files.stat', 'files.read', 'files.readMedia', 'files.search',
   'files.index',
   'git.status', 'git.refs', 'git.log', 'git.graph', 'git.graph.search', 'git.commit', 'git.diff', 'git.conflict',
   'terminal.poll', 'terminal.list', 'watch.poll',
@@ -31,6 +31,9 @@ export const LIMITS = {
   readLinesDefault: 2000,
   readLinesMax: 20000,
   readBytesMax: 16 * 1024 * 1024,
+  mediaChunkBytes: 2 * 1024 * 1024,
+  mediaImageBytesMax: 20 * 1024 * 1024,
+  mediaVideoBytesMax: 80 * 1024 * 1024,
   writeBytesMax: 8 * 1024 * 1024,
   dirEntriesMax: 5000,
   logPageDefault: 2000,

@@ -24,7 +24,8 @@ import { createRepositoriesDomain } from './repositories.stores.js';
 import { createCommandsDomain } from './commands.stores.js';
 import { createExplorerSelectionDomain } from './explorer-selection.stores.js';
 import { createQuickAccessDomain } from './quick-access.stores.js';
-import { defaultPreviewForPath, previewKindForPath } from '../service/preview.js';
+import { defaultPreviewForPath, isToggleablePreviewPath, previewKindForPath } from '../service/preview.js';
+import { baseNameOf, canMoveToDir, normalizeMoveTargets, parentDirOf } from '../service/explorer-drag.js';
 
 const EMPTY_LIMITS = LIMITS;
 
@@ -794,6 +795,66 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       return { removed, failed };
     },
 
+    async moveExplorerEntries(sources, targetDir) {
+      const root = workspace.getSnapshot().root;
+      if (!root) return null;
+      const dest = typeof targetDir === 'string' ? targetDir : '';
+      const check = canMoveToDir(sources, dest);
+      if (!check.valid) {
+        if (check.reason && check.reason !== '已在当前目录中') notify('warn', check.reason);
+        return null;
+      }
+      const targets = normalizeMoveTargets(sources);
+      const moved = [];
+      const failed = [];
+      const dirsToRefresh = new Set([dest]);
+      let reopenActivePath = null;
+      const previousActive = editor.getSnapshot().activePath;
+
+      for (const item of targets) {
+        if (workspace.getSnapshot().root !== root) break;
+        const from = item.path;
+        if (parentDirOf(from) === dest) continue;
+        const to = joinPath(dest, baseNameOf(from));
+        const dirty = editor.getSnapshot().tabs.some(
+          (tab) => tab.dirty && (tab.path === from || tab.path.startsWith(from + '/')),
+        );
+        if (dirty) {
+          failed.push({ path: from, message: '包含未保存的更改，请先保存' });
+          continue;
+        }
+        try {
+          await client.call('files.rename', { from, to });
+          moved.push({ from, to });
+          dirsToRefresh.add(parentDirOf(from));
+          for (const tab of [...editor.getSnapshot().tabs]) {
+            if (tab.path === from || tab.path.startsWith(from + '/')) {
+              const nextTabPath = tab.path === from ? to : to + tab.path.slice(from.length);
+              if (tab.path === previousActive) reopenActivePath = nextTabPath;
+              await actions.closeTabById(fileTabId(tab.path));
+            }
+          }
+        } catch (error) {
+          failed.push({ path: from, message: error?.message ?? '移动失败' });
+        }
+      }
+
+      if (workspace.getSnapshot().root === root) {
+        for (const dir of dirsToRefresh) await actions.listDir(dir, { refresh: true });
+        quickAccessDomain.actions.invalidate();
+        if (reopenActivePath) await actions.openFile(reopenActivePath);
+        if (moved.length || failed.length) {
+          notify(
+            failed.length ? 'warn' : 'info',
+            failed.length
+              ? '已移动 ' + moved.length + ' 项，' + failed.length + ' 项失败：' + failed.map((f) => f.path + '（' + f.message + '）').join('；')
+              : '已移动 ' + moved.length + ' 项到' + (dest ? ' ' + dest : '根目录'),
+          );
+        }
+      }
+      return { moved, failed };
+    },
+
     async deleteEntry(path) {
       const accepted = await actions.confirm({
         title: '删除？',
@@ -889,8 +950,22 @@ export function createStores({ client, sessionId, host, preferences = null }) {
     },
 
     togglePreview(path) {
-      if (!previewKindForPath(path)) return;
+      if (!isToggleablePreviewPath(path)) return;
       editorDomain.togglePreview(path);
+    },
+
+    async openFileInGroup(path, groupId, zone = 'center') {
+      if (!path) return null;
+      if (groupId) layoutModel.actions.setActiveGroup(groupId);
+      const res = await actions.openFile(path);
+      if (groupId && zone && zone !== 'center' && layoutModel.actions.canDrop(groupId, zone)) {
+        layoutModel.actions.split(fileTabId(path), groupId, zone);
+      }
+      return res;
+    },
+
+    setExplorerDrop(drop) {
+      ui.patch({ explorerDrop: drop ?? null });
     },
 
     activateLayoutTab(groupId, tabId) {
@@ -1283,6 +1358,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
         disposed = true;
         detachPreferences?.();
         explorerSelectionDomain.dispose();
+        editorDomain.dispose?.();
         quickAccessDomain.dispose();
         detachQuickAccess();
             if (workbenchTimer) clearTimeout(workbenchTimer);

@@ -2,7 +2,7 @@ import { useRef, useEffect } from '../../runtime.js';
 import { createEditor } from '../../editor/createEditor.js';
 import { renderMarkdown } from '../../editor/markdown.js';
 import { getEditorWrapState } from '../../editor/preferences.js';
-import { previewKindForPath } from '../../service/preview.js';
+import { formatMediaSize, previewKindForPath } from '../../service/preview.js';
 
 /**
  * One CodeMirror view for one open file tab. The store holds the text, so the view can be
@@ -59,6 +59,55 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
     );
   }
 
+  if (tab.mode === 'media') {
+    const sizeText = formatMediaSize(tab.size);
+    return (
+      <div className="wid-editor__pane" data-visible={String(visible)}>
+        <div className="wid-media" data-kind={tab.mediaKind}>
+          <div className="wid-media__stage">
+            {tab.mediaKind === 'video' ? (
+              <video
+                className="wid-media__video"
+                controls
+                playsInline
+                preload="metadata"
+                src={tab.mediaUrl}
+                onError={(event) => {
+                  const stage = event.currentTarget.parentElement;
+                  if (stage) stage.dataset.mediaError = 'true';
+                }}
+              />
+            ) : (
+              <img
+                className="wid-media__img"
+                src={tab.mediaUrl}
+                alt={tab.title}
+                onLoad={(event) => {
+                  const img = event.currentTarget;
+                  const meta = img.closest('.wid-media')?.querySelector('.wid-media__dims');
+                  if (meta && img.naturalWidth > 0) meta.textContent = img.naturalWidth + ' × ' + img.naturalHeight;
+                }}
+                onError={(event) => {
+                  const stage = event.currentTarget.parentElement;
+                  if (stage) stage.dataset.mediaError = 'true';
+                }}
+              />
+            )}
+            <div className="wid-media__error wid-hint">
+              {tab.mediaKind === 'video' ? '当前浏览器内核不支持该视频编码或文件无法解码' : '无法解码该图像文件'}
+            </div>
+          </div>
+          <div className="wid-media__bar">
+            <span>{tab.title}</span>
+            <span className="wid-media__dims" />
+            {tab.mediaMime && <span>{tab.mediaMime}</span>}
+            {sizeText && <span>{sizeText}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (tab.mode === 'binary' || tab.mode === 'too-large' || tab.mode === 'error') {
     return (
       <div className="wid-editor__pane" data-visible={String(visible)}>
@@ -74,6 +123,9 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
 
   const wrap = getEditorWrapState(tab.text ?? '', prefs);
   const previewKind = preview ? previewKindForPath(tab.path) : null;
+  const svgSrc = previewKind === 'image'
+    ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tab.text ?? '')
+    : null;
   return (
     <div className="wid-editor__pane" data-visible={String(visible)}>
       {previewKind === 'html' ? (
@@ -84,6 +136,16 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
           title={tab.path}
           srcDoc={tab.text ?? ''}
         />
+      ) : svgSrc ? (
+        <div className="wid-media" data-kind="image">
+          <div className="wid-media__stage">
+            <img className="wid-media__img" src={svgSrc} alt={tab.title} />
+          </div>
+          <div className="wid-media__bar">
+            <span>{tab.title}</span>
+            <span>image/svg+xml</span>
+          </div>
+        </div>
       ) : preview ? (
         <div className="wid-md">{renderMarkdown(tab.text ?? '')}</div>
       ) : (
