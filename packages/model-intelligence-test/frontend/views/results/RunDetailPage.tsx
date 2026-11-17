@@ -50,8 +50,12 @@ export function RunDetailPage({ store,recordId,runId }: {
           {attempt? ` · 测试轮次 #${attempt.number}`:''}
         </p>
       </div>
-      <button type="button" className="mit-text-button" onClick={back}>返回模型列表
-      </button>
+      <div className="mit-detail-page-actions">
+        {record.a6api&&run.model.a6api&&run.stage==='completed'&&<button type="button" className="mit-text-button mit-retry-button" title="以此指纹结果中的 a6api 渠道创建自定义测试" onClick={() => store.actions.beginCustomFromFingerprint(record.id,runId)}>转为自定义测试
+        </button>}
+        <button type="button" className="mit-text-button" onClick={back}>返回模型列表
+        </button>
+      </div>
     </header>
     {attempt?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，测试轮次已中断。</p>}
     {record.a6api&&<p className="mit-attempt-note" role="status">
