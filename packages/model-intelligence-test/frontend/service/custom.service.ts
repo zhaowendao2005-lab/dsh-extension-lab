@@ -45,8 +45,8 @@ export interface CreateCustomTaskInput {
 }
 export async function createCustomTask(transport: ModelIntelligenceTransport, input: CreateCustomTaskInput): Promise<{record: StoredRecord; attemptId: string}> {
   const prompt = customPrompt(input.prompt);
-  const common = { name: input.name, models: input.a6Models, slots: input.slots, dshModels: input.dshModels, kind: 'custom' as const, prompt, footerVersion: input.footerVersion ?? FIXED_FOOTER_VERSION, preset: input.preset ?? null, concurrency: input.concurrency, timeoutMs: input.timeoutMs };
-  if (input.sourceRecordId && input.a6Models.length) return transport.a6CustomFromRecord({ recordId: input.sourceRecordId, name: input.name, models: input.a6Models.map(({ channelId, model }) => ({ channelId, model })), slots: input.slots, dshModels: input.dshModels, prompt, footerVersion: common.footerVersion, preset: input.preset ?? null, concurrency: input.concurrency, timeoutMs: input.timeoutMs });
+  const common = { name: input.name, models: input.a6Models, slots: input.slots.map(({ tokenId }) => ({ tokenId })), dshModels: input.dshModels, kind: 'custom' as const, prompt, footerVersion: input.footerVersion ?? FIXED_FOOTER_VERSION, preset: input.preset ?? null, concurrency: input.concurrency, timeoutMs: input.timeoutMs };
+  if (input.sourceRecordId && input.a6Models.length) return transport.a6CustomFromRecord({ recordId: input.sourceRecordId, name: input.name, models: input.a6Models.map(({ channelId, model }) => ({ channelId, model })), slots: input.slots.map(({ tokenId }) => ({ tokenId })), dshModels: input.dshModels, prompt, footerVersion: common.footerVersion, preset: input.preset ?? null, concurrency: input.concurrency, timeoutMs: input.timeoutMs });
   if (input.selectionId && input.a6Models.length) return transport.a6Create({ selectionId: input.selectionId, ...common });
   if (input.a6Models.length) throw new Error('a6api 目标必须来自一次有效网页选择或已有指纹结果');
   const models = input.dshModels.map(({ provider, id, name }) => ({ provider, id, name }));

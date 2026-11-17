@@ -8,7 +8,7 @@ const BILLING_GRACE_MS = 420_000;
 const keyOf = (attemptId: string, runId: string): string => `${attemptId}:${runId}`;
 
 export function createCustomDomain(transport: ModelIntelligenceTransport) {
-  const store = createStore<CustomState>(() => ({ draft: { a6Models: [], a6Tokens: [], tokens: [], concurrency: 2, timeoutMs: 180_000, creating: false, step: 1 }, details: {} }));
+  const store = createStore<CustomState>(() => ({ draft: { a6Models: [], a6Tokens: [], tokens: [], concurrency: 2, timeoutMs: 180_000, creating: false, step: 1 }, details: {}, selectedRunIds: [] }));
   let disposed = false;
   let active: {attemptId: string; runId: string} | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -62,11 +62,18 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
     beginFromSelection(selection: A6Selection, draft?: A6Draft): void {
       store.setState(state => ({ draft: { ...state.draft, sourceSelectionId: selection.id, sourceRecordId: undefined, a6Models: draft?.models ?? selection.models, a6Tokens: selection.tokens, tokens: draft?.tokens ?? selection.tokens.map(token => token.id), timeoutMs: draft?.timeoutMs ?? state.draft.timeoutMs, step: 1, error: undefined } }));
     },
-    beginFromFingerprint(recordId: string, model: import('../types').Model, slots: {tokenId: number; name?: string}[] = []): void {
-      const a6 = model.a6api;
-      if (!a6) return;
-      store.setState(state => ({ draft: { ...state.draft, sourceRecordId: recordId, sourceSelectionId: undefined, a6Models: [a6], a6Tokens: slots.map(slot => ({ id: slot.tokenId, name: slot.name ?? `token #${slot.tokenId}` })), tokens: slots.map(slot => slot.tokenId), step: 1, error: undefined } }));
+    beginFromFingerprint(recordId: string, models: import('../types').Model[], slots: {tokenId: number; name?: string}[] = []): void {
+      const channels = models.flatMap(model => model.a6api ? [model.a6api] : []);
+      if (!channels.length) return;
+      const chosen = slots.slice(0, 1);
+      store.setState(state => ({ selectedRunIds: [], selectionRecordId: undefined, draft: { ...state.draft, sourceRecordId: recordId, sourceSelectionId: undefined, a6Models: channels, a6Tokens: slots.map(slot => ({ id: slot.tokenId, name: slot.name ?? `token #${slot.tokenId}` })), tokens: chosen.map(slot => slot.tokenId), concurrency: 1, step: 1, error: undefined } }));
     },
+    startSelection(recordId: string): void { store.setState({ selectionRecordId: recordId, selectedRunIds: [] }); },
+    toggleRunSelection(recordId: string, runId: string): void {
+      store.setState(state => state.selectionRecordId !== recordId ? state : ({ selectedRunIds: state.selectedRunIds.includes(runId) ? state.selectedRunIds.filter(id => id !== runId) : [...state.selectedRunIds, runId] }));
+    },
+    cancelSelection(): void { store.setState({ selectionRecordId: undefined, selectedRunIds: [] }); },
+    clearSelection(): void { store.setState({ selectedRunIds: [] }); },
     patchDraft(value: Partial<Pick<CustomState['draft'], 'concurrency' | 'timeoutMs' | 'step'>>): void {
       store.setState(state => ({ draft: { ...state.draft, ...value, error: undefined } }));
     },

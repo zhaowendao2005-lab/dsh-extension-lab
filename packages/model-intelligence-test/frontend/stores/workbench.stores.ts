@@ -217,11 +217,28 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
       draft.setState(state => ({ selected: state.selected.includes(key) ? state.selected.filter(item => item !== key) : [...state.selected, key], error: undefined }));
     },
     refreshModels,
-    beginCustomFromFingerprint(recordId, runId) {
+    beginCustomFromFingerprint(recordId, runIds) {
       const record = evaluations.getState().records.find(item => item.id === recordId);
-      const run = runId ? evaluations.getState().runs[runId] : record?.runIds.map(id => evaluations.getState().runs[id]).find(item => item?.model.a6api);
-      if (!record || !run?.model.a6api) { showError('无法转换为自定义测试', '仅支持从包含 a6api 渠道身份的指纹结果创建。'); return; }
-      customDomain.beginFromFingerprint(recordId, run.model, record.a6api?.slots ?? []);
+      const requested = Array.isArray(runIds) ? runIds : runIds ? [runIds] : undefined;
+      const runs = requested ? requested.map(id => evaluations.getState().runs[id]) : record?.runIds.map(id => evaluations.getState().runs[id]).filter(item => item?.model.a6api && item.stage === 'completed').slice(0, 1);
+      if (!record || !runs?.length || runs.some(run => !run?.model.a6api || run.stage !== 'completed')) { showError('无法创建自定义测试', '请选择至少一个已完成的 a6api 指纹模型。'); return; }
+      customDomain.beginFromFingerprint(recordId, runs.map(run => run.model), record.a6api?.slots ?? []);
+      const preset = presets.getState().items.find(item => item.id === 'builtin-totoro');
+      draft.setState({ ...emptyDraft(), kind: 'custom', name: `${record.name} 自定义`, body: preset?.body ?? '', presetId: preset?.id });
+      openDraft();
+    },
+    startCustomSelection(recordId) { customDomain.startSelection(recordId); },
+    toggleCustomRunSelection(recordId, runId) { customDomain.toggleRunSelection(recordId, runId); },
+    cancelCustomSelection() { customDomain.cancelSelection(); },
+    createCustomFromSelection(recordId) {
+      const state = customDomain.store.getState();
+      if (state.selectionRecordId !== recordId || !state.selectedRunIds.length) return;
+      const ids = [...state.selectedRunIds];
+      const record = evaluations.getState().records.find(item => item.id === recordId);
+      const runs = ids.map(id => evaluations.getState().runs[id]);
+      if (!record || runs.some(run => !run?.model.a6api || run.stage !== 'completed')) { showError('无法创建自定义测试', '所选模型已发生变化，请重新选择。'); return; }
+      customDomain.clearSelection();
+      customDomain.beginFromFingerprint(recordId, runs.map(run => run.model), record.a6api?.slots ?? []);
       const preset = presets.getState().items.find(item => item.id === 'builtin-totoro');
       draft.setState({ ...emptyDraft(), kind: 'custom', name: `${record.name} 自定义`, body: preset?.body ?? '', presetId: preset?.id });
       openDraft();

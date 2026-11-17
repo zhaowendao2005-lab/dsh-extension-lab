@@ -122,8 +122,10 @@ export function DraftView({ store }: {
             <div><strong>{model.model}</strong><span className="mit-muted">{model.supplierName||`供应商 #${model.supplierId}`} · {model.channelName||`渠道 #${model.channelId}`}</span></div>
             <button type="button" className="mit-icon-button" disabled={custom.creating} aria-label={`移除 ${model.model}`} onClick={() => store.actions.removeCustomA6Model(`${model.channelId}:${model.model}`)}><Icon name="close" size={14} /></button>
           </div>)}</div>
-          <div className="mit-a6-slots">{custom.a6Tokens.map(token => <label className="mit-a6-slot is-inline" key={token.id}><input type="checkbox" checked={custom.tokens.includes(token.id)} disabled={custom.creating||Boolean(custom.sourceRecordId)} onChange={() => store.actions.toggleCustomToken(token.id)} /><span className="mit-a6-slot-name"><strong>{token.name}</strong><small className="mit-muted">令牌 #{token.id}</small></span></label>)}</div>
-          {custom.sourceRecordId&&<p className="mit-muted">槽位沿用所选指纹记录。</p>}
+          <strong className="mit-a6-slots-heading">执行令牌</strong>
+          <div className="mit-a6-slots">{custom.a6Tokens.map(token => <label className="mit-a6-slot is-inline" key={token.id}><input type="checkbox" checked={custom.tokens.includes(token.id)} disabled={custom.creating} onChange={() => store.actions.toggleCustomToken(token.id)} /><span className="mit-a6-slot-name"><strong>{token.name}</strong><small className="mit-muted">令牌 #{token.id}</small></span></label>)}</div>
+          <p className="mit-a6-slot-help">默认只选 1 个令牌执行所选模型；需要并行时再增加令牌。令牌数限制 a6api 同时运行的模型数，不代表模型选择数量。</p>
+          {custom.sourceRecordId&&<p className="mit-muted">模型来自已完成的指纹结果；可在此增减执行令牌。</p>}
         </section>}
         <div className="mit-field-row">
           <label className="mit-field">任务并发<input type="number" min={1} max={6} step={1} value={custom.concurrency} disabled={custom.creating} onChange={event => store.actions.patchCustom({ concurrency: Number(event.currentTarget.value) })} /></label>

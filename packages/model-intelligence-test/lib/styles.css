@@ -986,7 +986,44 @@
   display:flex;
   gap:10px;
   align-items:center;
-  justify-content:space-between
+  justify-content:space-between;
+  border-bottom:1px solid var(--mit-border-strong);
+  background:var(--mit-layer)
+}
+.mit-workbench .mit-monitor-bulk-actions {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  min-height:34px;
+  padding:3px 8px;
+  border-left:2px solid transparent
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-monitor-tools {
+  background:color-mix(in srgb,var(--mit-brand) 7%,var(--mit-layer))
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-monitor-bulk-actions {
+  border-left-color:var(--mit-brand)
+}
+.mit-workbench .mit-bulk-selection-count {
+  color:var(--mit-brand);
+  font-weight:600;
+  white-space:nowrap
+}
+.mit-workbench .mit-custom-row-check {
+  width:14px;
+  height:14px;
+  margin:0 9px 0 0;
+  vertical-align:middle;
+  accent-color:var(--mit-brand);
+  cursor:pointer
+}
+.mit-workbench .mit-custom-row-check:disabled {
+  cursor:not-allowed;
+  opacity:.42
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-table tbody tr:has(.mit-custom-row-check:checked) {
+  background:color-mix(in srgb,var(--mit-brand) 5%,var(--mit-bg))
 }
 .mit-workbench .mit-table-search {
   width:min(260px,65%);
@@ -2125,13 +2162,20 @@
 }
 
 /* a6api.css */
-.mit-workbench .mit-a6-section { display:grid; gap:12px; border:1px solid var(--mit-border); border-radius:6px; padding:14px; background:var(--mit-layer); min-width:0 }
+.mit-workbench .mit-a6-slot-help { margin:0; padding:9px 11px; border-left:3px solid var(--mit-brand); background:color-mix(in srgb,var(--mit-brand) 6%,var(--mit-layer)); color:var(--mit-text); font-size:11px; line-height:1.55 }
+.mit-workbench .mit-a6-slots-heading { margin:2px 0 -6px; color:var(--mit-text); font-size:11px; font-weight:600 }
+.mit-workbench .mit-a6-section>.mit-a6-slots { border-top:1px solid var(--mit-border-strong); padding-top:12px }
+.mit-workbench .mit-a6-section>.mit-label-row { padding-bottom:8px; border-bottom:1px solid var(--mit-border) }
+.mit-workbench .mit-a6-slot input { accent-color:var(--mit-brand) }
+.mit-workbench .mit-a6-slot-help + .mit-muted { margin-top:-4px; padding:9px 11px; background:var(--mit-layer-2); border-left:3px solid var(--mit-border-strong); font-size:11px }
+.mit-workbench .mit-a6-section { display:grid; gap:14px; border:1px solid var(--mit-border-strong); border-radius:6px; padding:14px; background:var(--mit-layer); min-width:0 }
 .mit-workbench .mit-a6-channel-list { display:grid; gap:6px; max-height:340px; overflow:auto; scrollbar-width:thin }
 .mit-workbench .mit-a6-channel-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; background:var(--mit-bg); border:1px solid var(--mit-border); border-radius:4px }
 .mit-workbench .mit-a6-channel-row>div { display:grid; min-width:0; overflow-wrap:anywhere }
 .mit-workbench .mit-a6-channel-row .mit-icon-button { flex-shrink:0 }
 .mit-workbench .mit-a6-slots { display:grid; gap:8px }
-.mit-workbench .mit-a6-slot { border:1px solid var(--mit-border); border-radius:4px; padding:10px 12px; background:var(--mit-bg) }
+.mit-workbench .mit-a6-slot { border:1px solid var(--mit-border-strong); border-radius:4px; padding:10px 12px; background:var(--mit-bg) }
+.mit-workbench .mit-a6-slot:has(input:checked) { border-color:color-mix(in srgb,var(--mit-brand) 56%,var(--mit-border)); background:color-mix(in srgb,var(--mit-brand) 6%,var(--mit-bg)) }
 .mit-workbench .mit-a6-slot.is-inline { display:flex; gap:10px; align-items:center; cursor:pointer }
 .mit-workbench .mit-a6-slot-name { display:grid; gap:2px; min-width:0; overflow-wrap:anywhere }
 .mit-workbench .mit-a6-token { display:flex; gap:8px; align-items:center; padding-top:8px; min-width:0; overflow-wrap:anywhere }

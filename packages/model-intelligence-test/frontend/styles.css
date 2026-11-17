@@ -946,7 +946,44 @@
   display:flex;
   gap:10px;
   align-items:center;
-  justify-content:space-between
+  justify-content:space-between;
+  border-bottom:1px solid var(--mit-border-strong);
+  background:var(--mit-layer)
+}
+.mit-workbench .mit-monitor-bulk-actions {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  min-height:34px;
+  padding:3px 8px;
+  border-left:2px solid transparent
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-monitor-tools {
+  background:color-mix(in srgb,var(--mit-brand) 7%,var(--mit-layer))
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-monitor-bulk-actions {
+  border-left-color:var(--mit-brand)
+}
+.mit-workbench .mit-bulk-selection-count {
+  color:var(--mit-brand);
+  font-weight:600;
+  white-space:nowrap
+}
+.mit-workbench .mit-custom-row-check {
+  width:14px;
+  height:14px;
+  margin:0 9px 0 0;
+  vertical-align:middle;
+  accent-color:var(--mit-brand);
+  cursor:pointer
+}
+.mit-workbench .mit-custom-row-check:disabled {
+  cursor:not-allowed;
+  opacity:.42
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-table tbody tr:has(.mit-custom-row-check:checked) {
+  background:color-mix(in srgb,var(--mit-brand) 5%,var(--mit-bg))
 }
 .mit-workbench .mit-table-search {
   width:min(260px,65%);

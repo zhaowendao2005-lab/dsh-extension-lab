@@ -121,7 +121,7 @@ export interface CustomDraftState {
  tokens: number[];
  error?: string;
 }
-export interface CustomState { draft: CustomDraftState; details: Record<string, CustomRunDetailEntry> }
+export interface CustomState { draft: CustomDraftState; details: Record<string, CustomRunDetailEntry>; selectionRecordId?: string; selectedRunIds: string[] }
 export type AttemptViewResult = (AttemptSummary & {view: FingerprintJobView | null; custom: {runs: CustomRunSummary[]; billingPending?: boolean} | null; billingPending?: boolean; revision: number}) | {id: string; unchanged: true; revision: number};
 export interface ModelIntelligenceTransport extends CatalogTransport {
  recordsList(request: {revision?: number}): Promise<RecordsListView>;
@@ -178,7 +178,7 @@ export interface Workbench {
   patchDraft(value: Partial<Pick<DraftState, 'name' | 'kind' | 'body' | 'pickerOpen' | 'query'>>): void; toggleModel(key: string): void; refreshModels(): void; submit(): void;
   selectPreset(id: string): void; addPreset(): void; renamePreset(id: string): void; deletePreset(id: string): void; savePreset(): void; togglePresets(): void;
   cancelRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
-  beginCustomFromFingerprint(recordId: string, runId?: string): void;
+  beginCustomFromFingerprint(recordId: string, runId?: string | string[]): void; startCustomSelection(recordId: string): void; toggleCustomRunSelection(recordId: string, runId: string): void; cancelCustomSelection(): void; createCustomFromSelection(recordId: string): void;
   patchCustom(value: Partial<Pick<CustomDraftState, 'concurrency' | 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
   setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;

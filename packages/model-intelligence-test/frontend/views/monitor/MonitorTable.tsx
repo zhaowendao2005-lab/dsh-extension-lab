@@ -64,13 +64,15 @@ function CellValue({ run,column,custom,store,record }: {
     return <span className="mit-muted" title="真实请求可能产生费用；当前无法取得实际账单，不显示模拟估价。">不可用</span>;
   return <span className="mit-tabular">{formatMetric(column,run.metrics[column as keyof Metrics])}</span>;
 }
-function RunRow({ store,record,id,columns,custom,results }: {
+function RunRow({ store,record,id,columns,custom,results,selecting,checked }: {
   store: Workbench;
   record: Evaluation;
   id: string;
   columns: string[];
   custom: boolean;
   results: boolean;
+  selecting: boolean;
+  checked: boolean;
 }) {
   const run=useStore(store.evaluations,state => state.runs[id]);
   const selected=useStore(store.workbench,state => state.navigation[state.activeTab]?.runId===id);
@@ -83,6 +85,7 @@ function RunRow({ store,record,id,columns,custom,results }: {
   const retryTitle=!settled? '该模型仍有样本未结束，结束后可重试；只重新请求失败的样本，已完成样本保留。':fingerprint?.busy? '正在应用配置或重试，请稍候；只重新请求该模型失败的样本，已完成样本保留。':'只重新请求该模型失败的样本；已完成样本保留，任务会短暂回到运行中。';
   return <tr className={selected? 'is-selected':''}>
     <th scope="row">
+      {selecting&&<input type="checkbox" className="mit-custom-row-check" aria-label={`选择 ${modelLabel(run.model)} 创建自定义测试`} checked={checked} disabled={!run.model.a6api||run.stage!=='completed'} onChange={() => store.actions.toggleCustomRunSelection(record.id,id)} />}
       <button type="button" className="mit-run-link" onClick={() => store.actions.navigate({ runId: id,artifact: false })}>
         <strong>
           {modelLabel(run.model)}
@@ -101,7 +104,6 @@ function RunRow({ store,record,id,columns,custom,results }: {
         <button type="button" className="mit-text-button" onClick={() => store.actions.navigate({ runId: id,artifact: false })}>详情
           <Icon name="chevron" size={12} />
         </button>
-        {record.kind==='fingerprint'&&run.model.a6api&&run.stage==='completed'&&<button type="button" className="mit-text-button mit-retry-button" title="以此指纹结果中的 a6api 渠道创建自定义测试" onClick={() => store.actions.beginCustomFromFingerprint(record.id,id)}>转为自定义</button>}
         {retryable&&<button type="button" className="mit-text-button mit-retry-button" title={retryTitle} disabled={Boolean(fingerprint?.busy)||!settled} onClick={() => store.actions.retryFailedSample(record.id,id)}>重试失败项</button>}
       </div>
     </td>
@@ -129,6 +131,9 @@ export function MonitorTable({ store,record,results=false }: {
   results?: boolean;
 }) {
   const presentation=useStore(store.presentation,value => value);
+  const selectionRecordId=useStore(store.custom,state => state.selectionRecordId);
+  const selectedRunIds=useStore(store.custom,state => state.selectedRunIds);
+  const selecting=selectionRecordId===record.id;
   const columns=presentation.columns.filter(column => supportsColumn(column,record));
   const rowIds=useStore(store.evaluations,state => {
     const filtered=record.runIds.filter(id => {
@@ -143,11 +148,16 @@ export function MonitorTable({ store,record,results=false }: {
   }).length);
   const columnRoot=useDismissablePopover(presentation.columnsOpen,store.actions.toggleColumns);
   const ids=rowIds? rowIds.split('\n'):[];
-  return <section className="mit-monitor">
+  const selectableCount=useStore(store.evaluations,state => ids.filter(id => { const run=state.runs[id]; return Boolean(run?.model.a6api&&run.stage==='completed'); }).length);
+  return <section className={`mit-monitor${selecting ? ' is-bulk-selecting' : ''}`}>
     <div className="mit-monitor-tools">
       <div className="mit-search mit-table-search">
         <Icon name="search" />
         <input aria-label="筛选参测模型" placeholder="筛选模型…" value={presentation.filter} onChange={event => store.actions.setFilter(event.currentTarget.value)} />
+      </div>
+      <div className="mit-monitor-bulk-actions">
+        {record.kind==='fingerprint'&&!selecting&&selectableCount>0&&<button type="button" className="mit-button" onClick={() => store.actions.startCustomSelection(record.id)}>自定义测试</button>}
+        {selecting&&<><span className="mit-bulk-selection-count" role="status">已选择 {selectedRunIds.length} 个模型</span><button type="button" className="mit-button mit-primary" disabled={!selectedRunIds.length} onClick={() => store.actions.createCustomFromSelection(record.id)}>用所选模型创建</button><button type="button" className="mit-text-button" onClick={store.actions.cancelCustomSelection}>取消</button></>}
       </div>
       <div className="mit-column-picker" ref={columnRoot}>
         <button type="button" className="mit-button" aria-expanded={presentation.columnsOpen} aria-controls={`${store.sessionId}-mit-columns`} onClick={store.actions.toggleColumns}>
@@ -191,7 +201,7 @@ export function MonitorTable({ store,record,results=false }: {
           </tr>
         </thead>
         <tbody>
-          {ids.map(id => <RunRow store={store} record={record} key={id} id={id} columns={columns} custom={record.kind==='custom'} results={results} />)}
+          {ids.map(id => <RunRow store={store} record={record} key={id} id={id} columns={columns} custom={record.kind==='custom'} results={results} selecting={selecting} checked={selectedRunIds.includes(id)} />)}
         </tbody>
       </table>
       {!ids.length&&<Empty title={results? '还没有可展示的结果':'没有匹配的模型'}>
