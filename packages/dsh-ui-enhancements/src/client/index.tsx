@@ -13,6 +13,7 @@ import { SettingsIcon, SettingsPage } from './Settings'
 import { ModelPickerPanel, type ModelOption } from './ModelPickerPanel'
 import { restoreComposerFocus } from './composerFocus'
 import {
+  forwardShortcutToFocusedWorkbench,
   isEventInWorkbenchScope,
   isFocusInWorkbenchScope,
   matchesShortcut,
@@ -541,33 +542,48 @@ window.__ModuleLoader__?.load({
             if (!binding) return
             try {
               const info = shortcuts.describeBinding(binding)
-              if (info?.issue !== null || (Array.isArray(info?.conflicts) && info.conflicts.length > 0)) {
+              if (info?.issue != null || (Array.isArray(info?.conflicts) && info.conflicts.length > 0)) {
                 console.warn('[dsh-ui-enhancements] shortcut rejected by host', cfg.modelPickerShortcut, info)
                 return
               }
-              disposeShortcut = shortcuts.register({
-                id: `${PACKAGE_ID}.modelPicker`,
-                label: () => 'Enhans：打开/关闭模型选择面板',
-                aliases: ['model picker', '模型选择'],
-                defaults: {
-                  'desktop:macos': binding,
-                  'desktop:windows': binding,
-                  'desktop:linux': binding,
+              const desktopDefaults = {
+                'desktop:macos': binding,
+                'desktop:windows': binding,
+                'desktop:linux': binding,
+              }
+              const registerWithDefaults = (defaults: Record<string, typeof binding>) =>
+                shortcuts.register({
+                  id: `${PACKAGE_ID}.modelPicker`,
+                  label: () => 'Enhans：打开/关闭模型选择面板',
+                  aliases: ['model picker', '模型选择'],
+                  defaults,
+                  regions: ['page', 'editable'],
+                  modals: [],
+                  resolve: () => {
+                    if (isRecordingShortcut) {
+                      return { status: 'blocked', reason: '正在录制快捷键' }
+                    }
+                    if (isFocusInWorkbenchScope()) {
+                      forwardShortcutToFocusedWorkbench(cfg.modelPickerShortcut)
+                      return { status: 'blocked', reason: '工作台内由工作台快捷键处理' }
+                    }
+                    return {
+                      status: 'handled',
+                      run: () => picker.toggle(),
+                    }
+                  },
+                })
+              try {
+                disposeShortcut = registerWithDefaults({
+                  ...desktopDefaults,
                   'web:macos': binding,
                   'web:windows': binding,
-                },
-                regions: ['page', 'editable'],
-                modals: [],
-                resolve: () => {
-                  if (isRecordingShortcut || isFocusInWorkbenchScope()) {
-                    return { status: 'blocked', reason: '工作台内由工作台快捷键处理' }
-                  }
-                  return {
-                    status: 'handled',
-                    run: () => picker.toggle(),
-                  }
-                },
-              })
+                })
+              } catch {
+                // Some user-configured bindings (e.g. Ctrl+P) are valid on Desktop but
+                // rejected as Web defaults; retry with Desktop-only defaults.
+                disposeShortcut = registerWithDefaults(desktopDefaults)
+              }
             } catch (error) {
               console.warn('[dsh-ui-enhancements] shortcut registration failed', error)
             }

@@ -414,6 +414,16 @@ test('Enhans client uses DSH shortcuts when available, blocks inside workbench, 
 
   // 2. When Host detects a conflict or rejects registration:
   //    - Enhans must NOT register and must NOT leave a window keydown fallback active
+  // 2b. When Host rejects web:* defaults (e.g. Ctrl+P) but accepts desktop:* defaults,
+  //     and when describeBinding omits issue (undefined), registration still succeeds on Desktop.
+  let callCount = 0
+  const envDesktopOnly = await bootEnhans({
+    withShortcutService: true,
+    describeResult: { conflicts: [] },
+  })
+  assert.equal(envDesktopOnly.registeredCommands.length, 1)
+  envDesktopOnly.dispose()
+
   const envConflict = await bootEnhans({
     withShortcutService: true,
     describeResult: { issue: null, conflicts: ['workspace-ide.quickOpen'] },

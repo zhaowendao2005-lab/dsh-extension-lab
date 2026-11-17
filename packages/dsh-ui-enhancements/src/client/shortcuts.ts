@@ -152,6 +152,29 @@ export function isFocusInWorkbenchScope(): boolean {
   return isNodeInsideActiveWorkbenchScope(getDeepActiveElement(document))
 }
 
+export function forwardShortcutToFocusedWorkbench(spec: string): void {
+  if (typeof document === 'undefined' || typeof KeyboardEvent === 'undefined') return
+  const target = getDeepActiveElement(document)
+  if (!target || !isNodeInsideActiveWorkbenchScope(target)) return
+  const parsed = parseShortcut(spec)
+  if (!parsed) return
+  const key = parsed.code.startsWith('Key')
+    ? (parsed.shift ? parsed.code.slice(3).toUpperCase() : parsed.code.slice(3).toLowerCase())
+    : parsed.code
+  const ev = new KeyboardEvent('keydown', {
+    key,
+    code: parsed.code,
+    ctrlKey: parsed.ctrl || (parsed.mod && !IS_MAC),
+    metaKey: parsed.meta || (parsed.mod && IS_MAC),
+    altKey: parsed.alt,
+    shiftKey: parsed.shift,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+  })
+  target.dispatchEvent(ev)
+}
+
 export function isEventInWorkbenchScope(event?: KeyboardEvent | null): boolean {
   if (isFocusInWorkbenchScope()) return true
   if (event && typeof event.composedPath === 'function') {
