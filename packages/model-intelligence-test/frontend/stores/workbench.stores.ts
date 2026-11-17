@@ -250,6 +250,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     setCustomDetailTab(runId, tab) { const context = customContext(runId); if (context) customDomain.setTab(context.attemptId, runId, tab); },
     readCustomFile(runId, path) { const context = customContext(runId); if (context) void customDomain.readFile(context.attemptId, runId, path); },
     openCustomOutput(runId, mode) { const context = customContext(runId); return context ? customDomain.openOutput(context.attemptId, runId, mode) : Promise.reject(new Error('自定义运行已不可用')); },
+    dismissPreview() { customDomain.dismissPreview(); },
     submit() {
       const value = draft.getState();
       if (value.kind === 'custom') { submitCustom(); return; }

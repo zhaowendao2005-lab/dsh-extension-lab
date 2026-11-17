@@ -66,7 +66,26 @@ export interface CustomRunSummary {
  metrics: {ttftMs: number | null; generationMs: number | null; e2eMs: number | null; modelTokensPerSecond: number | null; endToEndTokensPerSecond: number | null; cacheRate: number | null};
  error: {code: string | null; message: string; phase: string} | null;
 }
-export interface CustomEvent { id: string; type: 'message' | 'reasoning' | 'tool' | 'phase' | 'error'; role?: string; text?: string; name?: string; status?: string; at: number }
+export interface CustomEvent {
+ id: string;
+ type: 'message' | 'reasoning' | 'tool' | 'phase' | 'error';
+ role?: string;
+ text?: string;
+ name?: string;
+ status?: string;
+ at: number;
+ phase?: string | null;
+ code?: string | null;
+ callId?: string | null;
+ executionId?: string | null;
+ turn?: number | null;
+ step?: number | null;
+ index?: number | null;
+ delta?: boolean;
+ isError?: boolean;
+ arguments?: string | null;
+ content?: string | null;
+}
 export interface CustomRequestView {
  id: string;
  requestId: string | null;
@@ -121,7 +140,8 @@ export interface CustomDraftState {
  tokens: number[];
  error?: string;
 }
-export interface CustomState { draft: CustomDraftState; details: Record<string, CustomRunDetailEntry>; selectionRecordId?: string; selectedRunIds: string[] }
+export interface CustomPreviewState { open: boolean; loading: boolean; html: string | null; path: string | null; label: string | null; error?: string }
+export interface CustomState { draft: CustomDraftState; details: Record<string, CustomRunDetailEntry>; selectionRecordId?: string; selectedRunIds: string[]; preview: CustomPreviewState }
 export type AttemptViewResult = (AttemptSummary & {view: FingerprintJobView | null; custom: {runs: CustomRunSummary[]; billingPending?: boolean} | null; billingPending?: boolean; revision: number}) | {id: string; unchanged: true; revision: number};
 export interface ModelIntelligenceTransport extends CatalogTransport {
  recordsList(request: {revision?: number}): Promise<RecordsListView>;
@@ -180,7 +200,7 @@ export interface Workbench {
   cancelRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
   beginCustomFromFingerprint(recordId: string, runId?: string | string[]): void; startCustomSelection(recordId: string): void; toggleCustomRunSelection(recordId: string, runId: string): void; cancelCustomSelection(): void; createCustomFromSelection(recordId: string): void;
   patchCustom(value: Partial<Pick<CustomDraftState, 'concurrency' | 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
-  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>;
+  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>; dismissPreview(): void;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;

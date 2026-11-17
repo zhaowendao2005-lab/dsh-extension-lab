@@ -10,6 +10,7 @@ import {OperationKeyPicker} from '../a6/OperationKeyPicker';
 import { ATTEMPT_STATUS_LABELS,currentAttempt } from './modelLabel';
 import { CustomMonitorView, type CustomMonitorRow } from '../custom/CustomMonitorView';
 import { CustomTaskView } from '../custom/CustomTaskView';
+import { CustomOutputPreview } from '../custom/CustomOutputPreview';
 
 const VIEW_OPTIONS: MenuOption<'progress'|'results'>[] = [
   { value: 'progress',label: '实时进度' },
@@ -106,12 +107,14 @@ function CustomResults({ store,record,resultOnly }: {
   const selectedRunId=useStore(store.workbench,state => state.navigation[state.activeTab]?.runId);
   const detailEntry=useStore(store.custom,state => record.attemptId&&selectedRunId? state.details[`${record.attemptId}:${selectedRunId}`]:undefined);
   const selected=rows.find(row => row.id===selectedRunId);
-  return <div className="mit-custom-split">
-    <CustomMonitorView record={record} rows={rows} selectedRunId={selectedRunId} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} />
-    <div className="mit-custom-detail-pane">{selected&&record.attemptId?
-      <CustomTaskView model={selected.model} summary={selected.summary} detail={detailEntry?.detail} loading={detailEntry?.loading??true} error={detailEntry?.error} activeTab={detailEntry?.tab??'chat'} file={detailEntry?.file} fileLoading={Boolean(detailEntry?.fileLoading)} canRetry={['failed','cancelled','interrupted'].includes(selected.summary.phase)} canCancel={!['completed','failed','cancelled','interrupted'].includes(selected.summary.phase)} onTabChange={tab => store.actions.setCustomDetailTab(selected.id,tab)} onReadFile={path => store.actions.readCustomFile(selected.id,path)} onOpenOutput={mode => store.actions.openCustomOutput(selected.id,mode)} onRetry={() => store.actions.retryFailedSample(record.id,selected.id)} onCancel={() => store.actions.cancelRecord(record.id)} onClose={() => store.actions.navigate({runId:undefined})} compact />
-      :<Empty title="选择一个模型运行查看详情">会话、文件、指标、账单与权限均来自 Host。</Empty>}</div>
-  </div>;
+  const monitor=<CustomMonitorView record={record} rows={rows} selectedRunId={selectedRunId} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} />;
+  const detail=selected&&record.attemptId?<CustomTaskView model={selected.model} summary={selected.summary} detail={detailEntry?.detail} loading={detailEntry?.loading??true} error={detailEntry?.error} activeTab={detailEntry?.tab??'chat'} file={detailEntry?.file} fileLoading={Boolean(detailEntry?.fileLoading)} canRetry={['failed','cancelled','interrupted'].includes(selected.summary.phase)} canCancel={!['completed','failed','cancelled','interrupted'].includes(selected.summary.phase)} onTabChange={tab => store.actions.setCustomDetailTab(selected.id,tab)} onReadFile={path => store.actions.readCustomFile(selected.id,path)} onOpenOutput={mode => store.actions.openCustomOutput(selected.id,mode)} onRetry={() => store.actions.retryFailedSample(record.id,selected.id)} onCancel={() => store.actions.cancelRecord(record.id)} onClose={() => store.actions.navigate({runId:undefined})} />:null;
+  const stale=Boolean(selectedRunId&&!selected);
+  return <>
+    {detail?<div className="mit-custom-page">{detail}</div>:monitor}
+    {stale&&<p className="mit-custom-page-note" role="status">该模型运行已不在当前轮次，已返回执行概览。</p>}
+    <CustomOutputPreview store={store} />
+  </>;
 }
 export function RecordView({ store,id }: {
   store: Workbench;

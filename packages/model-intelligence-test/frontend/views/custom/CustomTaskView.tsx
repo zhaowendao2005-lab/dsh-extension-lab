@@ -1,5 +1,8 @@
 import React from '../../runtime';
 import type { CustomDetailTab, CustomFileReadResult, CustomOutputOpenResult, CustomRunDetail, CustomRunSummary, Model } from '../../types';
+import { buildChatRows, type ChatRow } from '../../chat/model';
+import { ChatFlow, ChatAssistantRowView, ChatErrorRowView, ChatReasoningRowView, ChatTurnRowView, ChatUserRowView } from '../../chat/rows';
+import { ChatToolCall } from '../../chat/tools';
 import { Empty, Icon } from '../../components/common';
 import { CustomMetricsChart } from '../../components/CustomMetricsChart';
 import { CustomOutputActions } from './CustomOutputActions';
@@ -25,14 +28,31 @@ export interface CustomTaskViewProps {
   compact?: boolean;
 }
 const TABS: { id: CustomDetailTab; label: string }[] = [{ id: 'chat', label: 'Chat' }, { id: 'files', label: '文件' }, { id: 'metrics', label: '指标' }, { id: 'billing', label: '账单' }, { id: 'permissions', label: '权限' }];
-function Chat({ detail, phase }: { detail: CustomRunDetail; phase: CustomRunSummary['phase'] }) {
-  if (!detail.events.length) return <Empty title="暂无会话事件">{phase === 'queued' ? '任务正在等待运行槽位。' : '会话开始后将显示真实消息与工具事件。'}</Empty>;
-  return <div className="mit-custom-chat" aria-label="会话事件记录">
-    <p className="mit-custom-data-note">最近 {detail.events.length} 条事件 · 按 Host 记录顺序展示</p>
-    {detail.events.map(event => <article key={event.id} className={`mit-custom-event is-${event.type}`}>
-      <header><strong>{event.type === 'tool' ? event.name || '工具调用' : event.type === 'reasoning' ? '思考' : event.type === 'phase' ? '执行状态' : event.type === 'error' ? '错误' : event.role === 'user' ? '用户' : event.role === 'system' ? '系统' : 'Agent'}</strong><span>{event.status || ''}</span><time>{clock(event.at)}</time></header>
-      {event.type === 'reasoning' ? <details><summary>查看思考内容</summary><pre>{event.text || '未提供文本'}</pre></details> : <pre>{event.text || (event.type === 'tool' ? '工具事件未包含文本。' : '未提供文本')}</pre>}
-    </article>)}
+function ChatRowView({ row }: { row: ChatRow }) {
+  switch (row.kind) {
+    case 'user': return <ChatUserRowView row={row} />;
+    case 'assistant': return <ChatAssistantRowView row={row} />;
+    case 'reasoning': return <ChatReasoningRowView row={row} />;
+    case 'error': return <ChatErrorRowView row={row} />;
+    case 'turn': return <ChatTurnRowView row={row} />;
+    case 'tool': return <ChatToolCall name={row.name} status={row.status} arguments={row.arguments} content={row.content} />;
+  }
+}
+function Chat({ detail, summary }: { detail: CustomRunDetail; summary: CustomRunSummary }) {
+  const rows = React.useMemo(() => buildChatRows(detail.events, summary), [detail.events, summary]);
+  const scroller = React.useRef<HTMLDivElement | null>(null);
+  const stick = React.useRef(true);
+  const count = rows.length;
+  // 只在贴近底部时跟随，避免用户上翻查看历史被拽回（也避免每帧重排）。
+  React.useEffect(() => {
+    const element = scroller.current;
+    if (element && stick.current) element.scrollTop = element.scrollHeight;
+  }, [count]);
+  if (!rows.length) return <Empty title="暂无会话内容">{summary.phase === 'queued' ? '任务正在等待运行槽位。' : '会话开始后将在此镜像 DSH 原始会话。'}</Empty>;
+  return <div className="mit-chat-mirror" aria-label="会话记录" ref={scroller}
+    onScroll={(event) => { const element = event.currentTarget; stick.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48; }}>
+    {detail.eventsTruncated && <p className="mit-chat-mirror-note" role="note">Host 仅保留最近的会话事件，更早内容未展示。</p>}
+    <ChatFlow>{rows.map(row => <ChatRowView key={row.id} row={row} />)}</ChatFlow>
   </div>;
 }
 function Files({ detail, file, loading, onReadFile, summary, onOpenOutput }: { detail: CustomRunDetail; file?: CustomFileReadResult; loading: boolean; onReadFile(path: string): void; summary: CustomRunSummary; onOpenOutput: CustomTaskViewProps['onOpenOutput'] }) {
@@ -72,16 +92,27 @@ function Permissions({ detail, summary }: { detail: CustomRunDetail; summary: Cu
   </div>;
 }
 export function CustomTaskView(props: CustomTaskViewProps) {
-  const { model, summary, detail, loading, error, activeTab, file, fileLoading, canRetry, canCancel, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose, compact } = props;
+  const { model, summary, detail, loading, error, activeTab, file, fileLoading, canRetry, canCancel, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose } = props;
   const tab = TABS.find(item => item.id === activeTab) || TABS[0];
-  return <section className={`mit-custom-detail${compact ? ' is-compact' : ''}`} aria-label="自定义执行详情" aria-busy={loading}>
-    <header className="mit-custom-detail-heading"><div><h3>{summary.target.displayName || model.name}</h3><p>{summary.target.kind === 'a6api' ? `a6api · 渠道 #${summary.target.channelId ?? '—'}` : model.providerName || model.provider}<span> · {summary.sessionId || '会话待创建'}</span></p></div>{onClose && <button type="button" className="mit-icon-button" aria-label="关闭执行详情" onClick={onClose}><Icon name="close" /></button>}</header>
-    <div className="mit-custom-detail-status"><CustomPhaseBadge phase={summary.phase} /><span>{count(summary.usage.requestCount)} 次请求</span><span>{clock(summary.startedAt)} 开始</span></div>
+  return <section className="mit-custom-detail" aria-label="自定义执行详情" aria-busy={loading}>
+    <header className="mit-custom-detail-heading">
+      <div className="mit-custom-detail-lead">
+        {onClose && <button type="button" className="mit-icon-button is-back" aria-label="返回执行概览" title="返回执行概览" onClick={onClose}><Icon name="chevron" /></button>}
+        <div>
+          <h3>{summary.target.displayName || model.name}</h3>
+          <p>{summary.target.kind === 'a6api' ? `a6api · 渠道 #${summary.target.channelId ?? '—'}` : model.providerName || model.provider}<span> · {summary.sessionId || '会话待创建'}</span></p>
+        </div>
+      </div>
+      <nav className="mit-custom-tabs" aria-label="执行详情分类">{TABS.map(item => <button type="button" key={item.id} aria-current={item.id === tab.id ? 'page' : undefined} className={item.id === tab.id ? 'is-active' : ''} onClick={() => onTabChange(item.id)}>{item.label}{item.id === 'files' && detail ? <span>{detail.files.length}</span> : null}</button>)}</nav>
+      <div className="mit-custom-detail-actions">
+        <CustomPhaseBadge phase={summary.phase} />
+        <span>{count(summary.usage.requestCount)} 次请求</span>
+        <span>{clock(summary.startedAt)} 开始</span>
+      </div>
+    </header>
     {summary.error && <div className="mit-custom-error" role="alert"><strong>{summary.error.code || '执行错误'}</strong><p>{summary.error.message}</p></div>}
     {error && <div className="mit-custom-error" role="alert">{error}</div>}
-    {loading && <p className="mit-custom-loading" role="status">{detail ? '正在更新详情…' : '正在加载运行详情…'}</p>}
-    <nav className="mit-custom-tabs" aria-label="执行详情分类">{TABS.map(item => <button type="button" key={item.id} aria-current={item.id === tab.id ? 'page' : undefined} className={item.id === tab.id ? 'is-active' : ''} onClick={() => onTabChange(item.id)}>{item.label}{item.id === 'files' && detail ? <span>{detail.files.length}</span> : null}</button>)}</nav>
-    <div className="mit-custom-detail-body" aria-label={tab.label}>{!detail ? !loading && <Empty title="详情暂不可用">{summary.phase === 'cancelled' ? '任务已取消，等待 Host 返回已保留的执行记录。' : '连接恢复后会继续读取已有运行数据。'}</Empty> : tab.id === 'chat' ? <Chat detail={detail} phase={summary.phase} /> : tab.id === 'files' ? <Files detail={detail} file={file} loading={fileLoading} onReadFile={onReadFile} summary={summary} onOpenOutput={onOpenOutput} /> : tab.id === 'metrics' ? <Metrics detail={detail} summary={summary} /> : tab.id === 'billing' ? <Billing detail={detail} summary={summary} /> : <Permissions detail={detail} summary={summary} />}</div>
-    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" onClick={onCancel}><Icon name="stop" size={13} />取消运行</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry}><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
+    <div className="mit-custom-detail-body" aria-label={tab.label}>{!detail ? !loading && <Empty title="详情暂不可用">{summary.phase === 'cancelled' ? '任务已取消，等待 Host 返回已保留的执行记录。' : '连接恢复后会继续读取已有运行数据。'}</Empty> : tab.id === 'chat' ? <Chat detail={detail} summary={summary} /> : tab.id === 'files' ? <Files detail={detail} file={file} loading={fileLoading} onReadFile={onReadFile} summary={summary} onOpenOutput={onOpenOutput} /> : tab.id === 'metrics' ? <Metrics detail={detail} summary={summary} /> : tab.id === 'billing' ? <Billing detail={detail} summary={summary} /> : <Permissions detail={detail} summary={summary} />}</div>
+    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" onClick={onCancel}><Icon name="stop" size={13} />取消运行</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry}><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
   </section>;
 }

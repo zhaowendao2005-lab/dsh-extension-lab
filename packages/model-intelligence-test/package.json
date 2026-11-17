@@ -1,6 +1,6 @@
 {
   "name": "model-intelligence-test",
-  "version": "3.0.17",
+  "version": "3.0.18",
   "private": true,
   "description": "真实模型指纹测试（lm-detector）与真实自定义 Agent 测试：每模型独立 DSH 会话与 UUID 沙箱、按模型并发、Chat/文件/指标/账单/权限详情，a6api 渠道固定与请求级账单对账，无模拟数据。",
   "type": "module",
@@ -40,19 +40,37 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "dependencies": {
+    "@shikijs/langs": "^4.6.0",
+    "anser": "^2.3.5",
+    "clsx": "^2.1.1",
+    "diff": "^9.0.0",
+    "echarts": "6.0.0",
+    "katex": "~0.16.47",
     "lmfpd-sdk": "0.2.0",
+    "mdast-util-from-markdown": "^2.1.0",
+    "mdast-util-gfm": "^3.1.0",
+    "mdast-util-math": "^3.0.0",
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-extension-math": "^3.1.0",
+    "micromark-factory-space": "^2.1.0",
+    "micromark-util-character": "^2.1.1",
+    "micromark-util-classify-character": "^2.0.1",
+    "micromark-util-decode-string": "^2.0.1",
+    "micromark-util-sanitize-uri": "^2.0.1",
+    "micromark-util-symbol": "^2.0.1",
     "pinyin-pro": "3.27.0",
+    "shiki": "^4.6.0",
+    "unist-util-visit": "^5.2.0",
     "zod": "4.4.3",
-    "zustand": "5.0.8",
-    "echarts": "6.0.0"
+    "zustand": "5.0.8"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
     "@deepseek-ai/dsh-credentials": ">=0.2.2-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-storage-domain": ">=0.2.2-rc.1 <0.3.0-0",
-    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.1 <0.3.0-0",
-    "@deepseek-ai/dsh-tool-executor-native": ">=0.2.2-rc.1 <0.3.0-0"
+    "@deepseek-ai/dsh-tool-executor-native": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.1 <0.3.0-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

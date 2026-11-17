@@ -1,0 +1,614 @@
+/* Vendored DeepSeek (DSH) tool-call row layer.
+
+   The DSH CSS modules behind the tool-call row, merged into one plain
+   stylesheet because this plugin ships no CSS modules:
+   - ToolRow.module.css        -> class prefix mit-chat-tool-
+   - DisclosureRow.module.css  -> class prefix mit-chat-tool-disclosure-
+   - TextShimmer.module.css    -> class prefix mit-chat-tool-shimmer-
+
+   Class names keep their original camelCase suffix (`.root` ->
+   `.mit-chat-tool-root`); the second segment only disambiguates the two atoms
+   whose class names (root/row/leading/title) collide with ToolRow's own. No
+   source used `composes:`, so nothing needed expansion. Declarations, data-*
+   selectors, media queries, comments and keyframes are otherwise unchanged. */
+
+/* ---- ToolRow.module.css (class prefix: mit-chat-tool-) ---- */
+/* Tool summary row (figma 122:9479): 24px single line at the default size —
+   [16 leading] gap6 [title 13/24] gap8 [2x2 dot] gap8 [summary FILL truncate].
+   The Settings font-size preference rides the body-published axis: the shared
+   DisclosureRow chrome scales the row height and leading glyph by the body px
+   delta; the title and the summary texts here read the secondary tier
+   (--dsh-content-font-size-secondary: one step under the body — setting −1 at
+   ≤14, setting −2 above), matching think text. */
+
+.mit-chat-tool-root {
+  display: flex;
+  flex-direction: column;
+}
+
+.mit-chat-tool-leading {
+  flex-shrink: 0;
+}
+
+.mit-chat-tool-root[data-tool^='cordis_'] .mit-chat-tool-title {
+  font-weight: 500;
+}
+
+.mit-chat-tool-title {
+  font-weight: 400;
+}
+
+.mit-chat-tool-sep {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  border-radius: 1px;
+  margin: 0 8px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.mit-chat-tool-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+/* Trailing summary fragment kept out of .mit-chat-tool-summary's ellipsis, for a count whose
+   whole value is that it survives a narrow row (the todo row's parallel-active
+   `+n`). Repeats .mit-chat-tool-summary's type because it sits beside that text, and its
+   `nowrap` too: `flex: none` stops the box shrinking but not the text wrapping,
+   which would break the one-line row in the narrow case the slot exists for. */
+.mit-chat-tool-summarySuffix {
+  flex: none;
+  margin-left: 4px;
+  white-space: nowrap;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+/* Diff-row +/- totals: the code font, matching the diff body the numbers
+   summarize; a wider gap keeps the digits from reading as part of the path.
+   Two px under the secondary tier (still riding the axis): mono digits read
+   optically larger than the sans path at the same size. The
+   half-pixel nudge closes the baseline gap the size difference leaves under
+   the row's box-centering (a transform, so flex layout is untouched). */
+.mit-chat-tool-diffStat {
+  margin-left: 10px;
+  font-family: var(--ds-font-family-code);
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 2px);
+  transform: translateY(0.5px);
+}
+
+.mit-chat-tool-row[aria-expanded='true'] .mit-chat-tool-diffAdded {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+@media (hover: hover) {
+  .mit-chat-tool-row:hover .mit-chat-tool-diffAdded {
+    color: var(--dsw-alias-state-success-primary);
+  }
+}
+
+.mit-chat-tool-row[aria-expanded='true'] .mit-chat-tool-diffRemoved {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+@media (hover: hover) {
+  .mit-chat-tool-row:hover .mit-chat-tool-diffRemoved {
+    color: var(--dsw-alias-state-error-primary);
+  }
+}
+
+/* File-tool path: same type as .mit-chat-tool-summary, with a persistent link affordance.
+   Dotted dimmed underline: visible enough to say "clickable", light enough
+   that a long path doesn't read as one heavy rule under the row. Shrink-to-fit
+   (flex 0): the click target ends where the path text ends — the row's empty
+   remainder stays the expand/collapse toggle. */
+.mit-chat-tool-fileLink {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: inherit;
+}
+
+/* Multi-file patch summary: one ellipsized line of plain separators and per-file
+   links. Shrink-to-fit like .mit-chat-tool-fileLink, so the row's empty remainder stays the
+   expand/collapse toggle. */
+.mit-chat-tool-fileLinks {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+/* One file inside .mit-chat-tool-fileLinks: .mit-chat-tool-fileLink's affordance without its own box, so the
+   line keeps flowing and the parent's ellipsis applies. */
+.mit-chat-tool-fileTargetLink {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+/* Path link affordance shared by the whole-summary and per-file links. */
+.mit-chat-tool-fileLink,
+.mit-chat-tool-fileTargetLink {
+  text-decoration: underline dotted;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* Pointing at one file of a multi-file patch brightens that file alone: the
+   row keeps its idle color and diff totals instead of the whole-row hover. */
+@media (hover: hover) {
+  .mit-chat-tool-row:has(.mit-chat-tool-fileTargetLink:hover) {
+    color: var(--dsw-alias-label-tertiary);
+  }
+
+  .mit-chat-tool-row:not([aria-expanded='true']):has(.mit-chat-tool-fileTargetLink:hover) .mit-chat-tool-diffAdded,
+  .mit-chat-tool-row:not([aria-expanded='true']):has(.mit-chat-tool-fileTargetLink:hover) .mit-chat-tool-diffRemoved {
+    color: inherit;
+  }
+
+  .mit-chat-tool-fileTargetLink:hover {
+    color: var(--dsw-alias-label-secondary);
+  }
+}
+
+/* Error row's collapsed summary: the failure's first line in the error color. */
+.mit-chat-tool-errorSummary {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Interrupted rows retain their business glyph and replace the summary with a visible warning. */
+.mit-chat-tool-stoppedSummary {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+/* Expanded body + Inspect pill wrapper (sibling of .mit-chat-tool-row: clicks never toggle). */
+.mit-chat-tool-bodyWrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hover-revealed jump to the trajectory record: a small pill in real flow
+   under the expanded body's bottom-left corner (it reserves its line, so
+   revealing never shifts layout); revealed by hovering anywhere on the tool
+   call — title row included — or by keyboard focus. */
+.mit-chat-tool-inspectButton {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 2px 4px;
+  padding: 2px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 999px;
+  corner-shape: round;
+  /* Base background, not bg-overlay: the overlay token is a raised dark
+     surface and reads too heavy for a quiet in-flow affordance. */
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.mit-chat-tool-inspectButton:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .mit-chat-tool-root:hover .mit-chat-tool-inspectButton {
+    opacity: 1;
+  }
+}
+
+.mit-chat-tool-detailsBodyWrap {
+  position: relative;
+}
+
+.mit-chat-tool-detailsBodyWrap .mit-chat-tool-inspectButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  margin: 0;
+}
+
+/* Solid hover fill (a translucent token would let content bleed through). */
+@media (hover: hover) {
+  .mit-chat-tool-inspectButton:hover {
+    background: var(--dsw-alias-interactive-bg-hover-solid);
+    color: var(--dsw-alias-label-primary);
+  }
+}
+
+/* Expanded-body scroll wrapper for the run_code CodeBlock; the IN/OUT card
+   and the terminal card scroll INSIDE their own surface instead, so the
+   scrollbar sits within the rounded card. */
+.mit-chat-tool-bodyScroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* Expanded input/output card (figma 1249:35657): the code-block surface and
+   radius from the TerminalBlock/CodeBlock family. The card itself is a plain
+   column — the padding and the IN/OUT gutter-label grid live on each section
+   so the divider spans the full card width and each section scrolls alone. */
+.mit-chat-tool-ioCard {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 4px 4px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-markdown-code-block);
+  font: var(--dsw-font-markdown-code-block-small);
+}
+
+/* One card section (IN or OUT): the gutter-label grid, capped and scrolling
+   independently so a long input never buries a short output (and vice versa). */
+.mit-chat-tool-ioSection {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 14px;
+  align-items: baseline;
+  padding: 12px 16px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+/* Card-internal scrollbar: a 2px transparent border clips the thumb inward so
+   it floats off the rounded card edge instead of hugging it (the terminal
+   card's own output scroller carries the same treatment in TerminalBlock). */
+.mit-chat-tool-ioSection::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--dsw-radius-sm);
+}
+
+/* Track end-margins keep the thumb's travel out of the rounded corners. */
+.mit-chat-tool-ioSection::-webkit-scrollbar-track {
+  margin: 6px 0;
+}
+
+/* Caption (not tertiary): one step dimmer than the payload text so the
+   gutter labels read as labels, not as part of the content. Sticky against
+   the section's own scroll so the label stays readable while its payload
+   scrolls underneath (top 0 = the section's padding edge inside the
+   scrollport; start-aligned because sticky needs a block-start anchor). */
+.mit-chat-tool-ioLabel {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* l2 hairline between the IN and OUT sections, spanning the full card width
+   (it sits between the padded sections, not inside their grid). */
+.mit-chat-tool-ioDivider {
+  flex: none;
+  height: 0.5px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.mit-chat-tool-ioText {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* A failed call's OUT text shares the collapsed summary's error color. */
+.mit-chat-tool-ioText[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* The block-shaped expanded bodies: the code variant's run_code program
+   through CodeBlock (shiki-highlighted TypeScript), a terminal card's command
+   output through TerminalBlock, a diff card through DiffBlock, a read card's
+   line-numbered window through ReadBlock, a search card's grouped matches or
+   path list through SearchBlock, and a web card's citation/source list through
+   WebBlock. All are drawn by the shared primitive, so only the row's
+   indentation is this file's concern — the margin also replaces each
+   primitive's own standalone vertical spacing with the flow's row rhythm. */
+.mit-chat-tool-codeBody,
+.mit-chat-tool-terminalBody,
+.mit-chat-tool-diffBody,
+.mit-chat-tool-readBody,
+.mit-chat-tool-imageBody,
+.mit-chat-tool-searchBody,
+.mit-chat-tool-webBody {
+  margin: 4px 0 4px 4px;
+}
+
+/* The recovery footer for a capped search: the result text (its `Full … stored
+   at …` locator) below the card in the muted tone, since the card holds only the
+   retained rows. Same column indent as the card body. */
+.mit-chat-tool-searchRecovery {
+  margin: 4px 0 4px 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The image card's full path and size lines under the gallery, in the small
+   code font of the expanded IN/OUT card. When the attachment slot renders
+   nothing, these lines are the only evidence an image was returned. pre-wrap
+   keeps repeated whitespace in a path. The enclosing .mit-chat-tool-imageBody already carries
+   the row indent. */
+.mit-chat-tool-imageMeta {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: var(--dsw-font-markdown-code-block-small);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Text blocks other than the envelope (for example, appended by a post-execute
+   hook), in the muted tone the search recovery footer uses. */
+.mit-chat-tool-imageExtra {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The terminal card scrolls its OUTPUT inside its own surface (same l1
+   hairline as the IN/OUT card): the banner stays pinned and the scrollbar
+   never rides over it. 224px = the 260px card cap minus the ~36px banner. */
+.mit-chat-tool-terminalBody {
+  --dsl-terminal-font: var(--dsw-font-markdown-code-block-small);
+  --dsl-terminal-line-height: 18px;
+  --dsl-terminal-output-max-height: 224px;
+  --dsl-terminal-command-whitespace: pre-wrap;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+/* Visually hidden run-state label for assistive technology: the business icon
+   and animated text treatment do not name the state, so this text carries the
+   running/failed/interrupted state to a screen reader. */
+.mit-chat-tool-visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (hover: none) {
+  .mit-chat-tool-inspectButton { opacity: 1; }
+}
+
+/* ---- DisclosureRow.module.css (class prefix: mit-chat-tool-disclosure-) ---- */
+/* Shared disclosure header: [16px leading] gap 6 [title 13/24] at the default
+   size. The Settings font-size preference moves the row through the
+   body-published axis: title size follows the secondary tier
+   (--dsh-content-font-size-secondary: one step under the body — setting −1 at
+   ≤14, setting −2 above), and the row height, leading box, and glyph edge
+   shift by the body px delta so the icon keeps its optical share of the
+   line. */
+
+.mit-chat-tool-disclosure-root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.mit-chat-tool-disclosure-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.mit-chat-tool-disclosure-header[data-has-accessory] {
+  gap: 8px;
+}
+
+.mit-chat-tool-disclosure-header[data-has-accessory] .mit-chat-tool-disclosure-row {
+  flex: 0 1 auto;
+}
+
+.mit-chat-tool-disclosure-row {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  transition: color 100ms ease;
+}
+
+.mit-chat-tool-disclosure-row[data-expandable] {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .mit-chat-tool-disclosure-row:hover {
+    color: var(--dsw-alias-label-secondary);
+  }
+}
+
+.mit-chat-tool-disclosure-leading {
+  position: relative;
+  flex: none;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+/* Flow-row glyphs render at 14px inside the 16px box; the CSS edge overrides
+   each svg's own width/height attributes so every registered icon scales
+   without a per-callsite size prop. StateDot (its svg carries data-state)
+   stays at its fixed figma size — it is a status mark, not text furniture. */
+.mit-chat-tool-disclosure-leading svg:not([data-state]) {
+  width: calc(14px + var(--dsh-content-font-delta, 0px));
+  height: calc(14px + var(--dsh-content-font-delta, 0px));
+}
+
+button.mit-chat-tool-disclosure-leading {
+  cursor: pointer;
+}
+
+.mit-chat-tool-disclosure-iconIdle {
+  display: inline-flex;
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.mit-chat-tool-disclosure-chevronHover {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+@media (hover: hover) {
+  .mit-chat-tool-disclosure-row:hover .mit-chat-tool-disclosure-iconIdle {
+    opacity: 0;
+  }
+
+  .mit-chat-tool-disclosure-row:hover .mit-chat-tool-disclosure-chevronHover {
+    opacity: 1;
+  }
+}
+
+.mit-chat-tool-disclosure-title {
+  flex: none;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mit-chat-tool-disclosure-row {
+    transition: none;
+  }
+}
+
+/* ---- TextShimmer.module.css (class prefix: mit-chat-tool-shimmer-) ---- */
+.mit-chat-tool-shimmer-root {
+  position: relative;
+  display: inline-grid;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: top;
+  color: inherit;
+}
+
+.mit-chat-tool-shimmer-content {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.mit-chat-tool-shimmer-text {
+  color: inherit;
+}
+
+.mit-chat-tool-shimmer-text[data-shimmer-text]::after {
+  content: attr(data-shimmer-text);
+}
+
+.mit-chat-tool-shimmer-decoration {
+  position: absolute;
+  inset: 0;
+  /* The moving mask must not enlarge any ancestor's scrollable area. */
+  overflow: clip;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mit-chat-tool-shimmer-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-shimmer);
+  mask-image: linear-gradient(105deg, transparent 0%, black 40% 60%, transparent 100%);
+  transform: translateX(-100%);
+  animation-name: dsh-row-shimmer-sweep;
+}
+
+/* Semantic base colors stay on the real content; the overlay supplies one tint. */
+.mit-chat-tool-shimmer-sweep * {
+  color: inherit !important;
+}
+
+.mit-chat-tool-shimmer-sweep [data-shimmer-decoration] {
+  background: currentColor;
+}
+
+/* Opposite transforms keep every glyph aligned while their shared mask moves. */
+.mit-chat-tool-shimmer-highlight {
+  width: 100%;
+  height: 100%;
+  transform: translateX(100%);
+  animation-name: dsh-row-shimmer-highlight;
+}
+
+.mit-chat-tool-shimmer-sweep,
+.mit-chat-tool-shimmer-highlight {
+  animation-duration: 1.5s;
+  animation-delay: 0.3s;
+  animation-timing-function: steps(48, end);
+  animation-iteration-count: infinite;
+}
+
+@keyframes dsh-row-shimmer-sweep {
+  0% { transform: translateX(-100%); }
+  66.6667%, 100% { transform: translateX(100%); }
+}
+
+@keyframes dsh-row-shimmer-highlight {
+  0% { transform: translateX(100%); }
+  66.6667%, 100% { transform: translateX(-100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mit-chat-tool-shimmer-decoration {
+    display: none;
+  }
+
+  .mit-chat-tool-shimmer-sweep,
+  .mit-chat-tool-shimmer-highlight {
+    animation: none;
+  }
+}

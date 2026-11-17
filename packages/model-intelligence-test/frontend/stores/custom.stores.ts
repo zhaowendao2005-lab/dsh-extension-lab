@@ -8,7 +8,7 @@ const BILLING_GRACE_MS = 420_000;
 const keyOf = (attemptId: string, runId: string): string => `${attemptId}:${runId}`;
 
 export function createCustomDomain(transport: ModelIntelligenceTransport) {
-  const store = createStore<CustomState>(() => ({ draft: { a6Models: [], a6Tokens: [], tokens: [], concurrency: 2, timeoutMs: 180_000, creating: false, step: 1 }, details: {}, selectedRunIds: [] }));
+  const store = createStore<CustomState>(() => ({ draft: { a6Models: [], a6Tokens: [], tokens: [], concurrency: 2, timeoutMs: 180_000, creating: false, step: 1 }, details: {}, selectedRunIds: [], preview: { open: false, loading: false, html: null, path: null, label: null } }));
   let disposed = false;
   let active: {attemptId: string; runId: string} | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -100,11 +100,23 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
       catch (error) { if (!disposed && requests.get(`${id}:file`) === request) setEntry(id, { fileLoading: false, error: error instanceof Error ? error.message : '读取文件失败' }); }
     },
     async openOutput(attemptId: string, runId: string, mode: 'preview' | 'vscode') {
-      const id = keyOf(attemptId, runId); setEntry(id, { previewLoading: true, error: undefined });
-      try { const result = await openOutput(transport, { attemptId, runId, mode }); setEntry(id, { previewLoading: false, previewPath: result.path }); return result; }
-      catch (error) { setEntry(id, { previewLoading: false, error: error instanceof Error ? error.message : '打开成果失败' }); throw error; }
+      const id = keyOf(attemptId, runId);
+      setEntry(id, { previewLoading: true, error: undefined });
+      if (mode === 'preview') store.setState({ preview: { open: true, loading: true, html: null, path: null, label: runId } });
+      try {
+        const result = await openOutput(transport, { attemptId, runId, mode });
+        setEntry(id, { previewLoading: false, previewPath: result.path });
+        if (mode === 'preview' && !disposed) store.setState({ preview: { open: true, loading: false, html: result.html ?? null, path: result.path ?? null, label: runId } });
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '打开成果失败';
+        setEntry(id, { previewLoading: false, error: message });
+        if (mode === 'preview' && !disposed) store.setState({ preview: { open: true, loading: false, html: null, path: null, label: runId, error: message } });
+        throw error;
+      }
     },
     closeOutput(attemptId: string, runId: string): void { setEntry(keyOf(attemptId, runId), { previewOpen: false, previewPath: undefined }); },
+    dismissPreview(): void { if (!disposed) store.setState(state => ({ preview: { ...state.preview, open: false, html: null, path: null, label: null } })); },
     dispose(): void { if (disposed) return; disposed = true; active = undefined; if (timer !== undefined) clearTimeout(timer); timer = undefined; requests.clear(); terminalSince.clear(); },
   };
 }

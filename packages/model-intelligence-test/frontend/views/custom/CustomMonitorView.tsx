@@ -1,5 +1,5 @@
 import React from '../../runtime';
-import type { Evaluation, Model, CustomRunSummary } from '../../types';
+import type { CustomOutputOpenResult, Evaluation, Model, CustomRunSummary } from '../../types';
 import { Empty, Icon } from '../../components/common';
 import { modelLabel, providerLabel } from '../results/modelLabel';
 import { count, decimal, millis, rate, cost, outputLabel, ended, CustomPhaseBadge, CUSTOM_BILLING_LABELS, observed } from './presentation';
@@ -14,8 +14,9 @@ export interface CustomMonitorViewProps {
   onFilter(value: string): void;
   onSelectRun(runId: string): void;
   onRetry(runId: string): void;
+  onOpenOutput?(runId: string, mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>;
 }
-export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry }: CustomMonitorViewProps) {
+export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput }: CustomMonitorViewProps) {
   const needle = filter.trim().toLowerCase();
   const visible = rows.filter(row => (!resultOnly || ended(row.summary.phase)) && (!needle || `${modelLabel(row.model)} ${providerLabel(row.model)} ${row.summary.target.displayName} ${row.summary.target.channelId ?? ''}`.toLowerCase().includes(needle)));
   const active = rows.filter(row => !ended(row.summary.phase)).length;
@@ -39,7 +40,7 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
           <td><span>{count(summary.usage.inputTokens)}</span><span className="mit-custom-cell-sub">{count(summary.usage.outputTokens)}</span></td>
           <td>{millis(summary.metrics.ttftMs)}</td><td>{decimal(summary.metrics.modelTokensPerSecond)}</td><td>{decimal(summary.metrics.endToEndTokensPerSecond)}</td><td>{rate(summary.metrics.cacheRate)}</td>
           <td><span>{cost(summary.usage.cost, summary.usage.currency)}</span><span className="mit-custom-cell-sub">{CUSTOM_BILLING_LABELS[summary.usage.billingState]}</span></td>
-          <td><span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span></td>
+          <td>{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ?? '查看成果'} onClick={() => { void onOpenOutput(id, 'preview'); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
           <td><div className="mit-custom-row-actions"><button type="button" className="mit-text-button" onClick={() => onSelectRun(id)}>详情<Icon name="chevron" size={12} /></button>{['failed', 'cancelled', 'interrupted'].includes(summary.phase) && <button type="button" className="mit-text-button" onClick={() => onRetry(id)}>重试</button>}</div></td>
         </tr>)}</tbody>
       </table>
