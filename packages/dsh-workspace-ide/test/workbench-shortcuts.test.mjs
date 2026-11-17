@@ -10,6 +10,8 @@ import {
   WORKBENCH_SCOPE_ATTR,
   WORKBENCH_SCOPE_ACTIVE_ATTR,
 } from '../frontend/service/shortcuts.js';
+import { createStore } from '../frontend/store.js';
+import { createExplorerSelectionDomain } from '../frontend/stores/explorer-selection.stores.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -99,9 +101,43 @@ test('handleWorkbenchKeyDown consumes and dispatches, guarding repeat and record
   assert.equal(evRecording.calls.preventDefault, 0);
 });
 
-test('built client bundle declares workbench scope attributes and keeps global defaults empty', async () => {
+test('built client bundle declares workbench scope attributes, focusable root, and keeps global defaults empty', async () => {
   const clientCode = await readFile(path.join(root, 'lib/client.js'), 'utf8');
   assert.match(clientCode, new RegExp(WORKBENCH_SCOPE_ATTR));
   assert.match(clientCode, new RegExp(WORKBENCH_SCOPE_ACTIVE_ATTR));
   assert.match(clientCode, /isShortcutRecording/);
+  assert.match(clientCode, /\.wid-root:focus\s*\{\s*outline:\s*none;\s*\}/);
+});
+
+test('explorer selection domain supports root blank-area context menu', () => {
+  const files = createStore({
+    entries: {
+      '': { entries: [{ name: 'README.md', type: 'file' }] },
+    },
+    expanded: [],
+    visible: {},
+    loading: [],
+  });
+  const workspace = createStore({ root: '/tmp/repo' });
+  const domain = createExplorerSelectionDomain({ files, workspace });
+
+  domain.select('README.md');
+  assert.deepEqual(domain.store.getSnapshot().selected, ['README.md']);
+
+  domain.openMenu('', { x: 40, y: 180, surface: 'explorer-1' });
+  const snap = domain.store.getSnapshot();
+  assert.deepEqual(snap.selected, []);
+  assert.deepEqual(snap.menu, { path: '', x: 40, y: 180, surface: 'explorer-1' });
+
+  // File tree refresh keeps the root menu open until closed or root changes.
+  files.patch({
+    entries: {
+      '': { entries: [{ name: 'README.md', type: 'file' }, { name: 'a.txt', type: 'file' }] },
+    },
+  });
+  assert.deepEqual(domain.store.getSnapshot().menu, { path: '', x: 40, y: 180, surface: 'explorer-1' });
+
+  domain.closeMenu();
+  assert.equal(domain.store.getSnapshot().menu, null);
+  domain.dispose();
 });

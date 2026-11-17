@@ -155,6 +155,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.wid-root:focus { outline: none; }
+
 .wid-activity__button[aria-pressed="true"]::before {
   content: "";
   position: absolute;
@@ -1172,6 +1174,8 @@
   line-height: 1.4;
   color: var(--dsw-alias-label-primary);
 }
+
+.wid-root:focus { outline: none; }
 
 :host(.wid-fullview-shadow) *,
 :host(.wid-fullview-shadow) *::before,

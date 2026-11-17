@@ -25,7 +25,7 @@ export function createExplorerSelectionDomain({ files, workspace, onSelectionCha
     const focused = visibleSet.has(state.focused) ? state.focused : (selected[0] ?? visible[0] ?? null);
     commit({ ...state, selected, focused,
       anchor: visibleSet.has(state.anchor) ? state.anchor : focused,
-      menu: state.menu && visibleSet.has(state.menu.path) ? state.menu : null });
+      menu: state.menu && (state.menu.path === '' || visibleSet.has(state.menu.path)) ? state.menu : null });
   }
   const detachFiles = files.subscribe(reconcile);
   const detachWorkspace = workspace.subscribe(reconcile);
@@ -42,6 +42,11 @@ export function createExplorerSelectionDomain({ files, workspace, onSelectionCha
     },
     clear() { commit({ ...store.getSnapshot(), selected: [], anchor: null, menu: null }); },
     openMenu(path, point) {
+      if (path === '') {
+        const state = store.getSnapshot();
+        commit({ ...state, selected: [], anchor: null, menu: { path: '', x: point.x, y: point.y, surface: point.surface ?? null } });
+        return;
+      }
       const next = explorerSelection(store.getSnapshot(), path, rows(), { preserve: true });
       if (!next.selected.includes(path)) return;
       commit({ ...next, menu: { path, x: point.x, y: point.y, surface: point.surface ?? null } });

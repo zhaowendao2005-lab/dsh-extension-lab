@@ -2,6 +2,7 @@ import { useStore, useEffect, useRef } from '../runtime.js';
 import { Toolbar } from './shell/Toolbar.jsx';
 import { NavHeader } from './nav/NavHeader.jsx';
 import { FileTree } from './explorer/FileTree.jsx';
+import { openExplorerMenu } from './explorer/FileTree.jsx';
 import { ExplorerContextMenu } from './explorer/ExplorerContextMenu.jsx';
 import { SplitTree } from './workbench/SplitTree.jsx';
 import { TabContextMenu } from './workbench/TabContextMenu.jsx';
@@ -103,6 +104,7 @@ export function Workbench({ stores, visible, surface = 'sidebar', scopeRef = nul
       <div
         ref={rootRef}
         className="wid-root"
+        tabIndex={-1}
         data-ui-scale={scalePercent}
         style={{ '--wid-ui-scale': scale, '--wid-panel-h': panelOpen ? ui.panelHeight + 'px' : '0px' }}
         data-nav={navOpen ? 'open' : 'collapsed'}
@@ -114,7 +116,15 @@ export function Workbench({ stores, visible, surface = 'sidebar', scopeRef = nul
       <Toolbar stores={stores} />
       <div className="wid-nav" aria-label="文件与搜索">
         <NavHeader stores={stores} />
-        <div className="wid-nav__body">
+        <div
+          className="wid-nav__body"
+          onContextMenu={(event) => {
+            if (!workspace.root) return;
+            event.preventDefault();
+            event.stopPropagation();
+            openExplorerMenu(stores, event.currentTarget, '', event.clientX, event.clientY);
+          }}
+        >
           {!workspace.root ? (
             <EmptyState stores={stores} />
           ) : (
