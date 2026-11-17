@@ -146,6 +146,7 @@ const result = await esbuild.build({
   jsxFactory: 'h',
   jsxFragment: 'Fragment',
   inject: [path.join(root, 'frontend/jsx-shim.js')],
+  plugins: [reactBridge],
   minify: true,
   sourcemap: false,
   loader: { '.css': 'text', '.jsx': 'jsx' },
@@ -163,11 +164,12 @@ const result = await esbuild.build({
 | `target` | `chrome120` | 宿主 web 端最低 Chromium 基线；由此可放心用 `color-mix`、`@property`、`Array.prototype.at`，且**不做**多余降级 |
 | `jsx` | `transform`（`jsxFactory: 'h'`、`jsxFragment: 'Fragment'`） | 走 classic 转换，`h` 由 `inject` 注入的 shim 提供；**不能用 `automatic`**，理由见下方「为什么不用 `jsx: 'automatic'`」 |
 | `inject` | `frontend/jsx-shim.js` | 给每个 `.jsx` 注入 `h`/`Fragment` 名字（`export { h, Fragment } from './runtime.js'`），从而**不需要**在视图里 `import react`（R14 因此可成立） |
+| `plugins` | `reactBridge`：`onResolve` 把 `react` / `react/jsx-runtime` / `react/jsx-dev-runtime` 指到 `frontend/react-bridge.js` | 从 npm 装的 React 组件（`react-markdown`）自己 `import 'react'`，不接管就会走 `external` 变成顶层裸 `require()`，或被打进第二份 React |
 | `loader['.jsx']` | `jsx` | vite 惯例默认支持 `.jsx`，esbuild 默认不会把 `.jsx` 当 JSX 解析 |
 | `minify` | `true` | 体积硬约束；生产构建没有"debug 版"这一说 |
 | `sourcemap` | `false` | 宿主不提供 sourcemap 路由，产出 `.map` 只会增加 `files` 噪音；调试用未压缩的模块路径与 `?rev` 重编译 |
 | `loader['.css']` | `text` | xterm 与自研样式都以字符串内联，运行时注入 `<style id="dsh-workspace-ide/css">`（`ARCHITECTURE.md` 要求不打包独立 CSS） |
-| `external` | 四个 react 入口 | react 由宿主提供；漏掉 `react/jsx-runtime` 会**打第二份 React** → hooks 报错 `Invalid hook call` |
+| `external` | 四个 react 入口 | react 由宿主提供；漏掉 `react/jsx-runtime` 会**打第二份 React** → hooks 报错 `Invalid hook call`。`reactBridge` 插件优先接管这四个 specifier，此处只是兜底 |
 | `define` | `'process.env.NODE_ENV': '"production"'` | 很多库（含 CM6 生态外的依赖）读它做分支；不定义会在浏览器里出 `process is not defined` |
 | `metafile` | `true` | §2.1 步骤 6 的白名单核对与体积归因都靠它 |
 | `logLevel` | `silent` | 自己打汇总行，避免双份输出 |
@@ -205,6 +207,7 @@ const result = await esbuild.build({
 | R13 | `frontend/**`（`editor/languages.js` 除外） | `@codemirror/lang-*` | 语言包必须集中白名单（§2.2） | 无 |
 | R14 | `frontend/**` | `from 'react'` / `react-dom` | React 由 ModuleLoader 运行时注入，打包第二份会撕开 hooks | 走 `runtime.js` 的 `h`/hooks |
 | R15 | `frontend/**` | `position: fixed` | 工作台住在右栏里，fixed 浮层会越出右栏；浮层必须 absolute 于 `.wid-root` | 无 |
+| R16 | `frontend/**` | `dangerouslySetInnerHTML` / `innerHTML =` | UI 只构造 React 元素；Markdown 预览渲染的是工作区文件，HTML 汇聚点就是注入点 | 无 |
 
 ## 4 本地开发循环
 
@@ -278,6 +281,9 @@ pnpm --dir packages/dsh-workspace-ide run build -- --check
 | `@tanstack/react-virtual` | 见 §1（锁定后回填） | MIT | 文件树 / 图谱行虚拟化 | 是 |
 | `zustand` | 见 §1（锁定后回填） | MIT | `*.stores.ts`（vanilla 版，不用 React 绑定） | 是 |
 | `zod` | `4.4.3` | MIT | Host 侧 payload 校验 | **否**（Host 运行时依赖，`lib/` 里原样 import） |
+| `react-markdown` | `10.1.0` | MIT | Markdown 预览渲染（替代手写渲染器） | 是 |
+| `remark-gfm` | `4.0.1` | MIT | GFM：表格 / 任务列表 / 删除线 / 自动链接 | 是 |
+| `rehype-slug` | `^6.0.0` | MIT | heading id，`[跳转](#x)` 可用 | 是 |
 | `esbuild` | `0.25.12` | MIT | 构建工具 | 否（devDependency） |
 | `react` / `react-dom` | 宿主提供 | MIT | UI 运行时 | 否（`external`） |
 

@@ -1,160 +1,126 @@
 /**
- * Minimal Markdown renderer for the preview pane. It deliberately stays dependency-free:
- * the panel ships as a single IIFE bundle and a full CommonMark parse is not worth 30 kB gzip
- * for "read the README" (docs/editor.md §7 → Markdown 预览).
+ * Markdown preview pane.
  *
- * Supported: ATX headings, fenced code, block quotes, ordered/unordered lists, horizontal
- * rules, paragraphs, and inline code/bold/italic/strikethrough/links. Everything renders as
- * React elements — never `dangerouslySetInnerHTML`, so a README cannot inject markup.
+ * Syntax handling is delegated wholesale to `react-markdown` + `remark-gfm` (GFM: tables,
+ * task lists, strikethrough, autolinks) and `rehype-slug` (GitHub-compatible heading ids, so
+ * `[jump](#deploy)` works — the same job as `#addNamedHeaders` in VS Code's markdown engine).
+ * Nothing here parses Markdown, and nothing produces HTML: the tree is React elements, so a
+ * README can never inject markup (docs/editor.md §12).
+ *
+ * Every element is created through `frontend/runtime.js`, i.e. with the Host's React copy.
  */
-import { h, Fragment } from '../runtime.js';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeSlug from 'rehype-slug';
+import { h, useEffect, useRef } from '../runtime.js';
+import { classifyHref } from '../service/markdown-links.js';
 
-const FENCE = /^\s*(```+|~~~+)\s*([\w+-]*)\s*$/;
-const HEADING = /^(#{1,6})\s+(.*)$/;
-const UL = /^\s*[-*+]\s+(.*)$/;
-const OL = /^\s*(\d+)[.)]\s+(.*)$/;
-const QUOTE = /^\s*>\s?(.*)$/;
-const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeSlug];
 
-const INLINE = [
-  { re: /`([^`]+)`/g, wrap: (children, key) => h('code', { key, className: 'wid-md__code' }, children) },
-  { re: /\*\*([^*]+)\*\*/g, wrap: (children, key) => h('strong', { key }, children) },
-  { re: /(?<![*])\*([^*]+)\*(?!\*)/g, wrap: (children, key) => h('em', { key }, children) },
-  { re: /~~([^~]+)~~/g, wrap: (children, key) => h('del', { key }, children) },
-  {
-    re: /\[([^\]]+)\]\(([^)\s]+)\)/g,
-    wrap: (children, key, match) =>
-      h('a', { key, href: safeHref(match[2]), target: '_blank', rel: 'noreferrer noopener' }, children),
-  },
-];
-
-function safeHref(href) {
-  const value = String(href ?? '').trim();
-  return /^(https?:|mailto:|#|\/|\.)/i.test(value) ? value : '#';
+/**
+ * Render Markdown source into a React element tree.
+ *
+ * @param {string} text
+ * @param {{ basePath?: string, openLink?: (path: string) => void,
+ *           loadImage?: (path: string) => Promise<string | null> }} [options]
+ *   `basePath` is the document itself, used to resolve relative links and images;
+ *   `openLink` receives a workspace path for file targets; `loadImage` resolves a workspace
+ *   path to a displayable URL (Blob URL) or null when the file cannot be shown.
+ */
+export function renderMarkdown(text, options = {}) {
+  return h(ReactMarkdown, {
+    remarkPlugins: REMARK_PLUGINS,
+    rehypePlugins: REHYPE_PLUGINS,
+    components: componentsFor(options),
+    children: String(text ?? ''),
+  });
 }
 
-/** Expand `**bold with `code` inside**`-style nesting one level deep. */
-function inline(text, keyPrefix = 'i') {
-  let nodes = [text];
-  for (const rule of INLINE) {
-    const next = [];
-    for (const node of nodes) {
-      if (typeof node !== 'string') {
-        next.push(node);
-        continue;
+function componentsFor({ basePath, openLink, loadImage } = {}) {
+  return {
+    a({ href, children }) {
+      const target = classifyHref(href, basePath);
+      if (target.kind === 'anchor') {
+        return h('a', { className: 'wid-md__link', href: target.href, onClick: scrollToAnchor }, children);
       }
-      let last = 0;
-      let match;
-      rule.re.lastIndex = 0;
-      let index = 0;
-      while ((match = rule.re.exec(node))) {
-        if (match.index > last) next.push(node.slice(last, match.index));
-        const inner = match[1] ?? '';
-        const key = `${keyPrefix}-${rule.re.source.slice(0, 3)}-${index}`;
-        index += 1;
-        next.push(rule.wrap(inner, key, match));
-        last = match.index + match[0].length;
+      if (target.kind === 'external') {
+        return h(
+          'a',
+          { className: 'wid-md__link', href: target.href, target: '_blank', rel: 'noreferrer noopener' },
+          children,
+        );
       }
-      if (last < node.length) next.push(node.slice(last));
-    }
-    nodes = next;
-  }
-  return nodes;
+      if (target.kind === 'file' && typeof openLink === 'function') {
+        return h(
+          'a',
+          {
+            className: 'wid-md__link wid-md__link--file',
+            href: '#',
+            title: target.path,
+            onClick: (event) => {
+              event.preventDefault();
+              openLink(target.path);
+            },
+          },
+          children,
+        );
+      }
+      // Unsupported or unresolvable target: keep the text, drop the navigation.
+      return h('span', { className: 'wid-md__link wid-md__link--inert' }, children);
+    },
+    img({ src, alt, title }) {
+      const target = classifyHref(src, basePath);
+      if (target.kind === 'external') {
+        return h('img', {
+          className: 'wid-md__img',
+          src: target.href,
+          alt: alt ?? '',
+          title,
+          loading: 'lazy',
+          decoding: 'async',
+        });
+      }
+      if (target.kind !== 'file') return h('span', { className: 'wid-md__img-missing' }, alt || '图片');
+      return h(MarkdownImage, { path: target.path, alt, title, loadImage });
+    },
+    table({ children }) {
+      return h('div', { className: 'wid-md__table' }, h('table', null, children));
+    },
+  };
 }
 
-export function renderMarkdown(text) {
-  const lines = String(text ?? '').split('\n');
-  const blocks = [];
-  let index = 0;
-  let key = 0;
+/**
+ * Workspace image: the URL only exists after the binary is read, so it is attached once
+ * `loadImage` settles. `loadImage` is the store's cached resolver, so re-renders reuse the
+ * same Blob URL instead of re-reading the file.
+ */
+function MarkdownImage({ path, alt, title, loadImage }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (typeof loadImage !== 'function') return undefined;
+    let alive = true;
+    Promise.resolve()
+      .then(() => loadImage(path))
+      .then((url) => {
+        if (alive && url && ref.current) ref.current.src = url;
+      })
+      .catch(() => {
+        // A failed image keeps the alt text; it must not break the rest of the preview.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [path, loadImage]);
+  return h('img', { ref, className: 'wid-md__img', alt: alt ?? '', title: title ?? path, 'data-md-image': path });
+}
 
-  const nextKey = (prefix) => `${prefix}-${(key += 1)}`;
-
-  while (index < lines.length) {
-    const line = lines[index];
-
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    const fence = line.match(FENCE);
-    if (fence) {
-      const marker = fence[1];
-      const language = fence[2] ?? '';
-      const body = [];
-      index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith(marker)) {
-        body.push(lines[index]);
-        index += 1;
-      }
-      index += 1;
-      blocks.push(
-        h(
-          'pre',
-          { key: nextKey('pre'), className: 'wid-md__pre' },
-          h('code', { className: 'wid-md__code', 'data-language': language || undefined }, body.join('\n')),
-        ),
-      );
-      continue;
-    }
-
-    if (RULE.test(line)) {
-      blocks.push(h('hr', { key: nextKey('hr') }));
-      index += 1;
-      continue;
-    }
-
-    const heading = line.match(HEADING);
-    if (heading) {
-      const level = heading[1].length;
-      blocks.push(h(`h${level}`, { key: nextKey('h'), className: `wid-md__h wid-md__h${level}` }, inline(heading[2], nextKey('hi'))));
-      index += 1;
-      continue;
-    }
-
-    if (QUOTE.test(line)) {
-      const body = [];
-      while (index < lines.length && QUOTE.test(lines[index])) {
-        body.push(lines[index].match(QUOTE)[1]);
-        index += 1;
-      }
-      blocks.push(h('blockquote', { key: nextKey('bq'), className: 'wid-md__quote' }, renderMarkdown(body.join('\n'))));
-      continue;
-    }
-
-    if (UL.test(line) || OL.test(line)) {
-      const ordered = OL.test(line);
-      const pattern = ordered ? OL : UL;
-      const items = [];
-      while (index < lines.length && pattern.test(lines[index])) {
-        const match = lines[index].match(pattern);
-        const itemText = ordered ? match[2] : match[1];
-        // An indented continuation line belongs to the same item.
-        let rest = itemText;
-        index += 1;
-        while (index < lines.length && /^\s{2,}\S/.test(lines[index]) && !pattern.test(lines[index])) {
-          rest += ` ${lines[index].trim()}`;
-          index += 1;
-        }
-        items.push(h('li', { key: nextKey('li') }, inline(rest, nextKey('lii'))));
-      }
-      blocks.push(h(ordered ? 'ol' : 'ul', { key: nextKey('list'), className: 'wid-md__list' }, items));
-      continue;
-    }
-
-    // Paragraph: consume until a blank line or a block opener.
-    const paragraph = [line];
-    index += 1;
-    while (index < lines.length) {
-      const candidate = lines[index];
-      if (!candidate.trim() || FENCE.test(candidate) || HEADING.test(candidate) || RULE.test(candidate)) break;
-      if (UL.test(candidate) || OL.test(candidate) || QUOTE.test(candidate)) break;
-      paragraph.push(candidate);
-      index += 1;
-    }
-    blocks.push(h('p', { key: nextKey('p'), className: 'wid-md__p' }, inline(paragraph.join(' '), nextKey('pi'))));
-  }
-
-  return h(Fragment, null, blocks);
+/** In-pane anchor navigation: scroll the heading into view without touching the Host URL. */
+function scrollToAnchor(event) {
+  event.preventDefault();
+  const id = String(event.currentTarget.getAttribute('href') ?? '').slice(1);
+  const root = event.currentTarget.closest('.wid-md');
+  if (!id || !root) return;
+  const target = Array.from(root.querySelectorAll('[id]')).find((node) => node.id === id);
+  if (target) target.scrollIntoView({ block: 'start' });
 }

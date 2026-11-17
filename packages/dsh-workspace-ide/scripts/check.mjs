@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Static rules R1–R14 (see docs/build.md §3). No dependencies, stdlib only.
+ * Static rules R1–R16 (see docs/build.md §3). No dependencies, stdlib only.
  * First failure exits non-zero; every message is `[Rn] path:line what`.
  */
 import { existsSync } from 'node:fs';
@@ -160,6 +160,12 @@ eachMatch('R14', inFrontend, (line) => {
 // R15 — every overlay stays inside the right column: no fixed positioning in the plugin UI.
 eachMatch('R15', inFrontend, (line) => (/position\s*:\s*fixed/.test(line)
   ? 'position:fixed can leave the right column; position it absolutely under .wid-root'
+  : null));
+
+// R16 — the UI builds React elements, never HTML strings: the preview renders workspace
+// Markdown, so an HTML sink would be an injection point (docs/editor.md §12).
+eachMatch('R16', inFrontend, (line) => (/dangerouslySetInnerHTML|innerHTML\s*=/.test(line)
+  ? 'HTML sink in the client bundle; render elements instead'
   : null));
 
 if (failed > 0) {

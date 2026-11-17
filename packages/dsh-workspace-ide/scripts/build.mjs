@@ -106,6 +106,20 @@ for (const file of backendFiles) {
 
 // --- step 4: bundle client -------------------------------------------------
 const esbuild = await import('esbuild');
+
+// Bundled npm React components (react-markdown) import `react` and `react/jsx-runtime`
+// themselves. Both specifiers resolve to frontend/react-bridge.js so every component shares
+// the one Host-injected runtime: `external` would leave a top-level `require()` (see the jsx
+// comment below) and a bundled copy would be a second React, breaking hooks (docs/build.md §3).
+const reactBridge = {
+  name: 'react-bridge',
+  setup(pluginBuild) {
+    pluginBuild.onResolve({ filter: /^react$|^react\/jsx-runtime$|^react\/jsx-dev-runtime$/ }, () => ({
+      path: path.join(root, 'frontend/react-bridge.js'),
+    }));
+  },
+};
+
 const result = await esbuild.build({
   entryPoints: [path.join(root, 'frontend/index.js')],
   outfile: path.join(lib, 'client.js'),
@@ -123,6 +137,9 @@ const result = await esbuild.build({
   sourcemap: false,
   loader: { '.css': 'text', '.jsx': 'jsx' },
   inject: [path.join(root, 'frontend/jsx-shim.js')],
+  plugins: [reactBridge],
+  // Fallback only: reactBridge resolves `react` first, but a stray specifier must never
+  // pull a second copy of React into the bundle.
   external: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'],
   define: { 'process.env.NODE_ENV': '"production"' },
   metafile: true,

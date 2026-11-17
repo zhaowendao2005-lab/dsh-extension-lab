@@ -66,6 +66,11 @@ export function useRef(...args) {
   return runtime().useRef(...args);
 }
 
+/** Only for bundled third-party components (react-bridge.js); views stay stateless (R4). */
+export function useState(...args) {
+  return runtime().useState(...args);
+}
+
 export function useMemo(...args) {
   return runtime().useMemo(...args);
 }

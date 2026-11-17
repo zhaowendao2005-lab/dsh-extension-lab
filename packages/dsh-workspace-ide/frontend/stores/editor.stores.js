@@ -11,6 +11,8 @@ const PAGE = LIMITS.readLinesDefault;
 
 export function createEditorDomain({ client, editor, files, notify, fail }) {
   const pending = new Map();
+  /** path → Promise<Blob URL|null>: Markdown previews reuse one URL per image. */
+  const mediaUrls = new Map();
 
   function snapshot() {
     return editor.getSnapshot();
@@ -34,6 +36,17 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
   }
 
   async function readMedia(path, stat) {
+    const { chunks, mime } = await readMediaChunks(path);
+    return {
+      stat,
+      media: true,
+      mime,
+      mediaUrl: mediaChunksToBlobUrl(chunks, mime),
+    };
+  }
+
+  /** Page through `files.readMedia` (the contract caps a page, not the file). */
+  async function readMediaChunks(path) {
     const chunks = [];
     let offset = 0;
     let mime = '';
@@ -44,12 +57,29 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
       if (page.eof || !page.length) break;
       offset = page.nextOffset ?? (offset + page.length);
     }
-    return {
-      stat,
-      media: true,
-      mime,
-      mediaUrl: mediaChunksToBlobUrl(chunks, mime),
-    };
+    return { chunks, mime };
+  }
+
+  /**
+   * Blob URL for an image referenced by a Markdown preview, or null when the target is not a
+   * displayable image within `mediaImageBytesMax`. Cached (including in-flight reads) so a
+   * re-rendering preview does not re-read the file; `dispose()` revokes the URLs.
+   */
+  function mediaUrl(path) {
+    if (mediaUrls.has(path)) return mediaUrls.get(path);
+    const read = (async () => {
+      try {
+        if (previewKindForPath(path) !== 'image') return null;
+        const stat = await client.call('files.stat', { path });
+        if (stat.type !== 'file' || (stat.size ?? 0) > LIMITS.mediaImageBytesMax) return null;
+        const { chunks, mime } = await readMediaChunks(path);
+        return mediaChunksToBlobUrl(chunks, mime);
+      } catch {
+        return null;
+      }
+    })();
+    mediaUrls.set(path, read);
+    return read;
   }
 
   /** Read a whole text file in pages; the contract caps a single page, not the file. */
@@ -263,6 +293,9 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
       patchTab(path, { cursor: position });
     },
 
+    /** Image URL for a Markdown preview; lazily read, then cached per path. */
+    mediaUrl,
+
     closeAll() {
       const state = snapshot();
       const dirty = state.tabs.filter((tab) => tab.dirty);
@@ -274,6 +307,10 @@ export function createEditorDomain({ client, editor, files, notify, fail }) {
 
     dispose() {
       for (const tab of snapshot().tabs) revokeMediaUrl(tab.mediaUrl);
+      for (const read of mediaUrls.values()) {
+        void Promise.resolve(read).then(revokeMediaUrl).catch(() => {});
+      }
+      mediaUrls.clear();
     },
 
     resolveConflict(path) {

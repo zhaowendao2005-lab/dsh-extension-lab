@@ -1,4 +1,4 @@
-import { useRef, useEffect } from '../../runtime.js';
+import { useRef, useEffect, useMemo } from '../../runtime.js';
 import { createEditor } from '../../editor/createEditor.js';
 import { renderMarkdown } from '../../editor/markdown.js';
 import { getEditorWrapState } from '../../editor/preferences.js';
@@ -50,6 +50,19 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
   useEffect(() => {
     if (visible && handle.current) handle.current.focus();
   }, [visible]);
+
+  // Parsing a README is the expensive part of the preview, so it only re-runs when the
+  // buffer changes — a cursor move or a resize must not re-parse the document.
+  const markdown = useMemo(
+    () => (preview && previewKindForPath(tab.path) === 'markdown'
+      ? renderMarkdown(tab.text ?? '', {
+        basePath: tab.path,
+        openLink: (path) => void stores.actions.openFile(path),
+        loadImage: (path) => stores.actions.mediaUrl(path),
+      })
+      : null),
+    [preview, tab.text, tab.path, stores],
+  );
 
   if (tab.mode === 'loading') {
     return (
@@ -147,7 +160,7 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
           </div>
         </div>
       ) : preview ? (
-        <div className="wid-md">{renderMarkdown(tab.text ?? '')}</div>
+        <div className="wid-md">{markdown}</div>
       ) : (
         <>
           {wrap.reason && (

@@ -378,18 +378,25 @@ IIFE 单文件下 `import()` 不省体积（esbuild 只能内联），**白名�
 
 P1 用 `@codemirror/legacy-modes 6.5.5` 兜底（**不在 P0 bundle**）：`shell`(sh/bash/zsh)、`dockerfile`、`makefile`/`cmake`、`toml`、`ini`、`php`、`ruby`、`perl`、`lua`、`powershell`、`diff`、`verilog`，经 `StreamLanguage.define(shell)` 接入。未知扩展名 → `language.reconfigure([])`（纯文本），状态栏显示 `Plain Text`，不报错不弹窗。
 
-## 12. Markdown 预览（P1）
+## 12. Markdown 预览
 
-依赖 `react-markdown@10.1.0`（34.1 KB）+ `remark-gfm@4.0.1`（+9.6 KB）。**不装** `rehype-raw`（禁 raw HTML）、`@shikijs/rehype`、`rehype-pretty-code`、`rehype-highlight`、`streamdown`。
+依赖 `react-markdown@10.1.0` + `remark-gfm@4.0.1` + `rehype-slug@^6.0.0`。**不装** `rehype-raw`（禁 raw HTML）、`@shikijs/rehype`、`rehype-pretty-code`、`rehype-highlight`、`streamdown`。三个包都进 bundle（gzip +61 KB，见 `docs/build.md` §7）。
+
+解析与渲染**全部交给库**：`frontend/editor/markdown.js` 只做组件映射（链接 / 图片 / 表格外壳），不自实现任何语法。历史版本手写过标题 / 围栏 / 引用 / 列表的行扫描器，表格、图片、任务列表、嵌套列表、`_em_`、实体、硬换行全都不对，已删除。
 
 | 决策 | 值 | 理由 |
 | --- | --- | --- |
-| raw HTML | 默认不渲染且不装 `rehype-raw`，`components` 再屏蔽 `iframe`/`script` | 预览的是工作区任意 `.md`，可能恶意；Host 侧还有 CSP |
-| 代码块高亮 | **不加 Shiki**：`highlightTree` + `dshHighlightStyle` 静态高亮 | 13 个语言的 lezer 语法已在包里；Shiki core+engine = 54 KB（oniguruma 还要内联 155 KB wasm），且复用同一套 alias token → 预览与编辑器配色天然一致 |
-| 滚动同步 | **不做** | 双向同步需行映射，投入产出比极低；切换时各自记 `previewScroll`/`scroll` 再恢复 |
-| 外链 | `ctx.uiWorkspace.openExternal` + `rel="noreferrer noopener"` | 不直接 `window.open` |
+| raw HTML | 不装 `rehype-raw`；渲染结果是 React 元素，从不拼 HTML 字符串 | 预览的是工作区任意 `.md`，可能恶意；`dangerouslySetInnerHTML` 由 `check.mjs` R16 禁止 |
+| heading id | `rehype-slug` | `[跳转](#deploy)` 需要锚点，与 VS Code `#addNamedHeaders` 同语义 |
+| 代码块高亮 | **不加 Shiki**：等宽字体 + 宿主 `--dsw-alias-markdown-code-block` 底色 | Shiki core+engine = 54 KB，oniguruma 还要内联 wasm。`highlightTree` + `editorHighlight` 是可选的后续项（13 个 lezer 语法已在包里，零新增字节），本轮不做 |
+| 表格 | 外层套 `.wid-md__table` 横向滚动 | 宽表格不撑开正文列 |
+| 工作区图片 | `files.stat` + `files.readMedia` 分块读 → Blob URL，按路径缓存 | 预览读的是磁盘而不是 webview 资源；`mediaImageBytesMax` 封顶 |
+| 链接 | `#anchor` → 容器内滚动；工作区相对路径 → 在工作台打开；http/https/mailto → 新标签 + `rel="noreferrer noopener"`；其余（`javascript:` / `data:` / 解析不到）→ 只留文本 | 预览不导航宿主页面 |
+| 滚动同步 | **不做** | 双向同步需行映射，投入产出比极低 |
 
-组件骨架（`frontend/views/editor/MarkdownPreview.tsx`，类名 `wid-md-preview`，props 来自 store，不持状态）：`<Markdown remarkPlugins={[remarkGfm]} components={{ a: ExtLink, code: HighlightedCode, iframe: () => null, script: () => null }}>{text}</Markdown>`。
+组件骨架（`frontend/editor/markdown.js`，容器类名 `wid-md`，无状态）：`renderMarkdown(text, options)` → `h(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeSlug], components })`；`options` 传 `{ basePath, openLink, loadImage }`。`EditorPane` 用 `useMemo` 包住这次调用，光标移动不会重新解析文档。
+
+**React 复用**：`react-markdown` 自己 `import 'react'` / `'react/jsx-runtime'`。`scripts/build.mjs` 的 `react-bridge` 插件把这两个 specifier 解析到 `frontend/react-bridge.js`，它再转出 `frontend/runtime.js` 里注入的那一份 — 不打包第二份 React，也不产生顶层裸 `require()`。
 
 ## 13. 性能手段与验收数字
 
@@ -438,6 +445,6 @@ P1 用 `@codemirror/legacy-modes 6.5.5` 兜底（**不在 P0 bundle**）：`shel
 
 ## 实现补充（代码为准）
 
-- Markdown 预览不是完整 CommonMark：`frontend/editor/markdown.js` 自实现标题/围栏代码/引用/列表/分隔线/段落与行内 `code`/粗体/斜体/删除线/链接，全部渲染成 React 元素，永不用 `dangerouslySetInnerHTML`（README 无法注入标记）。需要完整语法时按 `docs/build.md` 的体积规则另行评审，不要临时加依赖。
-- 预览是每个标签独立的开关（`editor.previews[path]`），切换不丢缓冲区、不重挂载 CodeMirror（保 undo 历史）。
+- Markdown 预览由 `react-markdown` + `remark-gfm` 渲染（GFM：表格、任务列表、删除线、字面 URL 自动链接），`rehype-slug` 补 heading id；输出是 React 元素，`dangerouslySetInnerHTML` 由 R16 禁止，README 无法注入标记。
+- 预览是每个标签独立的开关（`editor.previews[path]`）。切换时 `EditorPane` 会销毁并按 store 里的文本重建 CM6 实例（effect 依赖含 `preview`），**内容不丢，但 undo 历史与滚动位置会丢**（待办：改成隐藏而非卸载）。
 - 大文件与软换行降级阈值不变；Markdown 预览同样受 `syntaxMaxBytes 4MB` 限制，超限只显示源码。

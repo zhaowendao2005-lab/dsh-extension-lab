@@ -166,7 +166,7 @@
 | M4-3 | stash 面板 | list/push/pop/apply/drop | `backend/git/stash.js`、`views/scm/StashList.tsx` | M2-7 | 四动作可用；`includeUntracked`；drop 有确认；pop 冲突有提示 | 0.75 |
 | M4-4 | 统一搜索链路 | Node Worker 与一致过滤 | `backend/search.js`、`backend/search-worker.js`、`backend/search-globs.js`、`frontend/stores/quick-access.stores.js` | M1-1 | engine 为 node；索引 / 全文共用 ignore 和 glob；越界不读取，超时终止并提示截断；内容结果携片段 / 行列；旧请求不回写 | 1.0 |
 | M4-5 | 统一快速访问 | 文件 / 内容 / 命令 | `frontend/views/common/QuickOpen.jsx`、`frontend/stores/quick-access.stores.js`、`frontend/service/quick-access.js` | M1-1 | 文件来自 Host 有界索引；独立模式过滤，键盘选择 / 焦点恢复；命令支持中文 / 英文 / 拼音首字母、MRU 50；不声明默认键位 | 0.5 |
-| M4-6 | Markdown 预览 | 只读渲染 | `views/editor/MarkdownPreview.tsx` | M1-6 | `react-markdown` + `remark-gfm`；代码块不引 Shiki；明暗可读；链接不在面板内导航 | 0.5 |
+| M4-6 | Markdown 预览 | 只读渲染 | `frontend/editor/markdown.js`、`frontend/service/markdown-links.js` | M1-6 | `react-markdown` + `remark-gfm` + `rehype-slug`（已实现）；代码块不引 Shiki；明暗可读；链接不在面板内导航 | 0.5 |
 | M4-7 | watcher P1 | `watch.start/poll` | `backend/git/watch.js`、`stores/scm.stores.ts` | M2-10 | debounce 1000 ms；`.git` 只监听第一层；`dropped`→全量刷新；`stopped`→退回轮询并提示 | 1.0 |
 | M4-8 | 性能治理 | 预算全达标 | `build.mjs`、`ARCHITECTURE.md` 预算表 | M2-9、M3-3 | 首屏/status/graph/1 MB/8 MB/目录/回显全部达标；bundle 断言生效；长时运行内存无线性增长 | 0.75 |
 | M4-9 | 交互打磨 | 尺寸/焦点/快捷键 | `frontend/views/**`、`docs/ui-spec.md` | M2-9 | 明暗各看一眼无坏色；焦点环可见；快捷键表全覆盖；无"点了没反应"的按钮 | 0.75 |
