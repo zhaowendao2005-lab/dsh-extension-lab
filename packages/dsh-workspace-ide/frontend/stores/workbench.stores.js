@@ -24,6 +24,7 @@ import { createRepositoriesDomain } from './repositories.stores.js';
 import { createCommandsDomain } from './commands.stores.js';
 import { createExplorerSelectionDomain } from './explorer-selection.stores.js';
 import { createQuickAccessDomain } from './quick-access.stores.js';
+import { defaultPreviewForPath, previewKindForPath } from '../service/preview.js';
 
 const EMPTY_LIMITS = LIMITS;
 
@@ -861,12 +862,22 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       return host?.toggleFullView?.() ?? false;
     },
 
-    openFile(path) {
+    openFile(path, options) {
       if (!path) return null;
       quickAccessDomain.actions.close();
       ui.patch({ menu: null });
       // In the narrow column the file list is a drawer: opening a file must reveal the editor.
       if (ui.getSnapshot().compact) ui.patch({ sidebarCollapsed: true, navManual: true });
+      if (previewKindForPath(path)) {
+        const previews = { ...(editor.getSnapshot().previews ?? {}) };
+        if (options?.preview !== undefined) {
+          previews[path] = Boolean(options.preview);
+          editor.patch({ previews });
+        } else if (!(path in previews)) {
+          previews[path] = defaultPreviewForPath(path, ui.getSnapshot().editor);
+          editor.patch({ previews });
+        }
+      }
       layoutModel.actions.open({ id: fileTabId(path), kind: 'file', path, title: basename(path) });
       files.patch({ selected: path });
       editor.patch({ activePath: path });
@@ -875,6 +886,11 @@ export function createStores({ client, sessionId, host, preferences = null }) {
         if (workspace.getSnapshot().root === root) quickAccessDomain.actions.recordFile(path);
         return result;
       });
+    },
+
+    togglePreview(path) {
+      if (!previewKindForPath(path)) return;
+      editorDomain.togglePreview(path);
     },
 
     activateLayoutTab(groupId, tabId) {

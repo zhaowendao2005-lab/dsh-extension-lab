@@ -154,6 +154,26 @@ export function IdeSettingsSection({
             onChange={(event) => preferences.actions.setEditorPref('wrap', event.target.checked)}
           />
         </div>
+        <div className="wid-ide-settings__row">
+          <label className="wid-ide-settings__label" htmlFor="wid-ide-settings-preview-html">默认渲染 HTML</label>
+          <input
+            id="wid-ide-settings-preview-html"
+            className="wid-ide-settings__checkbox"
+            type="checkbox"
+            checked={Boolean(prefs.editor.defaultPreviewHtml)}
+            onChange={(event) => preferences.actions.setEditorPref('defaultPreviewHtml', event.target.checked)}
+          />
+        </div>
+        <div className="wid-ide-settings__row">
+          <label className="wid-ide-settings__label" htmlFor="wid-ide-settings-preview-md">默认渲染 MD</label>
+          <input
+            id="wid-ide-settings-preview-md"
+            className="wid-ide-settings__checkbox"
+            type="checkbox"
+            checked={Boolean(prefs.editor.defaultPreviewMd)}
+            onChange={(event) => preferences.actions.setEditorPref('defaultPreviewMd', event.target.checked)}
+          />
+        </div>
         <p className="wid-ide-settings__hint">
           Tab 显示宽度只影响已有制表符的显示宽度；缩进空格数用于新的缩进操作，不会重写已有空格。
         </p>

@@ -12,6 +12,8 @@ import {
 } from '../frontend/service/shortcuts.js';
 import { createStore } from '../frontend/store.js';
 import { createExplorerSelectionDomain } from '../frontend/stores/explorer-selection.stores.js';
+import { previewKindForPath, defaultPreviewForPath } from '../frontend/service/preview.js';
+import { DEFAULT_EDITOR_PREFS, normalizeEditorPrefs } from '../frontend/service/layout.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -140,4 +142,24 @@ test('explorer selection domain supports root blank-area context menu', () => {
   domain.closeMenu();
   assert.equal(domain.store.getSnapshot().menu, null);
   domain.dispose();
+});
+
+test('preview classification and default-render preferences default to false', () => {
+  assert.equal(previewKindForPath('index.html'), 'html');
+  assert.equal(previewKindForPath('docs/Page.HTM'), 'html');
+  assert.equal(previewKindForPath('README.md'), 'markdown');
+  assert.equal(previewKindForPath('notes/guide.MARKDOWN'), 'markdown');
+  assert.equal(previewKindForPath('src/app.ts'), null);
+
+  assert.equal(DEFAULT_EDITOR_PREFS.defaultPreviewHtml, false);
+  assert.equal(DEFAULT_EDITOR_PREFS.defaultPreviewMd, false);
+  assert.equal(defaultPreviewForPath('index.html', DEFAULT_EDITOR_PREFS), false);
+  assert.equal(defaultPreviewForPath('README.md', DEFAULT_EDITOR_PREFS), false);
+
+  const enabled = normalizeEditorPrefs({ defaultPreviewHtml: true, defaultPreviewMd: true });
+  assert.equal(enabled.defaultPreviewHtml, true);
+  assert.equal(enabled.defaultPreviewMd, true);
+  assert.equal(defaultPreviewForPath('index.html', enabled), true);
+  assert.equal(defaultPreviewForPath('README.md', enabled), true);
+  assert.equal(defaultPreviewForPath('src/app.ts', enabled), false);
 });

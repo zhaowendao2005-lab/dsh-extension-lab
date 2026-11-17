@@ -2,6 +2,7 @@ import { useRef, useEffect } from '../../runtime.js';
 import { createEditor } from '../../editor/createEditor.js';
 import { renderMarkdown } from '../../editor/markdown.js';
 import { getEditorWrapState } from '../../editor/preferences.js';
+import { previewKindForPath } from '../../service/preview.js';
 
 /**
  * One CodeMirror view for one open file tab. The store holds the text, so the view can be
@@ -72,9 +73,18 @@ export function EditorPane({ stores, tab, visible, prefs, reveal, preview }) {
   }
 
   const wrap = getEditorWrapState(tab.text ?? '', prefs);
+  const previewKind = preview ? previewKindForPath(tab.path) : null;
   return (
     <div className="wid-editor__pane" data-visible={String(visible)}>
-      {preview ? (
+      {previewKind === 'html' ? (
+        <iframe
+          className="wid-preview__frame"
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          title={tab.path}
+          srcDoc={tab.text ?? ''}
+        />
+      ) : preview ? (
         <div className="wid-md">{renderMarkdown(tab.text ?? '')}</div>
       ) : (
         <>

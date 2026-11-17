@@ -17,7 +17,14 @@ export function loadLayout() {
   }
 }
 
-export const DEFAULT_EDITOR_PREFS = Object.freeze({ fontSize: 13, wrap: true, tabSize: 2, indentSize: 2 });
+export const DEFAULT_EDITOR_PREFS = Object.freeze({
+  fontSize: 13,
+  wrap: true,
+  tabSize: 2,
+  indentSize: 2,
+  defaultPreviewHtml: false,
+  defaultPreviewMd: false,
+});
 
 /** Pure validation shared by persisted values, settings actions and editor instances.
  * Invalid updates keep the validated fallback; finite numbers are rounded and clamped.
@@ -31,6 +38,8 @@ export function normalizeEditorPrefs(source, fallback = DEFAULT_EDITOR_PREFS) {
       if (Number.isFinite(candidate[key])) prefs[key] = Math.min(max, Math.max(min, Math.round(candidate[key])));
     }
     if (typeof candidate.wrap === 'boolean') prefs.wrap = candidate.wrap;
+    if (typeof candidate.defaultPreviewHtml === 'boolean') prefs.defaultPreviewHtml = candidate.defaultPreviewHtml;
+    if (typeof candidate.defaultPreviewMd === 'boolean') prefs.defaultPreviewMd = candidate.defaultPreviewMd;
   }
   return prefs;
 }

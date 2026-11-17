@@ -3,6 +3,7 @@ import { Icon } from '../common/Icon.jsx';
 import { FileIcon } from '../common/FileIcon.jsx';
 import { workbenchRoot, localPoint } from '../../service/geometry.js';
 import { tabIcon, tabTitle } from '../../service/tabs.js';
+import { previewKindForPath } from '../../service/preview.js';
 import { zoneAt } from '../../service/split.js';
 
 const DRAG_THRESHOLD = 4;
@@ -233,6 +234,24 @@ export function TabStrip({ stores, groupId }) {
           );
         })}
       </div>
+      {(() => {
+        const activeTab = activeId ? layout.tabs[activeId] : null;
+        const previewKind = activeTab?.kind === 'file' ? previewKindForPath(activeTab.path) : null;
+        if (!previewKind) return null;
+        const isPreview = Boolean((editor.previews ?? {})[activeTab.path]);
+        return (
+          <button
+            type="button"
+            className="wid-tabs__action"
+            title={isPreview ? '切换为源码 (Raw)' : '切换为预览'}
+            aria-label={isPreview ? '切换为源码' : '切换为预览'}
+            aria-pressed={isPreview}
+            onClick={() => stores.actions.togglePreview(activeTab.path)}
+          >
+            <Icon name={isPreview ? 'script' : 'preview'} size={13} />
+          </button>
+        );
+      })()}
       <button type="button" className="wid-tabs__more" title="标签页操作" aria-label="标签页操作" onClick={openGroupMenu}>
         <Icon name="collapse" size={12} />
       </button>
