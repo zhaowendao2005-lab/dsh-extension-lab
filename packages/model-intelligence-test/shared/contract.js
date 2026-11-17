@@ -13,8 +13,12 @@ const timeoutMs = z.number().int().min(30_000).max(1_800_000);
 const relayApi = z.enum(['chat', 'responses', 'messages']);
 const relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), model: id(256), api: relayApi, listingId: z.number().int().min(0).optional(), supplierId: z.number().int().min(0).optional() });
 const modelRef = z.strictObject({ provider: id(128), id: id(256) });
-const recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional() });
 const a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional(), market: marketSchema.optional() });
+const recordModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional(), relay: relayRef.optional(), a6api: a6Channel.optional() });
+const nativeModel = z.strictObject({ provider: id(128), id: id(256), name: z.string().max(256).optional() });
+const preset = z.strictObject({ id: z.string().max(128), name: z.string().max(120), body: z.string().max(200_000) });
+const customPrompt = { prompt: z.string().max(200_000).optional(), footerVersion: z.string().max(40).optional(), preset: preset.nullable().optional(), concurrency: concurrency.optional(), dshModels: z.array(nativeModel).max(64).optional() };
+const customRun = { attemptId: id(), runId: id() };
 // A slot is one test token: the Host pins it to a channel, so no provider mapping is involved.
 const a6Slots = z.array(z.strictObject({ tokenId: z.number().int().positive() })).min(1);
 const options = z.strictObject({ concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() });
@@ -33,10 +37,13 @@ const schemas = {
   attemptCancel: z.strictObject({ attemptId: id() }),
   attemptConfigure: z.strictObject({ attemptId: id(), concurrency: concurrency.optional(), timeoutMs: timeoutMs.optional() }),
   attemptRetry: z.strictObject({ attemptId: id(), model: modelRef }),
-  customSave: z.strictObject({ recordId: id(), snapshot: z.strictObject({ ended: z.boolean(), runs: z.array(z.json()).max(64) }) }),
+  customRunDetail: z.strictObject({ ...customRun, revision: z.number().int().nonnegative().optional() }),
+  customFileRead: z.strictObject({ ...customRun, path: z.string().min(1).max(512) }),
+  customOutputOpen: z.strictObject({ ...customRun, mode: z.enum(['preview', 'vscode']).optional() }),
   a6ConfigSave: z.strictObject({ accessToken: z.string().max(512).optional(), userId: z.string().max(40).optional() }),
   a6Selections: z.strictObject({ revision: z.number().int().nonnegative().optional() }),
-  a6Create: z.strictObject({ selectionId: id(), name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
+  a6Create: z.strictObject({ selectionId: id(), kind: z.enum(['fingerprint', 'custom']).optional(), ...customPrompt, name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
+  a6CustomFromRecord: z.strictObject({ recordId: id(), name: z.string().max(120), models: z.array(z.strictObject({channelId:z.number().int().positive(), model:id(256)})).min(1).max(64).optional(), slots: a6Slots.optional(), ...customPrompt, timeoutMs: timeoutMs.optional() }),
   a6OperationState: z.strictObject({ refreshTokens: z.boolean().optional(), refreshRelations: z.boolean().optional() }),
   a6OperationSelect: z.strictObject({ tokenId: z.number().int().positive().nullable() }),
   a6OperationRefresh: z.strictObject({ kind: z.enum(['pins', 'routes', 'all']) }),
@@ -47,21 +54,24 @@ const schemas = {
 const DESCRIPTIONS = {
   catalog: 'Read configured provider/model metadata; does not invoke inference or endpoint discovery.',
   recordsList: 'List persisted test records with attempt summaries; {unchanged:true} when the revision has not moved.',
-  recordCreate: 'Create a test record; fingerprint records immediately start their first attempt (real model requests).',
-  recordRerun: 'Re-request a fingerprint record with its fixed model set; queued behind a running attempt.',
+  recordCreate: 'Create a test record; records immediately start their first Host-owned attempt (real model requests).',
+  recordRerun: 'Re-request a test record with its fixed model set; queued behind a running attempt.',
   recordDelete: 'Delete a record and its attempts, cancelling running requests.',
   recordsClear: 'Delete every record and attempt.',
   attemptView: 'Read one attempt: live engine view or persisted snapshot.',
   attemptCancel: 'Cancel a queued or running attempt.',
   attemptConfigure: 'Change concurrency / request deadline / channel lane of an attempt (live, non-preemptive) and the record defaults.',
   attemptRetry: 'Re-run the failed samples of one model; completed samples are kept.',
-  customSave: 'Persist a simulated custom-task snapshot; no inference is performed.',
+  customRunDetail: 'Read bounded events, requests and sandbox metadata for a custom run belonging to an attempt.',
+  customFileRead: 'Read a bounded relative file inside a verified custom-run sandbox.',
+  customOutputOpen: 'Preview a validated output or open that exact file with the discovered VS Code application.',
+  a6CustomFromRecord: 'Create custom sessions from channels of an existing fingerprint record; uses its account and dedicated test slots.',
   a6Config: 'Read a6api credential state (masked access token, intake token, loopback origin); never returns the access token.',
   a6ConfigSave: 'Verify and store the a6api access token plus user id in Host storage.',
   a6IntakeRotate: 'Rotate the intake token the userscript uses; received selections stay valid.',
   a6Tokens: 'List the account test tokens from a6api (id and name only, no key material).',
   a6Selections: 'Read selections sent by the a6api userscript. Does not start inference.',
-  a6Create: 'Create an a6api-specific fingerprint attempt using user-selected test token slots (real inference).',
+  a6Create: 'Create an a6api fingerprint or custom attempt using user-selected test token slots (real inference).',
   a6OperationState: 'Read account token metadata and selected-key pin/route snapshots; only initial load or explicit refresh contacts the site.',
   a6OperationSelect: 'Persist the account-wide operation key and read its pin and route state. No key plaintext is read.',
   a6OperationRefresh: 'Explicitly refresh selected-key pins, routes, or both from the site.',

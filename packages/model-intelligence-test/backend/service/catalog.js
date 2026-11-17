@@ -45,7 +45,9 @@ export class ModelIntelligenceService extends Service {
   attemptCancel(request) { return this.guard(() => this.records.cancel(request.attemptId)); }
   attemptConfigure(request) { return this.guard(() => this.records.configure(request.attemptId, { concurrency: request.concurrency, timeoutMs: request.timeoutMs })); }
   attemptRetry(request) { return this.guard(() => this.records.retry(request.attemptId, request.model)); }
-  customSave(request) { return this.guard(() => this.records.saveCustom(request.recordId, request.snapshot)); }
+  customRunDetail(request) { return this.guard(() => this.records.custom.detail(request)); }
+  customFileRead(request) { return this.guard(() => this.records.custom.read(request)); }
+  customOutputOpen(request) { return this.guard(() => this.records.custom.open(request)); }
 
   // Owner-only control plane. The only page-facing surface is the one-way selection intake.
   a6Config() { return this.guard(() => this.a6.config()); }
@@ -54,6 +56,7 @@ export class ModelIntelligenceService extends Service {
   a6Tokens() { return this.guard(() => this.a6.tokens()); }
   a6Selections(request) { return this.guard(() => this.a6.selections(request)); }
   a6Create(request) { return this.guard(() => this.a6.create(request)); }
+  a6CustomFromRecord(request) { return this.guard(() => this.a6.customFromRecord(request)); }
   a6OperationState(request) { return this.guard(() => this.a6.operationState(request ?? {})); }
   a6OperationSelect(request) { return this.guard(() => this.a6.operationSelect(request)); }
   a6OperationRefresh(request) { return this.guard(() => this.a6.operationRefresh(request)); }
@@ -100,8 +103,8 @@ export class ModelIntelligenceService extends Service {
 export const REMOTE_METHODS = [
   'catalog',
   'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear',
-  'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
-  'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create',
+  'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen',
+  'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6CustomFromRecord',
   'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView',
 ];
 const remoteInitializers = [];

@@ -88,7 +88,7 @@ function RecordsSidebar({ store }: {
       <div className="mit-sidebar-footer">
         <p className="mit-muted">关闭标签不停止测试，也不删除记录。
         </p>
-        <button type="button" className="mit-text-button" onClick={store.actions.resetMocks}>
+        <button type="button" className="mit-text-button" onClick={store.actions.resetRecords}>
           <Icon name="trash" size={14} />清空测试记录
         </button>
       </div>
@@ -100,9 +100,10 @@ export function Panel({ store }: {
 }) {
   const active=useStore(store.workbench,state => state.tabs.find(tab => tab.id===state.activeTab));
   const navigation=useStore(store.workbench,state => state.navigation[state.activeTab]);
+  const activeRecord=useStore(store.evaluations,state => state.records.find(record => record.id===active?.recordId));
   let content=<DraftView store={store} />;
   if(active?.type==='record'&&active.recordId)
-    content=navigation?.runId? <RunDetailPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:<RecordView key={active.recordId} store={store} id={active.recordId} />;
+    content=activeRecord?.kind==='custom'? <RecordView key={active.recordId} store={store} id={active.recordId} />:navigation?.runId? <RunDetailPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:<RecordView key={active.recordId} store={store} id={active.recordId} />;
   else if(active?.type==='feature')
     content=<FeatureHub store={store} />;
   else if(active?.type==='a6'&&active.selectionId)

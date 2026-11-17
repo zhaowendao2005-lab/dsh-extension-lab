@@ -43,19 +43,17 @@ export function formatMetric(key: string,value: number|undefined) {
     return `${value.toFixed(1)} tok/s`;
   return new Intl.NumberFormat('zh-CN',{ maximumFractionDigits: 0 }).format(value);
 }
-export function MetricGrid({ metrics,source='mock' }: {
+export function MetricGrid({ metrics }: {
   metrics: Metrics;
-  source?: 'real'|'mock';
 }) {
-  const real=source==='real';
-  const labels: Record<string,string>={ input: '输入 Token',output: '输出 Token',cache: '缓存 Token',ttft: real? '首可观测 Token（TTFT）':'首 Token 延迟',e2e: '端到端速率',generation: '生成速率',elapsed: '请求耗时',cost: real? '实际费用':'模拟费用（Mock）' };
-  return <dl className="mit-metrics" aria-label={real? '真实请求指标':'模拟指标（Mock）'}>
+  const labels: Record<string,string>={ input: '输入 Token',output: '输出 Token',cache: '缓存 Token',ttft: '首可观测 Token（TTFT）',e2e: '端到端速率',generation: '生成速率',elapsed: '请求耗时',cost: '实际费用' };
+  return <dl className="mit-metrics" aria-label="Host 可观测指标">
     {Object.entries(labels).map(([key,label]) => <div key={key}>
       <dt>
         {label}
       </dt>
       <dd>
-        {real&&key==='cost'? '不可用':formatMetric(key,metrics[key as keyof Metrics])}
+        {key==='cost'? '—':formatMetric(key,metrics[key as keyof Metrics])}
       </dd>
     </div>)}
   </dl>;

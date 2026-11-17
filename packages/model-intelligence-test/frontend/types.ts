@@ -1,5 +1,6 @@
 export type TestKind = 'fingerprint' | 'custom';
-export type Stage = 'queued' | 'waiting-first-token' | 'streaming' | 'finalizing' | 'analyzing' | 'completed' | 'failed' | 'timeout' | 'cancelled';
+export type CustomRunPhase = 'queued' | 'preparing' | 'running' | 'tooling' | 'validating' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type Stage = 'queued' | 'waiting-first-token' | 'streaming' | 'finalizing' | 'analyzing' | CustomRunPhase | 'timeout';
 export interface Model { key: string; provider: string; providerName: string; id: string; name: string; search: string; relay?: RelayRef; a6api?: A6Channel }
 export interface Provider { id: string; name: string; models: {id: string; name: string; description?: string}[]; error?: string }
 export interface Catalog { providers: Provider[] }
@@ -20,6 +21,7 @@ export interface FingerprintOptions { concurrency?: number; timeoutMs?: number }
 
 export interface A6MarketSnapshot { capturedAt: number; chargeType?: string; currency?: string; unit?: string; inputPriceMicros?: number; outputPriceMicros?: number; cacheReadPriceMicros?: number; cacheWritePriceMicros?: number; perRequestPriceMicros?: number; exchangeRate?: number; cacheHitRate24h?: number; cacheHitState?: string }
 export interface A6Channel { listingId: number; channelId: number; supplierId: number; model: string; supplierName?: string; channelName?: string; brand?: string; market?: A6MarketSnapshot }
+export interface CustomA6ModelRef { channelId: number; model: string }
 export interface A6OperationToken { id: number; name: string; maskedKey?: string; status?: number | string; expiredTime?: number }
 export type A6RelationKind = 'pins' | 'routes' | 'all';
 export interface A6OperationView { accountId: string; revision: number; tokenId: number | null; tokens: A6OperationToken[]; tokensAt: number | null; pins: {model: string; channelId: number; routeEffective: boolean; status: string}[]; routes: {model: string; channelIds: number[]}[]; pinsAt: number | null; routesAt: number | null; loading: {tokens: boolean; pins: boolean; routes: boolean}; errors: {tokens?: string; pins?: string; routes?: string}; legacyLeases: {recordId: string | null; tokenId: number; model: string; channelId: number; stage: string}[] }
@@ -33,11 +35,11 @@ export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'restore'; messa
 export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'> }
 export interface A6Token { id: number; name: string }
 export interface A6Slot { tokenId: number; name?: string }
-export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; models: A6Channel[]; tokens: A6Token[] }
+export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; kind?: TestKind; models: A6Channel[]; tokens: A6Token[] }
 /** Credential state as the panel sees it: the access token itself never leaves Host storage. */
 export interface A6Config { configured: boolean; mask: string; userId: string; intakeToken: string; origin: string; link?: string; userscript?: {version: string; protocolVersion: number; installUrl: string; updateUrl: string; recent?: {version: string; protocolVersion: number | null; seenAt: number; accountId: string}} }
 export type A6SelectionsView = {revision: number; selections: A6Selection[]} | {revision: number; unchanged: true};
-export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[] }
+export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[]; kind?: TestKind; prompt?: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; dshModels?: RecordModelRef[] }
 export interface A6Record { accountId: string; siteOrigin: string; selectionId: string; slots: A6Slot[] }
 export interface A6Draft { name: string; models: A6Channel[]; tokens: number[]; timeoutMs?: number; creating: boolean; error?: string; feedback?: string }
 export interface A6State { selections: A6Selection[]; drafts: Record<string, A6Draft>; loaded: boolean; error?: string; config: A6Config | null; configLoading: boolean; configError?: string; configFeedback?: string; form: {accessToken: string; userId: string}; saving: boolean; rotating: boolean; copying: boolean }
@@ -48,7 +50,79 @@ export interface AttemptSummary { id: string; recordId: string; number: number; 
 export interface RecordModelRef { provider: string; id: string; name?: string; relay?: RelayRef; a6api?: A6Channel }
 export interface StoredRecord { id: string; name: string; kind: TestKind; createdAt: number; models: RecordModelRef[]; options: FingerprintOptions; prompt: string; footerVersion: string; preset: Preset | null; attempts: AttemptSummary[]; a6api?: A6Record }
 export type RecordsListView = {revision: number; records: StoredRecord[]} | {revision: number; unchanged: true};
-export type AttemptViewResult = (AttemptSummary & {view: FingerprintJobView | null; custom: {runs: unknown[]} | null; revision: number}) | {id: string; unchanged: true; revision: number};
+export type CustomBillingState = 'pending' | 'partial' | 'observed' | 'settled' | 'ambiguous' | 'unknown';
+export interface CustomRunSummary {
+ id: string;
+ target: {kind: 'dsh' | 'a6api'; providerId?: string; modelId: string; displayName: string; channelId?: number; supplierId?: number; listingId?: number; marketSnapshot?: A6MarketSnapshot | null};
+ phase: CustomRunPhase;
+ sessionId: string | null;
+ sandboxState: 'preparing' | 'ready' | 'failed' | 'cleaning' | 'unknown';
+ eventCount: number;
+ startedAt: number | null;
+ updatedAt: number | null;
+ finishedAt: number | null;
+ output: {state: 'none' | 'writing' | 'ready' | 'invalid'; relativePath: string | null; size: number | null; modifiedAt: number | null; validation: 'pending' | 'valid' | 'invalid' | 'unknown'; format?: string; errors?: string[]; checkedAt?: number};
+ usage: {requestCount: number | null; inputTokens: number | null; inputTotalTokens?: number | null; outputTokens: number | null; cacheReadTokens: number | null; cacheWriteTokens: number | null; cost: number | null; currency: string | null; billingState: CustomBillingState};
+ metrics: {ttftMs: number | null; generationMs: number | null; e2eMs: number | null; modelTokensPerSecond: number | null; endToEndTokensPerSecond: number | null; cacheRate: number | null};
+ error: {code: string | null; message: string; phase: string} | null;
+}
+export interface CustomEvent { id: string; type: 'message' | 'reasoning' | 'tool' | 'phase' | 'error'; role?: string; text?: string; name?: string; status?: string; at: number }
+export interface CustomRequestView {
+ id: string;
+ requestId: string | null;
+ executionId?: string | null;
+ status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+ streamUsage?: Record<string, unknown>;
+ streamUsageFrames?: unknown[];
+ startedAt: number | null;
+ finishedAt: number | null;
+ usage: {inputTokens: number | null; inputTotalTokens?: number | null; outputTokens: number | null; cacheReadTokens: number | null; cacheWriteTokens: number | null; cost: number | null; currency: string | null};
+ metrics: {ttftMs: number | null; generationMs: number | null; e2eMs: number | null; modelTokensPerSecond: number | null; endToEndTokensPerSecond: number | null; cacheRate: number | null};
+ billingState: CustomBillingState;
+ error?: string | null;
+}
+export interface CustomFileView { path: string; size: number; modifiedAt: number }
+export interface CustomRunDetail {
+ run: CustomRunSummary;
+ events: CustomEvent[];
+ requests: CustomRequestView[];
+ files: CustomFileView[];
+ permissions: {allowed: string[]; denied: string[]};
+ revision: number;
+ metricBoundary?: string;
+ eventsTruncated?: boolean;
+ unchanged?: true;
+}
+export type CustomRunDetailResult = CustomRunDetail | {runId: string; revision: number; unchanged: true};
+export interface CustomFileReadResult { path: string; text: string; previewable: boolean }
+export interface CustomOutputOpenResult { html?: string; path?: string; opened?: boolean }
+export type CustomDetailTab = 'chat' | 'files' | 'metrics' | 'billing' | 'permissions';
+export interface CustomRunDetailEntry {
+ loading: boolean;
+ revision: number;
+ detail?: CustomRunDetail;
+ error?: string;
+ file?: CustomFileReadResult;
+ fileLoading?: boolean;
+ previewOpen?: boolean;
+ previewPath?: string;
+ previewLoading?: boolean;
+ tab: CustomDetailTab;
+}
+export interface CustomDraftState {
+ sourceSelectionId?: string;
+ sourceRecordId?: string;
+ a6Models: A6Channel[];
+ a6Tokens: A6Token[];
+ concurrency: number;
+ timeoutMs: number;
+ creating: boolean;
+ step: 1 | 2 | 3 | 4;
+ tokens: number[];
+ error?: string;
+}
+export interface CustomState { draft: CustomDraftState; details: Record<string, CustomRunDetailEntry> }
+export type AttemptViewResult = (AttemptSummary & {view: FingerprintJobView | null; custom: {runs: CustomRunSummary[]; billingPending?: boolean} | null; billingPending?: boolean; revision: number}) | {id: string; unchanged: true; revision: number};
 export interface ModelIntelligenceTransport extends CatalogTransport {
  recordsList(request: {revision?: number}): Promise<RecordsListView>;
  recordCreate(request: {kind: TestKind; name: string; models: RecordModelRef[]; options?: FingerprintOptions; prompt?: string; footerVersion?: string; preset?: Preset | null}): Promise<{record: StoredRecord; attemptId: string | null}>;
@@ -59,7 +133,10 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  attemptCancel(request: {attemptId: string}): Promise<AttemptViewResult>;
  attemptConfigure(request: {attemptId: string} & FingerprintOptions): Promise<AttemptViewResult>;
  attemptRetry(request: {attemptId: string; model: {provider: string; id: string}}): Promise<AttemptViewResult>;
- customSave(request: {recordId: string; snapshot: {ended: boolean; runs: unknown[]}}): Promise<{attemptId: string}>;
+ customRunDetail(request: {attemptId: string; runId: string; revision?: number}): Promise<CustomRunDetailResult>;
+ customFileRead(request: {attemptId: string; runId: string; path: string}): Promise<CustomFileReadResult>;
+ customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode'}): Promise<CustomOutputOpenResult>;
+ a6CustomFromRecord(request: {recordId: string; name: string; models: CustomA6ModelRef[]; slots?: A6Slot[]; dshModels?: RecordModelRef[]; prompt: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; timeoutMs?: number}): Promise<{record: StoredRecord; attemptId: string}>;
  a6Config(): Promise<A6Config>;
  a6ConfigSave(request: {accessToken?: string; userId?: string}): Promise<A6Config & {ok: true; account: {id: number; name: string}; pins: number}>;
  a6IntakeRotate(): Promise<A6Config>;
@@ -77,10 +154,10 @@ export interface Metrics { input?: number; output?: number; cache?: number; ttft
 export interface Step { id: string; title: string; state: Stage; metrics: Metrics }
 export interface Round { id: string; number: number; state: Stage; steps: Step[]; metrics: Metrics }
 export interface Candidate { name: string; score: number; calibrated?: boolean; family?: string }
-export interface Run { id: string; testId: string; sessionId: string; model: Model; stage: Stage; output: string; metrics: Metrics; candidates: Candidate[]; rounds: Round[]; currentRound: number; routing?: A6Routing | null; callProvider?: string | null; slotTokenId?: number | null; error?: {stage: Stage; message: string; detail?: FingerprintErrorDetail | null}; artifact?: {type: 'svg' | 'html'; source: string; name: string}; fingerprint?: {samples: FingerprintSample[]; analysis: FingerprintAnalysis | null} }
+export interface Run { id: string; testId: string; sessionId: string | null; model: Model; stage: Stage; output: string; metrics: Metrics; candidates: Candidate[]; rounds: Round[]; currentRound: number; routing?: A6Routing | null; callProvider?: string | null; slotTokenId?: number | null; error?: {stage: Stage; message: string; detail?: FingerprintErrorDetail | null}; artifact?: {type: 'svg' | 'html'; source: string; name: string}; fingerprint?: {samples: FingerprintSample[]; analysis: FingerprintAnalysis | null}; custom?: CustomRunSummary }
 export interface Evaluation { id: string; name: string; kind: TestKind; createdAt: number; runIds: string[]; prompt: string; footerVersion: string; preset?: Preset; fingerprint?: FingerprintRecord;
  /** Host-persisted attempts (请求) of this record, oldest first; `attemptId` is the attempt currently shown. */
- attempts: AttemptSummary[]; attemptId?: string; models: RecordModelRef[]; options: FingerprintOptions; a6api?: A6Record }
+ attempts: AttemptSummary[]; attemptId?: string; models: RecordModelRef[]; options: FingerprintOptions; a6api?: A6Record; custom?: {busy?: 'configure' | 'retry'; error?: string} }
 export interface FingerprintRecord { jobId?: string; status: 'starting' | 'running' | 'done' | 'cancelled' | 'failed'; reference?: {builtAt: string; sdk: string}; challenges: FingerprintChallenge[]; concurrency?: number; timeoutMs?: number; slots?: number; limits?: FingerprintLimits; busy?: 'configure' | 'retry'; error?: string }
 export interface Tab { id: string; title: string; type: 'draft' | 'record' | 'feature' | 'a6'; recordId?: string; feature?: 'hub'; selectionId?: string }
 export interface Navigation { mode: 'progress' | 'results'; runId?: string; artifact?: boolean }
@@ -95,12 +172,15 @@ export interface Store<T> { getState(): T; subscribe(listener: () => void): () =
 export interface Workbench {
  sessionId: string;
  workbench: Store<WorkbenchState>; draft: Store<DraftState>; models: Store<ModelsState>; presets: Store<PresetsState>; evaluations: Store<EvaluationsState>; presentation: Store<PresentationState>; a6: Store<A6State>; notice: Store<Notice | null>;
- a6Insights: Store<A6InsightsState>;
+ a6Insights: Store<A6InsightsState>; custom: Store<CustomState>;
  actions: {
   openDraft(): void; openRecord(id: string): void; openFeature(feature: 'hub'): void; activateTab(id: string): void; closeTab(id: string): void; toggleSidebar(): void; navigate(value: Partial<Navigation>): void;
   patchDraft(value: Partial<Pick<DraftState, 'name' | 'kind' | 'body' | 'pickerOpen' | 'query'>>): void; toggleModel(key: string): void; refreshModels(): void; submit(): void;
   selectPreset(id: string): void; addPreset(): void; renamePreset(id: string): void; deletePreset(id: string): void; savePreset(): void; togglePresets(): void;
-  cancelRecord(id: string): void; deleteRecord(id: string): void; resetMocks(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
+  cancelRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
+  beginCustomFromFingerprint(recordId: string, runId?: string): void;
+  patchCustom(value: Partial<Pick<CustomDraftState, 'concurrency' | 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
+  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;
@@ -115,7 +195,7 @@ export interface Workbench {
  };
  dispose(): void;
 }
-export const FIXED_FOOTER_VERSION = 'delivery-v1';
-export const FIXED_FOOTER = '\n\n【最终交付约束 · delivery-v1】\n优先完成任务本身，由 Agent 根据任务选择合适的成果类型，无需过度包装。若交付绘图，只使用 Canvas + HTML 或 SVG。当前阶段不启动服务、不配置启动命令或端口。提供清晰的结果说明与可检查的成果。';
-export const STAGE_LABELS: Record<Stage, string> = {queued:'排队中', 'waiting-first-token':'等待首 Token', streaming:'生成中', finalizing:'收尾中', analyzing:'分析中', completed:'已完成', failed:'失败', timeout:'超时', cancelled:'已取消'};
-export const COLUMN_LABELS: Record<string,string> = {stage:'状态', input:'输入 Token', output:'输出 Token', ttft:'TTFT', e2e:'端到端 tok/s', generation:'生成 tok/s', cost:'费用（模拟）', price:'渠道报价（CNY）', cache24h:'渠道 24h 缓存率', target:'渠道操作', match:'最高匹配', round:'当前轮次'};
+export const FIXED_FOOTER_VERSION = 'delivery-v3';
+export const FIXED_FOOTER = '\n\n【最终交付约束 · delivery-v3】\n先读取沙箱规则与任务输入，仅使用允许的沙箱文件工具完成任务。将最终成果写入 output/ 并使用 declareOutput 声明一个有效输出文件，只有通过验证的声明成果才可打开。不访问网络、工作区、凭据，不启动服务。提供清晰的结果说明。';
+export const STAGE_LABELS: Record<Stage, string> = {queued:'排队中', 'waiting-first-token':'等待首 Token', streaming:'生成中', finalizing:'收尾中', analyzing:'分析中', completed:'已完成', failed:'失败', timeout:'超时', cancelled:'已取消', preparing:'准备沙箱', running:'运行中', tooling:'工具调用', validating:'验证输出', interrupted:'已中断'};
+export const COLUMN_LABELS: Record<string,string> = {stage:'状态', input:'输入 Token', output:'输出 Token', ttft:'TTFT', e2e:'端到端 tok/s', generation:'生成 tok/s', cost:'费用', price:'渠道报价（CNY）', cache24h:'渠道 24h 缓存率', target:'渠道操作', match:'最高匹配', round:'当前轮次'};

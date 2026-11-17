@@ -88,7 +88,7 @@ function SampleCard({ store,runId,index,sample,challenge,diagnostic,metrics,fall
       <div className="mit-detail-section-title"><h4>原始输出</h4><span className="mit-muted">真实模型响应 · 纯文本</span></div>
       <pre className="mit-output mit-sample-output" ref={output} tabIndex={0}>{sample?.text||(isSampleEnded(state)? '本样本没有返回文本。':'等待模型输出…')}</pre>
       <div className="mit-detail-section-title"><h4>本次请求指标</h4><span className="mit-muted">缺失项显示 —，不估造</span></div>
-      <MetricGrid metrics={metrics} source="real" />
+      <MetricGrid metrics={metrics} />
       <dl className="mit-sample-diagnostics">
         <div><dt>首输出（含推理）</dt><dd>{formatMetric('elapsed',sample?.firstByteMs??undefined)}</dd></div>
         <div><dt>首正文延迟</dt><dd>{formatMetric('elapsed',sample?.firstTextMs??undefined)}</dd></div>
@@ -121,7 +121,7 @@ export function FingerprintDetail({ store,run }: { store: Workbench; run: Run })
       {record?.fingerprint?.error&&<div className="mit-error-box" role="alert"><strong>任务或连接信息</strong><p>{record.fingerprint.error}</p></div>}
     </section>
     <div className="mit-detail-section-title"><h4>真实请求汇总</h4><span className="mit-muted">供应商未返回的用量不估算；实际费用不可用</span></div>
-    <MetricGrid metrics={run.metrics} source="real" />
+    <MetricGrid metrics={run.metrics} />
     <p className="mit-muted mit-fingerprint-note">TTFT 为首个正文或推理增量的可观测延迟，汇总显示已测样本的均值；生成区间为首尾可观测增量之间的时间。用量与请求耗时汇总已知值，速率仅采用同时有用量与时长的样本，不含排队或分析。缺失项显示 —，实际费用不可用，并非模型质量指标。</p>
     {analysis&&<CandidateRanking analysis={analysis} />}
     {analysis?.sequence&&<section aria-label="数字序列诊断">

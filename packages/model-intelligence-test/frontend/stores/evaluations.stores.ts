@@ -1,13 +1,13 @@
 import { createStore } from 'zustand/vanilla';
 import type { AttemptSummary, AttemptViewResult, Evaluation, EvaluationsState, FingerprintOptions, FingerprintRecord, ModelIntelligenceTransport, Preset, RecordModelRef, Run, StoredRecord, TestKind } from '../types';
 import {
-  advanceCustomRun, applyFingerprintRun, cancelAttempt, cancelCustomRun, clearRecords, configureAttempt, createCustomRun, createFingerprintRun, createRecord,
-  deleteRecord, failFingerprintRun, listRecords, modelOfRef, readAttempt, rerunRecord, retryAttempt, saveCustomAttempt, terminal,
+  applyFingerprintRun, cancelAttempt, clearRecords, configureAttempt, createFingerprintRun, createRecord,
+  deleteRecord, failFingerprintRun, listRecords, modelOfRef, readAttempt, rerunRecord, retryAttempt, terminal, applyCustomRun,
 } from './evaluations.datasource';
 
-const clock = (): number => typeof performance === 'undefined' ? Date.now() : performance.now();
 const ACTIVE_POLL_MS = 800;
 const IDLE_POLL_MS = 4_000;
+const TERMINAL_BILLING_GRACE_MS = 420_000;
 const MAX_RETRY_MS = 10_000;
 const SESSION = 'global';
 const ACTIVE = new Set<AttemptSummary['status']>(['queued', 'running']);
@@ -26,14 +26,13 @@ type AttemptEntry = {
   busy?: FingerprintRecord['busy'];
   error?: string;
 };
-type CustomSim = { recordId: string; attemptId: string; runs: Run[]; elapsed: number[]; saving: boolean };
 
 export interface CreateRecordInput { kind: TestKind; name: string; models: RecordModelRef[]; options?: FingerprintOptions; prompt?: string; footerVersion?: string; preset?: Preset | null }
 
 /**
  * Global, Host-persisted evaluation records. The Host owns records and attempts (请求); this domain
  * mirrors the list, loads the selected attempt of every watched record, polls active ones and
- * projects them into Run rows. Custom tasks are still simulated locally; their snapshots persist.
+ * projects them into stable Run rows. Custom execution facts come only from the Host.
  */
 export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
   const store = createStore<EvaluationsState>(() => ({ records: [], runs: {}, loaded: false }));
@@ -44,24 +43,19 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
   let acceptedVersion = 0;
   let failures = 0;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
-  let simTimer: ReturnType<typeof setInterval> | undefined;
-  let previousTick = 0;
   const selected = new Map<string, string>();
   const entries = new Map<string, AttemptEntry>();
   const watched = new Set<string>();
-  const sims = new Map<string, CustomSim>();
 
   // ---- projection -------------------------------------------------------------------------------
   function attemptOf(record: StoredRecord): AttemptSummary | undefined {
     const chosen = selected.get(record.id);
     const found = (record.attempts ?? []).find(attempt => attempt.id === chosen);
     if (found) return found;
-    // A just-started custom simulation exists before the next list sync carries its attempt.
-    const sim = sims.get(record.id);
-    if (sim && sim.attemptId === chosen) return { id: sim.attemptId, recordId: record.id, number: 1, status: 'running', createdAt: Date.now(), startedAt: Date.now(), finishedAt: null, error: null, summary: null };
     return record.attempts?.at(-1);
   }
   function runIdsOf(record: StoredRecord, attempt?: AttemptSummary): string[] {
+    if (record.kind === 'custom') return attempt ? (entries.get(attempt.id)?.result?.custom?.runs ?? []).map(run => run.id) : [];
     const prefix = attempt?.id ?? `${record.id}:none`;
     return record.models.map((_, index) => `${prefix}:${index}`);
   }
@@ -80,18 +74,11 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
   }
   function projectRuns(record: StoredRecord, attempt: AttemptSummary | undefined, entry: AttemptEntry | undefined, previous: Record<string, Run>, next: Record<string, Run>): void {
     const ids = runIdsOf(record, attempt);
-    const sim = sims.get(record.id);
     if (record.kind === 'custom') {
-      if (sim && attempt && sim.attemptId === attempt.id) { sim.runs.forEach((run, index) => { next[ids[index]] = run; }); return; }
-      const saved = (entry?.result?.custom?.runs ?? []) as Run[];
-      record.models.forEach((ref, index) => {
-        const id = ids[index];
-        const old = previous[id];
-        const snapshot = saved[index];
-        if (old) { next[id] = old; return; }
-        const base = snapshot && typeof snapshot === 'object' ? { ...snapshot, id, testId: record.id, sessionId: SESSION } : createCustomRun(id, record.id, SESSION, modelOfRef(ref));
-        next[id] = attempt?.status === 'interrupted' && !terminal(base.stage) ? cancelCustomRun(base) : base;
-      });
+      for (const summary of entry?.result?.custom?.runs ?? []) {
+        const ref = record.models.find(model => model.id === summary.target.modelId && (summary.target.kind === 'a6api' ? model.a6api?.channelId === summary.target.channelId : model.provider === summary.target.providerId));
+        if (ref) next[summary.id] = applyCustomRun(previous[summary.id], summary, record.id, modelOfRef(ref));
+      }
       return;
     }
     const view = entry?.result?.view ?? null;
@@ -120,7 +107,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
         id: record.id, name: record.name, kind: record.kind, createdAt: record.createdAt, prompt: record.prompt, footerVersion: record.footerVersion,
         ...(record.preset ? { preset: record.preset } : {}), runIds: runIdsOf(record, attempt), attempts: record.attempts, models: record.models,
         options: record.options ?? {}, ...(attempt ? { attemptId: attempt.id } : {}), ...(record.a6api ? { a6api: record.a6api } : {}),
-        ...(record.kind === 'fingerprint' ? { fingerprint: fingerprintOf(record, attempt, entry) } : {}),
+        ...(record.kind === 'fingerprint' ? { fingerprint: fingerprintOf(record, attempt, entry) } : {custom: {busy: entry?.busy, error: entry?.error}}),
       };
       return old && JSON.stringify(old) === JSON.stringify(value) ? old : value;
     });
@@ -140,8 +127,11 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     if (!attempt) return undefined;
     const entry = entries.get(attempt.id);
     if (!entry || entry.loading) return entry ? undefined : attempt;
-    if (sims.get(record.id)?.attemptId === attempt.id) return undefined;
     if (ACTIVE.has(attempt.status) || entry.seenStatus !== attempt.status) return attempt;
+    const result = entry.result;
+    const billingPending = result && 'custom' in result && Boolean(result.custom?.billingPending);
+    const finishedAt = attempt.finishedAt ?? attempt.createdAt;
+    if (record.kind === 'custom' && billingPending && Date.now() - finishedAt < TERMINAL_BILLING_GRACE_MS) return attempt;
     return undefined;
   }
   async function loadAttempt(attempt: AttemptSummary): Promise<void> {
@@ -194,45 +184,6 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
   }
   function refreshSoon(): void { schedule(0); }
 
-  // ---- custom simulation ------------------------------------------------------------------------
-  function stopSim(): void { if (simTimer !== undefined) { clearInterval(simTimer); simTimer = undefined; } }
-  function persistSim(sim: CustomSim, ended: boolean): void {
-    if (sim.saving && !ended) return;
-    sim.saving = true;
-    void saveCustomAttempt(transport, sim.recordId, ended, sim.runs).catch(error => setError(`自定义测试保存失败：${message(error, '连接中断')}`))
-      .finally(() => { sim.saving = false; if (ended) { sims.delete(sim.recordId); entries.delete(sim.attemptId); refreshSoon(); } });
-  }
-  function tick(): void {
-    if (disposed) return;
-    const now = clock();
-    const delta = Math.max(0, now - previousTick);
-    previousTick = now;
-    let changed = false;
-    for (const sim of sims.values()) {
-      let active = false;
-      sim.runs = sim.runs.map((run, index) => {
-        if (terminal(run.stage)) return run;
-        sim.elapsed[index] += delta;
-        const next = advanceCustomRun(run, index, sim.elapsed[index]);
-        if (next !== run) changed = true;
-        if (!terminal(next.stage)) active = true;
-        return next;
-      });
-      if (!active && !sim.saving) persistSim(sim, true);
-    }
-    if (changed) rebuild();
-    if (![...sims.values()].some(sim => sim.runs.some(run => !terminal(run.stage)))) stopSim();
-  }
-  async function startCustom(record: StoredRecord): Promise<void> {
-    const runs = record.models.map((ref, index) => createCustomRun(`pending:${index}`, record.id, SESSION, modelOfRef(ref)));
-    const { attemptId } = await saveCustomAttempt(transport, record.id, false, runs);
-    if (disposed) return;
-    const sim: CustomSim = { recordId: record.id, attemptId, runs: runs.map((run, index) => ({ ...run, id: `${attemptId}:${index}` })), elapsed: runs.map(() => 0), saving: false };
-    sims.set(record.id, sim);
-    selected.set(record.id, attemptId);
-    if (simTimer === undefined) { previousTick = clock(); simTimer = setInterval(tick, 120); }
-  }
-
   // ---- actions ------------------------------------------------------------------------------------
   function storedOf(recordId: string): StoredRecord | undefined { return stored.find(record => record.id === recordId); }
   function selectedAttemptId(recordId: string): string | undefined {
@@ -280,13 +231,11 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
         ...(input.options ? { options: input.options } : {}), ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
         ...(input.footerVersion ? { footerVersion: input.footerVersion } : {}), ...(input.preset !== undefined ? { preset: input.preset } : {}),
       });
+      if (disposed) return record.id;
+      acceptedVersion++;
       if (attemptId) selected.set(record.id, attemptId);
       watched.add(record.id);
       if (!stored.some(item => item.id === record.id)) stored = [{ ...record, attempts: record.attempts ?? [] }, ...stored];
-      if (record.kind === 'custom') {
-        try { await startCustom(record); }
-        catch (error) { setError(`自定义测试启动失败：${message(error, '连接中断')}`); }
-      }
       rebuild();
       refreshSoon();
       return record.id;
@@ -304,13 +253,6 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     async cancel(recordId: string): Promise<void> {
       const record = storedOf(recordId);
       if (!record) return;
-      const sim = sims.get(recordId);
-      if (record.kind === 'custom' && sim) {
-        sim.runs = sim.runs.map(run => cancelCustomRun(run));
-        rebuild();
-        persistSim(sim, true);
-        return;
-      }
       const attemptId = selectedAttemptId(recordId);
       if (!attemptId) return;
       busy(attemptId, entries.get(attemptId)?.busy, '');
@@ -326,17 +268,32 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
       catch (error) { busy(attemptId, undefined, `配置更新失败：${message(error, 'Host 未接受配置变更')}`); }
       refreshSoon();
     },
-    async retry(recordId: string, runId: string): Promise<void> {
+    async retry(recordId: string, runId: string): Promise<string | undefined> {
       const attemptId = selectedAttemptId(recordId);
       const run = store.getState().runs[runId];
-      if (!attemptId || !run || entries.get(attemptId)?.busy || !run.fingerprint?.samples.some(sample => sample.state === 'failed')) return;
+      if (!attemptId || !run || entries.get(attemptId)?.busy || !(run.custom ? ['failed','cancelled','interrupted'].includes(run.custom.phase) : run.fingerprint?.samples.some(sample => sample.state === 'failed'))) return undefined;
       busy(attemptId, 'retry', '');
-      try { absorb(attemptId, await retryAttempt(transport, attemptId, { provider: run.model.provider, id: run.model.id })); busy(attemptId, undefined); }
-      catch (error) { busy(attemptId, undefined, `重试失败样本失败：${message(error, 'Host 未接受重试请求')}`); }
+      try {
+        const result = await retryAttempt(transport, attemptId, { provider: run.model.provider, id: run.model.id });
+        if (run.custom && !('unchanged' in result)) {
+          if (result.id === attemptId) throw new Error('Host 未返回新的自定义测试轮次');
+          const nextAttempt: AttemptSummary = { id: result.id, recordId: result.recordId, number: result.number, status: result.status, createdAt: result.createdAt, startedAt: result.startedAt, finishedAt: result.finishedAt, error: result.error, summary: result.summary };
+          const oldEntry = entries.get(attemptId);
+          if (oldEntry) { oldEntry.busy = undefined; oldEntry.error = undefined; }
+          entries.set(result.id, { revision: result.revision, result, loading: false, seenStatus: result.status });
+          selected.set(recordId, result.id);
+          stored = stored.map(record => record.id === recordId ? { ...record, attempts: [...record.attempts.filter(item => item.id !== result.id), nextAttempt] } : record);
+          rebuild();
+          refreshSoon();
+          return result.custom?.runs.find(item => item.target.modelId === run.model.id && (item.target.kind === 'a6api' ? item.target.channelId === run.model.a6api?.channelId : item.target.providerId === run.model.provider))?.id;
+        }
+        absorb(attemptId, result);
+        busy(attemptId, undefined);
+      } catch (error) { busy(attemptId, undefined, `重试失败样本失败：${message(error, 'Host 未接受重试请求')}`); }
       refreshSoon();
+      return undefined;
     },
     async remove(recordId: string): Promise<void> {
-      sims.delete(recordId);
       await deleteRecord(transport, recordId);
       stored = stored.filter(record => record.id !== recordId);
       selected.delete(recordId);
@@ -344,7 +301,6 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
       refreshSoon();
     },
     async reset(): Promise<void> {
-      sims.clear(); stopSim();
       await clearRecords(transport);
       stored = []; selected.clear(); entries.clear();
       rebuild();
@@ -354,11 +310,8 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      stopSim();
       if (pollTimer !== undefined) clearTimeout(pollTimer);
-      // Running Host attempts keep running: records are global and survive this view.
-      for (const sim of sims.values()) void saveCustomAttempt(transport, sim.recordId, false, sim.runs).catch(() => {});
-      sims.clear();
+      // Host attempts survive closing a view; plugin teardown does not invent terminal states.
     },
   };
 }

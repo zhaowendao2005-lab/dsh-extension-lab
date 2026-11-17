@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
 import type { ModelIntelligenceTransport, Model, Navigation, Notice, Preset, RecordModelRef, Workbench, WorkbenchState } from '../types';
-import { FIXED_FOOTER, FIXED_FOOTER_VERSION } from '../types';
+import { FIXED_FOOTER_VERSION } from '../types';
 import { createDraftStore, emptyDraft } from './draft.stores';
 import { createModelsDomain } from './models.stores';
 import { createPresetsDomain } from './presets.stores';
@@ -8,6 +8,7 @@ import { createEvaluationsDomain } from './evaluations.stores';
 import { createPresentationDomain } from './presentation.stores';
 import { createA6Domain } from './a6api.stores';
 import { createA6InsightsDomain } from './a6insights.stores';
+import { createCustomDomain } from './custom.stores';
 import { createNoticeStore } from './notice.stores';
 
 let sequence = 0;
@@ -24,10 +25,19 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   const modelsDomain = createModelsDomain(transport, keys => draft.setState(state => ({ selected: state.selected.filter(key => keys.has(key)) })));
   const presetsDomain = createPresetsDomain();
   const evaluationsDomain = createEvaluationsDomain(transport);
+  const customDomain = createCustomDomain(transport);
   const presentationDomain = createPresentationDomain();
   const insightsDomain = createA6InsightsDomain(transport);
   const a6Domain = createA6Domain(transport, {
     open(selectionId) {
+      const selection = a6Domain.store.getState().selections.find(item => item.id === selectionId);
+      if (selection?.kind === 'custom') {
+        customDomain.beginFromSelection(selection, a6Domain.store.getState().drafts[selectionId]);
+        const preset = presets.getState().items.find(item => item.id === 'builtin-totoro');
+        draft.setState({ ...emptyDraft(), kind: 'custom', name: `自定义测试 ${selection.models.length} 个渠道`, body: preset?.body ?? '', presetId: preset?.id, pickerOpen: false });
+        openDraft();
+        return;
+      }
       const id = `a6:${selectionId}`;
       workbench.setState(state => ({ tabs: state.tabs.some(tab => tab.id === id) ? state.tabs : [...state.tabs, { id, title: 'a6api 专项', type: 'a6' as const, selectionId }], activeTab: id }));
       openPane(selectionId);
@@ -37,7 +47,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   const stores = {
     workbench: createStore<WorkbenchState>(() => ({ tabs: [{ id: 'draft', title: '新建测试', type: 'draft' }], activeTab: 'draft', sidebarCollapsed: false, navigation: {} })),
     a6Insights: insightsDomain.store,
-    draft, models: modelsDomain.store, presets: presetsDomain.store, evaluations: evaluationsDomain.store, presentation: presentationDomain.store, a6: a6Domain.store, notice: createNoticeStore(),
+    draft, custom: customDomain.store, models: modelsDomain.store, presets: presetsDomain.store, evaluations: evaluationsDomain.store, presentation: presentationDomain.store, a6: a6Domain.store, notice: createNoticeStore(),
   };
   const { workbench, models, presets, evaluations, notice } = stores;
   // Selections pushed by the userscript arrive without any DSH page action, so polling starts here.
@@ -61,7 +71,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   function saveDraft(after?: () => void): void {
     const value = draft.getState();
     const existing = presets.getState().items.find(item => item.id === value.presetId);
-    if (existing) {
+    if (existing && existing.id !== 'builtin-totoro') {
       const updated = { ...existing, body: value.body };
       if (persist(presets.getState().items.map(item => item.id === existing.id ? updated : item))) {
         draft.setState({ dirty: false }); after?.();
@@ -96,8 +106,12 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   }
   /** Keep the evaluations domain loading exactly the records that have an open tab. */
   function syncWatch(): void {
-    const open = workbench.getState().tabs.flatMap(tab => tab.recordId ? [tab.recordId] : []);
+    const state = workbench.getState();
+    const open = state.tabs.flatMap(tab => tab.recordId ? [tab.recordId] : []);
     evaluationsDomain.watch(open);
+    const tab = state.tabs.find(item => item.id === state.activeTab);
+    const record = tab?.recordId ? evaluations.getState().records.find(item => item.id === tab.recordId) : undefined;
+    customDomain.watch(record?.kind === 'custom' ? record.attemptId : undefined, record?.kind === 'custom' ? state.navigation[state.activeTab]?.runId : undefined);
   }
   /** Run an async domain call and surface failure as a notice. */
   function attempt(title: string, work: Promise<unknown>): void {
@@ -122,7 +136,9 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     const record = evaluations.getState().records.find(item => item.id === tab.recordId);
     if (!record || (value.runId && !record.runIds.includes(value.runId))) return;
     const previous = state.navigation[tab.id] ?? { mode: 'progress' as const };
-    workbench.setState({ navigation: { ...state.navigation, [tab.id]: { ...previous, ...(value.runId !== undefined && value.runId !== previous.runId ? { artifact: false } : {}), ...value } } });
+    const nextNavigation = { ...previous, ...(value.runId !== undefined && value.runId !== previous.runId ? { artifact: false } : {}), ...value };
+    workbench.setState({ navigation: { ...state.navigation, [tab.id]: nextNavigation } });
+    customDomain.watch(record.kind === 'custom' ? record.attemptId : undefined, record.kind === 'custom' ? nextNavigation.runId : undefined);
   }
   function refreshModels(): void { modelsDomain.refresh(); }
   function openFeature(feature: 'hub'): void {
@@ -134,6 +150,41 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
       const name = input.trim();
       if (choice === 'ok' && name) run(name.slice(0, 40));
     });
+  }
+  function submitCustom(): void {
+    const value = draft.getState();
+    const customDraft = customDomain.store.getState().draft;
+    const available = new Map(models.getState().items.map(model => [model.key, model]));
+    const chosen = value.selected.map(key => available.get(key)).filter((model): model is Model => Boolean(model));
+    if (chosen.length !== value.selected.length) { draft.setState({ error: '部分已选模型已不在目录中，请刷新后重选。' }); return; }
+    const count = chosen.length + customDraft.a6Models.length;
+    if (!value.body.trim()) { draft.setState({ error: '请填写自定义提示词。' }); return; }
+    if (!count || count > 64) { draft.setState({ error: '自定义任务需选择 1–64 个 DSH/a6api 模型。' }); return; }
+    if (customDraft.a6Models.length && !customDraft.sourceSelectionId && !customDraft.sourceRecordId) { draft.setState({ error: 'a6api 渠道只能来自网页选择或已完成的指纹记录。' }); return; }
+    if (customDraft.a6Models.length && !customDraft.tokens.length) { draft.setState({ error: '请至少选择一个 a6api 测试令牌槽位。' }); return; }
+    if (!Number.isInteger(customDraft.concurrency) || customDraft.concurrency < 1 || customDraft.concurrency > 6) { draft.setState({ error: '并发数须在 1–6 之间。' }); return; }
+    if (!Number.isInteger(customDraft.timeoutMs) || customDraft.timeoutMs < 30_000 || customDraft.timeoutMs > 1_800_000) { draft.setState({ error: '单模型最长时长须为 30–1800 秒的整数。' }); return; }
+    const preset = presets.getState().items.find(item => item.id === value.presetId) ?? null;
+    const name = value.name.trim() || `自定义测试 ${evaluations.getState().records.length + 1}`;
+    const dshModels: RecordModelRef[] = chosen.map(model => ({ provider: model.provider, id: model.id, name: model.name }));
+    const slots = customDraft.tokens.map(tokenId => ({ tokenId, name: customDraft.a6Tokens.find(token => token.id === tokenId)?.name }));
+    customDomain.store.setState(state => ({ draft: { ...state.draft, creating: true, error: undefined } }));
+    draft.setState({ error: undefined, pickerOpen: false });
+    void customDomain.createTask({ selectionId: customDraft.sourceSelectionId, sourceRecordId: customDraft.sourceRecordId, name, a6Models: customDraft.a6Models, slots, dshModels, prompt: value.body, footerVersion: FIXED_FOOTER_VERSION, preset, concurrency: customDraft.concurrency, timeoutMs: customDraft.timeoutMs }).then(({ record, attemptId }) => {
+      if (disposed) return;
+      evaluationsDomain.acceptCreated(record, attemptId);
+      customDomain.resetSource();
+      draft.setState(emptyDraft(), true);
+      openRecord(record.id);
+    }).catch(error => {
+      if (!disposed) customDomain.store.setState(state => ({ draft: { ...state.draft, error: message(error, 'Host 未接受请求') } }));
+    }).finally(() => {
+      if (!disposed) customDomain.store.setState(state => ({ draft: { ...state.draft, creating: false } }));
+    });
+  }
+  function customContext(runId: string): {attemptId: string; runId: string} | undefined {
+    const record = evaluations.getState().records.find(item => item.kind === 'custom' && item.attemptId && item.runIds.includes(runId));
+    return record?.attemptId ? { attemptId: record.attemptId, runId } : undefined;
   }
 
   const actions: Workbench['actions'] = {
@@ -154,8 +205,10 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     navigate,
     patchDraft(value) {
       const apply = (): void => { draft.setState(state => {
+        const builtin = presets.getState().items.find(item => item.id === 'builtin-totoro');
         const base = presets.getState().items.find(item => item.id === state.presetId)?.body ?? '';
-        return { ...value, error: undefined, ...(value.body !== undefined ? { dirty: value.body !== base } : {}) };
+        const initialCustom = value.kind === 'custom' && state.kind !== 'custom' && !state.presetId && builtin;
+        return { ...value, ...(initialCustom ? { presetId: builtin.id, body: builtin.body, dirty: false } : {}), error: undefined, ...(value.body !== undefined && !initialCustom ? { dirty: value.body !== base } : {}) };
       }); };
       if (value.kind !== undefined && value.kind !== draft.getState().kind) guardDirty(apply); else apply();
     },
@@ -164,8 +217,25 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
       draft.setState(state => ({ selected: state.selected.includes(key) ? state.selected.filter(item => item !== key) : [...state.selected, key], error: undefined }));
     },
     refreshModels,
+    beginCustomFromFingerprint(recordId, runId) {
+      const record = evaluations.getState().records.find(item => item.id === recordId);
+      const run = runId ? evaluations.getState().runs[runId] : record?.runIds.map(id => evaluations.getState().runs[id]).find(item => item?.model.a6api);
+      if (!record || !run?.model.a6api) { showError('无法转换为自定义测试', '仅支持从包含 a6api 渠道身份的指纹结果创建。'); return; }
+      customDomain.beginFromFingerprint(recordId, run.model, record.a6api?.slots ?? []);
+      const preset = presets.getState().items.find(item => item.id === 'builtin-totoro');
+      draft.setState({ ...emptyDraft(), kind: 'custom', name: `${record.name} 自定义`, body: preset?.body ?? '', presetId: preset?.id });
+      openDraft();
+    },
+    patchCustom: customDomain.patchDraft,
+    removeCustomA6Model: customDomain.removeA6Model,
+    toggleCustomToken: customDomain.toggleToken,
+    resetCustomSource: customDomain.resetSource,
+    setCustomDetailTab(runId, tab) { const context = customContext(runId); if (context) customDomain.setTab(context.attemptId, runId, tab); },
+    readCustomFile(runId, path) { const context = customContext(runId); if (context) void customDomain.readFile(context.attemptId, runId, path); },
+    openCustomOutput(runId, mode) { const context = customContext(runId); return context ? customDomain.openOutput(context.attemptId, runId, mode) : Promise.reject(new Error('自定义运行已不可用')); },
     submit() {
       const value = draft.getState();
+      if (value.kind === 'custom') { submitCustom(); return; }
       if (value.selected.length && models.getState().loading) { draft.setState({ error: '模型目录正在读取，请稍后提交。' }); return; }
       const available = new Map(models.getState().items.map(model => [model.key, model]));
       const dshSelected = value.selected.map(key => available.get(key)).filter((model): model is Model => model !== undefined);
@@ -173,16 +243,14 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
       const selected = dshSelected;
       if (!selected.length) { draft.setState({ error: '请至少选择一个 DSH 模型。' }); return; }
       if (selected.length > 64) { draft.setState({ error: '每条测试最多选择 64 个模型。' }); return; }
-      if (value.kind === 'custom' && !value.body.trim()) { draft.setState({ error: '请填写自定义提示词。' }); return; }
       if (value.body.length > 100_000) { draft.setState({ error: '提示词正文最多 100,000 字。' }); return; }
-      const preset = presets.getState().items.find(item => item.id === value.presetId);
-      const name = value.name.trim() || `${value.kind === 'custom' ? '自定义测试' : '模型指纹'} ${evaluations.getState().records.length + 1}`;
+      const name = value.name.trim() || `模型指纹 ${evaluations.getState().records.length + 1}`;
       const refs: RecordModelRef[] = selected.map(model => ({ provider: model.provider, id: model.id, name: model.name, ...(model.relay ? { relay: model.relay } : {}) }));
       draft.setState({ error: undefined, pickerOpen: false });
       void evaluationsDomain.create({
-        kind: value.kind, name, models: refs,
-        prompt: value.kind === 'custom' ? value.body + FIXED_FOOTER : 'lm-detector 数字指纹：每次请求 3 道共享挑战题（Host 侧官方 lmfpd-sdk 生成），各模型独立作答后与官方参考库比对。',
-        footerVersion: FIXED_FOOTER_VERSION, ...(value.kind === 'custom' && preset ? { preset: { ...preset, body: value.body } } : {}),
+        kind: 'fingerprint', name, models: refs,
+        prompt: 'lm-detector 数字指纹：每次请求 3 道共享挑战题（Host 侧官方 lmfpd-sdk 生成），各模型独立作答后与官方参考库比对。',
+        footerVersion: FIXED_FOOTER_VERSION,
       }).then(id => {
         if (disposed) return;
         draft.setState(emptyDraft(), true);
@@ -228,14 +296,14 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     },
     renamePreset(id) {
       const item = presets.getState().items.find(preset => preset.id === id);
-      if (!item) return;
+      if (!item || id === 'builtin-totoro') return;
       ask({ title: '重命名预设', message: '历史测试快照不受此修改影响。', input: item.name, choices: [{ id: 'rename', label: '保存名称' }, { id: 'cancel', label: '取消' }] }, (choice, input) => {
         if (choice === 'rename') persist(presets.getState().items.map(preset => preset.id === id ? { ...preset, name: input.trim() } : preset));
       });
     },
     deletePreset(id) {
       const item = presets.getState().items.find(preset => preset.id === id);
-      if (!item) return;
+      if (!item || id === 'builtin-totoro') return;
       const confirm = (): void => ask({ title: '删除提示词预设？', message: `将删除「${item.name}」。已提交测试中的快照保持不变。`, choices: [{ id: 'delete', label: '删除', danger: true }, { id: 'cancel', label: '取消' }] }, choice => {
         if (choice !== 'delete' || !persist(presets.getState().items.filter(preset => preset.id !== id))) return;
         if (draft.getState().presetId === id) draft.setState(state => ({ presetId: undefined, dirty: state.body !== '' }));
@@ -246,7 +314,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     togglePresets() { presetsDomain.toggle(); },
     cancelRecord,
     setFingerprintConfig(id, options) { void evaluationsDomain.configure(id, options); },
-    retryFailedSample(id, runId) { void evaluationsDomain.retry(id, runId); },
+    retryFailedSample(id, runId) { void evaluationsDomain.retry(id, runId).then(nextRunId => { if (nextRunId) navigate({ runId: nextRunId, artifact: false }); }); },
     deleteRecord(id) {
       const item = evaluations.getState().records.find(record => record.id === id);
       if (!item) return;
@@ -256,7 +324,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
         attempt('删除失败', evaluationsDomain.remove(id));
       });
     },
-    resetMocks() {
+    resetRecords() {
       ask({ title: '清空测试记录？', message: '取消所有运行中的请求并删除全部已保存的测试记录（所有会话共享）。模型目录、预设、分区和当前草稿会保留。', choices: [{ id: 'reset', label: '清空记录', danger: true }, { id: 'cancel', label: '取消' }] }, choice => {
         if (choice !== 'reset') return;
         attempt('清空失败', evaluationsDomain.reset());
@@ -283,7 +351,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     setNoticeInput(input) { const current = notice.getState(); if (current && current.input !== undefined) notice.setState({ ...current, input }, true); },
   };
   // Ignore late UI callbacks after teardown, in addition to cancelling asynchronous work.
-  const guardedActions = Object.fromEntries(Object.entries(actions).map(([key, action]) => [key, (...args: unknown[]) => { if (!disposed) (action as (...values: unknown[]) => void)(...args); }])) as Workbench['actions'];
+  const guardedActions = Object.fromEntries(Object.entries(actions).map(([key, action]) => [key, (...args: unknown[]) => { if (disposed) return undefined; return (action as (...values: unknown[]) => unknown)(...args); }])) as Workbench['actions'];
   presetsDomain.load();
   refreshModels();
   const unwatch = workbench.subscribe(syncWatch);
@@ -304,5 +372,5 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     const ids = new Set(state.records.map(record => record.id));
     for (const tab of workbench.getState().tabs) if (tab.recordId && !ids.has(tab.recordId)) removeTab(tab.id);
   });
-  return { sessionId, ...stores, actions: guardedActions, dispose() { if (disposed) return; disposed = true; unwatch(); unwatchInsights(); unevalInsights(); unaccountInsights(); unprune(); insightsDomain.dispose(); modelsDomain.dispose(); evaluationsDomain.dispose(); a6Domain.dispose(); noticeAnswer = undefined; notice.setState(null, true); } };
+  return { sessionId, ...stores, actions: guardedActions, dispose() { if (disposed) return; disposed = true; unwatch(); unwatchInsights(); unevalInsights(); unaccountInsights(); unprune(); insightsDomain.dispose(); customDomain.dispose(); modelsDomain.dispose(); evaluationsDomain.dispose(); a6Domain.dispose(); noticeAnswer = undefined; notice.setState(null, true); } };
 }

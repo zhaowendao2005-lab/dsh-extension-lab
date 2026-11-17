@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a6api · 模型智能测试 v3
 // @namespace    dsh.model-intelligence-test
-// @version      3.2.1
+// @version      3.3.0
 // @description  在市场与令牌表格中提供勾选列，把所选渠道与测试令牌一次性发送给本机 DSH；不执行站点写操作，不读取或导出 API 密钥。
 // @match        https://a6api.vip/*
 // @match        https://www.a6api.vip/*
@@ -32,7 +32,7 @@
   // Only these response fields enter the cache. Never observe key/reveal/copy endpoints,
   // React internals, authorization headers, or complete token objects.
   const SESSION_KEY = 'a6api_session_user_id';
-  const SCRIPT_VERSION = '3.2.1';
+  const SCRIPT_VERSION = '3.3.0';
   const PREFIX = 'mit-a6-v3:';
   const CONFIG_KEY = 'mit-a6-config-v3';
   const SEND_TIMEOUT_MS = 12000;
@@ -601,7 +601,7 @@
       });
     });
   }
-  async function send() {
+  async function send(kind = 'fingerprint') {
     if (busy) return;
     if (!config) { status = '先在连接设置中填写 DSH 地址与导入口令'; render(); return; }
     if (!accountId) { status = '请先登录 a6api'; render(); return; }
@@ -611,7 +611,7 @@
     const target = config;
     const generation = epoch;
     const body = {
-      siteOrigin, accountId, pageId, scriptVersion: SCRIPT_VERSION, protocolVersion: 1,
+      siteOrigin, accountId, pageId, scriptVersion: SCRIPT_VERSION, protocolVersion: 1, kind,
       models: [...selectedModels.values()].map(row => ({
         listingId: row.listingId, channelId: row.channelId, supplierId: row.supplierId, model: row.model,
         supplierName: row.supplierName, channelName: row.channelName, brand: row.brand, market: row.market,
@@ -622,7 +622,7 @@
       const data = await postSelection(body, target);
       if (disposed) return;
       if (generation !== epoch) { status = '发送期间账号已切换，DSH 结果未经本页确认，请核对'; return; }
-      status = `已发送 ${body.models.length + body.tokens.length} 项，等待 DSH 开始测试（渠道 ${body.models.length} / 令牌 ${body.tokens.length}）· selectionId ${data.selectionId.slice(0, 8)}`;
+      status = `已发送 ${body.models.length + body.tokens.length} 项，请在 DSH 确认${kind === 'custom' ? '自定义测试' : '指纹测试'}设置（渠道 ${body.models.length} / 令牌 ${body.tokens.length}）· selectionId ${data.selectionId.slice(0, 8)}`;
     } catch (error) { if (!disposed) status = error.message; }
     finally { busy = false; render(); }
   }
@@ -655,7 +655,7 @@
     <div class="body">
       <p class="count" data-count></p>
       <p class="hint">先到令牌页选择测试令牌，再到市场选渠道。若行被禁选，请通过站点翻页或刷新列表建立响应缓存；只保存令牌 ID 与名称。</p>
-      <div class="row"><button data-send class="primary" type="button">发送到 DSH 测试</button><button data-clear type="button">清空渠道选择</button></div>
+      <div class="row"><button data-send class="primary" type="button">发送到指纹测试</button><button data-send-custom type="button">发送到自定义测试</button><button data-clear type="button">清空渠道选择</button></div>
       <div class="row"><button data-fold type="button">折叠测试令牌</button></div>
       <p class="status" data-status role="status" aria-live="polite"></p>
       <details><summary>连接设置</summary>
@@ -697,6 +697,7 @@
     if (ui('[data-count]').textContent !== count) ui('[data-count]').textContent = count;
     if (ui('[data-status]').textContent !== status) ui('[data-status]').textContent = status;
     ui('[data-send]').disabled = busy;
+    ui('[data-send-custom]').disabled = busy;
     ui('[data-clear]').disabled = busy;
     ui('[data-fold]').disabled = busy || !selectedTokens.size;
     const foldLabel = foldState.expanded ? '收起测试令牌' : '展开测试令牌';
@@ -707,7 +708,8 @@
     if (host.isConnected) { const rect = host.getBoundingClientRect(); clampPosition(rect.left, rect.top); }
   }
   ui('[data-collapse]').addEventListener('click', () => { layout.collapsed = !layout.collapsed; applyLayout(); saveLayout(); });
-  ui('[data-send]').addEventListener('click', send);
+  ui('[data-send]').addEventListener('click', () => send('fingerprint'));
+  ui('[data-send-custom]').addEventListener('click', () => send('custom'));
   ui('[data-fold]').addEventListener('click', () => {
     foldState.expanded = foldState.expanded !== true;
     persistFold();
@@ -789,7 +791,7 @@
   if (config) {
     ui('[data-origin]').value = config.origin;
     ui('[data-intake]').value = config.intake;
-    status = `连接设置就绪：${config.origin}；勾选后点击「发送到 DSH 测试」`;
+    status = `连接设置就绪：${config.origin}；勾选后选择发送到指纹测试或自定义测试`;
   }
   reportVersion();
   uiReady = true;

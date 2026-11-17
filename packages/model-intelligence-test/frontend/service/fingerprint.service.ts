@@ -45,9 +45,6 @@ export async function configureAttempt(transport: ModelIntelligenceTransport, at
 export async function retryAttempt(transport: ModelIntelligenceTransport, attemptId: string, model: {provider: string; id: string}): Promise<AttemptViewResult> {
   return transport.attemptRetry({ attemptId, model: { provider: model.provider, id: model.id } });
 }
-export async function saveCustomAttempt(transport: ModelIntelligenceTransport, recordId: string, ended: boolean, runs: Run[]): Promise<{attemptId: string}> {
-  return transport.customSave({ recordId, snapshot: { ended, runs: JSON.parse(JSON.stringify(runs)) as unknown[] } });
-}
 
 /** Display model of a persisted record entry; relay channels are labelled by site and channel id. */
 export function modelOfRef(ref: RecordModelRef): Model {

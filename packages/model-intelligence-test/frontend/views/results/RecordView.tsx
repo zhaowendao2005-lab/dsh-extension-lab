@@ -1,61 +1,21 @@
 import React,{ useStore } from '../../runtime';
 import type { Evaluation,Workbench } from '../../types';
-import { Empty,Icon,MetricGrid,StageBadge } from '../../components/common';
+import { Empty,Icon } from '../../components/common';
 import { MenuSelect } from '../../components/MenuSelect';
 import type { MenuOption } from '../../components/MenuSelect';
 import { FingerprintConfigPanel } from './FingerprintConfigPanel';
 import { MonitorTable } from '../monitor/MonitorTable';
 import {LedgerOverview} from '../a6/LedgerOverview';
 import {OperationKeyPicker} from '../a6/OperationKeyPicker';
-import { endedRunIds,isEndedStage } from './runOrder';
-import { ATTEMPT_STATUS_LABELS,currentAttempt,modelLabel,providerLabel } from './modelLabel';
+import { ATTEMPT_STATUS_LABELS,currentAttempt } from './modelLabel';
+import { CustomMonitorView, type CustomMonitorRow } from '../custom/CustomMonitorView';
+import { CustomTaskView } from '../custom/CustomTaskView';
 
 const VIEW_OPTIONS: MenuOption<'progress'|'results'>[] = [
   { value: 'progress',label: '实时进度' },
   { value: 'results',label: '测试结果' },
 ];
 
-function ResultCard({ store,id }: {
-  store: Workbench;
-  id: string;
-}) {
-  const run=useStore(store.evaluations,state => state.runs[id]);
-  if(!run)
-    return null;
-  const best=run.candidates.reduce<{
-    name: string;
-    score: number;
-  }|undefined>((a,b) => !a||b.score>a.score? b:a,undefined);
-  return <article className="mit-result-card">
-    <div className="mit-label-row">
-      <strong>
-        {modelLabel(run.model)}
-      </strong>
-      <StageBadge stage={run.stage} />
-    </div>
-    <p className="mit-muted">
-      {providerLabel(run.model)}
-    </p>
-    <MetricGrid metrics={run.metrics} />
-    {best&&<div className="mit-result-match">
-      <span className="mit-muted">最高模拟匹配 · Mock
-      </span>
-      <strong>
-        {best.name}
-      </strong>
-      <span>
-        RAW {best.score.toFixed(4)}
-      </span>
-    </div>}
-    {run.error&&<p className="mit-error">
-      {run.error.message}
-    </p>}
-    <button type="button" className="mit-button" onClick={() => store.actions.navigate({ runId: id,artifact: Boolean(run.artifact) })}>
-      {run.artifact? '查看执行详情与成果':'查看完整详情'}
-      <Icon name="chevron" size={14} />
-    </button>
-  </article>;
-}
 function Breadcrumb({ record }: {
   record: Evaluation;
 }) {
@@ -80,7 +40,6 @@ function AttemptBar({ store,record }: {
   const attempts=record.attempts??[];
   const selected=currentAttempt(attempts,record.attemptId);
   const busy=attempts.some(attempt => attempt.status==='running'||attempt.status==='queued');
-  const custom=record.kind==='custom';
   return <div className="mit-attempt-bar">
     <span className="mit-attempt-label">测试轮次</span>
     <div className="mit-attempt-chips" role="tablist" aria-label="测试轮次记录">
@@ -96,8 +55,8 @@ function AttemptBar({ store,record }: {
       {!attempts.length&&<span className="mit-muted">暂无测试轮次</span>}
     </div>
     <div className="mit-attempt-actions">
-      {busy&&!custom&&<span className="mit-muted">将排队，在当前测试轮次结束后开始</span>}
-      <button type="button" className="mit-button" disabled={custom} title={custom? '自定义 Mock 测试不支持再次测试':'使用相同模型集合再次测试'} onClick={() => store.actions.rerunRecord(record.id)}>
+      {busy&&<span className="mit-muted">将排队，在当前测试轮次结束后开始</span>}
+      <button type="button" className="mit-button" disabled={busy} title="使用相同模型集合再次执行" onClick={() => store.actions.rerunRecord(record.id)}>
         <Icon name="refresh" size={14} />再次测试
       </button>
     </div>
@@ -112,7 +71,7 @@ function RecordSummary({ store,record }: {
       const stage=state.runs[id]?.stage;
       if(stage==='completed')
         done++;
-      else if(stage==='failed'||stage==='timeout'||stage==='cancelled')
+      else if(stage==='failed'||stage==='timeout'||stage==='cancelled'||stage==='interrupted')
         failed++;
       else
         active++;
@@ -135,29 +94,24 @@ function RecordSummary({ store,record }: {
     </button>}
   </div>;
 }
-function CustomResults({ store,record }: {
+function CustomResults({ store,record,resultOnly }: {
   store: Workbench;
   record: Evaluation;
+  resultOnly: boolean;
 }) {
-  const rowIds=useStore(store.evaluations,state => endedRunIds(record.runIds,state.runs).join('\n'));
-  const activeCount=useStore(store.evaluations,state => record.runIds.filter(id => {
-    const run=state.runs[id];
-    return run&&!isEndedStage(run.stage);
-  }).length);
-  const ids=rowIds? rowIds.split('\n'):[];
-  return <>
-    <div className="mit-result-note">
-      <strong>测试结果</strong>
-      <span className="mit-muted">仅显示已结束的
-        {ids.length} 个模型
-        {activeCount? ` · ${activeCount} 个仍在运行`:''}
-      </span>
-    </div>
-    {ids.length? <div className="mit-results-grid">
-      {ids.map(runId => <ResultCard key={runId} store={store} id={runId} />)}
-    </div>:<Empty title="还没有可展示的结果">测试仍在运行，结束后会出现在这里。
-    </Empty>}
-  </>;
+  const filter=useStore(store.presentation,state => state.filter);
+  const rows=useStore(store.evaluations,state => record.runIds.flatMap(id => {
+    const run=state.runs[id]; return run?.custom? [{id,model:run.model,summary:run.custom}]:[];
+  }));
+  const selectedRunId=useStore(store.workbench,state => state.navigation[state.activeTab]?.runId);
+  const detailEntry=useStore(store.custom,state => record.attemptId&&selectedRunId? state.details[`${record.attemptId}:${selectedRunId}`]:undefined);
+  const selected=rows.find(row => row.id===selectedRunId);
+  return <div className="mit-custom-split">
+    <CustomMonitorView record={record} rows={rows} selectedRunId={selectedRunId} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} />
+    <div className="mit-custom-detail-pane">{selected&&record.attemptId?
+      <CustomTaskView model={selected.model} summary={selected.summary} detail={detailEntry?.detail} loading={detailEntry?.loading??true} error={detailEntry?.error} activeTab={detailEntry?.tab??'chat'} file={detailEntry?.file} fileLoading={Boolean(detailEntry?.fileLoading)} canRetry={['failed','cancelled','interrupted'].includes(selected.summary.phase)} canCancel={!['completed','failed','cancelled','interrupted'].includes(selected.summary.phase)} onTabChange={tab => store.actions.setCustomDetailTab(selected.id,tab)} onReadFile={path => store.actions.readCustomFile(selected.id,path)} onOpenOutput={mode => store.actions.openCustomOutput(selected.id,mode)} onRetry={() => store.actions.retryFailedSample(record.id,selected.id)} onCancel={() => store.actions.cancelRecord(record.id)} onClose={() => store.actions.navigate({runId:undefined})} compact />
+      :<Empty title="选择一个模型运行查看详情">会话、文件、指标、账单与权限均来自 Host。</Empty>}</div>
+  </div>;
 }
 export function RecordView({ store,id }: {
   store: Workbench;
@@ -177,12 +131,12 @@ export function RecordView({ store,id }: {
             {record.name}
           </h2>
           <p className="mit-muted">
-            {record.a6api? 'a6api 专项指纹测试':record.kind==='fingerprint'? '指纹测试':'自定义 Agent 测试'} ·
+            {record.kind==='fingerprint'? record.a6api? 'a6api 专项指纹测试':'指纹测试':record.a6api? 'a6api 混合自定义测试':'自定义 Agent 测试'} ·
             {new Date(record.createdAt).toLocaleString('zh-CN')} ·
             {record.runIds.length} 个模型
           </p>
         </div>
-        <span className="mit-badge">{record.a6api? 'a6api 专项':record.kind==='fingerprint'? '真实指纹':'MOCK'}</span>
+        <span className="mit-badge">{record.kind==='fingerprint'? record.a6api? 'a6api 专项':'真实指纹':record.a6api? 'a6api 自定义':'Host 自定义任务'}</span>
       </div>
       <Breadcrumb record={record} />
       <AttemptBar store={store} record={record} />
@@ -203,12 +157,12 @@ export function RecordView({ store,id }: {
           <MenuSelect label="查看" value={mode} options={VIEW_OPTIONS} open={viewOpen} onToggle={store.actions.toggleView} onClose={store.actions.toggleView} onChange={value => store.actions.navigate({ mode: value })} />
           {record.kind==='fingerprint'&&<FingerprintConfigPanel store={store} record={record} />}
         </div>
-        <span className="mit-muted">{record.kind==='fingerprint'? '真实请求可能产生费用 · 概率仅限参考库闭集，不作身份或质量判定':'Mock 自定义任务 · 输出、用量、费用与成果均为模拟，不代表实际模型性能'}</span>
+        <span className="mit-muted">{record.kind==='fingerprint'? '真实请求可能产生费用 · 概率仅限参考库闭集，不作身份或质量判定':'Host 独立 Agent 会话 · 受限文件工具（非 OS 容器） · 网络、外部工作区与凭据默认不可用 · 费用以账单回填为准'}</span>
       </div>
     </header>
     <div className="mit-record-content">
       <div className="mit-record-main">
-        {mode==='progress'? <MonitorTable store={store} record={record} />:record.kind==='fingerprint'? <MonitorTable store={store} record={record} results />:<CustomResults store={store} record={record} />}
+        {record.kind==='custom'? <CustomResults store={store} record={record} resultOnly={mode==='results'} />:<MonitorTable store={store} record={record} results={mode==='results'} />}
         {record.kind==='custom'&&<details className="mit-prompt-snapshot">
           <summary>查看本次任务提示词与固定约束快照
           </summary>

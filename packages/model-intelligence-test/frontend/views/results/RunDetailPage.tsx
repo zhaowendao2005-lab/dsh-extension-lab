@@ -59,6 +59,6 @@ export function RunDetailPage({ store,recordId,runId }: {
       {run.callProvider? ` · DSH 提供商 ${run.callProvider}`:''}
       {run.routing? ` · ${{'waiting-page':'等待原账号网页连接','pinning':'固定渠道并确认','sampling':'三条挑战采样中','restoring':'恢复原固定关系','restored':'固定关系已恢复','restore-failed':'恢复失败，本次测试已停止'}[run.routing]}`:''}
     </p>}
-    <RunDetail store={store} id={runId} custom={record.kind==='custom'} />
+    <RunDetail store={store} id={runId} />
   </div>;
 }

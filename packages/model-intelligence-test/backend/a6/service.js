@@ -236,15 +236,36 @@ export class A6Service {
       this.assertRecordActive();
       const a6api = { selectionId: selection.id, accountId: selection.accountId, siteOrigin: SITE_ORIGIN, slots };
       return await this.records.create({
-        kind: 'fingerprint', name: input.name || 'a6api 专项指纹', a6api,
-        options: { timeoutMs: input.timeoutMs ?? 180_000, concurrency: slots.length },
-        models: channels.map(channel => ({
+        kind: input.kind ?? selection.kind ?? 'fingerprint', name: input.name || 'a6api 专项测试', a6api,
+        prompt: input.prompt, footerVersion: input.footerVersion, preset: input.preset,
+        options: { timeoutMs: input.timeoutMs ?? 180_000, concurrency: Math.min(6, input.concurrency ?? slots.length) },
+        models: [...channels.map(channel => ({
           // Stable identity is the tested channel, not the worker that happens to claim it.
           provider: `a6api:${channel.channelId}:${channel.supplierId}`, id: channel.model, name: channel.model,
           a6api: channel,
           relay: { siteId: 'a6api', channelId: channel.channelId, supplierId: channel.supplierId, listingId: channel.listingId, model: channel.model, api: channel.model && /claude|anthropic/i.test(`${channel.brand} ${channel.model}`) ? 'messages' : 'chat' },
-        })),
+        })), ...((input.kind ?? selection.kind) === 'custom' ? input.dshModels ?? [] : [])],
       });
+    } finally { this.creating -= 1; }
+  }
+
+  async customFromRecord(input) {
+    this.assertRecordActive(input.recordId); this.assertAvailable();
+    await this.config();
+    const domain = await this.records.domain();
+    const source = domain.table('records').get(input.recordId);
+    if (!source?.a6api || source.kind !== 'fingerprint') throw new A6Error('invalid-source', '请从 a6api 指纹结果创建自定义测试');
+    this.assertAccount(source.a6api);
+    const selected = input.models ? source.models.filter(row => input.models.some(target => target.channelId === row.a6api?.channelId && target.model === row.id)) : source.models;
+    if (!selected.length || input.models && selected.length !== input.models.length) throw new A6Error('invalid-selection', '渠道模型不属于此指纹记录');
+    const slots = input.slots ? input.slots.map(slot => source.a6api.slots.find(row => row.tokenId === slot.tokenId)) : source.a6api.slots;
+    if (!slots?.length || slots.some(slot => !slot) || new Set(slots.map(slot => slot.tokenId)).size !== slots.length) throw new A6Error('invalid-slots', '测试槽位不属于原记录或重复');
+    this.creating += 1;
+    try {
+      await this.releaseManual(source.a6api, slots);
+      this.assertRecordActive(input.recordId); this.assertAccount(source.a6api);
+      return await this.records.create({kind:'custom', name:input.name || `${source.name} · 自定义`, prompt:input.prompt, footerVersion:input.footerVersion, preset:input.preset,
+        models:[...selected, ...(input.dshModels ?? [])], a6api:{...source.a6api, slots}, options:{timeoutMs:input.timeoutMs ?? source.options?.timeoutMs ?? 180000, concurrency:input.concurrency ?? Math.min(6,slots.length)}});
     } finally { this.creating -= 1; }
   }
 

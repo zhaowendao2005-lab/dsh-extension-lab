@@ -1,0 +1,395 @@
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import { FingerprintError } from '../fingerprint/engine.js';
+import { tokenIdentity } from '../a6/slots.js';
+import { createSandbox, openSandbox, removeSandbox } from './sandbox.js';
+import { executeSession } from './session.js';
+import { createA6Stream } from './a6-llm.js';
+
+const END = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+const MAX_MODELS = 6;
+const copy = value => JSON.parse(JSON.stringify(value));
+const known = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+const sum = values => values.length && values.every(v => v !== null) ? values.reduce((a, b) => a + b, 0) : null;
+const mean = values => { const n = values.filter(v => v !== null); return n.length ? n.reduce((a, b) => a + b, 0) / n.length : null; };
+const err = (code, message) => new FingerprintError(code, message);
+const emptyUsage = () => ({ requestCount: 0, inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null, billingState: 'unknown' });
+const emptyMetrics = () => ({ ttftMs: null, generationMs: null, e2eMs: null, modelTokensPerSecond: null, endToEndTokensPerSecond: null, cacheRate: null });
+const publicRun = data => copy(data.summary);
+
+/** Real per-model Agent sessions. Secrets remain in short-lived transport closures only. */
+export class CustomCoordinator {
+  constructor(ctx, { storage, capacity, ledger, a6, onTouch, onSettled }) {
+    Object.assign(this, { ctx, storage, capacity, ledger, a6, onTouch, onSettled });
+    this.jobs = new Map(); this.removed = new Set(); this.writes = new Map();
+    this.timers = new Map(); this.active = 0; this.disposed = false; this.ready = this.boot();
+    this.ready.catch(() => {});
+  }
+  async boot() {
+    const domain = await this.storage.records();
+    for (const [id, data] of domain.table('custom_runs').entries()) {
+      if (END.has(data.summary?.phase)) continue;
+      data.summary.phase = 'interrupted'; data.summary.finishedAt = Date.now();
+      data.summary.error = { code: 'interrupted', message: '运行时已重启，会话已中断；不会自动重新发送请求', phase: 'running' };
+      for (const request of data.requests ?? []) if (request.status === 'running') request.status = 'interrupted';
+      await domain.table('custom_runs').put(id, data);
+    }
+    return domain;
+  }
+  async dataRoot() {
+    if (!this.rootPromise) this.rootPromise = (async () => {
+      const settings = this.ctx.get('settings');
+      if (!settings?.prepareDocument) throw err('sandbox-root-unavailable', '当前运行时无法定位此配置的沙箱目录');
+      const document = await settings.prepareDocument();
+      if (typeof document !== 'string' || !path.isAbsolute(document)) throw err('sandbox-root-unavailable', '配置目录不可用');
+      return path.join(path.dirname(document), 'model-intelligence-test', 'sandboxes');
+    })();
+    return this.rootPromise;
+  }
+  has(id) { return this.jobs.has(id); }
+  status(id, revision) {
+    const job = this.jobs.get(id);
+    if (!job) throw err('not-found', '自定义任务不存在');
+    if (revision === job.revision) return { id, revision, unchanged: true };
+    return { id, revision: job.revision, status: job.status, finishedAt: job.finishedAt, runs: job.runs.map(publicRun) };
+  }
+  touch(job) { job.revision += 1; this.onTouch?.(job); }
+  async save(data) {
+    if (this.disposed || this.removed.has(data.recordId)) return;
+    const snapshot = copy(data);
+    const previous = this.writes.get(data.id) ?? Promise.resolve();
+    const work = previous.catch(() => {}).then(async () => {
+      if (!this.disposed && !this.removed.has(data.recordId)) await (await this.ready).table('custom_runs').put(data.id, snapshot);
+    });
+    const settled = work;
+    this.writes.set(data.id, settled);
+    try { await settled; } finally { if (this.writes.get(data.id) === settled) this.writes.delete(data.id); }
+  }
+  async start(record, attempt) {
+    await this.ready;
+    if (this.disposed || this.removed.has(record.id)) throw err('disposed', '任务正在结束');
+    if (!record.prompt?.trim()) throw err('empty-prompt', '请填写自定义测试提示词');
+    if (record.models.some(model => model.relay && !record.a6api)) throw err('invalid-target', '渠道模型必须从 a6api 专项入口创建');
+    if (record.a6api) { await this.a6().config(); this.a6().assertAccount(record.a6api); }
+    {
+      const native = record.models.filter(model => !model.a6api);
+      const llm = this.ctx.get('llm');
+      if (native.length && !llm) throw err('llm-unavailable', '模型服务不可用');
+      for (const model of native) {
+        const models = await llm.listModels(model.provider);
+        if (!models.some(item => item.id === model.id)) throw err('model-unavailable', '所选模型已不在当前提供商目录中，请重新选择');
+      }
+    }
+    const id = `custom-${randomUUID()}`;
+    const job = { id, record, attemptId: attempt.id, revision: 1, status: 'running', finishedAt: null, controller: new AbortController(), active: new Map(), slotBusy: new Set(), options: { concurrency: 2, timeoutMs: 180_000, ...record.options }, runs: [] };
+    for (const model of record.models) {
+      const runId = randomUUID();
+      const target = { kind: model.a6api ? 'a6api' : 'dsh', providerId: model.provider, modelId: model.id, displayName: model.name || model.id, ...(model.a6api ? { channelId: model.a6api.channelId, supplierId: model.a6api.supplierId, listingId: model.a6api.listingId, marketSnapshot: model.a6api.market ?? null } : {}) };
+      const data = { id: runId, recordId: record.id, attemptId: attempt.id, jobId: id, root: null, revision: 1, events: [], requests: [], summary: { id: runId, target, phase: 'queued', sessionId: null, sandboxState: 'preparing', eventCount: 0, startedAt: null, updatedAt: Date.now(), finishedAt: null, output: { state: 'none', relativePath: null, size: null, modifiedAt: null, validation: 'pending' }, usage: emptyUsage(), metrics: emptyMetrics(), error: null } };
+      job.runs.push(data); await this.save(data);
+    }
+    this.jobs.set(id, job);
+    // RecordsService explicitly starts the scheduler after persisting the attempt/job mapping.
+    return this.status(id);
+  }
+  update(job, data, phase) {
+    if (phase) data.summary.phase = phase;
+    data.revision += 1; data.summary.updatedAt = Date.now(); this.touch(job);
+  }
+  event(job, data, input) {
+    const event = { id: `event-${randomUUID()}`, at: Date.now(), type: input.type, role:input.role ?? null, delta:input.delta === true, phase:input.phase ?? null, name:input.name ?? null, callId:input.callId ?? null, executionId:input.executionId ?? null, text:typeof input.text === 'string' ? input.text.slice(0,32000) : null, ...(input.content !== undefined ? {content:JSON.stringify(input.content).slice(0,32000)} : {}), ...(input.arguments !== undefined ? {arguments:JSON.stringify(input.arguments).slice(0,32000)} : {}), isError:input.isError === true };
+    // Keep bounded durable events; coalesce adjacent text deltas.
+    if (typeof event.text === 'string') event.text = event.text.slice(0, 100_000);
+    const previous = data.events.at(-1);
+    if (event.delta && previous?.type === event.type && previous.role === event.role && (previous.text?.length ?? 0) < 100_000) previous.text = `${previous.text ?? ''}${event.text ?? ''}`.slice(0, 100_000);
+    else data.events.push(event);
+    if (data.events.length > 500) data.events.splice(0, data.events.length - 500);
+    while (data.events.length > 1 && JSON.stringify(data.events).length > 500000) data.events.shift();
+    data.summary.eventCount += 1;
+    if (event.type === 'tool') data.summary.phase = event.phase === 'call' ? 'tooling' : 'running';
+    this.update(job, data);
+    if (!this.timers.has(data.id)) this.timers.set(data.id, setTimeout(() => {this.timers.delete(data.id); void this.save(data).catch(()=>{});}, 500));
+  }
+  pump() {
+    if (this.disposed) return;
+    for (const job of this.jobs.values()) {
+      if (job.status !== 'running') continue;
+      const limit = Math.min(MAX_MODELS, Math.max(1, job.options.concurrency));
+      while (this.active < MAX_MODELS && job.active.size < limit) {
+        const availableSlot = job.record.a6api?.slots.find(item => !job.slotBusy.has(item.tokenId));
+        const data = job.runs.find(item => item.summary.phase === 'queued' && (item.summary.target.kind !== 'a6api' || availableSlot));
+        if (!data || job.controller.signal.aborted) break;
+        const slot = data.summary.target.kind === 'a6api' ? availableSlot : null;
+        if (slot) job.slotBusy.add(slot.tokenId);
+        this.active += 1;
+        const control = { controller: new AbortController(), timer: null, promise: null };
+        job.active.set(data.id, control);
+        control.promise = this.run(job, data, slot, control).catch(() => {}).finally(() => {
+          this.active -= 1; job.active.delete(data.id); if (slot) job.slotBusy.delete(slot.tokenId);
+          if (job.runs.every(item => END.has(item.summary.phase)) && !job.active.size) {
+            job.status = job.controller.signal.aborted ? 'cancelled' : job.runs.every(item => item.summary.phase !== 'completed') ? 'failed' : 'done';
+            job.finishedAt = Date.now(); this.touch(job); this.onSettled?.(job);
+          }
+          this.pump();
+        });
+      }
+      if (job.controller.signal.aborted && !job.active.size && !job.finishedAt) {
+        job.status = 'cancelled'; job.finishedAt = Date.now(); this.touch(job); this.onSettled?.(job);
+      }
+    }
+  }
+  armTimeout(job, data, control) {
+    const requestedDeadline = data.summary.startedAt + job.options.timeoutMs;
+    if (control.deadlineAt !== undefined && requestedDeadline <= control.deadlineAt) return;
+    control.deadlineAt = requestedDeadline;
+    clearTimeout(control.timer);
+    control.timer = setTimeout(() => { control.timeout = true; control.controller.abort(); }, Math.max(1, control.deadlineAt - Date.now()));
+  }
+  aggregate(data) {
+    const rows = data.requests;
+    const usage = emptyUsage(); usage.requestCount = rows.length;
+    for (const key of ['inputTokens', 'inputTotalTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'cost']) usage[key] = sum(rows.map(row => known(row.usage[key])));
+    usage.currency = rows.length && rows.every(row => row.usage.currency === rows[0].usage.currency) ? rows[0].usage.currency : null;
+    usage.billingState = rows.some(row => row.billingState === 'ambiguous') ? 'ambiguous' : rows.length && rows.every(row => row.billingState === 'settled') ? 'settled' : rows.some(row => row.billingState === 'settled') ? 'partial' : rows.length && data.summary.target.kind === 'a6api' ? 'pending' : 'unknown';
+    data.summary.usage = usage;
+    const metrics = emptyMetrics();
+    for (const key of Object.keys(metrics)) metrics[key] = mean(rows.map(row => known(row.metrics[key])));
+    data.summary.metrics = metrics;
+  }
+  async run(job, data, slot, control) {
+    const signal = control.controller.signal;
+    const abort = () => control.controller.abort();
+    job.controller.signal.addEventListener('abort', abort, { once: true });
+    if (job.controller.signal.aborted) abort();
+    const handles = new Map(); const heldRequests = new Set();
+    let identity, lockHeld = false, attemptedPin = false, sandbox, target;
+    data.summary.startedAt = Date.now(); data.summary.sessionId = `mit-${randomUUID()}`;
+    this.armTimeout(job, data, control); this.update(job, data, 'preparing');
+    const checked = () => { if (signal.aborted || this.disposed || this.removed.has(data.recordId)) throw err('cancelled', '任务已取消'); };
+    const onRequest = {
+      start: async meta => {
+        checked();
+        if (!await this.capacity.acquire(signal, 1)) throw err('cancelled', '请求等待已取消');
+        heldRequests.add(meta.id);
+        let handle = null;
+        try {
+          checked();
+          if (slot) {
+            handle = await this.ledger.begin({ recordId: data.recordId, attemptId: data.attemptId, jobId: job.id, accountId: job.record.a6api.accountId, siteOrigin: job.record.a6api.siteOrigin, provider: data.summary.target.providerId, model: data.summary.target.modelId, tokenId: slot.tokenId, intendedChannelId: data.summary.target.channelId, challengeIndex: null });
+            if (!handle) throw err('ledger-unavailable', '请求账本未准备好，未发送模型请求');
+            handles.set(meta.id, handle);
+            await this.ledger.dispatch(handle);
+          }
+          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: 'running', startedAt: meta.startedAt, finishedAt: null, usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? 'pending' : 'unknown' });
+          this.aggregate(data); this.update(job, data, 'running'); await this.save(data);
+          return meta.id;
+        } catch (error) { if (heldRequests.delete(meta.id)) this.capacity.release(1); throw error; }
+      },
+      metadata: async (id, meta) => {
+        const row = data.requests.find(item => item.id === id); if (!row) return;
+        row.requestId = meta.requestId ?? row.requestId; row.httpStatus = meta.httpStatus ?? null;
+        if (handles.has(id)) await this.ledger.metadata(handles.get(id), meta);
+      },
+      usage: async (id, usage) => {
+        const row = data.requests.find(item => item.id === id); if (!row) return;
+        const { streamUsageFrames, ...canonicalUsage } = usage ?? {};
+        row.streamUsage = copy(canonicalUsage);
+        row.streamUsageFrames = Array.isArray(streamUsageFrames) ? copy(streamUsageFrames).slice(-32) : [];
+        row.usage = { ...row.usage, inputTokens: known(usage?.inputTokens), inputTotalTokens: known(usage?.inputTotalTokens) ?? (known(usage?.inputTokens) !== null && known(usage?.cacheReadTokens) !== null ? usage.inputTokens + usage.cacheReadTokens + (known(usage?.cacheWriteTokens) ?? 0) : null), outputTokens: known(usage?.outputTokens), cacheReadTokens: known(usage?.cacheReadTokens), cacheWriteTokens: known(usage?.cacheWriteTokens), cost: known(usage?.cost), currency: usage?.currency ?? null };
+        this.aggregate(data); this.update(job, data);
+      },
+      finish: async (id, finish) => {
+        try {
+          if (finish.usage) await onRequest.usage(id, finish.usage);
+          const row = data.requests.find(item => item.id === id);
+          if (row) {
+            row.status = finish.status; row.finishedAt = finish.finishedAt; row.finishReason = finish.finishReason ?? null;
+            const duration = known(finish.durationMs); const generation = known(finish.generationMs); const output = row.usage.outputTokens;
+            row.metrics = { ttftMs: known(finish.firstTokenMs), generationMs: generation, e2eMs: duration, modelTokensPerSecond: output !== null && generation > 0 ? output * 1000 / generation : null, endToEndTokensPerSecond: output !== null && duration > 0 ? output * 1000 / duration : null, cacheRate: row.usage.cacheReadTokens !== null && row.usage.inputTotalTokens > 0 ? Math.min(1, row.usage.cacheReadTokens / row.usage.inputTotalTokens) : null };
+            if (handles.has(id)) await this.ledger.finish(handles.get(id), { state: finish.status, finishKind: finish.finishReason, streamUsage: row.streamUsage });
+            handles.delete(id); this.aggregate(data); this.update(job, data); await this.save(data);
+          }
+        } finally { if (heldRequests.delete(id)) this.capacity.release(1); }
+      },
+    };
+    try {
+      checked();
+      sandbox = await createSandbox({ dataRoot: await this.dataRoot(), runId: data.id, prompt: job.record.prompt, preset: job.record.preset, signal, onFile: event => { this.event(job, data, { type: 'tool', phase: 'result', name: 'sandbox_file', text: JSON.stringify(event) }); } });
+      data.root = sandbox.root; data.summary.sandboxState = 'ready'; await this.save(data);
+      checked();
+      let stream;
+      if (slot) {
+        await this.a6().config(); this.a6().assertAccount(job.record.a6api);
+        identity = tokenIdentity(job.record.a6api, slot.tokenId);
+        if (!await this.capacity.tokenSlots.acquire(identity, signal)) throw err('cancelled', '令牌等待已取消');
+        lockHeld = true;
+        checked(); await this.a6().assertTestSlot(slot.tokenId, job.record.a6api); checked();
+        const key = await this.a6().key(slot.tokenId); checked();
+        target = { tokenId: slot.tokenId, model: data.summary.target.modelId, channelId: data.summary.target.channelId };
+        attemptedPin = true;
+        const pin = await this.a6().site.pin(target);
+        if (!pin.routeEffective) throw err('pin-unverified', '固定渠道未读回生效，未发送模型请求');
+        checked(); stream = createA6Stream({ key, api: job.record.models.find(model => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId)?.relay?.api ?? 'chat' });
+      }
+      this.update(job, data, 'running');
+      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: job.record.prompt, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: event => this.event(job, data, event), stream });
+      checked(); this.update(job, data, 'validating');
+      data.summary.output = await sandbox.output();
+      if (result.outcome !== 'completed') throw err('session-failed', result.outcome === 'limited' ? '会话已达到执行预算' : '模型会话未完成');
+      if (data.summary.output.state !== 'ready') throw err('output-invalid', '会话已结束，但未声明有效输出文件');
+      this.update(job, data, 'completed');
+    } catch (error) {
+      if (data.summary.sandboxState === 'preparing') data.summary.sandboxState = 'failed';
+      const phase = signal.aborted ? (control.timeout ? 'failed' : 'cancelled') : 'failed';
+      data.summary.error = { code: control.timeout ? 'timeout' : signal.aborted ? 'cancelled' : error instanceof FingerprintError ? error.code : 'execution-failed', message: control.timeout ? '模型会话超时' : signal.aborted ? '任务已取消' : error instanceof FingerprintError ? error.message : '模型会话执行失败，请检查会话记录或运行时配置', phase: data.summary.phase };
+      this.update(job, data, phase);
+    } finally {
+      clearTimeout(control.timer); job.controller.signal.removeEventListener('abort', abort);
+      for (const [id, handle] of handles) await this.ledger.finish(handle, { state: 'cancelled', finishKind: 'interrupted', streamUsage: data.requests.find(row => row.id === id)?.streamUsage }).catch(() => {});
+      for (const id of heldRequests) { this.capacity.release(1); heldRequests.delete(id); }
+      if (attemptedPin && target) {
+        try {
+          await this.a6().site.unpin(target);
+          if ((await this.a6().site.pins()).some(pin => pin.tokenId === target.tokenId && pin.model === target.model && pin.channelId === target.channelId)) throw err('restore-failed', '固定仍未解除');
+        } catch {
+          data.summary.phase = 'failed'; data.summary.error = { code: 'restore-failed', message: '测试固定关系未能确认解除，请在站点手工检查；该任务已停止领取模型', phase: 'cleanup' };
+          this.cancel(job.id);
+        }
+      }
+      // Release only a lock this run successfully acquired.
+      if (lockHeld) this.capacity.tokenSlots.release(identity);
+      if (sandbox) { try { data.summary.output = await sandbox.output(); } catch { data.summary.output.validation = 'unknown'; } }
+      for (const row of data.requests) if (row.status === 'running') {row.status = signal.aborted ? 'cancelled' : 'failed'; row.finishedAt=Date.now();}
+      clearTimeout(this.timers.get(data.id)); this.timers.delete(data.id);
+      data.summary.finishedAt = Date.now(); this.aggregate(data); this.update(job, data); await this.save(data);
+    }
+  }
+  cancel(id) {
+    const job = this.jobs.get(id); if (!job || job.status !== 'running') return;
+    job.controller.abort();
+    for (const data of job.runs) if (data.summary.phase === 'queued') { data.summary.finishedAt = Date.now(); this.update(job, data, 'cancelled'); void this.save(data); }
+    this.pump();
+  }
+  configure(id, options) {
+    const job = this.jobs.get(id); if (!job) return;
+    job.options = { ...job.options, ...Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) };
+    for (const [runId, control] of job.active) this.armTimeout(job, job.runs.find(data => data.id === runId), control);
+    this.touch(job); this.pump();
+  }
+  async drain(id) { const job = this.jobs.get(id); if (job) await Promise.allSettled([...job.active.values()].map(item => item.promise)); }
+  async load(attemptId, runId) {
+    const domain = await this.ready;
+    if (!domain.table('attempts').get(attemptId)) throw err('not-found', '测试轮次不存在');
+    const data = [...this.jobs.values()].flatMap(job => job.runs).find(run => run.id === runId) ?? domain.table('custom_runs').get(runId);
+    if (!data || data.attemptId !== attemptId || this.removed.has(data.recordId) || !domain.table('records').get(data.recordId)) throw err('not-found', '此模型运行不属于该轮次或已删除');
+    return data;
+  }
+  applyLedgerBilling(data, run, requests, rows) {
+    if (data.summary.target.kind !== 'a6api') return;
+    for (const request of requests) {
+      const row = rows.get(request.executionId); if (!row) continue;
+      request.billingState = row.billingState === 'reconciled' ? 'settled'
+        : row.billingState === 'observed' ? 'observed'
+          : row.billingState === 'ambiguous' ? 'ambiguous'
+            : ['not-sent', 'unattributed', 'unavailable', 'deferred'].includes(row.billingState) ? 'unknown' : 'pending';
+      request.usage.inputTokens = known(row.inputTokens) ?? request.usage.inputTokens;
+      request.usage.inputTotalTokens = known(request.usage.inputTotalTokens) ?? known(row.inputTokens);
+      request.usage.outputTokens = known(row.outputTokens) ?? request.usage.outputTokens;
+      request.usage.cacheReadTokens = known(row.cacheReadTokens) ?? request.usage.cacheReadTokens;
+      const costCny = known(row.billing?.costCny ?? row.costCny);
+      if (costCny !== null) { request.usage.cost = costCny; request.usage.currency = 'CNY'; }
+    }
+    for (const key of ['inputTokens', 'inputTotalTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens']) run.usage[key] = sum(requests.map(request => known(request.usage[key])));
+    run.usage.requestCount = requests.length;
+    run.usage.currency = requests.length && requests.every(request => request.usage.currency === requests[0].usage.currency) ? requests[0].usage.currency : null;
+    const charged = requests.filter(request => request.usage.cost !== null && request.usage.currency === 'CNY');
+    run.usage.cost = charged.length ? charged.reduce((total, request) => total + request.usage.cost, 0) : null;
+    run.usage.currency = charged.length ? 'CNY' : null;
+    run.metrics.cacheRate = run.usage.cacheReadTokens !== null && run.usage.inputTotalTokens !== null && run.usage.inputTotalTokens > 0 ? Math.min(1, run.usage.cacheReadTokens / run.usage.inputTotalTokens) : null;
+    run.usage.billingState = requests.some(request => request.billingState === 'ambiguous') ? 'ambiguous'
+      : requests.length && requests.every(request => request.billingState === 'settled') ? 'settled'
+        : requests.some(request => ['settled', 'observed'].includes(request.billingState)) ? 'partial'
+          : requests.some(request => request.billingState === 'pending') ? 'pending' : 'unknown';
+  }
+  async projectAttempt(attemptId, summaries) {
+    const domain = await this.ready;
+    const resolved = (summaries ?? []).map(summary => ({ summary, data: [...this.jobs.values()].flatMap(job => job.runs).find(item => item.id === summary.id)
+      ?? domain.table('custom_runs').get(summary.id) })).map(item => ({ ...item, data: item.data?.attemptId === attemptId ? item.data : null }));
+    const hasA6 = resolved.some(({ data }) => data?.summary?.target?.kind === 'a6api');
+    const rows = hasA6 && this.ledger ? new Map(((await this.ledger.view({ attemptId })).executions ?? []).map(item => [item.id, item])) : new Map();
+    const projected = resolved.map(({ summary, data }) => {
+      if (!data?.summary?.target) return copy(summary);
+      const run = publicRun(data);
+      this.applyLedgerBilling(data, run, copy(data.requests), rows);
+      return run;
+    });
+    return { runs: projected, billingPending: projected.some(run => ['pending', 'partial'].includes(run.usage?.billingState)) };
+  }
+  async detail({ attemptId, runId }) {
+    const data = await this.load(attemptId, runId);
+    const requests = copy(data.requests);
+    const run = publicRun(data);
+    if (data.summary.target.kind === 'a6api') {
+      const ledger = await this.ledger.view({ attemptId });
+      const rows = new Map((ledger.executions ?? []).map(item => [item.id, item]));
+      this.applyLedgerBilling(data, run, requests, rows);
+    }
+    let files = [];
+    if (data.root) { try { files = await (await openSandbox({ root: data.root })).files(); } catch { /* files may have been removed externally */ } }
+    return { run, events: copy(data.events), requests: requests.slice(-200), files, revision: data.revision, permissions: { allowed: ['sandbox.readRules', 'sandbox.readInput', 'sandbox.readFile', 'sandbox.listFiles', 'sandbox.writeFile', 'sandbox.statFile', 'sandbox.declareOutput'], denied: ['network', 'shell', 'browser', 'workspace', 'credentials', 'provider.configure'] }, metricBoundary: '请求数按 DSH 可观测模型调用计；提供商 SDK 内部 HTTP 重试可能无法单独观察。', eventsTruncated: data.summary.eventCount > data.events.length };
+  }
+  async read({ attemptId, runId, path: file }) {
+    const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');
+    return (await openSandbox({ root: data.root })).read(file);
+  }
+  async open({ attemptId, runId, mode = 'preview' }) {
+    const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');
+    const sandbox = await openSandbox({ root: data.root });
+    const output = await sandbox.output();
+    if (output.state !== 'ready') throw err('output-invalid', '输出文件不存在或未通过验证');
+    if (mode === 'vscode') {
+      const opener = this.ctx.get('sessionController');
+      if (!opener?.canOpenWorkspacePath()) throw err('opener-unavailable', '当前运行时不支持在桌面打开输出文件');
+      const filename = path.join(sandbox.root, output.relativePath);
+      const signal = new AbortController().signal;
+      const apps = await opener.workspacePathApplications({path:filename}, signal);
+      const app = apps.find(item=>/visual studio code|^code$|vscode/i.test(item.name));
+      if (!app) throw err('opener-unavailable', '系统未提供可用于此文件的 VS Code 应用');
+      const opened = await opener.openWorkspacePath({path:filename, application:app.id}, signal);
+      return {...opened,path:output.relativePath};
+    }
+    const preview = await sandbox.preview();
+    if (!preview) throw err('preview-unavailable', '此输出类型不支持 HTML 预览，请在文件中查看');
+    return preview;
+  }
+  async removeRecord(recordId) {
+    this.removed.add(recordId);
+    try {
+      const jobs = [...this.jobs.values()].filter(job => job.record.id === recordId);
+      for (const job of jobs) this.cancel(job.id);
+      await Promise.allSettled(jobs.map(job => this.drain(job.id)));
+      await Promise.allSettled([...this.writes.values()]);
+      const domain = await this.ready;
+      const runs = [...domain.table('custom_runs').entries()].filter(([, run]) => run.recordId === recordId);
+      if (runs.length) {
+        const dataRoot = await this.dataRoot();
+        for (const [id, run] of runs) {
+          const runId = run.id || id;
+          await removeSandbox({ root: run.root || path.join(dataRoot, runId), expectedRunId: runId });
+        }
+      }
+      await domain.table('custom_runs').deleteMany(runs.map(([id]) => id));
+      for (const job of jobs) this.jobs.delete(job.id);
+    } catch (error) {
+      this.removed.delete(recordId);
+      throw error;
+    }
+  }
+  async dispose() {
+    for (const job of this.jobs.values()) this.cancel(job.id);
+    await Promise.allSettled([...this.jobs.keys()].map(id => this.drain(id)));
+    await Promise.allSettled([...this.writes.values()]);
+    for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear();
+    this.disposed = true;
+  }
+}

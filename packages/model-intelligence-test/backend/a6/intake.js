@@ -119,7 +119,9 @@ export class A6Intake {
     if (!SITE_ORIGINS.has(siteOrigin)) throw new A6Error('wrong-site', '只接受 a6api 站点发来的选择');
     const accountId = text(input?.accountId, 40);
     if (!accountId) throw new A6Error('invalid-input', '缺少账号标识');
+    if (input.kind !== undefined && !['fingerprint', 'custom'].includes(input.kind)) throw new A6Error('invalid-input', '测试类型无效');
     const selection = {
+      kind: input.kind ?? 'fingerprint',
       id: randomBytes(9).toString('base64url'),
       siteOrigin, accountId,
       pageId: text(input?.pageId, 120),

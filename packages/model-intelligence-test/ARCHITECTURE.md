@@ -12,7 +12,7 @@ Host webServer /mit-a6/select
  ├─ backend/a6/intake.js  口令鉴权 → selection 队列（list / selection）
  ├─ backend/a6/site.js    访问令牌直连 a6api 控制面：pin / unpin / pins / token key / tokens
  ├─ backend/a6/transport.js 数据面：SSE → DSH StreamChunk（chat / messages）
- ├─ backend/a6/service.js  凭据保存、槽位校验、专项记录创建、手动固定/解除
+ ├─ backend/a6/service.js  凭据保存、槽位校验、专项记录创建、结果操作与历史租约恢复
  ├─ backend/a6/slots.js    跨任务测试令牌身份锁
  └─ backend/fingerprint/engine.js
        → pin 确认 → 取测试 key → 3 条共享挑战并发 → 全部流清理 → unpin → 下一项
@@ -33,8 +33,6 @@ Client apply 生命周期
 - 固定渠道、取测试 key、解除固定都用账户访问令牌（`authorization: <token>` + `new-api-user: <userId>`，站点专门支持这条无 cookie 通道）；
 - 因此不需要网页在线、不需要拿 cookie 做写操作、不需要命令通道。
 
-早先的双向配对（capability + poll + ack + 租约）已整体删除：它解决的问题（谁来 pin）由宿主自己接管后就不存在了。
-
 ## 状态所有权
 
 | 所有者 | 数据 |
@@ -44,7 +42,8 @@ Client apply 生命周期
 | GM 存储 | Host 接入点 `{origin, intake}`，不存测试 API key |
 | Host `A6Site` | 访问令牌与用户 ID（内存），以及掩码视图 |
 | Host `A6Intake` | 导入口令（持久化）、已收到的 selection 队列 |
-| Host `A6Service` | 凭据持久化、test key 10 分钟缓存、手动固定租约 |
+| Host `A6Service` | 凭据持久化、按账号隔离的 test key 短期缓存、历史租约恢复 |
+| Host `A6Operations` | 全局操作 Key、令牌元数据和 pins/routes 快照 |
 | Host `FingerprintEngine` | 挑战、队列、槽位、真实采样/指标/分析与 revision |
 | Host `RecordsService` | records、attempts、固定目标快照及请求持久化 |
 | Client a6api 域 | selection 镜像、专项草稿、配置表单 |

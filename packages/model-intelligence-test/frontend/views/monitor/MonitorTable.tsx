@@ -11,16 +11,16 @@ import {ActualCost} from '../a6/LedgerOverview';
 import { FINGERPRINT_DECISIONS,formatRankingScore,hasCalibratedProbability,isSampleEnded } from '../results/fingerprintPresentation';
 
 // Keep in sync with `.mit-table .mit-sticky-match { right: ... }` in styles.css.
-const ACTION_COLUMN_WIDTH=144;
+const ACTION_COLUMN_WIDTH=208;
 const A6_COLUMNS = new Set(['price','cache24h','target']);
 const defaultWidth = (column: string): number => column === 'target' ? 236 : column === 'price' ? 228 : 144;
 const supportsColumn = (column: string,record: Evaluation): boolean => column in COLUMN_LABELS && (record.kind === 'custom' || column !== 'round') && (Boolean(record.a6api) || !A6_COLUMNS.has(column));
 
-function columnLabel(column: string,custom: boolean): string {
+function columnLabel(column: string): string {
   if(column==='cost')
-    return custom? '费用（Mock）':'实际费用';
+    return '实际费用';
   if(column==='match')
-    return custom? '最高匹配（Mock）':'最高匹配';
+    return '最高匹配';
   return COLUMN_LABELS[column];
 }
 function CellValue({ run,column,custom,store,record }: {
@@ -56,21 +56,21 @@ function CellValue({ run,column,custom,store,record }: {
         {analysis.decision==='partial'&&<span className="mit-muted">部分样本 · {analysis.usedOutputs}/3 有效</span>}
       </div>;
     }
-    const best=run.candidates.reduce<{ name: string; score: number }|undefined>((a,b) => !a||b.score>a.score? b:a,undefined);
-    return best? <span title={`${best.name} · 模拟排序分数`}>{best.name} · RAW {formatRankingScore(best.score)} · Mock</span>:<span className="mit-muted">—</span>;
+    return <span className="mit-muted">不适用</span>;
   }
   if(column==='round')
-    return <span>{run.currentRound? `第 ${run.currentRound} 轮 · Mock`:'—'}</span>;
+    return <span>{run.currentRound? `第 ${run.currentRound} 轮`:'—'}</span>;
   if(column==='cost'&&!custom)
     return <span className="mit-muted" title="真实请求可能产生费用；当前无法取得实际账单，不显示模拟估价。">不可用</span>;
   return <span className="mit-tabular">{formatMetric(column,run.metrics[column as keyof Metrics])}</span>;
 }
-function RunRow({ store,record,id,columns,custom }: {
+function RunRow({ store,record,id,columns,custom,results }: {
   store: Workbench;
   record: Evaluation;
   id: string;
   columns: string[];
   custom: boolean;
+  results: boolean;
 }) {
   const run=useStore(store.evaluations,state => state.runs[id]);
   const selected=useStore(store.workbench,state => state.navigation[state.activeTab]?.runId===id);
@@ -101,6 +101,7 @@ function RunRow({ store,record,id,columns,custom }: {
         <button type="button" className="mit-text-button" onClick={() => store.actions.navigate({ runId: id,artifact: false })}>详情
           <Icon name="chevron" size={12} />
         </button>
+        {results&&record.kind==='fingerprint'&&run.model.a6api&&run.stage==='completed'&&<button type="button" className="mit-text-button mit-retry-button" title="以此指纹结果中的 a6api 渠道创建自定义测试" onClick={() => store.actions.beginCustomFromFingerprint(record.id,id)}>转为自定义</button>}
         {retryable&&<button type="button" className="mit-text-button mit-retry-button" title={retryTitle} disabled={Boolean(fingerprint?.busy)||!settled} onClick={() => store.actions.retryFailedSample(record.id,id)}>重试失败项</button>}
       </div>
     </td>
@@ -155,7 +156,7 @@ export function MonitorTable({ store,record,results=false }: {
         {presentation.columnsOpen&&<div className="mit-column-menu mit-frosted" id={`${store.sessionId}-mit-columns`}>
           {Object.keys(COLUMN_LABELS).filter(id => supportsColumn(id,record)).map(id => <label key={id}>
             <input type="checkbox" checked={presentation.columns.includes(id)} onChange={() => store.actions.toggleColumn(id)} />
-            {columnLabel(id,record.kind==='custom')}
+            {columnLabel(id)}
           </label>)}
           <p className="mit-muted">拖动列分隔线调整宽度，或聚焦后使用左右键。
           </p>
@@ -182,15 +183,15 @@ export function MonitorTable({ store,record,results=false }: {
               <ResizeHandle store={store} column="model" width={presentation.widths.model||224} label="模型" />
             </th>
             {columns.map(id => <th scope="col" key={id} className={id==='match'? 'mit-sticky-match':''}>
-              {columnLabel(id,record.kind==='custom')}
-              <ResizeHandle store={store} column={id} width={presentation.widths[id]||defaultWidth(id)} label={columnLabel(id,record.kind==='custom')} />
+              {columnLabel(id)}
+              <ResizeHandle store={store} column={id} width={presentation.widths[id]||defaultWidth(id)} label={columnLabel(id)} />
             </th>)}
             <th scope="col" className="mit-sticky-actions">操作
             </th>
           </tr>
         </thead>
         <tbody>
-          {ids.map(id => <RunRow store={store} record={record} key={id} id={id} columns={columns} custom={record.kind==='custom'} />)}
+          {ids.map(id => <RunRow store={store} record={record} key={id} id={id} columns={columns} custom={record.kind==='custom'} results={results} />)}
         </tbody>
       </table>
       {!ids.length&&<Empty title={results? '还没有可展示的结果':'没有匹配的模型'}>

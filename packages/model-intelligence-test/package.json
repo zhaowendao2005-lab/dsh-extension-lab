@@ -1,6 +1,6 @@
 {
   "name": "model-intelligence-test",
-  "version": "3.0.5",
+  "version": "3.0.6",
   "private": true,
   "description": "a6api 专项指纹测试：令牌槽位采样、请求账单与全局操作 Key 固定/路由管理。",
   "type": "module",
@@ -43,14 +43,16 @@
     "lmfpd-sdk": "0.2.0",
     "pinyin-pro": "3.27.0",
     "zod": "4.4.3",
-    "zustand": "5.0.8"
+    "zustand": "5.0.8",
+    "echarts": "6.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
     "@deepseek-ai/dsh-credentials": ">=0.2.2-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1 <0.3.0-0",
     "@deepseek-ai/dsh-storage-domain": ">=0.2.2-rc.1 <0.3.0-0",
-    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.1 <0.3.0-0"
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-tool-executor-native": ">=0.2.2-rc.1 <0.3.0-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -66,6 +68,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tool-executor-native": {
       "optional": true
     }
   },

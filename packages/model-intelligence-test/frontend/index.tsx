@@ -29,7 +29,7 @@ declare global { interface Window { __ModuleLoader__: {load(module: {id: string;
 const ID = 'model-intelligence-test';
 /** Every Host method the client may call; each response is unwrapped from the Typert envelope. */
 const METHODS = [
- 'catalog', 'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear', 'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customSave',
+ 'catalog', 'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear', 'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen', 'a6CustomFromRecord',
  'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create',
  'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView',
 ] as const satisfies readonly (keyof ModelIntelligenceTransport)[];
@@ -54,7 +54,7 @@ window.__ModuleLoader__.load({id: ID, factory(require) {
    remoteCtx.effect(() => () => { workbench?.dispose(); workbench = undefined; }, `${ID}.stores`);
    remoteCtx.effect(() => remoteCtx.sidebarRightTabs.register({
     id: ID, kind: ID, multiple: false, priority: 'extension', title: () => '模型智能测试',
-    guide: [{id: 'open', order: 35, title: () => '模型智能测试', description: () => 'lm-detector 真实模型指纹 · a6api 渠道测试 · 自定义任务评测（模拟）'}],
+    guide: [{id: 'open', order: 35, title: () => '模型智能测试', description: () => 'lm-detector 真实模型指纹 · a6api 渠道测试 · 自定义 Agent 任务'}],
    }), `${ID}.tab`);
    remoteCtx.effect(() => remoteCtx.slots.inject('sidebar.right.pane.tab', () => remoteCtx.slots.register({
     name: 'sidebar.right.pane.tab', key: ID, inject: () => ({store: shared()}),

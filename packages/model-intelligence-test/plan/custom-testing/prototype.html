@@ -1,0 +1,1333 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>自定义测试 · 交互原型</title>
+<style>
+/* hidden 必须压过 .mit-modal{display:flex}：预览弹层在 .mit-workbench 之外，拿不到容器内的规则。 */
+[hidden]{display:none!important}
+/* 设计令牌取自 frontend/styles.css 的 --mit-* 变量（这里写死为浅色主题的取值）。 */
+.mit-workbench{
+  --mit-bg:#fff;--mit-layer:#f7f8fa;--mit-layer-2:#eceef2;--mit-overlay:#fff;
+  --mit-border:#e3e5ea;--mit-border-strong:#cfd2d9;
+  --mit-text:#1f2329;--mit-muted:#6b7280;
+  --mit-brand:#4d6bfe;--mit-error:#d92d20;--mit-success:#079455;--mit-warn:#dc6803;
+  position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;
+  color:var(--mit-text);background:var(--mit-bg);
+  font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  isolation:isolate}
+.mit-workbench *{box-sizing:border-box}
+.mit-workbench h2,.mit-workbench h3,.mit-workbench h4,.mit-workbench p{margin:0}
+.mit-workbench h2{font-size:16px;font-weight:600}
+.mit-workbench h3{font-size:14px;font-weight:600}
+.mit-workbench h4{font-size:12px;font-weight:600}
+.mit-workbench button,.mit-workbench input,.mit-workbench select,.mit-workbench textarea{font:inherit;color:inherit}
+.mit-workbench button{cursor:pointer;transition:background-color 120ms,border-color 120ms}
+.mit-workbench button:disabled{opacity:.48;cursor:not-allowed}
+.mit-workbench :focus-visible{outline:2px solid var(--mit-brand);outline-offset:2px}
+.mit-workbench input:not([type=checkbox]):not([type=radio]),.mit-workbench select,.mit-workbench textarea{
+  border:1px solid var(--mit-border);background:var(--mit-bg);border-radius:4px;padding:7px 9px;min-width:0}
+.mit-workbench input[type=checkbox]{accent-color:var(--mit-brand);margin:0;width:14px;height:14px;flex-shrink:0}
+.mit-workbench input::placeholder,.mit-workbench textarea::placeholder{color:var(--mit-muted)}
+.mit-workbench [hidden]{display:none!important}
+.mit-muted{color:var(--mit-muted)}
+.mit-tabular{font-variant-numeric:tabular-nums}
+.mit-error{color:var(--mit-error)}
+
+/* 按钮 */
+.mit-button,.mit-icon-button,.mit-text-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border-radius:4px;border:1px solid transparent;min-height:30px;background:transparent;white-space:nowrap}
+.mit-button{padding:5px 10px;border-color:var(--mit-border);background:var(--mit-layer)}
+.mit-icon-button{width:30px;padding:5px;flex-shrink:0}
+.mit-text-button{padding:3px 5px;color:var(--mit-muted)}
+.mit-button:hover:not(:disabled),.mit-icon-button:hover:not(:disabled),.mit-text-button:hover:not(:disabled){background:var(--mit-layer-2)}
+.mit-primary{color:var(--mit-brand);border-color:var(--mit-brand);
+  background:color-mix(in srgb,var(--mit-brand) 10%,#fff);font-weight:600}
+.mit-primary:hover:not(:disabled){background:color-mix(in srgb,var(--mit-brand) 17%,#fff)}
+.mit-danger{color:var(--mit-error);border-color:var(--mit-error)}
+
+/* 顶栏 */
+.mit-tabs-header{height:39px;flex-shrink:0;display:flex;align-items:stretch;background:var(--mit-layer);
+  border-bottom:1px solid var(--mit-border)}
+.mit-tabs{display:flex;overflow-x:auto;min-width:0}
+.mit-tab{display:flex;align-items:center;min-width:170px;border-right:1px solid var(--mit-border);position:relative}
+.mit-tab>span{flex:1;padding:9px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mit-tab.is-active{background:var(--mit-bg)}
+.mit-tab.is-active::after{content:'';position:absolute;height:2px;bottom:0;left:0;right:0;background:var(--mit-brand)}
+.mit-header-tail{margin-left:auto;display:flex;align-items:center;gap:6px;padding:0 10px}
+
+.mit-workbench-body{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
+.mit-records-sidebar{width:212px;flex-shrink:0;border-right:1px solid var(--mit-border);display:flex;
+  flex-direction:column;background:var(--mit-layer);min-height:0}
+.mit-sidebar-heading{display:flex;align-items:center;gap:6px;min-height:42px;padding:4px 10px;
+  border-bottom:1px solid var(--mit-border);font-weight:600}
+.mit-record-list{flex:1;min-height:0;overflow:auto;padding:4px}
+.mit-record-list-row{position:relative;display:flex;align-items:center;border-radius:4px;margin-bottom:3px;
+  transition:background-color .12s,box-shadow .12s}
+.mit-record-list-row:hover{background:var(--mit-layer-2);box-shadow:inset 0 0 0 1px var(--mit-border)}
+.mit-record-list-row.is-selected{background:var(--mit-layer-2);box-shadow:inset 2px 0 0 var(--mit-brand)}
+.mit-record-open{min-width:0;flex:1;display:grid;gap:2px;text-align:left;border:0;border-radius:4px;
+  padding:9px 7px;background:none;color:inherit}
+.mit-record-open strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mit-record-open span{font-size:10px;color:var(--mit-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mit-sidebar-footer{padding:8px;border-top:1px solid var(--mit-border);display:grid;gap:6px;font-size:11px}
+
+.mit-main{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column}
+.mit-detail{width:480px;flex-shrink:0;border-left:1px solid var(--mit-border);display:flex;
+  flex-direction:column;min-height:0;background:var(--mit-bg)}
+
+/* 徽标 / 状态 */
+.mit-badge{font-size:10px;line-height:20px;border:1px solid var(--mit-border);padding:0 6px;border-radius:3px;
+  color:var(--mit-muted);white-space:nowrap}
+.mit-badge.is-brand{color:var(--mit-brand);border-color:var(--mit-brand)}
+.mit-badge.is-warn{color:var(--mit-warn);border-color:var(--mit-warn)}
+.mit-status{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:10px;color:var(--mit-muted)}
+.mit-status-dot{width:5px;height:5px;flex-shrink:0;border-radius:50%;background:currentColor}
+.mit-status.running,.mit-status.tooling,.mit-status.validating{color:var(--mit-brand)}
+.mit-status.completed{color:var(--mit-success)}
+.mit-status.failed{color:var(--mit-error)}
+.mit-status.queued{color:var(--mit-muted)}
+.mit-status.cancelled{color:var(--mit-muted)}
+.mit-status.validating{color:var(--mit-warn)}
+
+/* 草稿 */
+.mit-draft{padding:20px 24px 40px;display:grid;gap:18px;max-width:940px}
+.mit-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.mit-title-row p{margin-top:3px}
+.mit-field{display:grid;gap:6px;font-weight:500}
+.mit-field input:not([type=radio]):not([type=checkbox]),.mit-field select{font-weight:400;width:100%}
+.mit-kind-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+.mit-kind{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--mit-border);border-radius:5px;
+  padding:12px;cursor:pointer}
+.mit-kind input{margin-top:3px}
+.mit-kind strong{font-weight:500;display:flex;align-items:center;gap:6px}
+.mit-kind small{display:block;margin-top:4px;color:var(--mit-muted);font-size:11px;line-height:1.6}
+.mit-kind.is-selected{border-color:var(--mit-brand);background:color-mix(in srgb,var(--mit-brand) 5%,#fff)}
+.mit-info{padding:10px 12px;background:var(--mit-layer);border:1px solid var(--mit-border);border-radius:4px;
+  color:var(--mit-muted);line-height:1.7}
+.mit-info strong{color:var(--mit-text)}
+
+/* 模型选择 */
+.mit-selected-models{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;min-height:44px;
+  border:1px solid var(--mit-border);background:var(--mit-bg);position:relative}
+.mit-model-tag{display:flex;align-items:center;max-width:100%;gap:5px;border:1px solid var(--mit-border);
+  background:var(--mit-layer-2);padding:4px 6px;border-radius:3px}
+.mit-model-tag em{font-style:normal;font-size:10px;color:var(--mit-muted)}
+.mit-tag-remove{border:0;padding:2px;background:none;color:var(--mit-muted);line-height:1}
+.mit-picker-popover{position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:8;
+  border:1px solid var(--mit-border-strong);border-radius:8px;overflow:hidden;background:var(--mit-overlay);
+  box-shadow:0 10px 24px rgba(16,24,40,.10)}
+.mit-search{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid var(--mit-border);
+  color:var(--mit-muted)}
+.mit-search input{border:0!important;padding:2px 0!important;width:100%;background:transparent!important}
+.mit-picker-options{max-height:260px;overflow:auto;padding:10px;display:grid;gap:12px}
+.mit-model-group h4{color:var(--mit-muted);margin-bottom:6px;font-size:11px}
+.mit-model-option{display:flex;align-items:center;gap:8px;padding:6px;border-radius:4px;cursor:pointer}
+.mit-model-option:hover{background:var(--mit-layer-2)}
+.mit-model-option span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* prompt 工作区 */
+.mit-prompt-workspace{display:grid;grid-template-columns:190px 1fr;gap:0;border:1px solid var(--mit-border);
+  border-radius:5px;overflow:hidden;min-height:280px}
+.mit-presets{background:var(--mit-layer);border-right:1px solid var(--mit-border);display:flex;flex-direction:column}
+.mit-section-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 9px;
+  border-bottom:1px solid var(--mit-border);font-weight:500}
+.mit-preset-list{display:grid;gap:2px;padding:6px;overflow:auto}
+.mit-preset-row{display:flex;align-items:center;gap:4px;border-radius:4px;padding:2px}
+.mit-preset-row.is-selected{background:var(--mit-layer-2);box-shadow:inset 2px 0 0 var(--mit-brand)}
+.mit-preset-name{flex:1;min-width:0;text-align:left;border:0;background:none;padding:6px;border-radius:4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mit-preset-actions{display:flex;gap:2px;opacity:0;transition:opacity .12s}
+.mit-preset-row:hover .mit-preset-actions,.mit-preset-row.is-selected .mit-preset-actions{opacity:1}
+.mit-preset-note{padding:8px 9px;border-top:1px solid var(--mit-border);font-size:10px;color:var(--mit-muted)}
+.mit-editor{display:flex;flex-direction:column;min-width:0}
+.mit-prompt-input{flex:1;border:0!important;border-radius:0!important;resize:vertical;min-height:170px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.7;padding:12px!important}
+.mit-fixed-footer{border-top:1px solid var(--mit-border);background:var(--mit-layer);padding:9px 12px}
+.mit-fixed-footer pre{margin:6px 0 0;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;
+  color:var(--mit-muted);white-space:pre-wrap;line-height:1.7}
+
+/* 运行参数 / 输出 */
+.mit-params{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.mit-stepper{display:flex;align-items:center;gap:0;border:1px solid var(--mit-border);border-radius:4px;
+  width:max-content;background:var(--mit-bg)}
+.mit-stepper button{width:28px;height:30px;border:0;background:none;color:var(--mit-muted)}
+.mit-stepper button:hover{background:var(--mit-layer-2)}
+.mit-stepper output{min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
+.mit-hint{font-size:10.5px;color:var(--mit-muted);line-height:1.6}
+.mit-snapshot{border:1px solid var(--mit-border);border-radius:5px;background:var(--mit-layer)}
+.mit-snapshot dl{display:grid;grid-template-columns:120px 1fr;gap:7px 12px;margin:0;padding:12px}
+.mit-snapshot dt{color:var(--mit-muted)}
+.mit-snapshot dd{margin:0;overflow-wrap:anywhere}
+.mit-draft-actions{display:flex;align-items:center;gap:8px}
+.mit-draft-actions .mit-muted{margin-left:auto}
+
+/* 监控 */
+.mit-monitor-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  padding:16px 20px 12px;border-bottom:1px solid var(--mit-border)}
+.mit-monitor-stats{display:flex;gap:18px;flex-wrap:wrap;padding:10px 20px;border-bottom:1px solid var(--mit-border);
+  background:var(--mit-layer)}
+.mit-stat{display:grid;gap:2px}
+.mit-stat strong{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.mit-stat span{font-size:10.5px;color:var(--mit-muted)}
+.mit-table-scroll{width:100%;overflow:auto;flex:1}
+.mit-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1120px;font-size:11px}
+.mit-table th,.mit-table td{padding:10px 12px;border-bottom:1px solid var(--mit-border);text-align:left;
+  vertical-align:middle;overflow-wrap:anywhere}
+.mit-table thead th{position:sticky;top:0;z-index:2;background:var(--mit-layer);font-weight:500;
+  color:var(--mit-muted);padding-top:8px;padding-bottom:8px}
+.mit-table tbody tr{cursor:pointer}
+.mit-table tbody tr:hover,.mit-table tbody tr.is-selected{background:var(--mit-layer)}
+.mit-run-link{display:grid;gap:3px;border:0;background:none;padding:0;text-align:left}
+.mit-run-link strong{font-weight:500}
+.mit-run-link span{font-size:10px;color:var(--mit-muted)}
+.mit-open-output{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--mit-border);
+  background:var(--mit-layer);border-radius:4px;padding:2px 6px;font-size:10px;min-height:22px}
+.mit-open-output:hover{border-color:var(--mit-border-strong)}
+.mit-open-output.is-disabled{color:var(--mit-muted);cursor:not-allowed;border-style:dashed}
+.mit-table th:first-child,.mit-table td:first-child{position:sticky;left:0;z-index:3;background:var(--mit-bg);
+  box-shadow:inset -1px 0 0 var(--mit-border)}
+.mit-table thead th:first-child{z-index:4;background:var(--mit-layer)}
+.mit-table tbody tr:hover td:first-child,.mit-table tbody tr.is-selected td:first-child{background:var(--mit-layer)}
+
+/* 详情 */
+.mit-detail-head{padding:12px 14px;border-bottom:1px solid var(--mit-border);display:grid;gap:6px}
+.mit-detail-head .mit-title-row{align-items:center}
+.mit-subtabs{display:flex;gap:2px;padding:0 8px;border-bottom:1px solid var(--mit-border);background:var(--mit-layer);
+  overflow-x:auto}
+.mit-subtab{border:0;background:none;padding:9px 10px;color:var(--mit-muted);white-space:nowrap;position:relative;
+  border-radius:3px 3px 0 0}
+.mit-subtab:hover{background:var(--mit-layer-2)}
+.mit-subtab.is-active{color:var(--mit-text);font-weight:500}
+.mit-subtab.is-active::after{content:'';position:absolute;left:10px;right:10px;bottom:-1px;height:2px;
+  background:var(--mit-brand)}
+.mit-detail-body{flex:1;min-height:0;overflow:auto;padding:12px 14px 24px;display:grid;gap:12px;align-content:start}
+.mit-detail-foot{border-top:1px solid var(--mit-border);padding:8px 14px;font-size:10.5px;color:var(--mit-muted);
+  display:flex;gap:8px;align-items:center;justify-content:space-between}
+
+/* chat */
+.mit-timeline{display:grid;gap:10px}
+.mit-msg{border:1px solid var(--mit-border);border-radius:5px;padding:8px 10px;display:grid;gap:4px}
+.mit-msg-role{font-size:10px;color:var(--mit-muted);display:flex;gap:6px;align-items:center}
+.mit-msg pre{margin:0;white-space:pre-wrap;font-family:inherit;font-size:11.5px;line-height:1.7}
+.mit-tool{display:flex;gap:8px;align-items:flex-start;border-left:2px solid var(--mit-border);padding:5px 0 5px 9px}
+.mit-tool code{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--mit-brand)}
+.mit-tool span{font-size:10.5px;color:var(--mit-muted);overflow-wrap:anywhere}
+
+/* 文件 */
+.mit-file-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px}
+.mit-file-row:hover{background:var(--mit-layer-2)}
+.mit-file-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.mit-file-row small{color:var(--mit-muted);font-size:10px;white-space:nowrap}
+
+/* 指标 */
+.mit-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.mit-tile{border:1px solid var(--mit-border);border-radius:5px;padding:9px 10px;display:grid;gap:2px;
+  background:var(--mit-layer)}
+.mit-tile strong{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.mit-tile span{font-size:10px;color:var(--mit-muted)}
+.mit-tile em{font-style:normal;font-size:10px;color:var(--mit-muted)}
+.mit-chart{border:1px solid var(--mit-border);border-radius:5px;padding:10px}
+.mit-chart-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px}
+.mit-chart-head h4{font-weight:500}
+.mit-legend{display:flex;gap:10px;font-size:10px;color:var(--mit-muted)}
+.mit-legend i{display:inline-block;width:8px;height:2px;margin-right:4px;vertical-align:middle}
+.mit-chart svg{display:block;width:100%;height:auto;overflow:visible}
+.mit-chart-tip{font-size:10px;color:var(--mit-muted);min-height:14px;font-variant-numeric:tabular-nums}
+.mit-req-table{width:100%;border-collapse:separate;border-spacing:0;font-size:10.5px}
+.mit-req-table th,.mit-req-table td{padding:6px 8px;border-bottom:1px solid var(--mit-border);text-align:right;
+  white-space:nowrap}
+.mit-req-table th:first-child,.mit-req-table td:first-child{text-align:left}
+.mit-req-table thead th{color:var(--mit-muted);font-weight:500}
+
+/* 账单 */
+.mit-amount{font-variant-numeric:tabular-nums;font-weight:600}
+.mit-settle{font-size:9.5px;border:1px solid var(--mit-border);border-radius:3px;padding:0 5px;line-height:16px;
+  display:inline-block;color:var(--mit-muted)}
+.mit-settle.ok{color:var(--mit-success);border-color:color-mix(in srgb,var(--mit-success) 40%,#fff)}
+.mit-settle.warn{color:var(--mit-warn);border-color:color-mix(in srgb,var(--mit-warn) 40%,#fff)}
+.mit-settle.bad{color:var(--mit-error);border-color:color-mix(in srgb,var(--mit-error) 40%,#fff)}
+
+/* 权限 */
+.mit-perm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mit-perm{border:1px solid var(--mit-border);border-radius:5px;padding:10px}
+.mit-perm h4{margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.mit-perm ul{margin:0;padding-left:16px;display:grid;gap:3px;font-family:ui-monospace,Menlo,monospace;font-size:10.5px}
+.mit-perm.allowed h4{color:var(--mit-success)}
+.mit-perm.denied h4{color:var(--mit-error)}
+.mit-kv{display:grid;grid-template-columns:88px 1fr;gap:6px 10px}
+.mit-kv dt{color:var(--mit-muted)}
+.mit-kv dd{margin:0;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;overflow-wrap:anywhere}
+
+/* 预览弹层 */
+.mit-modal{position:fixed;inset:0;background:rgba(16,24,40,.42);display:flex;align-items:center;
+  justify-content:center;z-index:20;padding:24px}
+.mit-modal-card{background:#fff;border-radius:8px;box-shadow:0 20px 40px rgba(16,24,40,.2);
+  width:min(760px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden}
+.mit-modal-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--mit-border)}
+.mit-modal-head .mit-muted{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px}
+.mit-preview{background:#0f1216;display:flex;align-items:center;justify-content:center;padding:0;
+  aspect-ratio:16/9}
+.mit-preview canvas{display:block;width:100%;height:100%}
+.mit-modal-foot{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--mit-border)}
+.mit-row-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mit-modal-foot .mit-muted{margin-left:auto;font-size:10.5px}
+</style>
+</head>
+<body>
+<div class="mit-workbench">
+  <div class="mit-tabs-header">
+    <div class="mit-tabs">
+      <div class="mit-tab is-active"><span>模型智能测试 · 工作台</span></div>
+    </div>
+    <div class="mit-header-tail">
+      <span class="mit-badge">交互原型</span>
+      <span class="mit-badge">仅演示交互，不发请求</span>
+    </div>
+  </div>
+
+  <div class="mit-workbench-body">
+    <aside class="mit-records-sidebar">
+      <div class="mit-sidebar-heading">测试记录<span class="mit-muted" style="margin-left:auto;font-weight:400">4</span></div>
+      <div class="mit-record-list" id="recordList"></div>
+      <div class="mit-sidebar-footer">
+        <button class="mit-button mit-primary" id="newDraft" style="width:100%">＋ 新建测试</button>
+        <span class="mit-muted">自定义任务当前仍为 Mock 适配器，正式实现将替换为真实 Host 执行。</span>
+      </div>
+    </aside>
+
+    <main class="mit-main" id="main"></main>
+    <section class="mit-detail" id="detail" hidden></section>
+  </div>
+
+  <div class="mit-modal" id="preview" hidden>
+    <div class="mit-modal-card" role="dialog" aria-modal="true" aria-label="输出预览">
+      <div class="mit-modal-head">
+        <strong>输出预览</strong>
+        <span class="mit-badge is-brand">隔离预览</span>
+        <span class="mit-muted" id="previewPath">output/totoro.html</span>
+        <button class="mit-icon-button" id="previewClose" aria-label="关闭预览">✕</button>
+      </div>
+      <div class="mit-preview"><canvas id="totoro" width="960" height="540"></canvas></div>
+      <div class="mit-modal-foot">
+        <button class="mit-button" id="previewVscode">在 VS Code 中打开</button>
+        <button class="mit-button" id="previewCopy">复制沙箱路径</button>
+        <span class="mit-muted">无同源权限 iframe · 网络/顶层导航/父页面访问被阻断</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------- 演示数据 ---------------- */
+  const PRESETS = [
+    { id: 'totoro', name: '龙猫测试', note: 'HTML + Canvas 动态壁纸' },
+    { id: 'landing', name: '落地页还原', note: '单页 HTML + CSS' },
+    { id: 'chart', name: '数据可视化', note: 'Canvas 图表' }
+  ];
+
+  const MODELS = [
+    { group: 'a6api · a6api-gpt', items: [
+      { id: 'a6:gpt-6.1-sol', name: 'gpt-6.1-sol', provider: 'a6api-gpt', via: 'a6api' },
+      { id: 'a6:gpt-6-astra', name: 'gpt-6-astra', provider: 'a6api-gpt', via: 'a6api' }
+    ]},
+    { group: 'DSH · anthropic', items: [
+      { id: 'dsh:claude-sonnet-4.5', name: 'claude-sonnet-4.5', provider: 'anthropic', via: 'dsh' },
+      { id: 'dsh:claude-opus-4.1', name: 'claude-opus-4.1', provider: 'anthropic', via: 'dsh' }
+    ]},
+    { group: 'DSH · deepseek', items: [
+      { id: 'dsh:deepseek-v4', name: 'deepseek-v4', provider: 'deepseek', via: 'dsh' },
+      { id: 'dsh:deepseek-v3.2', name: 'deepseek-v3.2', provider: 'deepseek', via: 'dsh' }
+    ]}
+  ];
+
+  const RECORDS = [
+    { id: 'rec-fp', name: '指纹测试 · 3 模型', meta: '16:10 · 已完成', view: 'monitor', kind: 'fingerprint' },
+    { id: 'rec-custom', name: '自定义测试 · 龙猫壁纸', meta: '运行中 · 并发 2/3', view: 'monitor', kind: 'custom' },
+    { id: 'rec-a6', name: 'a6api 专项 · 5 渠道', meta: '昨天 · 已完成', view: 'monitor', kind: 'a6api' },
+    { id: 'rec-old', name: '自定义测试 · 落地页', meta: '昨天 · 已取消', view: 'monitor', kind: 'custom' }
+  ];
+
+  const RUNS = {
+    'rec-custom': [
+      { id: 'r1', name: 'gpt-6.1-sol', provider: 'a6api-gpt', via: 'a6api', token: '测试-j73HOM',
+        phase: 'completed', reqs: 6, input: 18420, output: 3160, ttft: 820, gen: 78.4, e2e: 52.1,
+        cache: 42, cost: '¥0.83', out: 'output/totoro.html', outState: 'ready' },
+      { id: 'r2', name: 'claude-sonnet-4.5', provider: 'anthropic', via: 'dsh',
+        phase: 'running', reqs: 3, input: 9210, output: 1420, ttft: 1240, gen: 52.6, e2e: 31.4,
+        cache: 18, cost: '¥0.41', out: 'output/totoro.html', outState: 'writing' },
+      { id: 'r3', name: 'deepseek-v4', provider: 'deepseek', via: 'dsh',
+        phase: 'tooling', reqs: 2, input: 4300, output: 610, ttft: 990, gen: 63.2, e2e: 38.7,
+        cache: 0, cost: '¥0.12', out: '—', outState: 'none' },
+      { id: 'r4', name: 'gpt-6-astra', provider: 'a6api-gpt', via: 'a6api', token: '测试-IM2REg',
+        phase: 'failed', reqs: 1, input: 2210, output: 0, ttft: null, gen: null, e2e: null,
+        cache: null, cost: '未知', out: '—', outState: 'none', error: '固定未读回 route_effective，未发送数据面请求' }
+    ],
+    'rec-fp': [
+      { id: 'f1', name: 'gpt-6.1-sol', provider: 'a6api-gpt', via: 'a6api', phase: 'completed',
+        reqs: 3, input: 2120, output: 486, ttft: 640, gen: 84.2, e2e: 61.5, cache: 34, cost: '¥0.06' },
+      { id: 'f2', name: 'claude-sonnet-4.5', provider: 'anthropic', via: 'dsh', phase: 'completed',
+        reqs: 3, input: 2120, output: 512, ttft: 1010, gen: 55.1, e2e: 36.8, cache: 12, cost: '¥0.09' },
+      { id: 'f3', name: 'deepseek-v4', provider: 'deepseek', via: 'dsh', phase: 'completed',
+        reqs: 3, input: 2120, output: 468, ttft: 720, gen: 70.4, e2e: 44.2, cache: 0, cost: '¥0.03' }
+    ],
+    'rec-a6': [
+      { id: 'a1', name: 'gpt-6.1-sol', provider: 'a6api-gpt', via: 'a6api', token: '测试-j73HOM',
+        phase: 'completed', reqs: 3, input: 2120, output: 501, ttft: 700, gen: 80.1, e2e: 58.4,
+        cache: 46, cost: '¥0.07', price: '¥3.2 / M', cache24: '46%' },
+      { id: 'a2', name: 'gpt-6-astra', provider: 'a6api-gpt', via: 'a6api', token: '测试-IM2REg',
+        phase: 'completed', reqs: 3, input: 2120, output: 488, ttft: 860, gen: 72.6, e2e: 47.9,
+        cache: '未知', cost: '¥0.05', price: '¥2.6 / M', cache24: '未见状态' }
+    ],
+    'rec-old': [
+      { id: 'o1', name: 'deepseek-v3.2', provider: 'deepseek', via: 'dsh', phase: 'cancelled',
+        reqs: 1, input: 860, output: 120, ttft: 1100, gen: 41.2, e2e: 22.4, cache: 0, cost: '¥0.01' }
+    ]
+  };
+
+  /* 每次请求的明细（伪随机但稳定）。 */
+  function makeRequests(seed, count, base) {
+    let x = seed;
+    const rnd = () => { x = (x * 1103515245 + 12345) % 2147483648; return x / 2147483648; };
+    const rows = [];
+    for (let i = 0; i < count; i++) {
+      const outTokens = Math.round((base.out || 300) * (0.6 + rnd() * 0.9));
+      const ttft = Math.round((base.ttft || 800) * (0.7 + rnd() * 0.7));
+      const genSeconds = outTokens / ((base.gen || 60) * (0.75 + rnd() * 0.55));
+      const totalSeconds = genSeconds + ttft / 1000;
+      const baseRatio = base.cache === null ? null : (base.cache > 1 ? base.cache / 100 : base.cache);
+      const cacheRate = baseRatio === null ? null : Math.max(0, Math.min(0.95, baseRatio + (rnd() - 0.5) * 0.3));
+      rows.push({
+        index: i + 1,
+        input: Math.round((base.input || 2000) * (0.8 + rnd() * 0.5)),
+        outTokens,
+        ttft,
+        genSeconds: +genSeconds.toFixed(2),
+        totalSeconds: +totalSeconds.toFixed(2),
+        genRate: +(outTokens / genSeconds).toFixed(1),
+        e2eRate: +(outTokens / totalSeconds).toFixed(1),
+        cacheRate: cacheRate === null ? null : +(cacheRate * 100).toFixed(0),
+        requestId: '2026' + String(11021500 + Math.round(rnd() * 9000)) + String(1000 + i).slice(0, 4) + 'x' + (i + 3),
+        settle: i === count - 1 && base.pending ? 'pending' : (i === 1 && base.ambiguous ? 'ambiguous' : 'settled'),
+        cost: +(0.008 + rnd() * 0.05).toFixed(3)
+      });
+    }
+    return rows;
+  }
+
+  const REQUEST_CACHE = {};
+  function requestsOf(run) {
+    if (!REQUEST_CACHE[run.id]) {
+      const seed = run.id.split('').reduce((a, c) => a + c.charCodeAt(0), 7) * 97;
+      REQUEST_CACHE[run.id] = makeRequests(seed, Math.max(run.reqs, 1), {
+        out: run.output ? Math.max(120, Math.round(run.output / Math.max(run.reqs, 1))) : 240,
+        ttft: run.ttft || 800,
+        gen: run.gen || 60,
+        input: run.input ? Math.round(run.input / Math.max(run.reqs, 1)) : 1800,
+        cache: run.cache,
+        pending: run.phase === 'running' || run.phase === 'tooling',
+        ambiguous: run.via === 'a6api'
+      });
+    }
+    return REQUEST_CACHE[run.id];
+  }
+
+  const PHASE_LABEL = {
+    queued: '排队中', preparing: '准备沙箱', running: '会话运行中', tooling: '工具调用中',
+    validating: '校验输出', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断'
+  };
+
+  /* ---------------- 状态 ---------------- */
+  const state = {
+    recordId: 'rec-custom',
+    view: 'monitor',
+    draft: {
+      name: '', kind: 'custom', preset: 'totoro',
+      body: '用 HTML + Canvas 画一张动态龙猫壁纸：夜间森林背景，龙猫缓慢呼吸、耳朵随雨滴轻动，雨丝循环下落。所有绘制在单个 HTML 文件内完成。',
+      selected: ['dsh:claude-sonnet-4.5', 'a6:gpt-6.1-sol'],
+      concurrency: 3, timeout: 180, output: 'output/totoro.html',
+      fromUserscript: false
+    },
+    selectedRunId: 'r1',
+    detailOpen: true,
+    detailTab: 'chat',
+    pickerOpen: false,
+    pickerQuery: ''
+  };
+
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const el = (tag, cls, html) => {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (html !== undefined) node.innerHTML = html;
+    return node;
+  };
+
+  function modelById(id) {
+    for (const g of MODELS) {
+      const hit = g.items.find((item) => item.id === id);
+      if (hit) return hit;
+    }
+    return { id, name: id, provider: '', via: 'dsh' };
+  }
+
+  function currentRun() {
+    const runs = RUNS[state.recordId] || [];
+    return runs.find((run) => run.id === state.selectedRunId) || runs[0];
+  }
+
+  /* ---------------- 侧栏 ---------------- */
+  function renderSidebar() {
+    const list = $('#recordList');
+    list.innerHTML = '';
+    RECORDS.forEach((record) => {
+      const row = el('div', 'mit-record-list-row' + (record.id === state.recordId && state.view === 'monitor' ? ' is-selected' : ''));
+      row.innerHTML =
+        '<button class="mit-record-open"><strong></strong><span></span></button>';
+      $('strong', row).textContent = record.name;
+      $('span', row).textContent = record.meta;
+      row.addEventListener('click', () => {
+        state.recordId = record.id;
+        state.view = 'monitor';
+        state.selectedRunId = (RUNS[record.id] || [])[0]?.id;
+        state.detailTab = 'chat';
+        state.detailOpen = true;
+        render();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  /* ---------------- 草稿 ---------------- */
+  function renderDraft() {
+    const draft = state.draft;
+    const main = $('#main');
+    main.innerHTML = '';
+
+    const wrap = el('div', 'mit-draft');
+
+    /* 标题 */
+    const title = el('div', 'mit-title-row');
+    title.innerHTML =
+      '<div><h2>新建模型测试</h2><p class="mit-muted">配置一次，横向观察多个模型。指纹使用真实请求；自定义任务使用真实会话与独立沙箱。</p></div>' +
+      '<span class="mit-badge ' + (draft.kind === 'fingerprint' ? 'is-brand' : 'is-warn') + '">' +
+      (draft.kind === 'fingerprint' ? '真实请求' : '会话任务') + '</span>';
+    wrap.appendChild(title);
+
+    if (draft.fromUserscript) {
+      const banner = el('div', 'mit-info');
+      banner.innerHTML =
+        '<strong>已接收油猴选择。</strong>2 个测试令牌 · 2 个渠道模型 · 快照时间 16:22。' +
+        '网页只负责发出这一次选择，执行由 Host 完成，不需要网页保持打开。' +
+        '<div style="margin-top:6px"><button class="mit-text-button" id="clearUserscript">清除并改为手动选择</button></div>';
+      wrap.appendChild(banner);
+    }
+
+    /* 名称 */
+    const name = el('label', 'mit-field');
+    name.innerHTML = '测试名称<input placeholder="可选，例如：龙猫壁纸对照" maxlength="120">';
+    $('input', name).value = draft.name;
+    $('input', name).addEventListener('input', (event) => { draft.name = event.target.value; });
+    wrap.appendChild(name);
+
+    /* 类型 */
+    const kindField = el('fieldset', 'mit-field');
+    kindField.style.border = '0';
+    kindField.style.padding = '0';
+    kindField.style.margin = '0';
+    kindField.innerHTML = '<legend style="padding:0 0 6px;font-weight:500">测试类型</legend>';
+    const kinds = el('div', 'mit-kind-options');
+    [
+      { id: 'fingerprint', title: '指纹测试', hint: '每个模型 3 次真实付费请求，展示官方排名与实测指标。' },
+      { id: 'custom', title: '自定义 Agent 测试', hint: '用预设提示词驱动完整会话，观察步骤、文件与输出成果。' }
+    ].forEach((item) => {
+      const label = el('label', 'mit-kind' + (draft.kind === item.id ? ' is-selected' : ''));
+      label.innerHTML =
+        '<input type="radio" name="mit-kind" ' + (draft.kind === item.id ? 'checked' : '') + '>' +
+        '<span><strong>' + item.title + '</strong><small>' + item.hint + '</small></span>';
+      $('input', label).addEventListener('change', () => { draft.kind = item.id; renderDraft(); });
+      kinds.appendChild(label);
+    });
+    kindField.appendChild(kinds);
+    wrap.appendChild(kindField);
+
+    /* 模型选择 */
+    const picker = el('div', 'mit-field');
+    picker.style.position = 'relative';
+    picker.innerHTML = '<div class="mit-title-row" style="align-items:center"><span>待测模型</span>' +
+      '<span class="mit-muted" style="font-weight:400">已选 ' + draft.selected.length + ' 个</span></div>';
+    const chips = el('div', 'mit-selected-models');
+    if (!draft.selected.length) {
+      chips.innerHTML = '<span class="mit-muted">尚未选择模型</span>';
+    }
+    draft.selected.forEach((id) => {
+      const model = modelById(id);
+      const tag = el('div', 'mit-model-tag');
+      tag.innerHTML = '<span>' + model.name + '</span><em>' + model.provider + '</em>' +
+        '<button class="mit-tag-remove" aria-label="移除 ' + model.name + '">✕</button>';
+      $('button', tag).addEventListener('click', (event) => {
+        event.stopPropagation();
+        draft.selected = draft.selected.filter((item) => item !== id);
+        renderDraft();
+      });
+      chips.appendChild(tag);
+    });
+    const toggle = el('button', 'mit-text-button', '＋ 添加模型');
+    toggle.type = 'button';
+    toggle.style.marginLeft = 'auto';
+    toggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      state.pickerOpen = !state.pickerOpen;
+      renderDraft();
+    });
+    chips.appendChild(toggle);
+    picker.appendChild(chips);
+
+    if (state.pickerOpen) {
+      const popover = el('div', 'mit-picker-popover');
+      const search = el('div', 'mit-search');
+      search.innerHTML = '<span aria-hidden="true">⌕</span><input placeholder="搜索 provider 或模型">';
+      const input = $('input', search);
+      input.value = state.pickerQuery;
+      input.addEventListener('input', () => { state.pickerQuery = input.value; renderDraft(); });
+      input.addEventListener('click', (event) => event.stopPropagation());
+      popover.appendChild(search);
+
+      const options = el('div', 'mit-picker-options');
+      const query = state.pickerQuery.trim().toLowerCase();
+      MODELS.forEach((group) => {
+        const items = group.items.filter((item) =>
+          !query || item.name.toLowerCase().includes(query) || item.provider.toLowerCase().includes(query));
+        if (!items.length) return;
+        const box = el('div', 'mit-model-group');
+        box.innerHTML = '<h4>' + group.group + '</h4>';
+        items.forEach((item) => {
+          const checked = draft.selected.includes(item.id);
+          const option = el('label', 'mit-model-option');
+          option.innerHTML = '<input type="checkbox" ' + (checked ? 'checked' : '') + '><span>' + item.name + '</span>' +
+            '<em class="mit-muted" style="font-style:normal;font-size:10px">' + item.via + '</em>';
+          $('input', option).addEventListener('change', () => {
+            draft.selected = checked
+              ? draft.selected.filter((id) => id !== item.id)
+              : draft.selected.concat(item.id);
+            renderDraft();
+          });
+          box.appendChild(option);
+        });
+        options.appendChild(box);
+      });
+      popover.appendChild(options);
+      popover.addEventListener('click', (event) => event.stopPropagation());
+      picker.appendChild(popover);
+    }
+    wrap.appendChild(picker);
+
+    /* 预设 + 提示词（仅在自定义类型下） */
+    if (draft.kind === 'custom') {
+      const workspace = el('div', 'mit-prompt-workspace');
+      const presets = el('aside', 'mit-presets');
+      presets.innerHTML = '<div class="mit-section-heading"><span>提示词预设</span>' +
+        '<button class="mit-icon-button" aria-label="新建预设">＋</button></div>';
+      const presetList = el('div', 'mit-preset-list');
+      PRESETS.forEach((preset) => {
+        const row = el('div', 'mit-preset-row' + (draft.preset === preset.id ? ' is-selected' : ''));
+        row.innerHTML = '<button class="mit-preset-name">' + preset.name + '</button>' +
+          '<div class="mit-preset-actions"><button class="mit-text-button">改名</button></div>';
+        $('.mit-preset-name', row).addEventListener('click', () => { draft.preset = preset.id; renderDraft(); });
+        presetList.appendChild(row);
+      });
+      presets.appendChild(presetList);
+      presets.appendChild(el('div', 'mit-preset-note', '「龙猫测试」是本模块的默认预设，输出 HTML 的限制只属于该预设。'));
+
+      const editor = el('div', 'mit-editor');
+      editor.innerHTML =
+        '<div class="mit-section-heading"><span>任务提示词</span><button class="mit-text-button">保存预设</button></div>' +
+        '<textarea class="mit-prompt-input" spellcheck="false"></textarea>' +
+        '<div class="mit-fixed-footer"><div class="mit-title-row"><strong>固定交付约束</strong>' +
+        '<span class="mit-muted">自动附加 · 只读</span></div>' +
+        '<pre>1. 只写入当前沙箱目录，不访问网络、工作区、其他模型目录或凭据。\n' +
+        '2. 在沙箱内创建文件后，通过输出声明登记相对路径。\n' +
+        '3. 完成后报告文件路径、大小、最后修改时间和自检结果。</pre></div>';
+      const textarea = $('textarea', editor);
+      textarea.value = draft.body;
+      textarea.addEventListener('input', () => { draft.body = textarea.value; });
+      workspace.appendChild(presets);
+      workspace.appendChild(editor);
+      wrap.appendChild(workspace);
+    }
+
+    /* 运行参数 */
+    const params = el('div', 'mit-params');
+    const concurrency = el('div', 'mit-field');
+    concurrency.innerHTML = '<span>并发数</span>' +
+      '<div class="mit-stepper"><button aria-label="减少">−</button><output>' + draft.concurrency + '</output>' +
+      '<button aria-label="增加">＋</button></div>' +
+      '<span class="mit-hint" id="concurrencyHint"></span>';
+    const stepButtons = concurrency.querySelectorAll('.mit-stepper button');
+    stepButtons[0].addEventListener('click', () => {
+      draft.concurrency = Math.max(1, draft.concurrency - 1); renderDraft();
+    });
+    stepButtons[1].addEventListener('click', () => {
+      draft.concurrency = Math.min(8, draft.concurrency + 1); renderDraft();
+    });
+    params.appendChild(concurrency);
+
+    const timeout = el('div', 'mit-field');
+    timeout.innerHTML = '<span>单模型超时</span><select>' +
+      [90, 180, 300, 600].map((value) =>
+        '<option value="' + value + '"' + (draft.timeout === value ? ' selected' : '') + '>' + value + ' 秒</option>').join('') +
+      '</select><span class="mit-hint">只影响尚未领取的模型。</span>';
+    $('select', timeout).addEventListener('change', (event) => { draft.timeout = Number(event.target.value); });
+    params.appendChild(timeout);
+
+    const output = el('div', 'mit-field');
+    output.innerHTML = '<span>输出声明</span><input readonly value="' + draft.output + '">' +
+      '<span class="mit-hint">预设约束 HTML；启动后文件初始为未声明，由会话登记后再校验。</span>';
+    params.appendChild(output);
+    wrap.appendChild(params);
+
+    /* 并发提示：a6api 双约束 */
+    const hasA6 = draft.selected.some((id) => id.startsWith('a6:'));
+    const hint = concurrency.querySelector('#concurrencyHint');
+    if (hasA6) {
+      const effective = Math.min(draft.concurrency, 2);
+      hint.innerHTML = '已选 a6api 模型：受测试令牌数限制，有效并发 <strong>' + effective + '</strong>';
+    } else {
+      hint.textContent = '仅普通模型：受 Host 全局请求池裁剪。';
+    }
+
+    /* 快照 */
+    const snapshot = el('div', 'mit-snapshot');
+    snapshot.innerHTML =
+      '<dl><dt>目标</dt><dd>' + draft.selected.length + ' 个模型：' +
+      (draft.selected.map((id) => modelById(id).name).join('、') || '未选择') + '</dd>' +
+      '<dt>预设</dt><dd>' + (PRESETS.find((p) => p.id === draft.preset)?.name || '—') + ' · v1</dd>' +
+      '<dt>并发 / 超时</dt><dd>' + draft.concurrency + ' 个模型 / ' + draft.timeout + ' 秒</dd>' +
+      '<dt>输出</dt><dd>' + draft.output + '（预设约束）</dd>' +
+      '<dt>隔离</dt><dd>独立沙箱 · 无网络 · 无工作区 · 无凭据</dd></dl>';
+    wrap.appendChild(snapshot);
+
+    const actions = el('div', 'mit-draft-actions');
+    actions.innerHTML =
+      '<button class="mit-button mit-primary" id="startTest">开始测试</button>' +
+      '<button class="mit-button" id="simulateUserscript">模拟油猴送入 a6api 选择</button>' +
+      '<span class="mit-muted">启动后目标、预设与并发不可静默改变。</span>';
+    $('.mit-primary', actions).disabled = !draft.selected.length;
+    wrap.appendChild(actions);
+
+    main.appendChild(wrap);
+
+    $('#startTest').addEventListener('click', () => {
+      state.view = 'monitor';
+      state.recordId = 'rec-custom';
+      state.selectedRunId = (RUNS['rec-custom'] || [])[0]?.id;
+      state.detailOpen = true;
+      render();
+    });
+    $('#simulateUserscript').addEventListener('click', () => {
+      draft.fromUserscript = true;
+      draft.selected = ['a6:gpt-6.1-sol', 'a6:gpt-6-astra'];
+      draft.preset = 'totoro';
+      renderDraft();
+    });
+    const clear = $('#clearUserscript');
+    if (clear) clear.addEventListener('click', () => { draft.fromUserscript = false; renderDraft(); });
+
+    /* 点击空白处收起模型选择浮层；浮层内部已 stopPropagation。 */
+    document.body.onclick = () => {
+      if (state.view === 'draft' && state.pickerOpen) { state.pickerOpen = false; renderDraft(); }
+    };
+  }
+
+  /* ---------------- 监控 ---------------- */
+  function renderMonitor() {
+    const main = $('#main');
+    main.innerHTML = '';
+    const record = RECORDS.find((item) => item.id === state.recordId);
+    const runs = RUNS[state.recordId] || [];
+    const done = runs.filter((run) => run.phase === 'completed').length;
+    const running = runs.filter((run) => ['running', 'tooling', 'validating', 'preparing'].includes(run.phase)).length;
+    const failed = runs.filter((run) => run.phase === 'failed').length;
+    const effective = record.kind === 'custom' ? 3 : runs.length;
+
+    const head = el('div', 'mit-monitor-head');
+    head.innerHTML =
+      '<div><h2>' + record.name + '</h2>' +
+      '<p class="mit-muted">自定义 Agent 测试 · 龙猫测试 · 2026-11-16 16:22 启动 · 已运行 06:41' +
+      (record.kind === 'custom' ? ' · 适配器：Mock（待替换为真实执行）' : '') + '</p></div>' +
+      '<div class="mit-row-actions">' +
+      '<button class="mit-button">取消任务</button>' +
+      '<button class="mit-button mit-danger">删除记录</button></div>';
+    main.appendChild(head);
+
+    const stats = el('div', 'mit-monitor-stats');
+    [
+      { value: runs.length, label: '目标模型' },
+      { value: done, label: '已完成' },
+      { value: running, label: '进行中' },
+      { value: failed, label: '失败' },
+      { value: '2 / ' + effective, label: '并发占用' },
+      { value: '183', label: '请求数（含重试）' },
+      { value: '¥2.31', label: '实际费用（部分待补账）' }
+    ].forEach((stat) => {
+      const box = el('div', 'mit-stat');
+      box.innerHTML = '<strong>' + stat.value + '</strong><span>' + stat.label + '</span>';
+      stats.appendChild(box);
+    });
+    main.appendChild(stats);
+
+    const scroll = el('div', 'mit-table-scroll');
+    const table = el('table', 'mit-table');
+    const isA6 = record.kind === 'a6api';
+    const columns = ['模型', '状态', '请求', '输入', '输出', 'TTFT', '模型吞吐', '端到端', '缓存率'];
+    if (isA6) columns.push('渠道报价');
+    columns.push('费用', '输出', '操作');
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    columns.forEach((label) => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    runs.forEach((run) => {
+      const tr = document.createElement('tr');
+      if (run.id === state.selectedRunId) tr.className = 'is-selected';
+      const cells = [
+        '<button class="mit-run-link"><strong>' + run.name + '</strong><span>' + run.provider +
+          (run.token ? ' · ' + run.token : '') + '</span></button>',
+        '<span class="mit-status ' + run.phase + '"><span class="mit-status-dot"></span>' + PHASE_LABEL[run.phase] + '</span>',
+        '<span class="mit-tabular">' + run.reqs + '</span>',
+        '<span class="mit-tabular">' + (run.input ? run.input.toLocaleString() : '—') + '</span>',
+        '<span class="mit-tabular">' + (run.output ? run.output.toLocaleString() : '—') + '</span>',
+        run.ttft ? '<span class="mit-tabular">' + run.ttft + ' ms</span>' : '<span class="mit-muted">—</span>',
+        run.gen ? '<span class="mit-tabular">' + run.gen.toFixed(1) + ' tok/s</span>' : '<span class="mit-muted">—</span>',
+        run.e2e ? '<span class="mit-tabular">' + run.e2e.toFixed(1) + ' tok/s</span>' : '<span class="mit-muted">—</span>',
+        run.cache === null ? '<span class="mit-muted">未知</span>'
+          : '<span class="mit-tabular">' + run.cache + '%</span>'
+      ];
+      if (isA6) cells.push('<span class="mit-tabular">' + (run.price || '—') + '<br><span class="mit-muted">24h ' + (run.cache24 || '—') + '</span></span>');
+      cells.push('<span class="mit-tabular">' + run.cost + '</span>');
+      cells.push(run.out !== '—'
+        ? '<span class="mit-muted">' + (run.outState === 'ready' ? '可打开' : '写入中') + '</span>'
+        : '<span class="mit-muted">未生成</span>');
+      cells.push(run.out !== '—' && run.outState === 'ready'
+        ? '<button class="mit-open-output">打开输出</button>'
+        : '<span class="mit-open-output is-disabled">不可打开</span>');
+
+      cells.forEach((html, index) => {
+        const cell = document.createElement('td');
+        cell.innerHTML = html;
+        if (index === columns.length - 1) cell.addEventListener('click', (event) => {
+          if (!cell.querySelector('.mit-open-output:not(.is-disabled)')) return;
+          event.stopPropagation();
+          openPreview(run);
+        });
+        tr.appendChild(cell);
+      });
+
+      tr.addEventListener('click', () => {
+        state.selectedRunId = run.id;
+        state.detailOpen = true;
+        render();
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    scroll.appendChild(table);
+    main.appendChild(scroll);
+
+    if (record.kind === 'custom') {
+      const note = el('div', 'mit-info');
+      note.style.margin = '12px 20px 20px';
+      note.innerHTML =
+        '<strong>关于 Mock：</strong>当前自定义任务的执行与成果均为模拟，仅用于验证编排与界面。' +
+        '真实实现将替换为 Host 会话执行，输出文件经路径校验后才能打开；失败或未声明的输出不会显示为可打开。';
+      main.appendChild(note);
+    }
+  }
+
+  /* ---------------- 详情 ---------------- */
+  function renderDetail() {
+    const detail = $('#detail');
+    if (detail.hidden) return;
+    const run = currentRun();
+    if (!run) { detail.innerHTML = ''; return; }
+    detail.innerHTML = '';
+
+    const head = el('div', 'mit-detail-head');
+    head.innerHTML =
+      '<div class="mit-title-row"><div><h3>' + run.name + '</h3>' +
+      '<p class="mit-muted">' + run.provider + (run.token ? ' · ' + run.token : '') +
+      ' · ' + (run.via === 'a6api' ? 'a6api 适配器' : 'DSH 会话') + '</p></div>' +
+      '<button class="mit-icon-button" id="closeDetail" aria-label="关闭详情">✕</button></div>' +
+      '<div class="mit-row-actions"><span class="mit-status ' + run.phase + '"><span class="mit-status-dot"></span>' +
+      PHASE_LABEL[run.phase] + '</span>' +
+      (run.error ? '<span class="mit-badge is-warn">' + run.error + '</span>' : '<span class="mit-badge">沙箱隔离</span>') +
+      '</div>';
+    detail.appendChild(head);
+    $('#closeDetail', head).addEventListener('click', () => { state.detailOpen = false; detail.hidden = true; });
+
+    const tabs = el('div', 'mit-subtabs');
+    [['chat', 'Chat'], ['files', '文件'], ['metrics', '指标'], ['billing', '账单'], ['perms', '权限']]
+      .forEach(([id, label]) => {
+        const button = el('button', 'mit-subtab' + (state.detailTab === id ? ' is-active' : ''), label);
+        button.addEventListener('click', () => { state.detailTab = id; renderDetail(); });
+        tabs.appendChild(button);
+      });
+    detail.appendChild(tabs);
+
+    const body = el('div', 'mit-detail-body');
+    detail.appendChild(body);
+
+    if (state.detailTab === 'chat') renderChat(body, run);
+    if (state.detailTab === 'files') renderFiles(body, run);
+    if (state.detailTab === 'metrics') renderMetrics(body, run);
+    if (state.detailTab === 'billing') renderBilling(body, run);
+    if (state.detailTab === 'perms') renderPerms(body, run);
+
+    const foot = el('div', 'mit-detail-foot');
+    foot.innerHTML = '<span>关闭详情不会取消任务。</span>' +
+      '<span><button class="mit-text-button" id="retryRun">重试该模型</button>' +
+      '<button class="mit-text-button" id="cancelRun">取消该模型</button></span>';
+    detail.appendChild(foot);
+  }
+
+  function renderChat(body, run) {
+    const timeline = el('div', 'mit-timeline');
+    const items = [
+      { role: '任务提示词', text: state.draft.body },
+      { role: '模型', text: '我先在沙箱里创建 totoro.html，然后用 Canvas 绘制夜空、森林和龙猫，最后把动画循环接上。' },
+      { tool: 'write_file', text: 'output/totoro.html · 12.4 KB' },
+      { tool: 'read_file', text: 'config.json · 读取输出声明' },
+      { role: '模型', text: '已把 output/totoro.html 登记为输出文件，并检查页面可以独立运行。' }
+    ];
+    items.forEach((item) => {
+      if (item.tool) {
+        const row = el('div', 'mit-tool');
+        row.innerHTML = '<code>' + item.tool + '</code><span>' + item.text + '</span>';
+        timeline.appendChild(row);
+        return;
+      }
+      const message = el('div', 'mit-msg');
+      message.innerHTML = '<div class="mit-msg-role">' + item.role +
+        '<span class="mit-muted">· 16:2' + (3 + timeline.children.length) + '</span></div>' +
+        '<pre>' + item.text + '</pre>';
+      timeline.appendChild(message);
+    });
+    if (run.phase === 'running' || run.phase === 'tooling') {
+      const pending = el('div', 'mit-msg');
+      pending.innerHTML = '<div class="mit-msg-role">模型<span class="mit-muted">· 正在生成</span></div>' +
+        '<pre class="mit-muted">调整雨滴密度与呼吸节奏…</pre>';
+      timeline.appendChild(pending);
+    }
+    body.appendChild(timeline);
+  }
+
+  function renderFiles(body, run) {
+    const root = '/<custom-test-root>/' + state.recordId + '/' + run.id + '/';
+    const list = el('div');
+    [
+      { name: 'RULES.md', meta: '1.8 KB · 16:22' },
+      { name: 'config.json', meta: '声明 output/totoro.html · 16:31', badge: '已声明' },
+      { name: 'input/', meta: '空' },
+      { name: 'output/totoro.html', meta: run.out !== '—' ? '18.6 KB · 16:33' : '未生成', badge: run.outState === 'ready' ? '可打开' : '写入中' }
+    ].forEach((file) => {
+      const row = el('div', 'mit-file-row');
+      row.innerHTML = '<span>' + file.name + '</span>' +
+        (file.badge ? '<span class="mit-badge is-brand">' + file.badge + '</span>' : '') +
+        '<small>' + file.meta + '</small>';
+      list.appendChild(row);
+    });
+    body.appendChild(list);
+
+    const note = el('div', 'mit-info');
+    note.innerHTML = '<strong>校验规则：</strong>只有 realpath 校验通过、文件存在且格式符合预设时，结果行才显示“打开输出”。' +
+      '未声明或越界的文件不会暴露打开入口。';
+    body.appendChild(note);
+
+    const actions = el('div', 'mit-row-actions');
+    actions.innerHTML = '<button class="mit-button" id="openPreviewBtn">打开输出</button>' +
+      '<button class="mit-button" id="openVscodeBtn">在 VS Code 中打开</button>';
+    body.appendChild(actions);
+    $('#openPreviewBtn', actions).disabled = run.outState !== 'ready';
+    $('#openPreviewBtn', actions).addEventListener('click', () => openPreview(run));
+    $('#openVscodeBtn', actions).addEventListener('click', () => {
+      window.alert('原型演示：真实实现会调用 DSH 现有的 VS Code / 工作区打开能力，并复用其路径校验。');
+    });
+    body.appendChild(el('div', 'mit-hint', '沙箱根目录：' + root));
+  }
+
+  function renderMetrics(body, run) {
+    const requests = requestsOf(run);
+    const tiles = el('div', 'mit-tiles');
+    const avgTtft = Math.round(requests.reduce((sum, item) => sum + item.ttft, 0) / requests.length);
+    const avgGen = requests.reduce((sum, item) => sum + item.genRate, 0) / requests.length;
+    const avgE2e = requests.reduce((sum, item) => sum + item.e2eRate, 0) / requests.length;
+    const known = requests.filter((item) => item.cacheRate !== null);
+    const avgCache = known.length ? Math.round(known.reduce((sum, item) => sum + item.cacheRate, 0) / known.length) : null;
+    [
+      { value: avgTtft + ' ms', label: 'TTFT 均值', note: '请求发出→首个可观测增量' },
+      { value: avgGen.toFixed(1), label: '模型吞吐 tok/s', note: '输出 Token / 生成时长' },
+      { value: avgE2e.toFixed(1), label: '端到端 tok/s', note: '输出 Token / 单请求总耗时' },
+      { value: avgCache === null ? '未知' : avgCache + '%', label: '缓存率', note: avgCache === null ? '缺少可确认状态' : '按请求加权' }
+    ].forEach((tile) => {
+      const box = el('div', 'mit-tile');
+      box.innerHTML = '<span>' + tile.label + '</span><strong>' + tile.value + '</strong><em>' + tile.note + '</em>';
+      tiles.appendChild(box);
+    });
+    body.appendChild(tiles);
+
+    body.appendChild(speedChart(requests));
+    body.appendChild(cacheChart(requests));
+
+    const table = el('table', 'mit-req-table');
+    table.innerHTML = '<thead><tr><th>#</th><th>TTFT</th><th>生成时长</th><th>总耗时</th><th>输出</th>' +
+      '<th>模型吞吐</th><th>端到端</th><th>缓存率</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    requests.forEach((item) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>#' + item.index + '</td>' +
+        '<td>' + item.ttft + ' ms</td>' +
+        '<td>' + item.genSeconds + ' s</td>' +
+        '<td>' + item.totalSeconds + ' s</td>' +
+        '<td>' + item.outTokens + '</td>' +
+        '<td>' + item.genRate + '</td>' +
+        '<td>' + item.e2eRate + '</td>' +
+        '<td>' + (item.cacheRate === null ? '<span class="mit-muted">未知</span>' : item.cacheRate + '%') + '</td>';
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    body.appendChild(table);
+  }
+
+  /* 极简折线图（真实实现使用 ECharts）。 */
+  function lineChart(config) {
+    const W = 460, H = 150, PAD = { left: 34, right: 10, top: 10, bottom: 20 };
+    const plotW = W - PAD.left - PAD.right;
+    const plotH = H - PAD.top - PAD.bottom;
+    const values = config.series.flatMap((series) => series.points.filter((value) => value !== null && isFinite(value)));
+    const peak = values.length ? Math.max(...values) : 1;
+    /* 百分比固定 0–100，避免出现 109% 这种轴；速度轴向上取整到 10 的倍数。 */
+    const max = config.max !== undefined ? config.max
+      : config.percent ? 100
+      : (peak > 0 ? Math.ceil((peak * 1.15) / 10) * 10 : 10);
+    const min = 0;
+    const count = config.labels.length;
+    const x = (index) => PAD.left + (count === 1 ? plotW / 2 : (index / (count - 1)) * plotW);
+    const y = (value) => PAD.top + plotH - ((value - min) / (max - min)) * plotH;
+
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + config.title + '">';
+    const divisions = config.percent ? 4 : 3;
+    for (let i = 0; i <= divisions; i++) {
+      const value = min + ((max - min) / divisions) * i;
+      const yy = y(value);
+      svg += '<line x1="' + PAD.left + '" x2="' + (W - PAD.right) + '" y1="' + yy + '" y2="' + yy +
+        '" stroke="#eceef2" stroke-width="1"/>';
+      svg += '<text x="' + (PAD.left - 6) + '" y="' + (yy + 3) + '" text-anchor="end" font-size="9" fill="#6b7280">' +
+        (config.percent ? Math.round(value) + '%' : value.toFixed(0)) + '</text>';
+    }
+    config.labels.forEach((label, index) => {
+      if (count > 8 && index % 2) return;
+      svg += '<text x="' + x(index) + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9" fill="#6b7280">' +
+        label + '</text>';
+    });
+    config.series.forEach((series) => {
+      const points = series.points.map((value, index) => value === null ? null : x(index) + ',' + y(value));
+      svg += '<polyline fill="none" stroke="' + series.color + '" stroke-width="2" stroke-linejoin="round" ' +
+        'stroke-linecap="round" points="' + points.filter(Boolean).join(' ') + '"/>';
+      series.points.forEach((value, index) => {
+        if (value === null) return;
+        svg += '<circle cx="' + x(index) + '" cy="' + y(value) + '" r="2.6" fill="#fff" stroke="' +
+          series.color + '" stroke-width="2"/>';
+      });
+    });
+    svg += '<rect x="' + PAD.left + '" y="' + PAD.top + '" width="' + plotW + '" height="' + plotH +
+      '" fill="transparent" data-plot="1"/>';
+    svg += '</svg>';
+    return { html: svg, x, y, W, H, PAD, plotW, count };
+  }
+
+  function chartBlock(title, note, series, labels, percent) {
+    const box = el('div', 'mit-chart');
+    const head = el('div', 'mit-chart-head');
+    head.innerHTML = '<h4>' + title + '</h4><div class="mit-legend">' +
+      series.map((item) => '<span><i style="background:' + item.color + '"></i>' + item.name + '</span>').join('') +
+      '</div>';
+    box.appendChild(head);
+    box.appendChild(el('div', 'mit-chart-tip', note));
+
+    const points = series.map((item) => ({ ...item, points: item.points }));
+    const chart = lineChart({ title, labels, series: points, percent });
+    box.insertAdjacentHTML('beforeend', chart.html);
+
+    const tip = $('.mit-chart-tip', box);
+    const svg = $('svg', box);
+    svg.addEventListener('mousemove', (event) => {
+      const rect = svg.getBoundingClientRect();
+      const px = ((event.clientX - rect.left) / rect.width) * chart.W;
+      const ratio = Math.max(0, Math.min(1, (px - chart.PAD.left) / chart.plotW));
+      const index = Math.round(ratio * (chart.count - 1));
+      tip.textContent = labels[index] + ' · ' + series.map((item) => {
+        const value = item.points[index];
+        return item.name + ' ' + (value === null ? '未知' : (percent ? Math.round(value) + '%' : value.toFixed(1)));
+      }).join(' · ');
+    });
+    svg.addEventListener('mouseleave', () => { tip.textContent = note; });
+    return box;
+  }
+
+  function speedChart(requests) {
+    return chartBlock(
+      '请求级速度',
+      '横轴为请求序号；模型吞吐 = 输出 Token / 生成时长，端到端 = 输出 Token / 单请求总耗时。',
+      [
+        { name: '模型吞吐 tok/s', color: '#4d6bfe', points: requests.map((item) => item.genRate) },
+        { name: '端到端 tok/s', color: '#079455', points: requests.map((item) => item.e2eRate) }
+      ],
+      requests.map((item) => '#' + item.index),
+      false
+    );
+  }
+
+  function cacheChart(requests) {
+    return chartBlock(
+      '缓存命中率',
+      '只统计有明确站点状态的请求；缺失或未结算时留空，不按 0 处理。',
+      [{ name: '缓存率', color: '#dc6803', points: requests.map((item) => item.cacheRate) }],
+      requests.map((item) => '#' + item.index),
+      true
+    );
+  }
+
+  function renderBilling(body, run) {
+    const requests = requestsOf(run);
+    const table = el('table', 'mit-req-table');
+    table.innerHTML = '<thead><tr><th>#</th><th>请求 ID</th><th>输入</th><th>输出</th><th>缓存读</th>' +
+      '<th>费用</th><th>结算</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    requests.forEach((item) => {
+      const settleLabel = item.settle === 'settled' ? '已结算'
+        : item.settle === 'pending' ? '待补账' : '歧义';
+      const settleClass = item.settle === 'settled' ? 'ok' : item.settle === 'pending' ? 'warn' : 'bad';
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>#' + item.index + '</td>' +
+        '<td style="text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:9.5px">' + item.requestId + '</td>' +
+        '<td>' + item.input + '</td><td>' + item.outTokens + '</td>' +
+        '<td>' + (item.cacheRate === null ? '—' : Math.round(item.input * item.cacheRate / 100)) + '</td>' +
+        '<td class="mit-amount">¥' + item.cost.toFixed(3) + '</td>' +
+        '<td><span class="mit-settle ' + settleClass + '">' + settleLabel + '</span></td>';
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    body.appendChild(table);
+
+    const total = requests.reduce((sum, item) => sum + item.cost, 0);
+    const summary = el('div', 'mit-info');
+    summary.innerHTML =
+      '<strong>合计 ¥' + total.toFixed(2) + '</strong>（仅已获取的账单行）。' +
+      '“待补账”表示请求已发出但日志尚未返回，不计入零费用；“歧义”表示无法安全归属（多消费事件、退款或分页不完整），保留原样。' +
+      '<div style="margin-top:6px" class="mit-hint">人民币等值 = quota / quota_per_unit × 站点汇率；渠道挂牌价只作为报价快照，不补实际费用。</div>';
+    body.appendChild(summary);
+
+    const ambiguous = requests.find((item) => item.settle === 'ambiguous');
+    if (ambiguous) {
+      const warn = el('div', 'mit-info');
+      warn.style.borderColor = '#f0c9a0';
+      warn.innerHTML = '<strong style="color:#dc6803">#2 需要人工核对：</strong>' +
+        '同一 request_id 下出现两条消费记录，无法判断哪条属于本次运行；已保留原始额度，不合并金额。';
+      body.appendChild(warn);
+    }
+  }
+
+  function renderPerms(body, run) {
+    const kv = el('dl', 'mit-kv');
+    kv.innerHTML =
+      '<dt>沙箱根</dt><dd>/&lt;custom-test-root&gt;/' + state.recordId + '/' + run.id + '/</dd>' +
+      '<dt>会话</dt><dd>sess-' + run.id + '-7f21</dd>' +
+      '<dt>输出声明</dt><dd>' + (run.out === '—' ? '未声明' : run.out) + '</dd>' +
+      '<dt>凭证</dt><dd>仅 Host 持有，不进入 Client 与沙箱</dd>';
+    body.appendChild(kv);
+
+    const grid = el('div', 'mit-perm-grid');
+    const allowed = el('div', 'mit-perm allowed');
+    allowed.innerHTML = '<h4>允许的能力</h4><ul>' +
+      ['sandbox.readRules', 'sandbox.readInput', 'sandbox.writeOutput', 'sandbox.statOutput',
+        'sandbox.declareOutput', 'session.emit'].map((item) => '<li>' + item + '</li>').join('') +
+      '</ul>';
+    const denied = el('div', 'mit-perm denied');
+    denied.innerHTML = '<h4>禁止的能力</h4><ul>' +
+      ['network', 'workspace.read', 'workspace.write', 'credentials.read', 'provider.configure',
+        'shell.exec', 'browser.navigate'].map((item) => '<li>' + item + '</li>').join('') +
+      '</ul>';
+    grid.appendChild(allowed);
+    grid.appendChild(denied);
+    body.appendChild(grid);
+
+    const note = el('div', 'mit-info');
+    note.innerHTML = '这是权限与生命周期摘要，不是设置页。a6api 模型额外展示固定状态与测试令牌锁；' +
+      '当前固定状态：' + (run.via === 'a6api' ? '已解除（本次运行完成）' : '不适用') + '。';
+    body.appendChild(note);
+  }
+
+  /* ---------------- 预览弹层 ---------------- */
+  let raf = 0;
+  function openPreview(run) {
+    const modal = $('#preview');
+    modal.hidden = false;
+    $('#previewPath').textContent = run.out;
+    startTotoro($('#totoro'));
+  }
+  function closePreview() {
+    $('#preview').hidden = true;
+    cancelAnimationFrame(raf);
+  }
+  function startTotoro(canvas) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    let t = 0;
+    cancelAnimationFrame(raf);
+    function frame() {
+      t += 0.016;
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#0d1b2a');
+      sky.addColorStop(1, '#1b3a4b');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      for (let i = 0; i < 60; i++) {
+        const x = (i * 137.5) % W;
+        const y = ((i * 71.3) % (H * 0.55));
+        ctx.globalAlpha = 0.25 + 0.5 * Math.abs(Math.sin(t + i));
+        ctx.fillRect(x, y, 2, 2);
+      }
+      ctx.globalAlpha = 1;
+
+      ctx.strokeStyle = 'rgba(160,200,220,.35)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 90; i++) {
+        const x = ((i * 83.7 + t * 60) % (W + 60)) - 30;
+        const y = (i * 47.3 + t * 420) % H;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 3, y + 14);
+        ctx.stroke();
+      }
+
+      const breathe = 1 + Math.sin(t * 1.4) * 0.02;
+      const cx = W / 2, cy = H * 0.66;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(breathe, breathe);
+      ctx.fillStyle = '#9aa7b1';
+      ctx.beginPath();
+      ctx.ellipse(0, 40, 110, 96, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#8b98a3';
+      [
+        [-58, -70, 16], [-24, -84, 15], [12, -86, 15], [46, -74, 16]
+      ].forEach(([x, y, r]) => {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.fillStyle = '#eef2f5';
+      ctx.beginPath();
+      ctx.ellipse(0, 62, 62, 52, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#1f2329';
+      [-26, 26].forEach((x) => {
+        ctx.beginPath();
+        ctx.arc(x, 20, 7, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.fillStyle = '#59636d';
+      ctx.beginPath();
+      ctx.ellipse(0, 40, 8, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#59636d';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-14, 52);
+      ctx.quadraticCurveTo(0, 60, 14, 52);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.fillStyle = 'rgba(255,255,255,.7)';
+      ctx.font = '14px -apple-system,PingFang SC,sans-serif';
+      ctx.fillText('龙猫测试 · Canvas 预览（隔离 iframe）', 24, H - 22);
+      raf = requestAnimationFrame(frame);
+    }
+    frame();
+  }
+
+  /* ---------------- 渲染 ---------------- */
+  function render() {
+    renderSidebar();
+    const detail = $('#detail');
+    if (state.view === 'draft') {
+      renderDraft();
+      detail.hidden = true;
+      return;
+    }
+    renderMonitor();
+    detail.hidden = !state.detailOpen;
+    if (state.detailOpen) renderDetail();
+  }
+
+  $('#newDraft').addEventListener('click', () => {
+    state.view = 'draft';
+    document.querySelectorAll('.mit-record-list-row').forEach((row) => row.classList.remove('is-selected'));
+    render();
+  });
+  $('#previewClose').addEventListener('click', closePreview);
+  $('#preview').addEventListener('click', (event) => {
+    if (event.target.id === 'preview') closePreview();
+  });
+  $('#previewVscode').addEventListener('click', () => {
+    $('#previewClose').focus();
+    window.alert('原型演示：真实实现会调用 DSH 现有的 VS Code / 工作区打开能力。');
+  });
+  $('#previewCopy').addEventListener('click', () => {
+    const run = currentRun();
+    const text = '/<custom-test-root>/' + state.recordId + '/' + (run ? run.id : '') + '/';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        $('#previewCopy').textContent = '已复制';
+      }, () => { $('#previewCopy').textContent = '复制失败'; });
+    } else {
+      $('#previewCopy').textContent = '复制失败';
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !$('#preview').hidden) closePreview();
+  });
+
+  /* 便于评审时直接打开某个状态：?view=draft / ?record=rec-a6 / ?tab=metrics */
+  const params = new URLSearchParams(location.search);
+  if (params.get('view') === 'draft') state.view = 'draft';
+  if (params.get('record') && RUNS[params.get('record')]) state.recordId = params.get('record');
+  if (params.get('tab')) state.detailTab = params.get('tab');
+
+  state.selectedRunId = (RUNS[state.recordId] || [])[0]?.id;
+  render();
+
+  /* 评审用：?preview=1 直接打开第一个可用的输出预览。 */
+  if (params.get('preview') === '1') {
+    const ready = (RUNS[state.recordId] || []).find((run) => run.outState === 'ready');
+    if (ready) openPreview(ready);
+  }
+})();
+</script>
+</body>
+</html>
