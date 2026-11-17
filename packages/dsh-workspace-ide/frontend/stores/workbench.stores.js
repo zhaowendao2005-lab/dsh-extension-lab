@@ -195,7 +195,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       const items = level === 'info' && message === '已保存'
         ? current.items.filter((entry) => !(entry.level === 'info' && entry.message === '已保存'))
         : current.items;
-      return { items: [...items, item].slice(-6) };
+      return { items: [...items, item].slice(-2) };
     });
     return item.id;
   }

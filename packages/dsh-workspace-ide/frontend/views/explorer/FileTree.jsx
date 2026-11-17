@@ -90,10 +90,6 @@ export function FileTree({ stores }) {
   if (!workspace.root) return null;
   if (!rootEntries) return <div className="wid-empty"><span className="wid-hint">{files.loading.includes('') ? '读取目录…' : '目录为空'}</span></div>;
   return <>
-    {selection.selected.length > 0 && <div className="wid-explorer-selection" role="status" aria-live="polite">
-      <span className="wid-explorer-selection__count">{files.batchBusy ? "正在删除…" : "已选 " + selection.selected.length + " 项 · 右键查看批量操作"}</span>
-      <button type="button" className="wid-explorer-selection__clear" title="清除选择" aria-label="清除选择" onClick={() => domain.clear()}>×</button>
-    </div>}
     <div ref={tree} className="wid-tree" role="tree" aria-label="文件" aria-multiselectable="true" onKeyDown={onKeyDown}>
       <DirRows stores={stores} entries={rootEntries} parent="" depth={0} files={files} selection={selection} />
       {files.entries['']?.truncated && <div className="wid-tree__truncated wid-hint">目录条目超过上限，未完整显示</div>}
