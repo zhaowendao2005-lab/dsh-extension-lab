@@ -36,7 +36,7 @@ function publicFailure(error) {
   return {
     code,
     // Do not publish raw adapter error bodies, stack traces, or credential-bearing URLs.
-    message: code === 'CUSTOM_BOUNDARY' ? '隔离会话拒绝了额外上下文或工具，未发送该请求。' : `模型会话未完成（${code}）。`,
+    message: code === 'CUSTOM_BOUNDARY' ? `隔离会话拒绝了额外上下文或工具（${String(raw?.message ?? '').slice(0, 220)}），未发送该请求。` : `模型会话未完成（${code}）。`,
     ...(Number.isInteger(raw?.status) && raw.status >= 100 && raw.status <= 599 ? { status: raw.status } : {}),
   };
 }
@@ -47,7 +47,7 @@ function limitSnapshot(value = {}) {
     return [name, selected];
   }));
 }
-function boundaryError() { return new LlmError('Custom test request violated its context or tool boundary', 'CUSTOM_BOUNDARY'); }
+function boundaryError(where = 'unknown') { return new LlmError(`boundary:${where}`, 'CUSTOM_BOUNDARY'); }
 
 /**
  * Do not rewrite loop-built GenerateOptions (DSH deliberately freezes them).
@@ -57,9 +57,9 @@ function boundaryError() { return new LlmError('Custom test request violated its
  */
 function checkRequest(request, { route, model, promptText, userMessage, toolSchemas, toolCallNames, maxTokens }) {
   if (request.provider !== route || request.model !== model || request.system !== undefined
-    || !Number.isSafeInteger(request.maxTokens) || request.maxTokens < 1 || request.maxTokens > maxTokens) throw boundaryError();
+    || !Number.isSafeInteger(request.maxTokens) || request.maxTokens < 1 || request.maxTokens > maxTokens) throw boundaryError(`config(provider=${request.provider === route ? 'ok' : 'mismatch'},model=${request.model === model ? 'ok' : 'mismatch'},system=${request.system === undefined ? 'none' : 'set'},maxTokens=${request.maxTokens}/${maxTokens})`);
   const checkTools = tools => {
-    for (const tool of tools ?? []) if (JSON.stringify(tool) !== toolSchemas.get(tool.name)) throw boundaryError();
+    for (const tool of tools ?? []) if (JSON.stringify(tool) !== toolSchemas.get(tool.name)) throw boundaryError(`tool(${tool?.name})`);
   };
   checkTools(request.tools);
   checkTools(request.toolHistory?.tools);
@@ -68,32 +68,32 @@ function checkRequest(request, { route, model, promptText, userMessage, toolSche
   let systems = 0;
   for (const message of request.messages ?? []) {
     if (message.role === 'system') {
-      if (++systems !== 1 || message.content.some(block => block.type !== 'text') || message.content.map(block => block.text).join('') !== promptText) throw boundaryError();
+      if (++systems !== 1 || message.content.some(block => block.type !== 'text') || message.content.map(block => block.text).join('') !== promptText) throw boundaryError(`system(count=${systems},blocks=${message.content.map(block => block.type).join('|')},chars=${message.content.map(block => block.text ?? '').join('').length}/${promptText.length})`);
       continue;
     }
     if (message.role === 'user') {
       if (++users !== 1 || message.id !== userMessage.id || message.content.some(block => block.type !== 'text')
-        || message.content.map(block => block.text).join('') !== userMessage.content[0].text) throw boundaryError();
+        || message.content.map(block => block.text).join('') !== userMessage.content[0].text) throw boundaryError(`user(count=${users},idMatch=${message.id === userMessage.id},chars=${message.content.map(block => block.text ?? '').join('').length}/${userMessage.content[0].text.length})`);
       continue;
     }
     if (message.role === 'assistant') {
-      if (message.source?.provider !== route || message.source?.model !== model) throw boundaryError();
+      if (message.source?.provider !== route || message.source?.model !== model) throw boundaryError(`assistant-source(${message.source?.provider}/${message.source?.model})`);
       for (const block of message.content) {
-        if (!['text', 'reasoning', 'tool-call'].includes(block.type)) throw boundaryError();
+        if (!['text', 'reasoning', 'tool-call'].includes(block.type)) throw boundaryError(`assistant-block(${block.type})`);
         if (block.type === 'tool-call') {
-          if (!toolSchemas.has(block.name)) throw boundaryError();
+          if (!toolSchemas.has(block.name)) throw boundaryError(`assistant-tool(${block.name})`);
           toolCallNames.set(block.id, block.name);
         }
       }
       continue;
     }
     if (message.role === 'tool') {
-      if (!toolSchemas.has(toolCallNames.get(message.toolCallId)) || message.content.some(block => block.type !== 'text')) throw boundaryError();
+      if (!toolSchemas.has(toolCallNames.get(message.toolCallId)) || message.content.some(block => block.type !== 'text')) throw boundaryError(`tool-result(${toolCallNames.get(message.toolCallId) ?? 'unknown'})`);
       continue;
     }
-    throw boundaryError();
+    throw boundaryError(`role(${message.role})`);
   }
-  if (users !== 1 || systems !== 1) throw boundaryError();
+  if (users !== 1 || systems !== 1) throw boundaryError(`counts(users=${users},systems=${systems},total=${(request.messages ?? []).length})`);
 }
 
 /**

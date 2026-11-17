@@ -4079,7 +4079,7 @@ function publicFailure(error) {
   return {
     code,
     // Do not publish raw adapter error bodies, stack traces, or credential-bearing URLs.
-    message: code === "CUSTOM_BOUNDARY" ? "\u9694\u79BB\u4F1A\u8BDD\u62D2\u7EDD\u4E86\u989D\u5916\u4E0A\u4E0B\u6587\u6216\u5DE5\u5177\uFF0C\u672A\u53D1\u9001\u8BE5\u8BF7\u6C42\u3002" : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210\uFF08${code}\uFF09\u3002`,
+    message: code === "CUSTOM_BOUNDARY" ? `\u9694\u79BB\u4F1A\u8BDD\u62D2\u7EDD\u4E86\u989D\u5916\u4E0A\u4E0B\u6587\u6216\u5DE5\u5177\uFF08${String(raw?.message ?? "").slice(0, 220)}\uFF09\uFF0C\u672A\u53D1\u9001\u8BE5\u8BF7\u6C42\u3002` : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210\uFF08${code}\uFF09\u3002`,
     ...Number.isInteger(raw?.status) && raw.status >= 100 && raw.status <= 599 ? { status: raw.status } : {}
   };
 }
@@ -4090,13 +4090,13 @@ function limitSnapshot(value = {}) {
     return [name2, selected];
   }));
 }
-function boundaryError() {
-  return new LlmError("Custom test request violated its context or tool boundary", "CUSTOM_BOUNDARY");
+function boundaryError(where = "unknown") {
+  return new LlmError(`boundary:${where}`, "CUSTOM_BOUNDARY");
 }
 function checkRequest(request, { route, model, promptText, userMessage, toolSchemas, toolCallNames, maxTokens }) {
-  if (request.provider !== route || request.model !== model || request.system !== void 0 || !Number.isSafeInteger(request.maxTokens) || request.maxTokens < 1 || request.maxTokens > maxTokens) throw boundaryError();
+  if (request.provider !== route || request.model !== model || request.system !== void 0 || !Number.isSafeInteger(request.maxTokens) || request.maxTokens < 1 || request.maxTokens > maxTokens) throw boundaryError(`config(provider=${request.provider === route ? "ok" : "mismatch"},model=${request.model === model ? "ok" : "mismatch"},system=${request.system === void 0 ? "none" : "set"},maxTokens=${request.maxTokens}/${maxTokens})`);
   const checkTools = (tools) => {
-    for (const tool of tools ?? []) if (JSON.stringify(tool) !== toolSchemas.get(tool.name)) throw boundaryError();
+    for (const tool of tools ?? []) if (JSON.stringify(tool) !== toolSchemas.get(tool.name)) throw boundaryError(`tool(${tool?.name})`);
   };
   checkTools(request.tools);
   checkTools(request.toolHistory?.tools);
@@ -4105,31 +4105,31 @@ function checkRequest(request, { route, model, promptText, userMessage, toolSche
   let systems = 0;
   for (const message of request.messages ?? []) {
     if (message.role === "system") {
-      if (++systems !== 1 || message.content.some((block) => block.type !== "text") || message.content.map((block) => block.text).join("") !== promptText) throw boundaryError();
+      if (++systems !== 1 || message.content.some((block) => block.type !== "text") || message.content.map((block) => block.text).join("") !== promptText) throw boundaryError(`system(count=${systems},blocks=${message.content.map((block) => block.type).join("|")},chars=${message.content.map((block) => block.text ?? "").join("").length}/${promptText.length})`);
       continue;
     }
     if (message.role === "user") {
-      if (++users !== 1 || message.id !== userMessage.id || message.content.some((block) => block.type !== "text") || message.content.map((block) => block.text).join("") !== userMessage.content[0].text) throw boundaryError();
+      if (++users !== 1 || message.id !== userMessage.id || message.content.some((block) => block.type !== "text") || message.content.map((block) => block.text).join("") !== userMessage.content[0].text) throw boundaryError(`user(count=${users},idMatch=${message.id === userMessage.id},chars=${message.content.map((block) => block.text ?? "").join("").length}/${userMessage.content[0].text.length})`);
       continue;
     }
     if (message.role === "assistant") {
-      if (message.source?.provider !== route || message.source?.model !== model) throw boundaryError();
+      if (message.source?.provider !== route || message.source?.model !== model) throw boundaryError(`assistant-source(${message.source?.provider}/${message.source?.model})`);
       for (const block of message.content) {
-        if (!["text", "reasoning", "tool-call"].includes(block.type)) throw boundaryError();
+        if (!["text", "reasoning", "tool-call"].includes(block.type)) throw boundaryError(`assistant-block(${block.type})`);
         if (block.type === "tool-call") {
-          if (!toolSchemas.has(block.name)) throw boundaryError();
+          if (!toolSchemas.has(block.name)) throw boundaryError(`assistant-tool(${block.name})`);
           toolCallNames.set(block.id, block.name);
         }
       }
       continue;
     }
     if (message.role === "tool") {
-      if (!toolSchemas.has(toolCallNames.get(message.toolCallId)) || message.content.some((block) => block.type !== "text")) throw boundaryError();
+      if (!toolSchemas.has(toolCallNames.get(message.toolCallId)) || message.content.some((block) => block.type !== "text")) throw boundaryError(`tool-result(${toolCallNames.get(message.toolCallId) ?? "unknown"})`);
       continue;
     }
-    throw boundaryError();
+    throw boundaryError(`role(${message.role})`);
   }
-  if (users !== 1 || systems !== 1) throw boundaryError();
+  if (users !== 1 || systems !== 1) throw boundaryError(`counts(users=${users},systems=${systems},total=${(request.messages ?? []).length})`);
 }
 async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = "", sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream }) {
   if (!sessionId || typeof sessionId !== "string" || !provider || !model || typeof prompt !== "string" || !prompt.trim()) throw new TypeError("Invalid custom Agent request");
