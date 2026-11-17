@@ -4291,12 +4291,20 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
         }));
         scopeDisposers.push(agentCtx.on("agent/pre-step", async (payload, next) => {
           if (payload.agent !== agent) return next();
-          if (payload.modelSelection.provider !== route || payload.modelSelection.model !== model) throw boundaryError();
+          if (payload.modelSelection.provider !== route || payload.modelSelection.model !== model) throw boundaryError(`model-selection(${payload.modelSelection.provider}/${payload.modelSelection.model})`);
           if (payload.step > limits.maxSteps) {
             markLimited("maxSteps");
             return { kind: "reject" };
           }
-          return next();
+          const decision = await next();
+          if (decision.kind !== "enter") return decision;
+          const messages = decision.messages.filter((message) => {
+            if (message.role === "assistant" || message.role === "tool") return true;
+            if (message.role === "system") return message.content.map((block) => block.text ?? "").join("") === promptText;
+            return message.role === "user" && message.id === userMessage.id;
+          });
+          if (messages.length !== decision.messages.length) observe({ type: "phase", phase: "context-filtered", dropped: decision.messages.length - messages.length });
+          return { ...decision, messages };
         }));
         scopeDisposers.push(agentCtx.on("llm/stream", (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));
         scopeDisposers.push(agentCtx.on("session/event", (session, event) => {

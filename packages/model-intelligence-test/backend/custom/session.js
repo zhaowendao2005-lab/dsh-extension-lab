@@ -257,12 +257,20 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
         }));
         scopeDisposers.push(agentCtx.on('agent/pre-step', async (payload, next) => {
           if (payload.agent !== agent) return next();
-          if (payload.modelSelection.provider !== route || payload.modelSelection.model !== model) throw boundaryError();
+          if (payload.modelSelection.provider !== route || payload.modelSelection.model !== model) throw boundaryError(`model-selection(${payload.modelSelection.provider}/${payload.modelSelection.model})`);
           if (payload.step > limits.maxSteps) { markLimited('maxSteps'); return { kind: 'reject' }; }
-          // Message provenance is enforced on the real request in observeRequest(); the pre-step
-          // decision legitimately carries the system prompt and later tool turns, so it cannot be
-          // compared against this run's single user message.
-          return next();
+          const decision = await next();
+          if (decision.kind !== 'enter') return decision;
+          // Global plugins (time context, instructions, …) may inject user/system messages into every
+          // session. This run owns exactly its system prompt and its one user message: drop the rest
+          // instead of leaking foreign context into the isolated test.
+          const messages = decision.messages.filter(message => {
+            if (message.role === 'assistant' || message.role === 'tool') return true;
+            if (message.role === 'system') return message.content.map(block => block.text ?? '').join('') === promptText;
+            return message.role === 'user' && message.id === userMessage.id;
+          });
+          if (messages.length !== decision.messages.length) observe({ type: 'phase', phase: 'context-filtered', dropped: decision.messages.length - messages.length });
+          return { ...decision, messages };
         }));
         // llm/stream itself is not scope-filtered: explicit identity match is mandatory.
         scopeDisposers.push(agentCtx.on('llm/stream', (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));

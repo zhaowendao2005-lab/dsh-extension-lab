@@ -1,6 +1,6 @@
 {
   "name": "model-intelligence-test",
-  "version": "3.0.13",
+  "version": "3.0.14",
   "private": true,
   "description": "真实模型指纹测试（lm-detector）与真实自定义 Agent 测试：每模型独立 DSH 会话与 UUID 沙箱、按模型并发、Chat/文件/指标/账单/权限详情，a6api 渠道固定与请求级账单对账，无模拟数据。",
   "type": "module",
