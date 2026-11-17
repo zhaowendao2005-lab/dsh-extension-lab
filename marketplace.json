@@ -301,19 +301,38 @@
     {
       "name": "model-intelligence-test",
       "title": {
-        "en": "Model Intelligence Test"
+        "en": "Model Intelligence Test",
+        "zh": "模型智能测试"
       },
       "description": {
-        "en": "真实模型指纹测试（lm-detector）与自定义 Agent 任务评测（模拟）。"
+        "en": "Real model fingerprint testing (lm-detector) through Host-managed sampling and request-level billing, plus real custom Agent tests: every model runs in its own DSH session and UUID sandbox with per-model concurrency, and the monitor exposes chat, files, metrics, billing and permissions for each run. No simulated data.",
+        "zh": "真实模型指纹测试（lm-detector）＋ 真实自定义 Agent 测试：每个模型独立 DSH 会话与 UUID 沙箱、按模型并发，监控页按模型提供 Chat／文件／指标／账单／权限详情；a6api 渠道固定与请求级账单对账，成果文件需校验声明后才能打开。无模拟数据。"
       },
       "metadata": {
         "keywords": [
-          "test"
+          "test",
+          "fingerprint",
+          "agent",
+          "sandbox",
+          "a6api"
         ],
         "labels": [],
         "sortKeys": {}
       },
       "versions": [
+        {
+          "version": "3.0.7",
+          "publishTimestamp": 1794905611,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/zhaowendao2005-lab/dsh-extension-lab",
+            "commit": "ab668617ae6a8a784d6e3dcf8b5aab96fbca980a",
+            "path": "packages/model-intelligence-test"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+          }
+        },
         {
           "version": "3.0.6",
           "publishTimestamp": 1794898325,
