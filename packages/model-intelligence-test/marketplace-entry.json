@@ -1,0 +1,21 @@
+{
+  "title": {
+    "en": "Model Intelligence Test",
+    "zh": "模型智能测试"
+  },
+  "description": {
+    "en": "Real model fingerprint testing (lm-detector) through Host-managed sampling and request-level billing, plus real custom Agent tests: every model runs in its own DSH session and UUID sandbox with per-model concurrency, and the monitor exposes chat, files, metrics, billing and permissions for each run. No simulated data.",
+    "zh": "真实模型指纹测试（lm-detector）＋ 真实自定义 Agent 测试：每个模型独立 DSH 会话与 UUID 沙箱、按模型并发，监控页按模型提供 Chat／文件／指标／账单／权限详情；a6api 渠道固定与请求级账单对账，成果文件需校验声明后才能打开。无模拟数据。"
+  },
+  "metadata": {
+    "keywords": [
+      "test",
+      "fingerprint",
+      "agent",
+      "sandbox",
+      "a6api"
+    ],
+    "labels": [],
+    "sortKeys": {}
+  }
+}

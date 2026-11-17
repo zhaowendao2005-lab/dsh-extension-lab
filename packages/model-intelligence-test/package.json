@@ -1,8 +1,8 @@
 {
   "name": "model-intelligence-test",
-  "version": "3.0.6",
+  "version": "3.0.7",
   "private": true,
-  "description": "a6api 专项指纹测试：令牌槽位采样、请求账单与全局操作 Key 固定/路由管理。",
+  "description": "真实模型指纹测试（lm-detector）与真实自定义 Agent 测试：每模型独立 DSH 会话与 UUID 沙箱、按模型并发、Chat/文件/指标/账单/权限详情，a6api 渠道固定与请求级账单对账，无模拟数据。",
   "type": "module",
   "exports": {
     ".": "./lib/index.js",
