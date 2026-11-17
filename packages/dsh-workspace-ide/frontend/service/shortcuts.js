@@ -22,3 +22,37 @@ export function shortcutBindingLabel(catalog, status, id) {
   if (!row) return '命令未注册';
   return row.keys?.length ? row.keys.join(' + ') : '未绑定';
 }
+
+export const WORKBENCH_SCOPE_ATTR = 'data-dsh-workbench-scope';
+export const WORKBENCH_SCOPE_ACTIVE_ATTR = 'data-dsh-workbench-active';
+
+/**
+ * Match exact Ctrl+P (quickOpen) or Ctrl+Shift+P (commandPalette).
+ * Ignores IME composition, already-prevented events, and Meta/Alt combinations.
+ */
+export function matchWorkbenchShortcut(event) {
+  if (!event || event.defaultPrevented) return null;
+  if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return null;
+  if (!event.ctrlKey || event.metaKey || event.altKey) return null;
+  const isKeyP = event.code === 'KeyP'
+    || (!event.code && typeof event.key === 'string' && event.key.toLowerCase() === 'p');
+  if (!isKeyP) return null;
+  return event.shiftKey ? 'commandPalette' : 'quickOpen';
+}
+
+/**
+ * Consume and dispatch workbench-scoped Ctrl+P / Ctrl+Shift+P.
+ * Key repeats are consumed without re-triggering; shortcut recording suppresses handling.
+ */
+export function handleWorkbenchKeyDown(event, { actions, isRecording } = {}) {
+  if (isRecording?.()) return false;
+  const action = matchWorkbenchShortcut(event);
+  if (!action) return false;
+  event.preventDefault?.();
+  event.stopPropagation?.();
+  event.stopImmediatePropagation?.();
+  if (event.repeat) return true;
+  if (action === 'commandPalette') actions?.openCommandPalette?.();
+  else void actions?.openQuick?.();
+  return true;
+}

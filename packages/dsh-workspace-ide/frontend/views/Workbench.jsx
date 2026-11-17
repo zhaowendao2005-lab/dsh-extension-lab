@@ -13,13 +13,14 @@ import { QuickOpen } from './common/QuickOpen.jsx';
 import { ConfirmModal } from './common/ConfirmModal.jsx';
 import { EmptyState } from './common/EmptyState.jsx';
 import { workbenchScale } from '../service/geometry.js';
+import { handleWorkbenchKeyDown } from '../service/shortcuts.js';
 
 /**
  * The workbench shell: toolbar, collapsible file/search column, the split editor area and
  * the terminal/status bar. All overlays are children of .wid-root, so nothing escapes the
  * right column.
  */
-export function Workbench({ stores, visible, surface = 'sidebar' }) {
+export function Workbench({ stores, visible, surface = 'sidebar', scopeRef = null }) {
   const ui = useStore(stores.ui);
   const layout = useStore(stores.layout);
   const workspace = useStore(stores.workspace);
@@ -65,6 +66,20 @@ export function Workbench({ stores, visible, surface = 'sidebar' }) {
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [Boolean(drag), stores]);
 
+  useEffect(() => {
+    if (!ownsOverlays) return undefined;
+    const scopeEl = scopeRef?.current ?? rootRef.current;
+    if (!scopeEl) return undefined;
+    const onKeyDown = (event) => {
+      handleWorkbenchKeyDown(event, {
+        actions: stores.actions,
+        isRecording: () => Boolean(stores.host?.isShortcutRecording?.()),
+      });
+    };
+    scopeEl.addEventListener('keydown', onKeyDown, true);
+    return () => scopeEl.removeEventListener('keydown', onKeyDown, true);
+  }, [ownsOverlays, stores, scopeRef]);
+
   let ghost = null;
   if (drag && rootRef.current) {
     const rect = rootRef.current.getBoundingClientRect();
@@ -93,6 +108,8 @@ export function Workbench({ stores, visible, surface = 'sidebar' }) {
         data-nav={navOpen ? 'open' : 'collapsed'}
         data-panel={panelOpen ? 'open' : 'collapsed'}
         data-visible={visible ? 'true' : 'false'}
+        data-dsh-workbench-scope={surface}
+        data-dsh-workbench-active={ownsOverlays ? 'true' : 'false'}
       >
       <Toolbar stores={stores} />
       <div className="wid-nav" aria-label="文件与搜索">

@@ -14,6 +14,8 @@ function IsolatedFullView({ stores, close }) {
   if (!hostRef.current) {
     const host = document.createElement('div');
     host.className = 'wid-fullview-shadow';
+    host.setAttribute('data-dsh-workbench-scope', 'overlay');
+    host.setAttribute('data-dsh-workbench-active', 'true');
     host.attachShadow({ mode: 'open' });
     hostRef.current = host;
   }
@@ -68,9 +70,10 @@ function IsolatedFullView({ stores, close }) {
         <style>{CSS}</style>
         <div className="wid-fullview-backdrop" role="presentation" onClick={close}>
           <div ref={dialogRef} className="wid-fullview" role="dialog" aria-modal="true" aria-label="工作台全视图" tabIndex={-1}
+            data-dsh-workbench-scope="overlay" data-dsh-workbench-active="true"
             onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
             <button type="button" className="wid-fullview__close" title="关闭全视图（Esc）" aria-label="关闭全视图" onClick={close}>×</button>
-            <Workbench stores={stores} visible surface="overlay" />
+            <Workbench stores={stores} visible surface="overlay" scopeRef={dialogRef} />
           </div>
         </div>
       </>, hostRef.current.shadowRoot)}

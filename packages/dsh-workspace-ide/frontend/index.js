@@ -145,6 +145,7 @@ window.__ModuleLoader__.load({
           closeFullView,
           shortcutCatalog,
           shortcutStatus,
+          isShortcutRecording: () => Boolean(shortcutEditor.store.getSnapshot().recording),
         };
 
         /** One runtime per session: its own client (sessionId stamped on every request) and stores. */
