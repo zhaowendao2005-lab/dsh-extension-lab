@@ -4263,7 +4263,9 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
     timeout = setTimeout(() => markLimited("maxDurationMs"), limits.maxDurationMs);
     timeout.unref?.();
     await emit({ type: "phase", phase: "creating" });
-    handle = await ctx.agents.create({
+    const agents = ctx.get("agents");
+    if (!agents) throw new TypeError("Agent service is unavailable in the plugin context");
+    handle = await agents.create({
       sessionId,
       meta: { cwd: sandbox.root },
       agentOptions: { provider: route, model, maxTokens: limits.maxTokens },
@@ -5065,13 +5067,18 @@ var CustomCoordinator = class {
       checked();
       this.update(job, data, "validating");
       data.summary.output = await sandbox.output();
-      if (result.outcome !== "completed") throw err("session-failed", result.outcome === "limited" ? "\u4F1A\u8BDD\u5DF2\u8FBE\u5230\u6267\u884C\u9884\u7B97" : "\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210");
+      if (result.outcome !== "completed") {
+        const detail = result.error ? `${result.error.code}: ${result.error.message}` : "";
+        throw err("session-failed", result.outcome === "limited" ? "\u4F1A\u8BDD\u5DF2\u8FBE\u5230\u6267\u884C\u9884\u7B97" : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210${detail ? `\uFF08${detail}\uFF09` : ""}`);
+      }
       if (data.summary.output.state !== "ready") throw err("output-invalid", "\u4F1A\u8BDD\u5DF2\u7ED3\u675F\uFF0C\u4F46\u672A\u58F0\u660E\u6709\u6548\u8F93\u51FA\u6587\u4EF6");
       this.update(job, data, "completed");
     } catch (error) {
       if (data.summary.sandboxState === "preparing") data.summary.sandboxState = "failed";
       const phase = signal.aborted ? control.timeout ? "failed" : "cancelled" : "failed";
-      data.summary.error = { code: control.timeout ? "timeout" : signal.aborted ? "cancelled" : error instanceof FingerprintError ? error.code : "execution-failed", message: control.timeout ? "\u6A21\u578B\u4F1A\u8BDD\u8D85\u65F6" : signal.aborted ? "\u4EFB\u52A1\u5DF2\u53D6\u6D88" : error instanceof FingerprintError ? error.message : "\u6A21\u578B\u4F1A\u8BDD\u6267\u884C\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u4F1A\u8BDD\u8BB0\u5F55\u6216\u8FD0\u884C\u65F6\u914D\u7F6E", phase: data.summary.phase };
+      const raw = typeof error?.message === "string" ? error.message.replace(/\s+/g, " ").trim().slice(0, 240) : "";
+      const detail = raw && !(error instanceof FingerprintError) ? `\uFF08${raw}\uFF09` : "";
+      data.summary.error = { code: control.timeout ? "timeout" : signal.aborted ? "cancelled" : error instanceof FingerprintError ? error.code : "execution-failed", message: control.timeout ? "\u6A21\u578B\u4F1A\u8BDD\u8D85\u65F6" : signal.aborted ? "\u4EFB\u52A1\u5DF2\u53D6\u6D88" : error instanceof FingerprintError ? error.message : `\u6A21\u578B\u4F1A\u8BDD\u6267\u884C\u5931\u8D25${detail}`, phase: data.summary.phase };
       this.update(job, data, phase);
     } finally {
       clearTimeout(control.timer);

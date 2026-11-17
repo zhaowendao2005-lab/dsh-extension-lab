@@ -235,13 +235,19 @@ export class CustomCoordinator {
       const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: job.record.prompt, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: event => this.event(job, data, event), stream });
       checked(); this.update(job, data, 'validating');
       data.summary.output = await sandbox.output();
-      if (result.outcome !== 'completed') throw err('session-failed', result.outcome === 'limited' ? '会话已达到执行预算' : '模型会话未完成');
+      if (result.outcome !== 'completed') {
+        const detail = result.error ? `${result.error.code}: ${result.error.message}` : '';
+        throw err('session-failed', result.outcome === 'limited' ? '会话已达到执行预算' : `模型会话未完成${detail ? `（${detail}）` : ''}`);
+      }
       if (data.summary.output.state !== 'ready') throw err('output-invalid', '会话已结束，但未声明有效输出文件');
       this.update(job, data, 'completed');
     } catch (error) {
       if (data.summary.sandboxState === 'preparing') data.summary.sandboxState = 'failed';
       const phase = signal.aborted ? (control.timeout ? 'failed' : 'cancelled') : 'failed';
-      data.summary.error = { code: control.timeout ? 'timeout' : signal.aborted ? 'cancelled' : error instanceof FingerprintError ? error.code : 'execution-failed', message: control.timeout ? '模型会话超时' : signal.aborted ? '任务已取消' : error instanceof FingerprintError ? error.message : '模型会话执行失败，请检查会话记录或运行时配置', phase: data.summary.phase };
+      // Keep one sanitized line of the real cause: a generic message makes Host-only failures undiagnosable.
+      const raw = typeof error?.message === 'string' ? error.message.replace(/\s+/g, ' ').trim().slice(0, 240) : '';
+      const detail = raw && !(error instanceof FingerprintError) ? `（${raw}）` : '';
+      data.summary.error = { code: control.timeout ? 'timeout' : signal.aborted ? 'cancelled' : error instanceof FingerprintError ? error.code : 'execution-failed', message: control.timeout ? '模型会话超时' : signal.aborted ? '任务已取消' : error instanceof FingerprintError ? error.message : `模型会话执行失败${detail}`, phase: data.summary.phase };
       this.update(job, data, phase);
     } finally {
       clearTimeout(control.timer); job.controller.signal.removeEventListener('abort', abort);

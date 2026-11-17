@@ -229,7 +229,10 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
     timeout = setTimeout(() => markLimited('maxDurationMs'), limits.maxDurationMs);
     timeout.unref?.();
     await emit({ type: 'phase', phase: 'creating' });
-    handle = await ctx.agents.create({
+    // Cordis hides services the plugin did not inject; read it explicitly instead of ctx.agents.
+    const agents = ctx.get('agents');
+    if (!agents) throw new TypeError('Agent service is unavailable in the plugin context');
+    handle = await agents.create({
       sessionId,
       meta: { cwd: sandbox.root },
       agentOptions: { provider: route, model, maxTokens: limits.maxTokens },
