@@ -12,7 +12,12 @@ import { FeatureStyleManager } from './features'
 import { SettingsIcon, SettingsPage } from './Settings'
 import { ModelPickerPanel, type ModelOption } from './ModelPickerPanel'
 import { restoreComposerFocus } from './composerFocus'
-import { matchesShortcut, toDshBinding } from './shortcuts'
+import {
+  isEventInWorkbenchScope,
+  isFocusInWorkbenchScope,
+  matchesShortcut,
+  toDshBinding,
+} from './shortcuts'
 import { loadModelUsage, recordModelUsage, type ModelUsageHistory } from './modelUsage'
 
 const ENTRY_ID = 'ui-enhancements'
@@ -485,25 +490,40 @@ window.__ModuleLoader__?.load({
           `${PACKAGE_ID}.settings-icon`,
         )
 
-        // Global keydown listener for the configurable Model Picker shortcut (hot-updated).
+        // Fallback window keydown listener is only active when DSH's shortcuts service is unavailable.
+        // Even then, it yields whenever keyboard focus is inside an active workbench scope.
+        let shortcutServiceActive = false
+        let teardownFallback: (() => void) | null = null
+
         ctx.effect(() => {
+          if (shortcutServiceActive) return () => {}
           const onKeyDown = (event: KeyboardEvent): void => {
-            if (isRecordingShortcut || event.isComposing || event.keyCode === 229) return
+            if (shortcutServiceActive) return
+            if (isRecordingShortcut || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229) return
             const cfg = configStore.getSnapshot().config
             if (!cfg.enableModelPicker) return
             if (!matchesShortcut(event, cfg.modelPickerShortcut)) return
+            if (isEventInWorkbenchScope(event)) return
             event.preventDefault()
             event.stopPropagation()
             picker.toggle()
           }
           window.addEventListener('keydown', onKeyDown, true)
-          return () => window.removeEventListener('keydown', onKeyDown, true)
+          const remove = () => window.removeEventListener('keydown', onKeyDown, true)
+          teardownFallback = remove
+          return () => {
+            if (teardownFallback === remove) teardownFallback = null
+            remove()
+          }
         }, `${PACKAGE_ID}.model-picker-keydown`)
 
-        // Also register in DSH's shortcut catalog if non-conflicting.
+        // Register in DSH's shortcut catalog; if Host rejects/conflicts, do NOT bypass via fallback.
         ctx.inject(['shortcuts'], (shortcutCtx: any) => {
           const shortcuts = shortcutCtx.get?.('shortcuts')
           if (!shortcuts?.register || !shortcuts?.describeBinding) return
+          shortcutServiceActive = true
+          teardownFallback?.()
+          teardownFallback = null
           let disposeShortcut: (() => void) | null = null
 
           const syncShortcut = () => {
@@ -521,7 +541,10 @@ window.__ModuleLoader__?.load({
             if (!binding) return
             try {
               const info = shortcuts.describeBinding(binding)
-              if (info.issue !== null || info.conflicts.length > 0) return
+              if (info?.issue !== null || (Array.isArray(info?.conflicts) && info.conflicts.length > 0)) {
+                console.warn('[dsh-ui-enhancements] shortcut rejected by host', cfg.modelPickerShortcut, info)
+                return
+              }
               disposeShortcut = shortcuts.register({
                 id: `${PACKAGE_ID}.modelPicker`,
                 label: () => 'Enhans：打开/关闭模型选择面板',
@@ -530,16 +553,23 @@ window.__ModuleLoader__?.load({
                   'desktop:macos': binding,
                   'desktop:windows': binding,
                   'desktop:linux': binding,
+                  'web:macos': binding,
+                  'web:windows': binding,
                 },
                 regions: ['page', 'editable'],
                 modals: [],
-                resolve: () => ({
-                  status: 'handled',
-                  run: () => picker.toggle(),
-                }),
+                resolve: () => {
+                  if (isRecordingShortcut || isFocusInWorkbenchScope()) {
+                    return { status: 'blocked', reason: '工作台内由工作台快捷键处理' }
+                  }
+                  return {
+                    status: 'handled',
+                    run: () => picker.toggle(),
+                  }
+                },
               })
-            } catch {
-              /* fallback window keydown listener remains active */
+            } catch (error) {
+              console.warn('[dsh-ui-enhancements] shortcut registration failed', error)
             }
           }
 

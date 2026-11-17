@@ -78,6 +78,7 @@ export function SettingsPage({
     const onKeyDown = (event: KeyboardEvent): void => {
       event.preventDefault()
       event.stopPropagation()
+      event.stopImmediatePropagation?.()
       if (event.key === 'Escape') {
         setRecording(false)
         return

@@ -106,11 +106,60 @@ export function toDshBinding(spec: string): { code: string; modifiers: string[] 
   if (!parsed) return null
   const modifiers: string[] = []
   if (parsed.mod) modifiers.push('primary')
-  if (parsed.ctrl) modifiers.push('ctrl')
+  if (parsed.ctrl) modifiers.push('control')
   if (parsed.meta) modifiers.push('meta')
   if (parsed.alt) modifiers.push('alt')
   if (parsed.shift) modifiers.push('shift')
   return { code: parsed.code, modifiers }
+}
+
+function isActiveWorkbenchScopeNode(node: unknown): boolean {
+  if (!node || typeof node !== 'object') return false
+  const el = node as Element
+  return (
+    typeof el.getAttribute === 'function' &&
+    el.hasAttribute('data-dsh-workbench-scope') &&
+    el.getAttribute('data-dsh-workbench-active') === 'true'
+  )
+}
+
+function getDeepActiveElement(root: Document | ShadowRoot | null): Element | null {
+  if (!root) return null
+  const active = root.activeElement ?? null
+  if (active && active.shadowRoot?.activeElement) {
+    return getDeepActiveElement(active.shadowRoot)
+  }
+  return active
+}
+
+function isNodeInsideActiveWorkbenchScope(node: Node | null): boolean {
+  let cur: Node | null = node
+  while (cur) {
+    if (isActiveWorkbenchScopeNode(cur)) return true
+    if (cur.parentNode) {
+      cur = cur.parentNode
+    } else if (typeof ShadowRoot !== 'undefined' && cur instanceof ShadowRoot) {
+      cur = cur.host
+    } else {
+      cur = null
+    }
+  }
+  return false
+}
+
+export function isFocusInWorkbenchScope(): boolean {
+  if (typeof document === 'undefined') return false
+  return isNodeInsideActiveWorkbenchScope(getDeepActiveElement(document))
+}
+
+export function isEventInWorkbenchScope(event?: KeyboardEvent | null): boolean {
+  if (isFocusInWorkbenchScope()) return true
+  if (event && typeof event.composedPath === 'function') {
+    for (const node of event.composedPath()) {
+      if (isActiveWorkbenchScopeNode(node)) return true
+    }
+  }
+  return isNodeInsideActiveWorkbenchScope((event?.target as Node | null) ?? null)
 }
 
 export function displayShortcut(spec: string): string {
