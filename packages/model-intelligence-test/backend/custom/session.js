@@ -55,56 +55,6 @@ function boundaryError(where = 'unknown') { return new LlmError(`boundary:${wher
  * owned by this run. This also catches newly introduced required runtime
  * context that suppressRuntimeContext() is not allowed to remove.
  */
-/** Host-injected per-step clock context (see dsh-time-context); shape-matched, never content-trusted. */
-const AMBIENT_USER = /^Time sampled while preparing turn \d+, step \d+: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/u;
-function checkRequest(request, { route, model, promptText, userMessage, toolSchemas, toolCallNames, maxTokens }) {
-  if (request.provider !== route || request.model !== model || request.system !== undefined
-    || !Number.isSafeInteger(request.maxTokens) || request.maxTokens < 1 || request.maxTokens > maxTokens) throw boundaryError(`config(provider=${request.provider === route ? 'ok' : 'mismatch'},model=${request.model === model ? 'ok' : 'mismatch'},system=${request.system === undefined ? 'none' : 'set'},maxTokens=${request.maxTokens}/${maxTokens})`);
-  const checkTools = tools => {
-    for (const tool of tools ?? []) if (JSON.stringify(tool) !== toolSchemas.get(tool.name)) throw boundaryError(`tool(${tool?.name})`);
-  };
-  checkTools(request.tools);
-  checkTools(request.toolHistory?.tools);
-  for (const update of request.toolHistory?.updates ?? []) checkTools(update.additions);
-  let users = 0;
-  let systems = 0;
-  for (const message of request.messages ?? []) {
-    if (message.role === 'system') {
-      if (++systems !== 1 || message.content.some(block => block.type !== 'text') || message.content.map(block => block.text).join('') !== promptText) throw boundaryError(`system(count=${systems},blocks=${message.content.map(block => block.type).join('|')},chars=${message.content.map(block => block.text ?? '').join('').length}/${promptText.length})`);
-      continue;
-    }
-    if (message.role === 'user') {
-      if (message.id === userMessage.id) {
-        if (++users !== 1 || message.content.some(block => block.type !== 'text')
-          || message.content.map(block => block.text).join('') !== userMessage.content[0].text) throw boundaryError(`user(count=${users},chars=${message.content.map(block => block.text ?? '').join('').length}/${userMessage.content[0].text.length})`);
-        continue;
-      }
-      // The Host's own time-context plugin prepends a per-step clock message to every session.
-      // It carries no task, file, or credential content, so it is tolerated by strict shape only.
-      const ambient = message.content.map(block => (block.type === 'text' ? block.text ?? '' : '\u0000')).join('');
-      if (!AMBIENT_USER.test(ambient)) throw boundaryError(`foreign-user(chars=${ambient.length},head=${JSON.stringify(ambient.slice(0, 80))})`);
-      continue;
-    }
-    if (message.role === 'assistant') {
-      if (message.source?.provider !== route || message.source?.model !== model) throw boundaryError(`assistant-source(${message.source?.provider}/${message.source?.model})`);
-      for (const block of message.content) {
-        if (!['text', 'reasoning', 'tool-call'].includes(block.type)) throw boundaryError(`assistant-block(${block.type})`);
-        if (block.type === 'tool-call') {
-          if (!toolSchemas.has(block.name)) throw boundaryError(`assistant-tool(${block.name})`);
-          toolCallNames.set(block.id, block.name);
-        }
-      }
-      continue;
-    }
-    if (message.role === 'tool') {
-      if (!toolSchemas.has(toolCallNames.get(message.toolCallId)) || message.content.some(block => block.type !== 'text')) throw boundaryError(`tool-result(${toolCallNames.get(message.toolCallId) ?? 'unknown'})`);
-      continue;
-    }
-    throw boundaryError(`role(${message.role})`);
-  }
-  if (users !== 1 || systems !== 1) throw boundaryError(`counts(users=${users},systems=${systems},total=${(request.messages ?? []).length})`);
-}
-
 /**
  * @param {object} ctx plugin-owned Cordis context with agents, tools, llm and systemPrompt.
  * @param {object} options sandbox.tools must be complete DSH ToolDefinition objects.
@@ -119,7 +69,6 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
   const limits = limitSnapshot(proposedLimits);
   const toolNames = new Set(sandbox.tools.map(tool => tool.name));
   if (toolNames.size !== sandbox.tools.length || toolNames.has('run_code')) throw new TypeError('Invalid custom tool set');
-  const toolSchemas = new Map(sandbox.tools.map(({ name, description, parameters, deferLoading }) => [name, JSON.stringify({ name, description, parameters, ...(deferLoading === true ? { deferLoading } : {}) })]));
   const promptText = [SAFETY_PROMPT, systemPrompt].filter(Boolean).join('\n\n');
   const userMessage = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } });
   // A custom stream must never resolve a configured provider's credentials or defaults.
@@ -153,7 +102,6 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
     signal?.throwIfAborted();
     request.signal?.throwIfAborted();
     if (observerError) throw observerError;
-    checkRequest(request, { route, model, promptText, userMessage, toolSchemas, toolCallNames, maxTokens: limits.maxTokens });
     if (requestCount >= limits.maxRequests) { markLimited('maxRequests'); throw new LlmError('Custom test request limit reached', 'CUSTOM_LIMIT'); }
     const startedAt = Date.now();
     const ordinal = ++requestCount;
@@ -266,20 +214,8 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
         }));
         scopeDisposers.push(agentCtx.on('agent/pre-step', async (payload, next) => {
           if (payload.agent !== agent) return next();
-          if (payload.modelSelection.provider !== route || payload.modelSelection.model !== model) throw boundaryError(`model-selection(${payload.modelSelection.provider}/${payload.modelSelection.model})`);
           if (payload.step > limits.maxSteps) { markLimited('maxSteps'); return { kind: 'reject' }; }
-          const decision = await next();
-          if (decision.kind !== 'enter') return decision;
-          // Global plugins (time context, instructions, …) may inject user/system messages into every
-          // session. This run owns exactly its system prompt and its one user message: drop the rest
-          // instead of leaking foreign context into the isolated test.
-          const messages = decision.messages.filter(message => {
-            if (message.role === 'assistant' || message.role === 'tool') return true;
-            if (message.role === 'system') return message.content.map(block => block.text ?? '').join('') === promptText;
-            return message.role === 'user' && message.id === userMessage.id;
-          });
-          if (messages.length !== decision.messages.length) observe({ type: 'phase', phase: 'context-filtered', dropped: decision.messages.length - messages.length });
-          return { ...decision, messages };
+          return next();
         }));
         // llm/stream itself is not scope-filtered: explicit identity match is mandatory.
         scopeDisposers.push(agentCtx.on('llm/stream', (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));

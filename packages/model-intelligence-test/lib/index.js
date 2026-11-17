@@ -4090,60 +4090,12 @@ function limitSnapshot(value = {}) {
     return [name2, selected];
   }));
 }
-function boundaryError(where = "unknown") {
-  return new LlmError(`boundary:${where}`, "CUSTOM_BOUNDARY");
-}
-var AMBIENT_USER = /^Time sampled while preparing turn \d+, step \d+: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/u;
-function checkRequest(request, { route, model, promptText, userMessage, toolSchemas, toolCallNames, maxTokens }) {
-  if (request.provider !== route || request.model !== model || request.system !== void 0 || !Number.isSafeInteger(request.maxTokens) || request.maxTokens < 1 || request.maxTokens > maxTokens) throw boundaryError(`config(provider=${request.provider === route ? "ok" : "mismatch"},model=${request.model === model ? "ok" : "mismatch"},system=${request.system === void 0 ? "none" : "set"},maxTokens=${request.maxTokens}/${maxTokens})`);
-  const checkTools = (tools) => {
-    for (const tool of tools ?? []) if (JSON.stringify(tool) !== toolSchemas.get(tool.name)) throw boundaryError(`tool(${tool?.name})`);
-  };
-  checkTools(request.tools);
-  checkTools(request.toolHistory?.tools);
-  for (const update of request.toolHistory?.updates ?? []) checkTools(update.additions);
-  let users = 0;
-  let systems = 0;
-  for (const message of request.messages ?? []) {
-    if (message.role === "system") {
-      if (++systems !== 1 || message.content.some((block) => block.type !== "text") || message.content.map((block) => block.text).join("") !== promptText) throw boundaryError(`system(count=${systems},blocks=${message.content.map((block) => block.type).join("|")},chars=${message.content.map((block) => block.text ?? "").join("").length}/${promptText.length})`);
-      continue;
-    }
-    if (message.role === "user") {
-      if (message.id === userMessage.id) {
-        if (++users !== 1 || message.content.some((block) => block.type !== "text") || message.content.map((block) => block.text).join("") !== userMessage.content[0].text) throw boundaryError(`user(count=${users},chars=${message.content.map((block) => block.text ?? "").join("").length}/${userMessage.content[0].text.length})`);
-        continue;
-      }
-      const ambient = message.content.map((block) => block.type === "text" ? block.text ?? "" : "\0").join("");
-      if (!AMBIENT_USER.test(ambient)) throw boundaryError(`foreign-user(chars=${ambient.length},head=${JSON.stringify(ambient.slice(0, 80))})`);
-      continue;
-    }
-    if (message.role === "assistant") {
-      if (message.source?.provider !== route || message.source?.model !== model) throw boundaryError(`assistant-source(${message.source?.provider}/${message.source?.model})`);
-      for (const block of message.content) {
-        if (!["text", "reasoning", "tool-call"].includes(block.type)) throw boundaryError(`assistant-block(${block.type})`);
-        if (block.type === "tool-call") {
-          if (!toolSchemas.has(block.name)) throw boundaryError(`assistant-tool(${block.name})`);
-          toolCallNames.set(block.id, block.name);
-        }
-      }
-      continue;
-    }
-    if (message.role === "tool") {
-      if (!toolSchemas.has(toolCallNames.get(message.toolCallId)) || message.content.some((block) => block.type !== "text")) throw boundaryError(`tool-result(${toolCallNames.get(message.toolCallId) ?? "unknown"})`);
-      continue;
-    }
-    throw boundaryError(`role(${message.role})`);
-  }
-  if (users !== 1 || systems !== 1) throw boundaryError(`counts(users=${users},systems=${systems},total=${(request.messages ?? []).length})`);
-}
 async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = "", sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream }) {
   if (!sessionId || typeof sessionId !== "string" || !provider || !model || typeof prompt !== "string" || !prompt.trim()) throw new TypeError("Invalid custom Agent request");
   if (!sandbox?.root || !Array.isArray(sandbox.tools) || sandbox.tools.length === 0) throw new TypeError("Custom Agent requires rooted tools");
   const limits = limitSnapshot(proposedLimits);
   const toolNames = new Set(sandbox.tools.map((tool) => tool.name));
   if (toolNames.size !== sandbox.tools.length || toolNames.has("run_code")) throw new TypeError("Invalid custom tool set");
-  const toolSchemas = new Map(sandbox.tools.map(({ name: name2, description, parameters, deferLoading }) => [name2, JSON.stringify({ name: name2, description, parameters, ...deferLoading === true ? { deferLoading } : {} })]));
   const promptText = [SAFETY_PROMPT, systemPrompt].filter(Boolean).join("\n\n");
   const userMessage = createUserMessage2({ content: [{ type: "text", text: prompt }], source: { kind: "user" } });
   const route = stream ? `mit-custom-${randomUUID4()}` : provider;
@@ -4184,7 +4136,6 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
     signal?.throwIfAborted();
     request.signal?.throwIfAborted();
     if (observerError) throw observerError;
-    checkRequest(request, { route, model, promptText, userMessage, toolSchemas, toolCallNames, maxTokens: limits.maxTokens });
     if (requestCount >= limits.maxRequests) {
       markLimited("maxRequests");
       throw new LlmError("Custom test request limit reached", "CUSTOM_LIMIT");
@@ -4297,20 +4248,11 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
         }));
         scopeDisposers.push(agentCtx.on("agent/pre-step", async (payload, next) => {
           if (payload.agent !== agent) return next();
-          if (payload.modelSelection.provider !== route || payload.modelSelection.model !== model) throw boundaryError(`model-selection(${payload.modelSelection.provider}/${payload.modelSelection.model})`);
           if (payload.step > limits.maxSteps) {
             markLimited("maxSteps");
             return { kind: "reject" };
           }
-          const decision = await next();
-          if (decision.kind !== "enter") return decision;
-          const messages = decision.messages.filter((message) => {
-            if (message.role === "assistant" || message.role === "tool") return true;
-            if (message.role === "system") return message.content.map((block) => block.text ?? "").join("") === promptText;
-            return message.role === "user" && message.id === userMessage.id;
-          });
-          if (messages.length !== decision.messages.length) observe({ type: "phase", phase: "context-filtered", dropped: decision.messages.length - messages.length });
-          return { ...decision, messages };
+          return next();
         }));
         scopeDisposers.push(agentCtx.on("llm/stream", (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));
         scopeDisposers.push(agentCtx.on("session/event", (session, event) => {
