@@ -10,8 +10,6 @@ import { reasoningText } from './reasoning-text';
 import { TextShimmer } from './TextShimmer';
 import { ChatMarkdown } from '../md';
 
-const THINK_ICON = <IconThinkOutlineRegular size={14} />;
-
 /** First line of a block of text. */
 function firstLine(text: string): string {
   const newline = text.indexOf('\n');
@@ -98,7 +96,7 @@ export const ReasoningRow = memo(function ReasoningRow({
         rowClassName={css.row}
         leadingClassName={css.leading}
         titleClassName={css.title}
-        icon={THINK_ICON}
+        icon={<IconThinkOutlineRegular size={14} />}
         title={t('message.think')}
         running={running}
         open={expanded}
