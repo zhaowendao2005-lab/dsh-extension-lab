@@ -56,6 +56,7 @@ export class RecordsService {
     this.launchLocks = new Map();
     this.starting = new Set();
     this.timers = new Map();    // attemptId -> persistence timer
+    this.closing = false;
     this.disposed = false;
     this.ready = this.boot();
     this.ready.catch(() => {});
@@ -63,7 +64,7 @@ export class RecordsService {
 
   async boot() {
     const domain = await this.storage.records();
-    // Attempts that were running when the runtime stopped can never resume: mark them interrupted.
+    // An interrupted attempt is never auto-dispatched. An eligible custom run may be resumed explicitly.
     const attempts = domain.table('attempts');
     for (const [id, attempt] of [...attempts.entries()]) {
       if (!ACTIVE.has(attempt.status)) continue;
@@ -100,26 +101,30 @@ export class RecordsService {
     if (!attemptId) return;
     this.bump();
     if (this.timers.has(attemptId)) return;
-    this.timers.set(attemptId, setTimeout(() => { this.timers.delete(attemptId); void this.persistJob(attemptId, job.id); }, PERSIST_THROTTLE_MS));
+    this.timers.set(attemptId, setTimeout(() => { this.timers.delete(attemptId); void this.persistJob(attemptId, job.id).catch(() => {}); }, PERSIST_THROTTLE_MS));
   }
   onSettled(job) {
     const attemptId = this.byJob.get(job.id);
     if (!attemptId) return;
     clearTimeout(this.timers.get(attemptId)); this.timers.delete(attemptId);
-    void this.persistJob(attemptId, job.id, true).then(() => this.startNextQueued(attemptId));
+    void this.persistJob(attemptId, job.id).then(() => this.startNextQueued(attemptId)).catch(() => {});
   }
 
-  async persistJob(attemptId, jobId, settled = false) {
+  async persistJob(attemptId, jobId) {
     if (this.disposed) return;
     const domain = await this.ready;
     const table = domain.table('attempts');
-    const attempt = table.get(attemptId);
-    if (!attempt || this.disposed || this.removing.has(attempt.recordId)) return;
-    let view;
-    try { view = this.runner(jobId).status(jobId); } catch { return; }
-    const status = settled ? (view.status === 'cancelled' ? 'cancelled' : view.status === 'failed' ? 'failed' : 'done') : 'running';
-    await this.put(domain, 'attempts', attemptId, { ...attempt, status, ...(jobId.startsWith('custom-') ? {custom: {runs:view.runs, revision:view.revision}, view:null} : {view}), finishedAt: settled ? view.finishedAt ?? Date.now() : null });
-    this.bump();
+    const recordId = table.get(attemptId)?.recordId;
+    if (!recordId) return;
+    await this.serializeLaunch(recordId, async () => {
+      const attempt = table.get(attemptId);
+      if (attempt?.jobId !== jobId || this.disposed || this.removing.has(recordId)) return;
+      const view = this.safeStatus(jobId);
+      if (!view) return;
+      const status = ['cancelled', 'failed', 'done'].includes(view.status) ? view.status : 'running';
+      await this.put(domain, 'attempts', attemptId, { ...attempt, status, ...(jobId.startsWith('custom-') ? {custom: {runs:view.runs, revision:view.revision}, view:null} : {view}), finishedAt: status === 'running' ? null : view.finishedAt ?? Date.now() });
+      this.bump();
+    });
   }
 
   // ---- queries --------------------------------------------------------------------------------
@@ -205,8 +210,10 @@ export class RecordsService {
   }
 
   async launch(record) {
+    if (this.closing) throw new FingerprintError('disposed', '插件正在卸载');
     return this.serializeLaunch(record.id, async () => {
-      const domain = await this.ready;
+      const domain = await this.domain();
+      if (this.closing || this.removing.has(record.id) || !domain.table('records').get(record.id)) throw new FingerprintError('not-found', '测试记录不存在或正在关闭');
       const attempts = domain.table('attempts');
       const existing = [...attempts.entries()].map(([, item]) => item).filter(item => item.recordId === record.id);
       const number = existing.reduce((max, item) => Math.max(max, item.number), 0) + 1;
@@ -228,7 +235,7 @@ export class RecordsService {
     if (this.starting.has(attemptId)) return;
     const source = attempt && domain.table('records').get(attempt.recordId);
     const record = source && attempt.models ? {...source, models:attempt.models} : source;
-    if (!attempt || !record || attempt.status !== 'queued' || this.disposed || this.removing.has(record.id)) return;
+    if (!attempt || !record || attempt.status !== 'queued' || this.closing || this.disposed || this.removing.has(record.id)) return;
     this.starting.add(attemptId);
     try {
       const view = record.kind === 'custom' ? await this.custom.start(record, attempt) : await this.engine.start(record.models.map(model => ({ provider: model.provider, id: model.id, ...(model.relay ? { relay: model.relay } : {}), ...(model.a6api ? { a6api: model.a6api } : {}) })), record.options, record.a6api ?? null, { recordId: record.id, attemptId });
@@ -238,18 +245,20 @@ export class RecordsService {
       }
       this.byJob.set(view.id, attemptId);
       await this.put(domain, 'attempts', attemptId, { ...attempts.get(attemptId), status: 'running', jobId: view.id, startedAt: Date.now(), ...(record.kind === 'custom' ? {custom:{runs:view.runs,revision:view.revision},view:null} : {view}) });
-      if (record.kind === 'custom') this.custom.pump();
+      if (record.kind === 'custom') this.custom.activate(view.id);
     } catch (error) {
       if (this.disposed || this.removing.has(record.id) || !attempts.get(attemptId) || attempts.get(attemptId).status !== 'queued') return;
       const message = error instanceof FingerprintError ? error.message : record.kind === 'custom' ? '自定义会话启动失败，请检查运行时配置。' : '指纹服务执行失败，请稍后重试。';
       await this.put(domain, 'attempts', attemptId, { ...attempts.get(attemptId), status: 'failed', finishedAt: Date.now(), error: message });
       void this.startNextQueued(attemptId);
+    } finally {
+      this.starting.delete(attemptId);
+      this.bump();
     }
-    this.bump();
   }
 
   async startNextQueued(attemptId) {
-    if (this.disposed) return;
+    if (this.closing || this.disposed) return;
     const domain = await this.ready;
     const recordId = domain.table('attempts').get(attemptId)?.recordId;
     if (!recordId || this.disposed || this.removing.has(recordId)) return;
@@ -268,24 +277,61 @@ export class RecordsService {
     return attempt;
   }
 
+  async customMutation(attemptId, action) {
+    const initial = await this.liveJob(attemptId);
+    return this.serializeLaunch(initial.recordId, async () => {
+      const domain = await this.domain();
+      const attempt = domain.table('attempts').get(attemptId);
+      const source = domain.table('records').get(initial.recordId);
+      if (this.closing || this.removing.has(initial.recordId) || !attempt || source?.kind !== 'custom') throw new FingerprintError('not-found', '自定义测试轮次不可用');
+      return action(domain, attempt, { ...source, models: attempt.models ?? source.models });
+    });
+  }
+  async continueCustomRun({ attemptId, runId }) {
+    return this.customMutation(attemptId, async (domain, attempt, record) => {
+      const attempts = domain.table('attempts');
+      if ([...attempts.entries()].some(([, item]) => item.recordId === record.id && item.id !== attemptId && item.status === 'running')) {
+        throw new FingerprintError('task-busy', '该记录的另一个轮次正在运行，请先等待它结束');
+      }
+      return this.custom.continueRun({ record, attempt, runId, bind: async (jobId, runs, revision) => {
+        if (this.closing) throw new FingerprintError('disposed', '插件正在卸载');
+        await this.put(domain, 'attempts', attemptId, { ...attempt, status: 'running', finishedAt: null, jobId, view: null, custom: { runs, revision } });
+        if (attempt.jobId && attempt.jobId !== jobId) this.byJob.delete(attempt.jobId);
+        clearTimeout(this.timers.get(attemptId)); this.timers.delete(attemptId);
+        this.byJob.set(jobId, attemptId);
+        this.bump();
+      } });
+    });
+  }
+  async cancelCustomRun({ attemptId, runId }) {
+    return this.customMutation(attemptId, (_domain, attempt) => this.custom.cancelRun({ attemptId, runId, jobId: attempt.jobId }));
+  }
+
   async cancel(attemptId) {
-    const attempt = await this.liveJob(attemptId);
-    const domain = await this.ready;
-    if (attempt.status === 'queued') {
-      await this.put(domain, 'attempts', attemptId, { ...attempt, status: 'cancelled', finishedAt: Date.now() });
-      this.bump(); void this.startNextQueued(attemptId);
-    } else if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+    const initial = await this.liveJob(attemptId);
+    await this.serializeLaunch(initial.recordId, async () => {
+      const domain = await this.domain();
+      const attempt = domain.table('attempts').get(attemptId);
+      if (!attempt || this.closing || this.removing.has(initial.recordId)) return;
+      if (attempt.status === 'queued') {
+        await this.put(domain, 'attempts', attemptId, { ...attempt, status: 'cancelled', finishedAt: Date.now() });
+        this.bump(); void this.startNextQueued(attemptId);
+      } else if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+    });
     return this.attempt(attemptId);
   }
   async configure(attemptId, options) {
-    const attempt = await this.liveJob(attemptId);
-    const domain = await this.ready;
-    const records = domain.table('records');
-    const record = records.get(attempt.recordId);
-    // Options are a record-level setting: future re-requests inherit the latest values.
-    if (record) await this.put(domain, 'records', record.id, { ...record, options: { ...record.options, ...clean(options) } });
-    if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).configure(attempt.jobId, options);
-    this.bump();
+    const initial = await this.liveJob(attemptId);
+    await this.serializeLaunch(initial.recordId, async () => {
+      const domain = await this.domain();
+      const attempt = domain.table('attempts').get(attemptId);
+      const records = domain.table('records');
+      const record = records.get(initial.recordId);
+      if (this.closing || !attempt || !record || this.removing.has(record.id)) throw new FingerprintError('not-found', '测试轮次不可用');
+      await this.put(domain, 'records', record.id, { ...record, options: { ...record.options, ...clean(options) } });
+      if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).configure(attempt.jobId, options);
+      this.bump();
+    });
     return this.attempt(attemptId);
   }
   async retry(attemptId, model) {
@@ -307,27 +353,31 @@ export class RecordsService {
   }
 
   async remove(recordId) {
-    const domain = await this.domain();
-    this.removing.add(recordId);
-    try {
-      await Promise.allSettled([...(this.writes.get(recordId) ?? [])]);
-      const attempts = [...domain.table('attempts').entries()].map(([, item]) => item).filter(item => item.recordId === recordId);
-      await this.custom?.removeRecord(recordId);
-      // Invalidate billing before aborting sampling, so its finally/late HTTP callbacks cannot write.
-      await this.ledger?.removeRecord(recordId);
-      for (const attempt of attempts) {
-        clearTimeout(this.timers.get(attempt.id)); this.timers.delete(attempt.id);
-        if (attempt.jobId) this.byJob.delete(attempt.jobId);
-        if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+    return this.serializeLaunch(recordId, async () => {
+      const domain = await this.domain();
+      if (this.closing) throw new FingerprintError('disposed', '插件正在卸载');
+      if (!domain.table('records').get(recordId)) return { ok: true };
+      this.removing.add(recordId);
+      try {
+        await Promise.allSettled([...(this.writes.get(recordId) ?? [])]);
+        const attempts = [...domain.table('attempts').entries()].map(([, item]) => item).filter(item => item.recordId === recordId);
+        await this.custom?.removeRecord(recordId);
+        // Invalidate billing before aborting sampling, so its finally/late HTTP callbacks cannot write.
+        await this.ledger?.removeRecord(recordId);
+        for (const attempt of attempts) {
+          clearTimeout(this.timers.get(attempt.id)); this.timers.delete(attempt.id);
+          if (attempt.jobId) this.byJob.delete(attempt.jobId);
+          if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+        }
+        await domain.table('attempts').deleteMany(attempts.map(item => item.id));
+        await domain.table('records').delete(recordId);
+        this.bump();
+        return { ok: true };
+      } catch (error) {
+        this.removing.delete(recordId);
+        throw error;
       }
-      await domain.table('attempts').deleteMany(attempts.map(item => item.id));
-      await domain.table('records').delete(recordId);
-      this.bump();
-      return { ok: true };
-    } catch (error) {
-      this.removing.delete(recordId);
-      throw error;
-    }
+    });
   }
   async clear() {
     const domain = await this.domain();
@@ -338,10 +388,15 @@ export class RecordsService {
   async saveCustom() { throw new FingerprintError('unsupported', '自定义测试状态由 Host 管理，客户端快照写入已停用'); }
 
   async dispose() {
+    this.closing = true;
+    this.custom?.stopScheduling();
+    await this.ready.catch(() => {});
+    await Promise.allSettled([...this.launchLocks.values()]);
     await this.custom?.dispose();
-    this.disposed = true;
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    await Promise.allSettled([...this.launchLocks.values()]);
+    this.disposed = true;
     await Promise.allSettled([...this.writes.values()].flatMap(writes => [...writes]));
   }
 }

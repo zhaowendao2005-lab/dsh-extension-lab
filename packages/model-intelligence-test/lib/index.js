@@ -71,6 +71,7 @@ var schemas = {
   customFileRead: z2.strictObject({ ...customRun, path: z2.string().min(1).max(512) }),
   customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode", "reveal"]).optional(), application: z2.string().min(1).max(512).optional() }),
   customRunContinue: z2.strictObject({ ...customRun }),
+  customRunCancel: z2.strictObject({ ...customRun }),
   a6ConfigSave: z2.strictObject({ accessToken: z2.string().max(512).optional(), userId: z2.string().max(40).optional() }),
   a6Selections: z2.strictObject({ revision: z2.number().int().nonnegative().optional() }),
   a6Create: z2.strictObject({ selectionId: id(), kind: z2.enum(["fingerprint", "custom"]).optional(), ...customPrompt, name: z2.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z2.array(a6Channel).min(1).max(64).optional(), protocols: z2.array(protocolEntry).max(64).optional() }),
@@ -95,7 +96,8 @@ var DESCRIPTIONS = {
   customRunDetail: "Read bounded events, requests and sandbox metadata for a custom run belonging to an attempt.",
   customFileRead: "Read a bounded relative file inside a verified custom-run sandbox.",
   customOutputOpen: "Preview a validated output or open that exact file with the discovered VS Code application.",
-  customRunContinue: "Resume a failed/cancelled custom run in its original DSH session and send a continue message (real inference).",
+  customRunContinue: "Queue a failed, cancelled or interrupted custom run to resume its original DSH session and send a continue message (real inference).",
+  customRunCancel: "Cancel only the specified queued or running custom model; leave the other runs in its attempt alone.",
   a6CustomFromRecord: "Create custom sessions from channels of an existing fingerprint record; uses its account and dedicated test slots.",
   a6Config: "Read a6api credential state (masked access token, intake token, loopback origin); never returns the access token.",
   a6ConfigSave: "Verify and store the a6api access token plus user id in Host storage.",
@@ -1285,7 +1287,10 @@ var ModelIntelligenceService = class extends Service {
     return this.guard(() => this.records.custom.open(request));
   }
   customRunContinue(request) {
-    return this.guard(() => this.records.custom.continueRun(request));
+    return this.guard(() => this.records.continueCustomRun(request));
+  }
+  customRunCancel(request) {
+    return this.guard(() => this.records.cancelCustomRun(request));
   }
   // Owner-only control plane. The only page-facing surface is the one-way selection intake.
   a6Config() {
@@ -1377,6 +1382,7 @@ var REMOTE_METHODS = [
   "customFileRead",
   "customOutputOpen",
   "customRunContinue",
+  "customRunCancel",
   "a6Config",
   "a6ConfigSave",
   "a6IntakeRotate",
@@ -1508,6 +1514,7 @@ var RecordsService = class {
     this.launchLocks = /* @__PURE__ */ new Map();
     this.starting = /* @__PURE__ */ new Set();
     this.timers = /* @__PURE__ */ new Map();
+    this.closing = false;
     this.disposed = false;
     this.ready = this.boot();
     this.ready.catch(() => {
@@ -1554,7 +1561,8 @@ var RecordsService = class {
     if (this.timers.has(attemptId)) return;
     this.timers.set(attemptId, setTimeout(() => {
       this.timers.delete(attemptId);
-      void this.persistJob(attemptId, job.id);
+      void this.persistJob(attemptId, job.id).catch(() => {
+      });
     }, PERSIST_THROTTLE_MS));
   }
   onSettled(job) {
@@ -1562,23 +1570,24 @@ var RecordsService = class {
     if (!attemptId) return;
     clearTimeout(this.timers.get(attemptId));
     this.timers.delete(attemptId);
-    void this.persistJob(attemptId, job.id, true).then(() => this.startNextQueued(attemptId));
+    void this.persistJob(attemptId, job.id).then(() => this.startNextQueued(attemptId)).catch(() => {
+    });
   }
-  async persistJob(attemptId, jobId, settled = false) {
+  async persistJob(attemptId, jobId) {
     if (this.disposed) return;
     const domain = await this.ready;
     const table = domain.table("attempts");
-    const attempt = table.get(attemptId);
-    if (!attempt || this.disposed || this.removing.has(attempt.recordId)) return;
-    let view;
-    try {
-      view = this.runner(jobId).status(jobId);
-    } catch {
-      return;
-    }
-    const status = settled ? view.status === "cancelled" ? "cancelled" : view.status === "failed" ? "failed" : "done" : "running";
-    await this.put(domain, "attempts", attemptId, { ...attempt, status, ...jobId.startsWith("custom-") ? { custom: { runs: view.runs, revision: view.revision }, view: null } : { view }, finishedAt: settled ? view.finishedAt ?? Date.now() : null });
-    this.bump();
+    const recordId = table.get(attemptId)?.recordId;
+    if (!recordId) return;
+    await this.serializeLaunch(recordId, async () => {
+      const attempt = table.get(attemptId);
+      if (attempt?.jobId !== jobId || this.disposed || this.removing.has(recordId)) return;
+      const view = this.safeStatus(jobId);
+      if (!view) return;
+      const status = ["cancelled", "failed", "done"].includes(view.status) ? view.status : "running";
+      await this.put(domain, "attempts", attemptId, { ...attempt, status, ...jobId.startsWith("custom-") ? { custom: { runs: view.runs, revision: view.revision }, view: null } : { view }, finishedAt: status === "running" ? null : view.finishedAt ?? Date.now() });
+      this.bump();
+    });
   }
   // ---- queries --------------------------------------------------------------------------------
   attemptSummary(attempt) {
@@ -1681,8 +1690,10 @@ var RecordsService = class {
     }
   }
   async launch(record) {
+    if (this.closing) throw new FingerprintError("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
     return this.serializeLaunch(record.id, async () => {
-      const domain = await this.ready;
+      const domain = await this.domain();
+      if (this.closing || this.removing.has(record.id) || !domain.table("records").get(record.id)) throw new FingerprintError("not-found", "\u6D4B\u8BD5\u8BB0\u5F55\u4E0D\u5B58\u5728\u6216\u6B63\u5728\u5173\u95ED");
       const attempts = domain.table("attempts");
       const existing = [...attempts.entries()].map(([, item]) => item).filter((item) => item.recordId === record.id);
       const number3 = existing.reduce((max, item) => Math.max(max, item.number), 0) + 1;
@@ -1714,7 +1725,7 @@ var RecordsService = class {
     if (this.starting.has(attemptId)) return;
     const source = attempt && domain.table("records").get(attempt.recordId);
     const record = source && attempt.models ? { ...source, models: attempt.models } : source;
-    if (!attempt || !record || attempt.status !== "queued" || this.disposed || this.removing.has(record.id)) return;
+    if (!attempt || !record || attempt.status !== "queued" || this.closing || this.disposed || this.removing.has(record.id)) return;
     this.starting.add(attemptId);
     try {
       const view = record.kind === "custom" ? await this.custom.start(record, attempt) : await this.engine.start(record.models.map((model) => ({ provider: model.provider, id: model.id, ...model.relay ? { relay: model.relay } : {}, ...model.a6api ? { a6api: model.a6api } : {} })), record.options, record.a6api ?? null, { recordId: record.id, attemptId });
@@ -1724,17 +1735,19 @@ var RecordsService = class {
       }
       this.byJob.set(view.id, attemptId);
       await this.put(domain, "attempts", attemptId, { ...attempts.get(attemptId), status: "running", jobId: view.id, startedAt: Date.now(), ...record.kind === "custom" ? { custom: { runs: view.runs, revision: view.revision }, view: null } : { view } });
-      if (record.kind === "custom") this.custom.pump();
+      if (record.kind === "custom") this.custom.activate(view.id);
     } catch (error) {
       if (this.disposed || this.removing.has(record.id) || !attempts.get(attemptId) || attempts.get(attemptId).status !== "queued") return;
       const message = error instanceof FingerprintError ? error.message : record.kind === "custom" ? "\u81EA\u5B9A\u4E49\u4F1A\u8BDD\u542F\u52A8\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8FD0\u884C\u65F6\u914D\u7F6E\u3002" : "\u6307\u7EB9\u670D\u52A1\u6267\u884C\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002";
       await this.put(domain, "attempts", attemptId, { ...attempts.get(attemptId), status: "failed", finishedAt: Date.now(), error: message });
       void this.startNextQueued(attemptId);
+    } finally {
+      this.starting.delete(attemptId);
+      this.bump();
     }
-    this.bump();
   }
   async startNextQueued(attemptId) {
-    if (this.disposed) return;
+    if (this.closing || this.disposed) return;
     const domain = await this.ready;
     const recordId = domain.table("attempts").get(attemptId)?.recordId;
     if (!recordId || this.disposed || this.removing.has(recordId)) return;
@@ -1751,24 +1764,62 @@ var RecordsService = class {
     if (!attempt) throw new FingerprintError("not-found", "\u8BF7\u6C42\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
     return attempt;
   }
+  async customMutation(attemptId, action) {
+    const initial = await this.liveJob(attemptId);
+    return this.serializeLaunch(initial.recordId, async () => {
+      const domain = await this.domain();
+      const attempt = domain.table("attempts").get(attemptId);
+      const source = domain.table("records").get(initial.recordId);
+      if (this.closing || this.removing.has(initial.recordId) || !attempt || source?.kind !== "custom") throw new FingerprintError("not-found", "\u81EA\u5B9A\u4E49\u6D4B\u8BD5\u8F6E\u6B21\u4E0D\u53EF\u7528");
+      return action(domain, attempt, { ...source, models: attempt.models ?? source.models });
+    });
+  }
+  async continueCustomRun({ attemptId, runId }) {
+    return this.customMutation(attemptId, async (domain, attempt, record) => {
+      const attempts = domain.table("attempts");
+      if ([...attempts.entries()].some(([, item]) => item.recordId === record.id && item.id !== attemptId && item.status === "running")) {
+        throw new FingerprintError("task-busy", "\u8BE5\u8BB0\u5F55\u7684\u53E6\u4E00\u4E2A\u8F6E\u6B21\u6B63\u5728\u8FD0\u884C\uFF0C\u8BF7\u5148\u7B49\u5F85\u5B83\u7ED3\u675F");
+      }
+      return this.custom.continueRun({ record, attempt, runId, bind: async (jobId, runs, revision) => {
+        if (this.closing) throw new FingerprintError("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
+        await this.put(domain, "attempts", attemptId, { ...attempt, status: "running", finishedAt: null, jobId, view: null, custom: { runs, revision } });
+        if (attempt.jobId && attempt.jobId !== jobId) this.byJob.delete(attempt.jobId);
+        clearTimeout(this.timers.get(attemptId));
+        this.timers.delete(attemptId);
+        this.byJob.set(jobId, attemptId);
+        this.bump();
+      } });
+    });
+  }
+  async cancelCustomRun({ attemptId, runId }) {
+    return this.customMutation(attemptId, (_domain, attempt) => this.custom.cancelRun({ attemptId, runId, jobId: attempt.jobId }));
+  }
   async cancel(attemptId) {
-    const attempt = await this.liveJob(attemptId);
-    const domain = await this.ready;
-    if (attempt.status === "queued") {
-      await this.put(domain, "attempts", attemptId, { ...attempt, status: "cancelled", finishedAt: Date.now() });
-      this.bump();
-      void this.startNextQueued(attemptId);
-    } else if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+    const initial = await this.liveJob(attemptId);
+    await this.serializeLaunch(initial.recordId, async () => {
+      const domain = await this.domain();
+      const attempt = domain.table("attempts").get(attemptId);
+      if (!attempt || this.closing || this.removing.has(initial.recordId)) return;
+      if (attempt.status === "queued") {
+        await this.put(domain, "attempts", attemptId, { ...attempt, status: "cancelled", finishedAt: Date.now() });
+        this.bump();
+        void this.startNextQueued(attemptId);
+      } else if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+    });
     return this.attempt(attemptId);
   }
   async configure(attemptId, options2) {
-    const attempt = await this.liveJob(attemptId);
-    const domain = await this.ready;
-    const records = domain.table("records");
-    const record = records.get(attempt.recordId);
-    if (record) await this.put(domain, "records", record.id, { ...record, options: { ...record.options, ...clean(options2) } });
-    if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).configure(attempt.jobId, options2);
-    this.bump();
+    const initial = await this.liveJob(attemptId);
+    await this.serializeLaunch(initial.recordId, async () => {
+      const domain = await this.domain();
+      const attempt = domain.table("attempts").get(attemptId);
+      const records = domain.table("records");
+      const record = records.get(initial.recordId);
+      if (this.closing || !attempt || !record || this.removing.has(record.id)) throw new FingerprintError("not-found", "\u6D4B\u8BD5\u8F6E\u6B21\u4E0D\u53EF\u7528");
+      await this.put(domain, "records", record.id, { ...record, options: { ...record.options, ...clean(options2) } });
+      if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).configure(attempt.jobId, options2);
+      this.bump();
+    });
     return this.attempt(attemptId);
   }
   async retry(attemptId, model) {
@@ -1789,27 +1840,31 @@ var RecordsService = class {
     return this.attempt(attemptId);
   }
   async remove(recordId) {
-    const domain = await this.domain();
-    this.removing.add(recordId);
-    try {
-      await Promise.allSettled([...this.writes.get(recordId) ?? []]);
-      const attempts = [...domain.table("attempts").entries()].map(([, item]) => item).filter((item) => item.recordId === recordId);
-      await this.custom?.removeRecord(recordId);
-      await this.ledger?.removeRecord(recordId);
-      for (const attempt of attempts) {
-        clearTimeout(this.timers.get(attempt.id));
-        this.timers.delete(attempt.id);
-        if (attempt.jobId) this.byJob.delete(attempt.jobId);
-        if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+    return this.serializeLaunch(recordId, async () => {
+      const domain = await this.domain();
+      if (this.closing) throw new FingerprintError("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
+      if (!domain.table("records").get(recordId)) return { ok: true };
+      this.removing.add(recordId);
+      try {
+        await Promise.allSettled([...this.writes.get(recordId) ?? []]);
+        const attempts = [...domain.table("attempts").entries()].map(([, item]) => item).filter((item) => item.recordId === recordId);
+        await this.custom?.removeRecord(recordId);
+        await this.ledger?.removeRecord(recordId);
+        for (const attempt of attempts) {
+          clearTimeout(this.timers.get(attempt.id));
+          this.timers.delete(attempt.id);
+          if (attempt.jobId) this.byJob.delete(attempt.jobId);
+          if (attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId)) this.runner(attempt.jobId).cancel(attempt.jobId);
+        }
+        await domain.table("attempts").deleteMany(attempts.map((item) => item.id));
+        await domain.table("records").delete(recordId);
+        this.bump();
+        return { ok: true };
+      } catch (error) {
+        this.removing.delete(recordId);
+        throw error;
       }
-      await domain.table("attempts").deleteMany(attempts.map((item) => item.id));
-      await domain.table("records").delete(recordId);
-      this.bump();
-      return { ok: true };
-    } catch (error) {
-      this.removing.delete(recordId);
-      throw error;
-    }
+    });
   }
   async clear() {
     const domain = await this.domain();
@@ -1820,10 +1875,16 @@ var RecordsService = class {
     throw new FingerprintError("unsupported", "\u81EA\u5B9A\u4E49\u6D4B\u8BD5\u72B6\u6001\u7531 Host \u7BA1\u7406\uFF0C\u5BA2\u6237\u7AEF\u5FEB\u7167\u5199\u5165\u5DF2\u505C\u7528");
   }
   async dispose() {
+    this.closing = true;
+    this.custom?.stopScheduling();
+    await this.ready.catch(() => {
+    });
+    await Promise.allSettled([...this.launchLocks.values()]);
     await this.custom?.dispose();
-    this.disposed = true;
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    await Promise.allSettled([...this.launchLocks.values()]);
+    this.disposed = true;
     await Promise.allSettled([...this.writes.values()].flatMap((writes) => [...writes]));
   }
 };
@@ -4141,7 +4202,7 @@ function limitSnapshot(value = {}) {
     return [name2, selected];
   }));
 }
-async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = "", sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream, resume = false }) {
+async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = "", sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, onSubmitted, stream, resume = false }) {
   if (!sessionId || typeof sessionId !== "string" || !provider || !model || typeof prompt !== "string" || !prompt.trim()) throw new TypeError("Invalid custom Agent request");
   if (!sandbox?.root || !Array.isArray(sandbox.tools) || sandbox.tools.length === 0) throw new TypeError("Custom Agent requires rooted tools");
   const limits = limitSnapshot(proposedLimits);
@@ -4149,7 +4210,7 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
   if (toolNames.size !== sandbox.tools.length || toolNames.has("run_code")) throw new TypeError("Invalid custom tool set");
   const promptText = [SAFETY_PROMPT, systemPrompt].filter(Boolean).join("\n\n");
   const userMessage = createUserMessage2({ content: [{ type: "text", text: prompt }], source: { kind: "user" } });
-  const route = stream ? `mit-custom-${randomUUID4()}` : provider;
+  const route = provider;
   const toolCallNames = /* @__PURE__ */ new Map();
   const completedRequests = [];
   let handle;
@@ -4164,6 +4225,7 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
   let observerError = null;
   let runtimeError = null;
   let pendingEvents = Promise.resolve();
+  let lastRequest = null;
   const scopeDisposers = [];
   const markLimited = (reason) => {
     limited ??= reason;
@@ -4174,7 +4236,8 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
     agent?.cancel({ kind: "hook", reason: "Custom test recording failed" });
   };
   const emit = (event) => {
-    const next = pendingEvents.then(() => onEvent?.({ ...event, sessionId, at: event.at ?? Date.now() }));
+    const at = event.at ?? Date.now();
+    const next = pendingEvents.then(() => onEvent?.({ ...event, sessionId, at }));
     pendingEvents = next.catch(stopForObserver);
     return next;
   };
@@ -4192,13 +4255,20 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
       throw new LlmError("Custom test request limit reached", "CUSTOM_LIMIT");
     }
     const startedAt = Date.now();
+    const position = { turn: turns, step: steps };
     const ordinal = ++requestCount;
     const localId = randomUUID4();
-    const allocatedId = await onRequest.start?.({ id: localId, sessionId, provider, model, ordinal, startedAt, turn: turns, step: steps, boundary: stream ? "http-attempt" : "dsh-attempt" });
+    const allocatedId = await onRequest.start?.({ id: localId, sessionId, provider, model, ordinal, startedAt, ...position, boundary: stream ? "http-attempt" : "dsh-attempt" });
     const id2 = typeof allocatedId === "string" && allocatedId ? allocatedId : localId;
     let usage = null;
     let firstDeltaAt = null;
     let lastDeltaAt = null;
+    const noted = /* @__PURE__ */ new Set();
+    const note = (key, at) => {
+      if (noted.has(key)) return;
+      noted.add(key);
+      onRequest.progress?.(id2, { [key]: at });
+    };
     const streamedBlocks = /* @__PURE__ */ new Set();
     let finishReason2 = null;
     let failure3 = null;
@@ -4221,10 +4291,16 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
       await metadata({ requestId: null, httpStatus: null });
       signal?.throwIfAborted();
       request.signal?.throwIfAborted();
+      note("dispatchedAt", Date.now());
       const source = stream ? stream(request, { metadata, usage: acceptUsage }) : next();
       for await (const chunk of source) {
         const now = Date.now();
-        if ((chunk.type === "text-delta" || chunk.type === "reasoning-delta") && chunk.text) {
+        const textDelta = (chunk.type === "text-delta" || chunk.type === "reasoning-delta") && chunk.text;
+        const toolDelta = chunk.type === "tool-call-delta" && (chunk.name || chunk.argumentsDelta);
+        const finalOutput = chunk.type === "block-end" && (chunk.block?.type === "tool-call" || ["text", "reasoning"].includes(chunk.block?.type) && chunk.block.text);
+        if (textDelta || toolDelta || finalOutput) note("firstOutputAt", now);
+        if (chunk.type === "text-delta" && chunk.text || finalOutput && chunk.block.type === "text") note("firstTextAt", now);
+        if (textDelta) {
           firstDeltaAt ??= now;
           lastDeltaAt = now;
           streamedBlocks.add(chunk.index);
@@ -4233,6 +4309,7 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
           await emit({ type: chunk.block.type === "text" ? "message" : "reasoning", role: "assistant", text: chunk.block.text, delta: false, index: chunk.index, executionId: id2, at: now });
         } else if (chunk.type === "usage") await acceptUsage(chunk.usage);
         else if (chunk.type === "finish") {
+          note("streamEndedAt", now);
           finishReason2 = chunk.reason?.kind ?? null;
           if (finishReason2 === "error" || finishReason2 === "aborted") {
             failure3 = publicFailure({ failure: chunk.reason.failure });
@@ -4253,6 +4330,8 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
       const finishedAt = Date.now();
       const cancelled = signal?.aborted || request.signal?.aborted || finishReason2 === "aborted";
       if (!ended && !failure3 && !cancelled) failure3 = publicFailure(new LlmError("Stream consumer ended before completion", "CUSTOM_STREAM_INTERRUPTED"));
+      if (noted.has("dispatchedAt")) note("streamEndedAt", finishedAt);
+      lastRequest = cancelled || failure3 ? null : { id: id2, ...position };
       completedRequests.push(usage);
       await onRequest.finish?.(id2, {
         finishedAt,
@@ -4314,10 +4393,13 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
           lastReason = data.reason;
           observe({ type: "phase", phase: "turn-end", turn: data.turn, reason: data.reason.kind, seq: event.seq });
         } else if (event.type === "tool/call") {
-          toolCallNames.set(data.callId, data.name);
-          observe({ type: "tool", phase: "call", callId: data.callId, name: data.name, arguments: data.arguments, turn: data.turn, step: data.step, seq: event.seq });
+          const executionId = lastRequest?.turn === data.turn && lastRequest?.step === data.step ? lastRequest.id : null;
+          toolCallNames.set(data.callId, { name: data.name, executionId });
+          observe({ type: "tool", phase: "call", callId: data.callId, name: data.name, executionId, arguments: data.arguments, turn: data.turn, step: data.step, seq: event.seq });
         } else if (event.type === "tool/result") {
-          observe({ type: "tool", phase: "result", callId: data.message.toolCallId, name: toolCallNames.get(data.message.toolCallId) ?? "", content: data.message.content, isError: data.message.isError === true, turn: data.turn, step: data.step, seq: event.seq });
+          const call = toolCallNames.get(data.message.toolCallId);
+          toolCallNames.delete(data.message.toolCallId);
+          observe({ type: "tool", phase: "result", callId: data.message.toolCallId, name: call?.name ?? "", executionId: call?.executionId, content: data.message.content, isError: data.message.isError === true, turn: data.turn, step: data.step, seq: event.seq });
         }
       }));
       scopeDisposers.push(agentCtx.on("agent/error", (payload) => {
@@ -4333,8 +4415,12 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
     else {
       await emit({ type: "message", role: "user", text: prompt, delta: false });
       await emit({ type: "phase", phase: "running" });
+      signal?.throwIfAborted();
       if (limited || observerError) agent.cancel({ kind: "hook", reason: "Custom test could not continue" });
-      else agent.followup(userMessage);
+      else {
+        agent.followup(userMessage);
+        onSubmitted?.();
+      }
     }
     await agent.whenIdle();
     await pendingEvents;
@@ -5147,6 +5233,7 @@ function createA6Stream({ key, api = "openai-completions", fetchImpl = globalThi
 
 // backend/custom/coordinator.js
 var END = /* @__PURE__ */ new Set(["completed", "failed", "cancelled", "interrupted"]);
+var RESUMABLE = /* @__PURE__ */ new Set(["failed", "cancelled", "interrupted"]);
 var MAX_MODELS2 = 6;
 var REQUEST_CAP = 500;
 var TRIGGER_CAP = 120;
@@ -5161,6 +5248,7 @@ var err = (code, message) => new FingerprintError(code, message);
 var emptyUsage = () => ({ requestCount: 0, inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null, billingState: "unknown" });
 var emptyMetrics = () => ({ ttftMs: null, generationMs: null, e2eMs: null, modelTokensPerSecond: null, endToEndTokensPerSecond: null, cacheRate: null });
 var publicRun = (data) => copy(data.summary);
+var summaryError = (code, message, phase, detail = null) => ({ code, message, phase, detail });
 var clipLine = (value, limit = TRIGGER_CAP) => {
   const text4 = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   return text4.length > limit ? `${text4.slice(0, limit - 1)}\u2026` : text4;
@@ -5192,6 +5280,7 @@ var CustomCoordinator = class {
     this.writes = /* @__PURE__ */ new Map();
     this.timers = /* @__PURE__ */ new Map();
     this.active = 0;
+    this.closing = false;
     this.disposed = false;
     this.ready = this.boot();
     this.ready.catch(() => {
@@ -5201,10 +5290,19 @@ var CustomCoordinator = class {
     const domain = await this.storage.records();
     for (const [id2, data] of domain.table("custom_runs").entries()) {
       if (END.has(data.summary?.phase)) continue;
+      const interruptedAt = Date.now();
+      const interrupted = { code: "interrupted", message: "\u8FD0\u884C\u65F6\u5DF2\u91CD\u542F\uFF0C\u4F1A\u8BDD\u5DF2\u4E2D\u65AD\uFF1B\u4E0D\u4F1A\u81EA\u52A8\u91CD\u65B0\u53D1\u9001\u8BF7\u6C42", phase: data.summary.phase };
       data.summary.phase = "interrupted";
-      data.summary.finishedAt = Date.now();
-      data.summary.error = { code: "interrupted", message: "\u8FD0\u884C\u65F6\u5DF2\u91CD\u542F\uFF0C\u4F1A\u8BDD\u5DF2\u4E2D\u65AD\uFF1B\u4E0D\u4F1A\u81EA\u52A8\u91CD\u65B0\u53D1\u9001\u8BF7\u6C42", phase: "running" };
-      for (const request of data.requests ?? []) if (request.status === "running") request.status = "interrupted";
+      data.summary.finishedAt = interruptedAt;
+      if (data.resumeQueued) data.summary.resumeError = interrupted;
+      else data.summary.error = interrupted;
+      delete data.resumeQueued;
+      data.revision += 1;
+      data.summary.updatedAt = interruptedAt;
+      for (const request of data.requests ?? []) {
+        if (request.status === "running") request.status = "interrupted";
+        if (request.timing?.tools.some((tool) => tool.endedAt === null)) request.timing.toolsClosed = true;
+      }
       await domain.table("custom_runs").put(id2, data);
     }
     return domain;
@@ -5248,6 +5346,14 @@ var CustomCoordinator = class {
       if (this.writes.get(data.id) === settled) this.writes.delete(data.id);
     }
   }
+  makeJob(id2, record, attempt, runs) {
+    return { id: id2, record, attemptId: attempt.id, revision: attempt.custom?.revision ?? 1, status: "running", finishedAt: null, bound: false, admitting: false, controller: new AbortController(), active: /* @__PURE__ */ new Map(), slotBusy: /* @__PURE__ */ new Set(), options: { concurrency: 2, timeoutMs: 18e4, ...record.options }, runs };
+  }
+  activate(id2) {
+    const job = this.jobs.get(id2);
+    if (job) job.bound = true;
+    this.pump();
+  }
   async start(record, attempt) {
     await this.ready;
     if (this.disposed || this.removed.has(record.id)) throw err("disposed", "\u4EFB\u52A1\u6B63\u5728\u7ED3\u675F");
@@ -5267,7 +5373,7 @@ var CustomCoordinator = class {
       }
     }
     const id2 = `custom-${randomUUID5()}`;
-    const job = { id: id2, record, attemptId: attempt.id, revision: 1, status: "running", finishedAt: null, controller: new AbortController(), active: /* @__PURE__ */ new Map(), slotBusy: /* @__PURE__ */ new Set(), options: { concurrency: 2, timeoutMs: 18e4, ...record.options }, runs: [] };
+    const job = this.makeJob(id2, record, attempt, []);
     for (const model of record.models) {
       const runId = randomUUID5();
       const target = { kind: model.a6api ? "a6api" : "dsh", providerId: model.provider, modelId: model.id, displayName: model.name || model.id, ...model.a6api ? { channelId: model.a6api.channelId, supplierId: model.a6api.supplierId, listingId: model.a6api.listingId, marketSnapshot: model.a6api.market ?? null } : {} };
@@ -5284,8 +5390,15 @@ var CustomCoordinator = class {
     data.summary.updatedAt = Date.now();
     this.touch(job);
   }
+  saveSoon(data) {
+    if (!this.timers.has(data.id)) this.timers.set(data.id, setTimeout(() => {
+      this.timers.delete(data.id);
+      void this.save(data).catch(() => {
+      });
+    }, 500));
+  }
   event(job, data, input2) {
-    const event = { id: `event-${randomUUID5()}`, at: Date.now(), type: input2.type, role: input2.role ?? null, delta: input2.delta === true, phase: input2.phase ?? null, name: input2.name ?? null, callId: input2.callId ?? null, executionId: input2.executionId ?? null, turn: Number.isInteger(input2.turn) ? input2.turn : null, step: Number.isInteger(input2.step) ? input2.step : null, index: Number.isInteger(input2.index) ? input2.index : null, text: typeof input2.text === "string" ? input2.text.slice(0, 32e3) : input2.type === "error" && typeof input2.message === "string" ? input2.message.slice(0, 800) : null, ...input2.type === "error" && typeof input2.code === "string" ? { code: input2.code.slice(0, 64) } : {}, ...input2.type === "error" && input2.detail ? { detail: input2.detail } : {}, ...input2.content !== void 0 ? { content: JSON.stringify(input2.content).slice(0, 32e3) } : {}, ...input2.arguments !== void 0 ? { arguments: JSON.stringify(input2.arguments).slice(0, 32e3) } : {}, isError: input2.isError === true || input2.type === "error" };
+    const event = { id: `event-${randomUUID5()}`, at: known(input2.at) ?? Date.now(), type: input2.type, role: input2.role ?? null, delta: input2.delta === true, phase: input2.phase ?? null, name: input2.name ?? null, callId: input2.callId ?? null, executionId: input2.executionId ?? null, turn: Number.isInteger(input2.turn) ? input2.turn : null, step: Number.isInteger(input2.step) ? input2.step : null, index: Number.isInteger(input2.index) ? input2.index : null, text: typeof input2.text === "string" ? input2.text.slice(0, 32e3) : input2.type === "error" && typeof input2.message === "string" ? input2.message.slice(0, 800) : null, ...input2.type === "error" && typeof input2.code === "string" ? { code: input2.code.slice(0, 64) } : {}, ...input2.type === "error" && input2.detail ? { detail: input2.detail } : {}, ...input2.content !== void 0 ? { content: JSON.stringify(input2.content).slice(0, 32e3) } : {}, ...input2.arguments !== void 0 ? { arguments: JSON.stringify(input2.arguments).slice(0, 32e3) } : {}, isError: input2.isError === true || input2.type === "error" };
     if (typeof event.text === "string") event.text = event.text.slice(0, 1e5);
     const previous = data.events.at(-1);
     if (event.delta && previous?.delta && previous.type === event.type && previous.role === event.role && previous.executionId === event.executionId && previous.index === event.index && (previous.text?.length ?? 0) < 1e5) previous.text = `${previous.text ?? ""}${event.text ?? ""}`.slice(0, 1e5);
@@ -5299,45 +5412,39 @@ var CustomCoordinator = class {
     data.summary.eventCount += 1;
     if (event.type === "tool") data.summary.phase = event.phase === "call" ? "tooling" : "running";
     this.update(job, data);
-    if (!this.timers.has(data.id)) this.timers.set(data.id, setTimeout(() => {
-      this.timers.delete(data.id);
-      void this.save(data).catch(() => {
-      });
-    }, 500));
+    this.saveSoon(data);
+  }
+  settle(job) {
+    if (job.admitting || job.status !== "running" || job.active.size || !job.runs.every((item) => END.has(item.summary.phase))) return;
+    job.status = job.controller.signal.aborted || job.runs.every((item) => item.summary.phase === "cancelled") ? "cancelled" : job.runs.some((item) => item.summary.phase === "completed") ? "done" : "failed";
+    job.finishedAt = Date.now();
+    this.touch(job);
+    this.onSettled?.(job);
   }
   pump() {
-    if (this.disposed) return;
+    if (this.closing || this.disposed) return;
     for (const job of this.jobs.values()) {
-      if (job.status !== "running") continue;
+      if (this.removed.has(job.record.id) || !job.bound || job.status !== "running" || job.admitting) continue;
+      this.settle(job);
+      if (job.status !== "running" || job.controller.signal.aborted) continue;
       const limit = Math.min(MAX_MODELS2, Math.max(1, job.options.concurrency));
       while (this.active < MAX_MODELS2 && job.active.size < limit) {
         const availableSlot = job.record.a6api?.slots.find((item) => !job.slotBusy.has(item.tokenId));
-        const data = job.runs.find((item) => item.summary.phase === "queued" && (item.summary.target.kind !== "a6api" || availableSlot));
-        if (!data || job.controller.signal.aborted) break;
+        const data = job.runs.find((item) => item.summary.phase === "queued" && !job.active.has(item.id) && (item.summary.target.kind !== "a6api" || availableSlot));
+        if (!data) break;
         const slot = data.summary.target.kind === "a6api" ? availableSlot : null;
         if (slot) job.slotBusy.add(slot.tokenId);
         this.active += 1;
-        const control = { controller: new AbortController(), timer: null, promise: null };
+        const control = { controller: new AbortController(), timer: null, promise: null, resume: data.resumeQueued === true };
         job.active.set(data.id, control);
         control.promise = this.run(job, data, slot, control).catch(() => {
         }).finally(() => {
           this.active -= 1;
           job.active.delete(data.id);
           if (slot) job.slotBusy.delete(slot.tokenId);
-          if (job.runs.every((item) => END.has(item.summary.phase)) && !job.active.size) {
-            job.status = job.controller.signal.aborted ? "cancelled" : job.runs.every((item) => item.summary.phase !== "completed") ? "failed" : "done";
-            job.finishedAt = Date.now();
-            this.touch(job);
-            this.onSettled?.(job);
-          }
+          this.settle(job);
           this.pump();
         });
-      }
-      if (job.controller.signal.aborted && !job.active.size && !job.finishedAt) {
-        job.status = "cancelled";
-        job.finishedAt = Date.now();
-        this.touch(job);
-        this.onSettled?.(job);
       }
     }
   }
@@ -5370,14 +5477,49 @@ var CustomCoordinator = class {
     if (job.controller.signal.aborted) abort();
     const handles = /* @__PURE__ */ new Map();
     const heldRequests = /* @__PURE__ */ new Set();
+    const openTools = /* @__PURE__ */ new Map();
+    let stopAt = null;
+    const stopTiming = () => {
+      stopAt = Date.now();
+      for (const row of data.requests) {
+        const timing = row.timing;
+        if (timing && (row.status === "running" && timing.streamEndedAt === void 0 || timing.tools.some((tool) => tool.endedAt === null))) timing.cancelledAt ??= stopAt;
+      }
+      this.update(job, data);
+      this.saveSoon(data);
+    };
+    signal.addEventListener("abort", stopTiming, { once: true });
+    const onEvent = (event) => {
+      if (event.type === "tool" && event.callId && event.executionId) {
+        const timing = findRequest(data, event.executionId)?.timing;
+        if (timing && event.phase === "call" && !openTools.has(event.callId) && (stopAt === null || event.at < stopAt)) {
+          const tool = { startedAt: event.at, endedAt: null };
+          timing.tools.push(tool);
+          if (stopAt !== null) timing.cancelledAt ??= stopAt;
+          openTools.set(event.callId, { tool, timing });
+        } else if (event.phase === "result") {
+          const tool = openTools.get(event.callId)?.tool;
+          if (tool && (stopAt === null || event.at <= stopAt)) tool.endedAt = event.at;
+          openTools.delete(event.callId);
+        }
+      }
+      this.event(job, data, event);
+    };
     let identity2, lockHeld = false, attemptedPin = false, sandbox, target;
-    const resume = Boolean(control.resume && data.summary.sessionId && data.root);
-    control.startedAt = Date.now();
-    if (resume) {
-      data.summary.finishedAt = null;
+    const resume = control.resume;
+    let submitted = false;
+    const onSubmitted = () => {
+      submitted = true;
+      if (!resume) return;
+      delete data.resumeQueued;
       data.summary.error = null;
+      data.summary.resumeError = null;
       data.summary.continuations = (data.summary.continuations ?? 0) + 1;
-    } else {
+      this.update(job, data);
+      this.saveSoon(data);
+    };
+    control.startedAt = Date.now();
+    if (!resume) {
       data.summary.startedAt = control.startedAt;
       data.summary.sessionId = `mit-${randomUUID5()}`;
     }
@@ -5402,7 +5544,7 @@ var CustomCoordinator = class {
           }
           const observed = latestTurnStep(data.events);
           const position = { turn: Number.isInteger(meta.turn) ? meta.turn : observed.turn, step: Number.isInteger(meta.step) ? meta.step : observed.step };
-          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: "running", startedAt: meta.startedAt, finishedAt: null, turn: position.turn, step: position.step, firstDeltaMs: null, trigger: latestTrigger(data.events), usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? "pending" : "unknown" });
+          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: "running", startedAt: meta.startedAt, finishedAt: null, turn: position.turn, step: position.step, firstDeltaMs: null, timing: { tools: [] }, trigger: latestTrigger(data.events), usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? "pending" : "unknown" });
           this.aggregate(data);
           this.update(job, data, "running");
           await this.save(data);
@@ -5411,6 +5553,13 @@ var CustomCoordinator = class {
           if (heldRequests.delete(meta.id)) this.capacity.release(1);
           throw error;
         }
+      },
+      progress: (id2, stamps) => {
+        const row = findRequest(data, id2);
+        if (!row?.timing || signal.aborted) return;
+        Object.assign(row.timing, stamps);
+        this.update(job, data);
+        this.saveSoon(data);
       },
       metadata: async (id2, meta) => {
         const row = data.requests.find((item) => item.id === id2);
@@ -5462,6 +5611,7 @@ var CustomCoordinator = class {
       data.root = sandbox.root;
       data.summary.sandboxState = "ready";
       await this.save(data);
+      if (resume && !await this.recoveryAvailable(data, sandbox.root)) throw err("resume-unavailable", "\u539F\u4F1A\u8BDD\u5DF2\u4E0D\u53EF\u6062\u590D\uFF0C\u8BF7\u4F7F\u7528\u91CD\u8BD5");
       checked();
       let stream;
       if (slot) {
@@ -5479,15 +5629,16 @@ var CustomCoordinator = class {
         attemptedPin = true;
         const pin = await this.a6().site.pin(target);
         if (!pin.routeEffective) throw err("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u8BFB\u56DE\u751F\u6548\uFF0C\u672A\u53D1\u9001\u6A21\u578B\u8BF7\u6C42");
+        const model = job.record.models.find((model2) => model2.provider === data.summary.target.providerId && model2.id === data.summary.target.modelId && model2.a6api?.channelId === target.channelId);
         checked();
-        stream = createA6Stream({ key, api: job.record.models.find((model) => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId)?.relay?.api ?? "openai-completions" });
+        stream = createA6Stream({ key, api: model?.relay?.api ?? "openai-completions" });
       }
       this.update(job, data, "running");
-      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: resume ? "continue" : job.record.prompt, resume, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: (event) => this.event(job, data, event), stream });
+      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: resume ? "continue" : job.record.prompt, resume, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent, onSubmitted, stream });
       checked();
       this.update(job, data, "validating");
       data.summary.output = await sandbox.output();
-      if (result.outcome !== "completed") {
+      if (!submitted || result.outcome !== "completed") {
         const detail = result.error ? `${result.error.code}: ${result.error.message}` : "";
         const failure2 = err("session-failed", result.outcome === "limited" ? "\u4F1A\u8BDD\u5DF2\u8FBE\u5230\u6267\u884C\u9884\u7B97" : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210${detail ? `\uFF08${detail}\uFF09` : ""}`);
         failure2.detail = result.error?.detail ?? null;
@@ -5498,13 +5649,17 @@ var CustomCoordinator = class {
     } catch (error) {
       if (data.summary.sandboxState === "preparing") data.summary.sandboxState = "failed";
       const phase = signal.aborted ? control.timeout ? "failed" : "cancelled" : "failed";
-      const raw = typeof error?.message === "string" ? error.message.replace(/\s+/g, " ").trim().slice(0, 240) : "";
-      const detail = raw && !(error instanceof FingerprintError) ? `\uFF08${raw}\uFF09` : "";
-      data.summary.error = { code: control.timeout ? "timeout" : signal.aborted ? "cancelled" : error instanceof FingerprintError ? error.code : "execution-failed", message: control.timeout ? "\u6A21\u578B\u4F1A\u8BDD\u8D85\u65F6" : signal.aborted ? "\u4EFB\u52A1\u5DF2\u53D6\u6D88" : error instanceof FingerprintError ? error.message : `\u6A21\u578B\u4F1A\u8BDD\u6267\u884C\u5931\u8D25${detail}`, phase: data.summary.phase, detail: error?.detail ?? errorDetail(error) };
+      const detail = error?.detail ?? errorDetail(error);
+      const raw = clipLine(detail?.message, 240);
+      const failure2 = summaryError(control.timeout ? "timeout" : signal.aborted ? "cancelled" : error instanceof FingerprintError ? error.code : "execution-failed", control.timeout ? "\u6A21\u578B\u4F1A\u8BDD\u8D85\u65F6" : signal.aborted ? "\u4EFB\u52A1\u5DF2\u53D6\u6D88" : error instanceof FingerprintError ? error.message : `\u6A21\u578B\u4F1A\u8BDD\u6267\u884C\u5931\u8D25${raw ? `\uFF08${raw}\uFF09` : ""}`, data.summary.phase, detail);
+      if (resume && !submitted) data.summary.resumeError = failure2;
+      else data.summary.error = failure2;
+      delete data.resumeQueued;
       this.update(job, data, phase);
     } finally {
       clearTimeout(control.timer);
       job.controller.signal.removeEventListener("abort", abort);
+      signal.removeEventListener("abort", stopTiming);
       for (const [id2, handle] of handles) await this.ledger.finish(handle, { state: "cancelled", finishKind: "interrupted", streamUsage: data.requests.find((row) => row.id === id2)?.streamUsage }).catch(() => {
       });
       for (const id2 of heldRequests) {
@@ -5529,6 +5684,7 @@ var CustomCoordinator = class {
           data.summary.output.validation = "unknown";
         }
       }
+      for (const { timing } of openTools.values()) timing.toolsClosed = true;
       for (const row of data.requests) if (row.status === "running") {
         row.status = signal.aborted ? "cancelled" : "failed";
         row.finishedAt = Date.now();
@@ -5541,58 +5697,95 @@ var CustomCoordinator = class {
       await this.save(data);
     }
   }
-  /** Resume a terminal failed/cancelled/interrupted run in its own session ("continue"). */
-  async continueRun({ attemptId, runId }) {
-    const data = await this.load(attemptId, runId);
-    if (!["failed", "cancelled", "interrupted"].includes(data.summary.phase)) throw err("not-resumable", "\u53EA\u6709\u5931\u8D25\u3001\u53D6\u6D88\u6216\u4E2D\u65AD\u7684\u6A21\u578B\u8FD0\u884C\u53EF\u4EE5\u7EE7\u7EED");
-    if (!data.summary.sessionId || !data.root) throw err("not-resumable", "\u4F1A\u8BDD\u6216\u6C99\u7BB1\u5C1A\u672A\u521B\u5EFA\uFF0C\u8BF7\u4F7F\u7528\u91CD\u8BD5");
-    let job = [...this.jobs.values()].find((item) => item.runs.includes(data));
-    if (!job) {
-      const domain = await this.ready;
-      const record = domain.table("records").get(data.recordId);
-      if (!record) throw err("not-found", "\u6D4B\u8BD5\u8BB0\u5F55\u4E0D\u5B58\u5728");
-      job = { id: data.jobId, record, attemptId, revision: 1, status: "done", finishedAt: Date.now(), controller: new AbortController(), active: /* @__PURE__ */ new Map(), slotBusy: /* @__PURE__ */ new Set(), options: { concurrency: 2, timeoutMs: 18e4, ...record.options }, runs: [data] };
-      this.jobs.set(job.id, job);
+  async recoveryAvailable(data, root = data.root) {
+    if (!data.summary.sessionId || !root || data.summary.sandboxState !== "ready") return false;
+    const persistence = this.ctx.get("sessionPersistence");
+    const agents = this.ctx.get("agents");
+    if (!persistence?.stat || !agents?.resume) return false;
+    const saved = await persistence.stat(data.summary.sessionId, { signal: AbortSignal.timeout(5e3) });
+    return Boolean(saved?.location && saved.formatStatus !== "migration-required" && saved.header?.id === data.summary.sessionId && saved.header.cwd === root);
+  }
+  /** Called under the record's launch lock. Nothing is runnable until both snapshots are durable. */
+  async continueRun({ record, attempt, runId, bind }) {
+    const data = await this.load(attempt.id, runId);
+    const existing = attempt.jobId ? this.jobs.get(attempt.jobId) : null;
+    if (this.closing || this.disposed || this.removed.has(record.id) || !RESUMABLE.has(data.summary.phase) || existing?.active.has(runId) || existing?.controller.signal.aborted && existing.active.size) {
+      throw err("not-resumable", "\u6B64\u6A21\u578B\u4ECD\u5728\u8FD0\u884C\u3001\u6E05\u7406\u6216\u5DF2\u7ECF\u6392\u961F\uFF0C\u6682\u4E0D\u80FD\u7EE7\u7EED");
     }
-    if (job.active.has(data.id)) throw err("busy", "\u8BE5\u6A21\u578B\u8FD0\u884C\u4ECD\u5728\u6267\u884C");
-    if (job.controller.signal.aborted) job.controller = new AbortController();
-    if (job.record.a6api) {
-      await this.a6().config();
-      this.a6().assertAccount(job.record.a6api);
-    }
-    const slot = data.summary.target.kind === "a6api" ? job.record.a6api?.slots.find((item) => !job.slotBusy.has(item.tokenId)) : null;
-    if (data.summary.target.kind === "a6api" && !slot) throw err("slot-busy", "\u6D4B\u8BD5\u4EE4\u724C\u6B63\u88AB\u5176\u5B83\u6A21\u578B\u4F7F\u7528\uFF0C\u8BF7\u7A0D\u540E\u7EE7\u7EED");
-    job.status = "running";
-    job.finishedAt = null;
-    if (slot) job.slotBusy.add(slot.tokenId);
-    this.active += 1;
-    const control = { controller: new AbortController(), timer: null, promise: null, resume: true };
-    job.active.set(data.id, control);
-    this.update(job, data, "queued");
-    control.promise = this.run(job, data, slot, control).catch(() => {
-    }).finally(() => {
-      this.active -= 1;
-      job.active.delete(data.id);
-      if (slot) job.slotBusy.delete(slot.tokenId);
-      if (!job.active.size && job.runs.every((item) => END.has(item.summary.phase))) {
-        job.status = job.runs.some((item) => item.summary.phase === "completed") ? "done" : "failed";
-        job.finishedAt = Date.now();
-        this.touch(job);
-        this.onSettled?.(job);
+    let available = false;
+    try {
+      if (data.root) {
+        const sandbox = await openSandbox({ root: data.root });
+        available = await this.recoveryAvailable(data, sandbox.root);
       }
+    } catch {
+      throw err("resume-unavailable", "\u65E0\u6CD5\u8BFB\u53D6\u539F\u4F1A\u8BDD\u6216\u6C99\u7BB1\uFF0C\u8BF7\u68C0\u67E5\u540E\u91CD\u8BD5");
+    }
+    if (!available) throw err("not-resumable", "\u539F\u4F1A\u8BDD\u672A\u6301\u4E45\u5316\u3001\u5DF2\u8FC1\u79FB\u6216\u4E0E\u6C99\u7BB1\u4E0D\u4E00\u81F4\uFF0C\u8BF7\u4F7F\u7528\u91CD\u8BD5");
+    if (data.summary.target.kind === "a6api" && !record.a6api?.slots.length) throw err("slot-missing", "\u539F\u8F6E\u6B21\u6CA1\u6709\u53EF\u7528\u7684\u6D4B\u8BD5\u4EE4\u724C");
+    const domain = await this.ready;
+    const rows = existing?.runs ?? [...domain.table("custom_runs").entries()].map(([, run]) => run).filter((run) => run.attemptId === attempt.id && run.recordId === record.id);
+    const job = existing ?? this.makeJob(`custom-${randomUUID5()}`, record, attempt, rows);
+    const index = job.runs.findIndex((item) => item.id === runId);
+    if (index < 0) throw err("not-found", "\u539F\u8F6E\u6B21\u672A\u627E\u5230\u6B64\u6A21\u578B\u8FD0\u884C");
+    if (this.closing || this.disposed || this.removed.has(record.id) || job.active.has(runId) || job.controller.signal.aborted && job.active.size || !RESUMABLE.has(job.runs[index].summary.phase)) throw err("not-resumable", "\u6B64\u6A21\u578B\u5F53\u524D\u4E0D\u80FD\u7EE7\u7EED");
+    const queued = copy(job.runs[index]);
+    Object.assign(queued, { jobId: job.id, resumeQueued: true, revision: queued.revision + 1 });
+    Object.assign(queued.summary, { phase: "queued", finishedAt: null, updatedAt: Date.now(), resumeError: null, canContinue: false });
+    const wasAborted = job.controller.signal.aborted;
+    job.admitting = true;
+    try {
+      await this.save(queued);
+      if (!wasAborted && job.controller.signal.aborted) throw err("task-cancelled", "\u672C\u8F6E\u5DF2\u505C\u6B62\uFF0C\u672A\u91CD\u65B0\u542F\u52A8\u6B64\u6A21\u578B");
+      await bind(job.id, job.runs.map((item, i) => publicRun(i === index ? queued : item)), job.revision + 1);
+      job.runs[index] = queued;
+      job.record = record;
+      job.options = { ...job.options, ...record.options };
+      if (wasAborted) job.controller = new AbortController();
+      job.status = "running";
+      job.finishedAt = null;
+      this.jobs.set(job.id, job);
+      if (job.controller.signal.aborted) await this.cancelQueued(job, queued).catch(() => {
+      });
+      this.touch(job);
+    } catch (error) {
+      await this.save(job.runs[index]).catch(() => {
+      });
+      throw error;
+    } finally {
+      job.admitting = false;
       this.pump();
-    });
+    }
+    const accepted = publicRun(queued);
+    this.activate(job.id);
+    return accepted;
+  }
+  cancelQueued(job, data) {
+    delete data.resumeQueued;
+    data.summary.finishedAt = Date.now();
+    this.update(job, data, "cancelled");
+    return this.save(data);
+  }
+  async cancelRun({ attemptId, runId, jobId }) {
+    const data = await this.load(attemptId, runId);
+    const job = this.jobs.get(jobId);
+    if (!job || !job.runs.includes(data)) {
+      if (END.has(data.summary.phase)) return publicRun(data);
+      throw err("not-running", "\u6B64\u6A21\u578B\u8FD0\u884C\u5F53\u524D\u672A\u7531\u8C03\u5EA6\u5668\u7BA1\u7406");
+    }
+    const control = job.active.get(runId);
+    if (control) control.controller.abort();
+    else if (data.summary.phase === "queued") await this.cancelQueued(job, data);
+    this.pump();
     return publicRun(data);
   }
   cancel(id2) {
     const job = this.jobs.get(id2);
     if (!job || job.status !== "running") return;
     job.controller.abort();
-    for (const data of job.runs) if (data.summary.phase === "queued") {
-      data.summary.finishedAt = Date.now();
-      this.update(job, data, "cancelled");
-      void this.save(data);
-    }
+    for (const data of job.runs) if (data.summary.phase === "queued") void this.cancelQueued(job, data).catch(() => {
+    });
+    if (job.bound && !this.removed.has(job.record.id)) this.settle(job);
     this.pump();
   }
   configure(id2, options2) {
@@ -5656,19 +5849,28 @@ var CustomCoordinator = class {
     const data = await this.load(attemptId, runId);
     const requests = copy(data.requests);
     const run = publicRun(data);
+    const revision = data.revision;
+    const events = copy(data.events);
     if (data.summary.target.kind === "a6api") {
       const ledger = await this.ledger.view({ attemptId });
       const rows = new Map((ledger.executions ?? []).map((item) => [item.id, item]));
       this.applyLedgerBilling(data, run, requests, rows);
     }
+    const job = this.jobs.get(data.jobId);
+    run.cleanupPending = RESUMABLE.has(run.phase) && Boolean(job?.active.has(runId) || job?.controller.signal.aborted && job.active.size);
     let files = [];
+    run.canContinue = false;
     if (data.root) {
       try {
-        files = await (await openSandbox({ root: data.root })).files();
+        const sandbox = await openSandbox({ root: data.root });
+        files = await sandbox.files();
+        if (RESUMABLE.has(run.phase) && !run.cleanupPending && !this.closing) {
+          run.canContinue = await this.recoveryAvailable(data, sandbox.root);
+        }
       } catch {
       }
     }
-    return { run, events: copy(data.events), requests: requests.slice(-REQUEST_CAP), files, revision: data.revision, permissions: { allowed: ["sandbox.readRules", "sandbox.readInput", "sandbox.readFile", "sandbox.listFiles", "sandbox.writeFile", "sandbox.statFile", "sandbox.declareOutput"], denied: ["network", "shell", "browser", "workspace", "credentials", "provider.configure"] }, metricBoundary: "\u8BF7\u6C42\u6570\u6309 DSH \u53EF\u89C2\u6D4B\u6A21\u578B\u8C03\u7528\u8BA1\uFF1B\u63D0\u4F9B\u5546 SDK \u5185\u90E8 HTTP \u91CD\u8BD5\u53EF\u80FD\u65E0\u6CD5\u5355\u72EC\u89C2\u5BDF\u3002", eventsTruncated: data.summary.eventCount > data.events.length, ...requests.length > REQUEST_CAP ? { requestsTruncated: true } : {} };
+    return { run, events, requests: requests.slice(-REQUEST_CAP), files, revision, permissions: { allowed: ["sandbox.readRules", "sandbox.readInput", "sandbox.readFile", "sandbox.listFiles", "sandbox.writeFile", "sandbox.statFile", "sandbox.declareOutput"], denied: ["network", "shell", "browser", "workspace", "credentials", "provider.configure"] }, metricBoundary: "\u8BF7\u6C42\u6570\u6309 DSH \u53EF\u89C2\u6D4B\u6A21\u578B\u8C03\u7528\u8BA1\uFF1B\u63D0\u4F9B\u5546 SDK \u5185\u90E8 HTTP \u91CD\u8BD5\u53EF\u80FD\u65E0\u6CD5\u5355\u72EC\u89C2\u5BDF\u3002", eventsTruncated: run.eventCount > events.length, ...requests.length > REQUEST_CAP ? { requestsTruncated: true } : {} };
   }
   async read({ attemptId, runId, path: file }) {
     const data = await this.load(attemptId, runId);
@@ -5736,7 +5938,11 @@ var CustomCoordinator = class {
       throw error;
     }
   }
+  stopScheduling() {
+    this.closing = true;
+  }
   async dispose() {
+    this.stopScheduling();
     for (const job of this.jobs.values()) this.cancel(job.id);
     await Promise.allSettled([...this.jobs.keys()].map((id2) => this.drain(id2)));
     await Promise.allSettled([...this.writes.values()]);

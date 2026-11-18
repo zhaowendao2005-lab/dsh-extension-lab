@@ -71,7 +71,7 @@ function boundaryError(where = 'unknown') { return new LlmError(`boundary:${wher
  * Usage callbacks are cumulative snapshots for ONE request, never deltas.
  * stream(options,{metadata,usage}) is optional and normally an a6 closure.
  */
-export async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = '', sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream, resume = false }) {
+export async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = '', sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, onSubmitted, stream, resume = false }) {
   if (!sessionId || typeof sessionId !== 'string' || !provider || !model || typeof prompt !== 'string' || !prompt.trim()) throw new TypeError('Invalid custom Agent request');
   if (!sandbox?.root || !Array.isArray(sandbox.tools) || sandbox.tools.length === 0) throw new TypeError('Custom Agent requires rooted tools');
   const limits = limitSnapshot(proposedLimits);
@@ -79,8 +79,9 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
   if (toolNames.size !== sandbox.tools.length || toolNames.has('run_code')) throw new TypeError('Invalid custom tool set');
   const promptText = [SAFETY_PROMPT, systemPrompt].filter(Boolean).join('\n\n');
   const userMessage = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } });
-  // A custom stream must never resolve a configured provider's credentials or defaults.
-  const route = stream ? `mit-custom-${randomUUID()}` : provider;
+  // The coordinator owns the private route. Restored a6 sessions still use the scoped stream,
+  // including older transcripts whose model selection recorded a different private route ID.
+  const route = provider;
   const toolCallNames = new Map();
   const completedRequests = [];
   let handle;
@@ -95,11 +96,13 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
   let observerError = null;
   let runtimeError = null;
   let pendingEvents = Promise.resolve();
+  let lastRequest = null;
   const scopeDisposers = [];
   const markLimited = reason => { limited ??= reason; agent?.cancel({ kind: 'hook', reason: 'Custom test limit reached' }); };
   const stopForObserver = error => { observerError ??= error; agent?.cancel({ kind: 'hook', reason: 'Custom test recording failed' }); };
   const emit = event => {
-    const next = pendingEvents.then(() => onEvent?.({ ...event, sessionId, at: event.at ?? Date.now() }));
+    const at = event.at ?? Date.now();
+    const next = pendingEvents.then(() => onEvent?.({ ...event, sessionId, at }));
     pendingEvents = next.catch(stopForObserver);
     return next;
   };
@@ -112,13 +115,20 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
     if (observerError) throw observerError;
     if (requestCount >= limits.maxRequests) { markLimited('maxRequests'); throw new LlmError('Custom test request limit reached', 'CUSTOM_LIMIT'); }
     const startedAt = Date.now();
+    const position = { turn: turns, step: steps };
     const ordinal = ++requestCount;
     const localId = randomUUID();
-    const allocatedId = await onRequest.start?.({ id: localId, sessionId, provider, model, ordinal, startedAt, turn: turns, step: steps, boundary: stream ? 'http-attempt' : 'dsh-attempt' });
+    const allocatedId = await onRequest.start?.({ id: localId, sessionId, provider, model, ordinal, startedAt, ...position, boundary: stream ? 'http-attempt' : 'dsh-attempt' });
     const id = typeof allocatedId === 'string' && allocatedId ? allocatedId : localId;
     let usage = null;
     let firstDeltaAt = null;
     let lastDeltaAt = null;
+    const noted = new Set();
+    const note = (key, at) => {
+      if (noted.has(key)) return;
+      noted.add(key);
+      onRequest.progress?.(id, { [key]: at });
+    };
     const streamedBlocks = new Set();
     let finishReason = null;
     let failure = null;
@@ -142,10 +152,16 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
       await metadata({ requestId: null, httpStatus: null });
       signal?.throwIfAborted();
       request.signal?.throwIfAborted();
+      note('dispatchedAt', Date.now());
       const source = stream ? stream(request, { metadata, usage: acceptUsage }) : next();
       for await (const chunk of source) {
         const now = Date.now();
-        if ((chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') && chunk.text) {
+        const textDelta = (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') && chunk.text;
+        const toolDelta = chunk.type === 'tool-call-delta' && (chunk.name || chunk.argumentsDelta);
+        const finalOutput = chunk.type === 'block-end' && (chunk.block?.type === 'tool-call' || ['text', 'reasoning'].includes(chunk.block?.type) && chunk.block.text);
+        if (textDelta || toolDelta || finalOutput) note('firstOutputAt', now);
+        if (chunk.type === 'text-delta' && chunk.text || finalOutput && chunk.block.type === 'text') note('firstTextAt', now);
+        if (textDelta) {
           firstDeltaAt ??= now;
           lastDeltaAt = now;
           streamedBlocks.add(chunk.index);
@@ -155,6 +171,7 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
           await emit({ type: chunk.block.type === 'text' ? 'message' : 'reasoning', role: 'assistant', text: chunk.block.text, delta: false, index: chunk.index, executionId: id, at: now });
         } else if (chunk.type === 'usage') await acceptUsage(chunk.usage);
         else if (chunk.type === 'finish') {
+          note('streamEndedAt', now);
           finishReason = chunk.reason?.kind ?? null;
           if (finishReason === 'error' || finishReason === 'aborted') {
             failure = publicFailure({ failure: chunk.reason.failure });
@@ -175,6 +192,8 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
       const finishedAt = Date.now();
       const cancelled = signal?.aborted || request.signal?.aborted || finishReason === 'aborted';
       if (!ended && !failure && !cancelled) failure = publicFailure(new LlmError('Stream consumer ended before completion', 'CUSTOM_STREAM_INTERRUPTED'));
+      if (noted.has('dispatchedAt')) note('streamEndedAt', finishedAt);
+      lastRequest = cancelled || failure ? null : { id, ...position };
       completedRequests.push(usage);
       await onRequest.finish?.(id, {
         finishedAt,
@@ -230,10 +249,13 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
           else if (event.type === 'step/start') { steps = data.step; observe({ type: 'phase', phase: 'step-start', turn: data.turn, step: data.step, seq: event.seq }); }
           else if (event.type === 'turn/end') { lastReason = data.reason; observe({ type: 'phase', phase: 'turn-end', turn: data.turn, reason: data.reason.kind, seq: event.seq }); }
           else if (event.type === 'tool/call') {
-            toolCallNames.set(data.callId, data.name);
-            observe({ type: 'tool', phase: 'call', callId: data.callId, name: data.name, arguments: data.arguments, turn: data.turn, step: data.step, seq: event.seq });
+            const executionId = lastRequest?.turn === data.turn && lastRequest?.step === data.step ? lastRequest.id : null;
+            toolCallNames.set(data.callId, { name: data.name, executionId });
+            observe({ type: 'tool', phase: 'call', callId: data.callId, name: data.name, executionId, arguments: data.arguments, turn: data.turn, step: data.step, seq: event.seq });
           } else if (event.type === 'tool/result') {
-            observe({ type: 'tool', phase: 'result', callId: data.message.toolCallId, name: toolCallNames.get(data.message.toolCallId) ?? '', content: data.message.content, isError: data.message.isError === true, turn: data.turn, step: data.step, seq: event.seq });
+            const call = toolCallNames.get(data.message.toolCallId);
+            toolCallNames.delete(data.message.toolCallId);
+            observe({ type: 'tool', phase: 'result', callId: data.message.toolCallId, name: call?.name ?? '', executionId: call?.executionId, content: data.message.content, isError: data.message.isError === true, turn: data.turn, step: data.step, seq: event.seq });
           }
         }));
         scopeDisposers.push(agentCtx.on('agent/error', payload => { if (payload.agent === agent) runtimeError ??= payload.error; }));
@@ -249,8 +271,12 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
     else {
       await emit({ type: 'message', role: 'user', text: prompt, delta: false });
       await emit({ type: 'phase', phase: 'running' });
+      signal?.throwIfAborted();
       if (limited || observerError) agent.cancel({ kind: 'hook', reason: 'Custom test could not continue' });
-      else agent.followup(userMessage);
+      else {
+        agent.followup(userMessage);
+        onSubmitted?.();
+      }
     }
     await agent.whenIdle();
     await pendingEvents;

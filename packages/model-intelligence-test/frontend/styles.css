@@ -2044,9 +2044,8 @@
   cursor:pointer;
 }
 .mit-workbench .mit-tab-add:hover { background:var(--mit-layer-2); color:var(--mit-text); }
-.mit-workbench .mit-tabs-actions { margin-left:auto; display:flex; align-items:stretch; }
-.mit-workbench .mit-tabs-actions .mit-tab-add { margin-left:0; }
 .mit-workbench .mit-feature-hub { padding:28px 32px; overflow:auto; height:100%; }
+.mit-workbench .mit-feature-actions { margin-top:16px; }
 .mit-workbench .mit-feature-head h1 { margin:2px 0 6px; font-size:24px; font-weight:650; letter-spacing:-.01em; }
 .mit-workbench .mit-feature-head p { margin:0; max-width:640px; }
 .mit-workbench .mit-feature-grid { display:flex; flex-wrap:wrap; gap:16px; margin-top:26px; }

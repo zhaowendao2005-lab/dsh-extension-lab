@@ -48,7 +48,11 @@ const paneWindow = {
   url.searchParams.set('mit', 'fullscreen');
   window.open(url.toString(), '_blank', 'noopener');
  },
- close() { window.close(); },
+ close() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('mit');
+  window.location.replace(url.toString());
+ },
 };
 window.__ModuleLoader__.load({id: ID, factory(require) {
  setReact(require('react'));

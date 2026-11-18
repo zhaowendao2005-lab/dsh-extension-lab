@@ -15,6 +15,8 @@ export interface CustomTaskViewProps {
   detail?: CustomRunDetail;
   loading: boolean;
   error?: string;
+  actionError?: string;
+  cancelling?: boolean;
   activeTab: CustomDetailTab;
   file?: CustomFileReadResult;
   fileLoading: boolean;
@@ -109,7 +111,7 @@ function Permissions({ detail, summary }: { detail: CustomRunDetail; summary: Cu
   </div>;
 }
 export function CustomTaskView(props: CustomTaskViewProps) {
-  const { model, summary, detail, loading, error, activeTab, file, fileLoading, canRetry, canCancel, canContinue, continuing, onContinue, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose } = props;
+  const { model, summary, detail, loading, error, actionError, cancelling, activeTab, file, fileLoading, canRetry, canCancel, canContinue, continuing, onContinue, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose } = props;
   const tab = TABS.find(item => item.id === activeTab) || TABS[0];
   return <section className="mit-custom-detail" aria-label="自定义执行详情" aria-busy={loading}>
     <header className="mit-custom-detail-heading">
@@ -128,8 +130,10 @@ export function CustomTaskView(props: CustomTaskViewProps) {
       </div>
     </header>
     {summary.error && <div className="mit-custom-error" role="alert"><div className="mit-custom-error-head"><strong>{summary.error.code || '执行错误'}</strong>{canContinue && onContinue && <button type="button" className="mit-button mit-button-primary" disabled={continuing} onClick={onContinue}><Icon name="refresh" size={13} />{continuing ? '正在继续…' : '补发 continue'}</button>}</div><p>{summary.error.message}</p><ErrorDetailView detail={summary.error.detail} /></div>}
+    {summary.resumeError && <div className="mit-custom-error" role="alert"><strong>继续会话未启动</strong><p>{summary.resumeError.message}</p><ErrorDetailView detail={summary.resumeError.detail} /></div>}
+    {actionError && <div className="mit-custom-error" role="alert">{actionError}</div>}
     {error && <div className="mit-custom-error" role="alert">{error}</div>}
     <div className="mit-custom-detail-body" aria-label={tab.label}>{!detail ? !loading && <Empty title="详情暂不可用">{summary.phase === 'cancelled' ? '任务已取消，等待 Host 返回已保留的执行记录。' : '连接恢复后会继续读取已有运行数据。'}</Empty> : tab.id === 'chat' ? <Chat detail={detail} summary={summary} /> : tab.id === 'steps' ? <CustomStepsView requests={detail.requests} events={detail.events} summary={summary} truncated={detail.requestsTruncated} /> : tab.id === 'files' ? <Files detail={detail} file={file} loading={fileLoading} onReadFile={onReadFile} summary={summary} onOpenOutput={onOpenOutput} /> : tab.id === 'metrics' ? <Metrics detail={detail} summary={summary} /> : tab.id === 'billing' ? <Billing detail={detail} summary={summary} /> : <Permissions detail={detail} summary={summary} />}</div>
-    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{summary.continuations ? ` · 已继续 ${summary.continuations} 次` : ''}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" onClick={onCancel}><Icon name="stop" size={13} />取消运行</button>}{canContinue && onContinue && <button type="button" className="mit-button" disabled={continuing} onClick={onContinue} title="在同一 DSH 会话中发送 continue，保留已有上下文与沙箱">{continuing ? '正在继续…' : '继续会话'}</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry} title="新建一轮与新沙箱重新运行"><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
+    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{summary.continuations ? ` · 已继续 ${summary.continuations} 次` : ''}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" disabled={cancelling || continuing} onClick={onCancel}><Icon name="stop" size={13} />{cancelling ? '正在取消…' : '取消此模型'}</button>}{canContinue && onContinue && <button type="button" className="mit-button" disabled={continuing} onClick={onContinue} title="在同一 DSH 会话中发送 continue，保留已有上下文与沙箱">{continuing ? '正在继续…' : '继续会话'}</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry} title="新建一轮与新沙箱重新运行"><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
   </section>;
 }

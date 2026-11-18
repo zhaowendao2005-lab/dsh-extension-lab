@@ -1,4 +1,5 @@
 import React from '../../runtime';
+import type { ReactNode } from 'react';
 import type { A6MarketSnapshot, CustomOutputOpenResult, Evaluation, Model, CustomRunSummary } from '../../types';
 import { Empty, Icon } from '../../components/common';
 import { modelLabel, providerLabel } from '../results/modelLabel';
@@ -16,9 +17,10 @@ export interface CustomMonitorViewProps {
   onSelectRun(runId: string): void;
   onRetry(runId: string): void;
   onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal'): Promise<CustomOutputOpenResult>;
+  renderChannelActions?(model: Model): ReactNode;
 }
 const marketOf = (model: Model, summary: CustomRunSummary): A6MarketSnapshot | undefined => summary.target.marketSnapshot ?? model.a6api?.market;
-export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput }: CustomMonitorViewProps) {
+export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput, renderChannelActions }: CustomMonitorViewProps) {
   const needle = filter.trim().toLowerCase();
   const visible = rows.filter(row => (!resultOnly || ended(row.summary.phase)) && (!needle || `${modelLabel(row.model)} ${providerLabel(row.model)} ${row.summary.target.displayName} ${row.summary.target.channelId ?? ''}`.toLowerCase().includes(needle)));
   const active = rows.filter(row => !ended(row.summary.phase)).length;
@@ -34,10 +36,11 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
     </div>
     {resultOnly && <div className="mit-custom-result-note" role="status">已结束 {rows.filter(row => ended(row.summary.phase)).length} 个模型{active ? ` · ${active} 个仍在运行` : ''}</div>}
     <div className="mit-custom-table-scroll">
-      <table className={withMarket ? 'mit-custom-table has-market' : 'mit-custom-table'}>
+      <table className={`mit-custom-table${withMarket ? ' has-market' : ''}${renderChannelActions ? ' has-channel-actions' : ''}`}>
         <caption className="mit-custom-sr-only">{record.name} · 真实自定义测试。未知数据以破折号显示，费用依 Host 账单回填。</caption>
         <thead><tr>
           <th scope="col" className="mit-col-model">参测模型</th>
+          {renderChannelActions && <th scope="col" className="mit-col-channel-actions">渠道操作</th>}
           <th scope="col" className="mit-col-phase">状态</th>
           <th scope="col" className="mit-col-req">请求</th>
           <th scope="col" className="mit-col-tokens">输入 / 输出</th>
@@ -56,6 +59,7 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
           const market = marketOf(model, summary);
           return <tr key={id} className={selectedRunId === id ? 'is-selected' : ''} aria-selected={selectedRunId === id}>
           <th scope="row" className="mit-col-model"><button type="button" className="mit-custom-model-button" aria-label={`查看 ${modelLabel(model)} 的执行详情`} onClick={() => onSelectRun(id)}><strong>{summary.target.displayName || modelLabel(model)}</strong><span>{summary.target.kind === 'a6api' ? `a6api · 渠道 #${summary.target.channelId ?? '—'}` : providerLabel(model)}</span></button></th>
+          {renderChannelActions && <td className="mit-col-channel-actions">{renderChannelActions(model) ?? '—'}</td>}
           <td className="mit-col-phase"><CustomPhaseBadge phase={summary.phase} />{summary.error && <span className="mit-custom-row-error" title={summary.error.message}>{summary.error.message}</span>}</td>
           <td className="mit-col-req">{count(summary.usage.requestCount)}</td>
           <td className="mit-col-tokens"><span>{count(summary.usage.inputTokens)}</span><span className="mit-custom-cell-sub">{count(summary.usage.outputTokens)}</span></td>

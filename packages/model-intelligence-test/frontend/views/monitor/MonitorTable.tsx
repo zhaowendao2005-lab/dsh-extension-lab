@@ -35,7 +35,7 @@ function CellValue({ run,column,custom,store,record }: {
 }) {
   if(column==='price') return <MarketPrice market={run.model.a6api?.market} />;
   if(column==='cache24h') return <MarketCache market={run.model.a6api?.market} />;
-  if(column==='target') return <ResultTarget store={store} record={record} run={run} />;
+  if(column==='target') return <ResultTarget store={store} record={record} model={run.model} />;
   if(column==='cost' && record.a6api) return <ActualCost store={store} record={record} run={run} />;
   if(column==='stage') {
     if(custom)

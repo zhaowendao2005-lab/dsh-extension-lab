@@ -2079,9 +2079,8 @@
   cursor:pointer;
 }
 .mit-workbench .mit-tab-add:hover { background:var(--mit-layer-2); color:var(--mit-text); }
-.mit-workbench .mit-tabs-actions { margin-left:auto; display:flex; align-items:stretch; }
-.mit-workbench .mit-tabs-actions .mit-tab-add { margin-left:0; }
 .mit-workbench .mit-feature-hub { padding:28px 32px; overflow:auto; height:100%; }
+.mit-workbench .mit-feature-actions { margin-top:16px; }
 .mit-workbench .mit-feature-head h1 { margin:2px 0 6px; font-size:24px; font-weight:650; letter-spacing:-.01em; }
 .mit-workbench .mit-feature-head p { margin:0; max-width:640px; }
 .mit-workbench .mit-feature-grid { display:flex; flex-wrap:wrap; gap:16px; margin-top:26px; }
@@ -2306,6 +2305,9 @@
 .mit-workbench .mit-a6-operation-controls { display:grid; grid-template-columns:minmax(160px,1fr) minmax(180px,2fr); gap:10px; min-width:0 }
 .mit-workbench .mit-a6-operation-controls .mit-field { min-width:0 }
 .mit-workbench .mit-a6-operation-controls select { width:100%; min-width:0; font:inherit; color:var(--mit-text); background:var(--mit-bg); border:1px solid var(--mit-border); border-radius:4px; padding:7px }
+.mit-workbench .mit-custom-table.has-channel-actions { min-width: 1526px }
+.mit-workbench .mit-custom-table.has-channel-actions.has-market { min-width: 1796px }
+.mit-workbench .mit-custom-table .mit-col-channel-actions { width: 216px }
 .mit-workbench .mit-a6-row-operations { display:grid; gap:6px; min-width:0; white-space:normal; font-size:12px; line-height:1.45 }
 .mit-workbench .mit-a6-row-operations small { overflow-wrap:anywhere }
 .mit-workbench .mit-a6-row-operations .mit-button.is-confirmed { border-color:var(--mit-success); color:var(--mit-success); background:color-mix(in srgb,var(--mit-success) 12%,var(--mit-bg)); opacity:1; cursor:default }
@@ -5413,6 +5415,16 @@ button.mit-chat-tool-disclosure-leading {
 .mit-workbench .mit-custom-steps-caret { display: flex; align-items: center; justify-content: center; padding-right: 4px; }
 .mit-workbench .mit-custom-steps-caret::before { content: ''; width: 5px; height: 5px; border-right: 1px solid var(--mit-muted); border-bottom: 1px solid var(--mit-muted); transform: rotate(-45deg); transition: transform 0.12s ease; }
 .mit-workbench .mit-custom-steps-row[open] > .mit-custom-steps-summary .mit-custom-steps-caret::before { transform: rotate(45deg); }
+.mit-workbench .mit-custom-steps-timing { grid-column: 1 / -2; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 0 9px 8px; }
+.mit-workbench .mit-custom-steps-timing-phase { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 6px; color: var(--mit-muted); font-size: 10px; }
+.mit-workbench .mit-custom-steps-timing-phase.is-first { --mit-phase: var(--mit-warn); }
+.mit-workbench .mit-custom-steps-timing-phase.is-model { --mit-phase: var(--mit-brand); }
+.mit-workbench .mit-custom-steps-timing-phase.is-tool { --mit-phase: var(--mit-success); }
+.mit-workbench .mit-custom-steps-timing-value { color: var(--mit-text); white-space: nowrap; }
+.mit-workbench .mit-custom-steps-timing-track { grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--mit-border); }
+.mit-workbench .mit-custom-steps-timing-track > span { display: block; height: 100%; border-radius: inherit; background: var(--mit-phase); }
+.mit-workbench .mit-custom-steps-timing-phase.is-live .mit-custom-steps-timing-track > span { transition: width 120ms linear; }
+@media (prefers-reduced-motion: reduce) { .mit-workbench .mit-custom-steps-timing-phase.is-live .mit-custom-steps-timing-track > span { transition: none; } }
 .mit-workbench .mit-custom-steps-events { padding: 8px 12px 10px 22px; background: var(--mit-layer-2); border-top: 1px solid var(--mit-border); display: flex; flex-direction: column; gap: 2px; }
 .mit-workbench .mit-custom-steps-event { display: flex; align-items: baseline; gap: 8px; font-size: 11px; line-height: 1.6; }
 .mit-workbench .mit-custom-steps-event-kind { flex: 0 0 30px; font-size: 9px; color: var(--mit-muted); text-align: right; }

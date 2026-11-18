@@ -10,8 +10,10 @@ export function FeatureHub({ store }: { store: Workbench }) {
   const userscript=config?.userscript;
   const recentScript=userscript?.recent;
   const { accessToken, userId }=a6.form;
+  const fullscreen=useStore(store.workbench,state => state.fullscreen);
   return <div className="mit-feature-hub">
     <div className="mit-feature-head"><p className="mit-kicker">FEATURES</p><h1>功能中心</h1><p className="mit-muted">真实模型指纹、自定义任务评测与 a6api 渠道测试。</p></div>
+    <div className="mit-feature-actions"><button type="button" className="mit-button" onClick={fullscreen ? store.actions.closeFullscreen : store.actions.openFullscreen}><Icon name={fullscreen ? 'collapse' : 'expand'} size={14} />{fullscreen ? '退出全屏' : '打开全屏面板'}</button></div>
     <div className="mit-feature-grid">
       <button type="button" className="mit-feature-card" onClick={store.actions.openDraft}><span className="mit-feature-index">01</span><strong>模型智能测试</strong><span className="mit-muted">lm-detector 真实数字指纹，或自定义 Agent 任务评测。全局 {records.length} 条记录。</span><span className="mit-feature-action">打开工作台 <Icon name="chevron" size={12} /></span></button>
       <section className="mit-feature-card mit-a6-credentials" aria-label="a6api 接入">

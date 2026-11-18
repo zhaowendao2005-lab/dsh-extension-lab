@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
 import type { A6Protocol, A6Draft, A6Selection, CustomDetailTab, CustomRunDetailEntry, CustomState, ModelIntelligenceTransport } from '../types';
-import { continueRun, createCustomTask as createCustomTaskService, loadRunDetail, openOutput, readFile } from './custom.datasource';
+import { cancelRun, continueRun, createCustomTask as createCustomTaskService, loadRunDetail, openOutput, readFile } from './custom.datasource';
 
 const ACTIVE = new Set(['queued', 'preparing', 'running', 'tooling', 'validating']);
 const BILLING_PENDING = new Set(['pending', 'observed', 'partial']);
@@ -21,16 +21,18 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
       return { details: { ...state.details, [id]: { ...previous, ...update } } };
     });
   }
-  async function load(attemptId: string, runId: string): Promise<void> {
+  async function load(attemptId: string, runId: string, force = false): Promise<void> {
     const id = keyOf(attemptId, runId);
-    const revision = store.getState().details[id]?.revision ?? -1;
+    const previous = store.getState().details[id];
+    if (!force && (previous?.action || previous?.loading)) return;
+    const revision = force ? -1 : previous?.revision ?? -1;
     const request = (requests.get(id) ?? 0) + 1;
     requests.set(id, request);
     setEntry(id, { loading: true, error: undefined });
     try {
       const result = await loadRunDetail(transport, { attemptId, runId, ...(revision >= 0 ? { revision } : {}) });
       if (disposed || requests.get(id) !== request) return;
-      if (!('unchanged' in result)) setEntry(id, { detail: result, revision: result.revision, loading: false, error: undefined });
+      if (!('unchanged' in result)) setEntry(id, { detail: result, revision: result.revision, loading: false, error: undefined, ...(ACTIVE.has(result.run.phase) ? {} : { cancelRequested: false }) });
       else setEntry(id, { revision: result.revision, loading: false });
     } catch (error) {
       if (!disposed && requests.get(id) === request) setEntry(id, { loading: false, error: error instanceof Error ? error.message : '读取 Host 详情失败' });
@@ -42,7 +44,7 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
     const id = keyOf(active.attemptId, active.runId);
     const entry = store.getState().details[id];
     const summary = entry?.detail?.run;
-    const activeRun = Boolean(summary && ACTIVE.has(summary.phase));
+    const activeRun = Boolean(summary && (ACTIVE.has(summary.phase) || summary.cleanupPending));
     if (activeRun) terminalSince.delete(id);
     if (!summary || !entry?.detail) {
       timer = setTimeout(() => { timer = undefined; const current = active; if (current) void load(current.attemptId, current.runId).finally(schedule); }, 1_000);
@@ -119,12 +121,29 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
         throw error;
       }
     },
-    /** Resume a failed run in its own DSH session with a "continue" message; the Host owns the real run. */
-    async continueRun(attemptId: string, runId: string): Promise<void> {
+    runAction(attemptId: string, runId: string, action: 'continue' | 'cancel', onSettled: () => void): void {
       const id = keyOf(attemptId, runId);
-      setEntry(id, { continuing: true, error: undefined });
-      try { await continueRun(transport, { attemptId, runId }); if (!disposed) { setEntry(id, { continuing: false }); void load(attemptId, runId); } }
-      catch (error) { if (!disposed) setEntry(id, { continuing: false, error: error instanceof Error ? error.message : '继续会话失败' }); }
+      if (disposed || store.getState().details[id]?.action) return;
+      requests.set(id, (requests.get(id) ?? 0) + 1);
+      setEntry(id, { action, actionError: undefined, loading: false });
+      const mutate = action === 'continue' ? continueRun : cancelRun;
+      void (async () => {
+        try {
+          const run = await mutate(transport, { attemptId, runId });
+          if (disposed) return;
+          const detail = store.getState().details[id]?.detail;
+          setEntry(id, { cancelRequested: action === 'cancel' && ACTIVE.has(run.phase), ...(detail ? { detail: { ...detail, run } } : {}) });
+        } catch (error) {
+          setEntry(id, { actionError: error instanceof Error ? error.message : action === 'continue' ? '继续会话失败' : '取消运行失败' });
+        } finally {
+          if (!disposed) {
+            onSettled();
+            await load(attemptId, runId, true);
+            setEntry(id, { action: undefined });
+            schedule();
+          }
+        }
+      })();
     },
     closeOutput(attemptId: string, runId: string): void { setEntry(keyOf(attemptId, runId), { previewOpen: false, previewPath: undefined }); },
     dismissPreview(): void { if (!disposed) store.setState(state => ({ preview: { ...state.preview, open: false, html: null, path: null, label: null } })); },

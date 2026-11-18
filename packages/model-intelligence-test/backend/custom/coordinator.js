@@ -8,6 +8,7 @@ import { createA6Stream } from './a6-llm.js';
 import { errorDetail } from './errors.js';
 
 const END = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+const RESUMABLE = new Set(['failed', 'cancelled', 'interrupted']);
 const MAX_MODELS = 6;
 const REQUEST_CAP = 500;
 const TRIGGER_CAP = 120;
@@ -19,6 +20,7 @@ const err = (code, message) => new FingerprintError(code, message);
 const emptyUsage = () => ({ requestCount: 0, inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null, billingState: 'unknown' });
 const emptyMetrics = () => ({ ttftMs: null, generationMs: null, e2eMs: null, modelTokensPerSecond: null, endToEndTokensPerSecond: null, cacheRate: null });
 const publicRun = data => copy(data.summary);
+const summaryError = (code, message, phase, detail = null) => ({ code, message, phase, detail });
 /** One bounded line: the steps view must never receive embedded newlines from a trigger preview. */
 const clipLine = (value, limit = TRIGGER_CAP) => { const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''; return text.length > limit ? `${text.slice(0, limit - 1)}…` : text; };
 /** Latest integer turn/step pair the Host recorded for the run; both stay null until one is observed. */
@@ -48,16 +50,25 @@ export class CustomCoordinator {
   constructor(ctx, { storage, capacity, ledger, a6, onTouch, onSettled }) {
     Object.assign(this, { ctx, storage, capacity, ledger, a6, onTouch, onSettled });
     this.jobs = new Map(); this.removed = new Set(); this.writes = new Map();
-    this.timers = new Map(); this.active = 0; this.disposed = false; this.ready = this.boot();
+    this.timers = new Map(); this.active = 0; this.closing = false; this.disposed = false; this.ready = this.boot();
     this.ready.catch(() => {});
   }
   async boot() {
     const domain = await this.storage.records();
     for (const [id, data] of domain.table('custom_runs').entries()) {
       if (END.has(data.summary?.phase)) continue;
-      data.summary.phase = 'interrupted'; data.summary.finishedAt = Date.now();
-      data.summary.error = { code: 'interrupted', message: '运行时已重启，会话已中断；不会自动重新发送请求', phase: 'running' };
-      for (const request of data.requests ?? []) if (request.status === 'running') request.status = 'interrupted';
+      const interruptedAt = Date.now();
+      const interrupted = { code: 'interrupted', message: '运行时已重启，会话已中断；不会自动重新发送请求', phase: data.summary.phase };
+      data.summary.phase = 'interrupted'; data.summary.finishedAt = interruptedAt;
+      if (data.resumeQueued) data.summary.resumeError = interrupted;
+      else data.summary.error = interrupted;
+      delete data.resumeQueued;
+      data.revision += 1; data.summary.updatedAt = interruptedAt;
+      for (const request of data.requests ?? []) {
+        if (request.status === 'running') request.status = 'interrupted';
+        // The stop instant is unknown after restart. Never include downtime or reactivate open calls.
+        if (request.timing?.tools.some(tool => tool.endedAt === null)) request.timing.toolsClosed = true;
+      }
       await domain.table('custom_runs').put(id, data);
     }
     return domain;
@@ -91,6 +102,14 @@ export class CustomCoordinator {
     this.writes.set(data.id, settled);
     try { await settled; } finally { if (this.writes.get(data.id) === settled) this.writes.delete(data.id); }
   }
+  makeJob(id, record, attempt, runs) {
+    return { id, record, attemptId: attempt.id, revision: attempt.custom?.revision ?? 1, status: 'running', finishedAt: null, bound: false, admitting: false, controller: new AbortController(), active: new Map(), slotBusy: new Set(), options: { concurrency: 2, timeoutMs: 180_000, ...record.options }, runs };
+  }
+  activate(id) {
+    const job = this.jobs.get(id);
+    if (job) job.bound = true;
+    this.pump();
+  }
   async start(record, attempt) {
     await this.ready;
     if (this.disposed || this.removed.has(record.id)) throw err('disposed', '任务正在结束');
@@ -107,7 +126,7 @@ export class CustomCoordinator {
       }
     }
     const id = `custom-${randomUUID()}`;
-    const job = { id, record, attemptId: attempt.id, revision: 1, status: 'running', finishedAt: null, controller: new AbortController(), active: new Map(), slotBusy: new Set(), options: { concurrency: 2, timeoutMs: 180_000, ...record.options }, runs: [] };
+    const job = this.makeJob(id, record, attempt, []);
     for (const model of record.models) {
       const runId = randomUUID();
       const target = { kind: model.a6api ? 'a6api' : 'dsh', providerId: model.provider, modelId: model.id, displayName: model.name || model.id, ...(model.a6api ? { channelId: model.a6api.channelId, supplierId: model.a6api.supplierId, listingId: model.a6api.listingId, marketSnapshot: model.a6api.market ?? null } : {}) };
@@ -122,8 +141,11 @@ export class CustomCoordinator {
     if (phase) data.summary.phase = phase;
     data.revision += 1; data.summary.updatedAt = Date.now(); this.touch(job);
   }
+  saveSoon(data) {
+    if (!this.timers.has(data.id)) this.timers.set(data.id, setTimeout(() => { this.timers.delete(data.id); void this.save(data).catch(() => {}); }, 500));
+  }
   event(job, data, input) {
-    const event = { id: `event-${randomUUID()}`, at: Date.now(), type: input.type, role:input.role ?? null, delta:input.delta === true, phase:input.phase ?? null, name:input.name ?? null, callId:input.callId ?? null, executionId:input.executionId ?? null, turn:Number.isInteger(input.turn) ? input.turn : null, step:Number.isInteger(input.step) ? input.step : null, index:Number.isInteger(input.index) ? input.index : null, text:typeof input.text === 'string' ? input.text.slice(0,32000) : (input.type === 'error' && typeof input.message === 'string' ? input.message.slice(0, 800) : null), ...(input.type === 'error' && typeof input.code === 'string' ? {code: input.code.slice(0, 64)} : {}), ...(input.type === 'error' && input.detail ? {detail: input.detail} : {}), ...(input.content !== undefined ? {content:JSON.stringify(input.content).slice(0,32000)} : {}), ...(input.arguments !== undefined ? {arguments:JSON.stringify(input.arguments).slice(0,32000)} : {}), isError:input.isError === true || input.type === 'error' };
+    const event = { id: `event-${randomUUID()}`, at: known(input.at) ?? Date.now(), type: input.type, role:input.role ?? null, delta:input.delta === true, phase:input.phase ?? null, name:input.name ?? null, callId:input.callId ?? null, executionId:input.executionId ?? null, turn:Number.isInteger(input.turn) ? input.turn : null, step:Number.isInteger(input.step) ? input.step : null, index:Number.isInteger(input.index) ? input.index : null, text:typeof input.text === 'string' ? input.text.slice(0,32000) : (input.type === 'error' && typeof input.message === 'string' ? input.message.slice(0, 800) : null), ...(input.type === 'error' && typeof input.code === 'string' ? {code: input.code.slice(0, 64)} : {}), ...(input.type === 'error' && input.detail ? {detail: input.detail} : {}), ...(input.content !== undefined ? {content:JSON.stringify(input.content).slice(0,32000)} : {}), ...(input.arguments !== undefined ? {arguments:JSON.stringify(input.arguments).slice(0,32000)} : {}), isError:input.isError === true || input.type === 'error' };
     // Keep bounded durable events; coalesce adjacent text deltas.
     if (typeof event.text === 'string') event.text = event.text.slice(0, 100_000);
     const previous = data.events.at(-1);
@@ -139,33 +161,34 @@ export class CustomCoordinator {
     data.summary.eventCount += 1;
     if (event.type === 'tool') data.summary.phase = event.phase === 'call' ? 'tooling' : 'running';
     this.update(job, data);
-    if (!this.timers.has(data.id)) this.timers.set(data.id, setTimeout(() => {this.timers.delete(data.id); void this.save(data).catch(()=>{});}, 500));
+    this.saveSoon(data);
+  }
+  settle(job) {
+    if (job.admitting || job.status !== 'running' || job.active.size || !job.runs.every(item => END.has(item.summary.phase))) return;
+    job.status = job.controller.signal.aborted || job.runs.every(item => item.summary.phase === 'cancelled') ? 'cancelled' : job.runs.some(item => item.summary.phase === 'completed') ? 'done' : 'failed';
+    job.finishedAt = Date.now(); this.touch(job); this.onSettled?.(job);
   }
   pump() {
-    if (this.disposed) return;
+    if (this.closing || this.disposed) return;
     for (const job of this.jobs.values()) {
-      if (job.status !== 'running') continue;
+      if (this.removed.has(job.record.id) || !job.bound || job.status !== 'running' || job.admitting) continue;
+      this.settle(job);
+      if (job.status !== 'running' || job.controller.signal.aborted) continue;
       const limit = Math.min(MAX_MODELS, Math.max(1, job.options.concurrency));
       while (this.active < MAX_MODELS && job.active.size < limit) {
         const availableSlot = job.record.a6api?.slots.find(item => !job.slotBusy.has(item.tokenId));
-        const data = job.runs.find(item => item.summary.phase === 'queued' && (item.summary.target.kind !== 'a6api' || availableSlot));
-        if (!data || job.controller.signal.aborted) break;
+        const data = job.runs.find(item => item.summary.phase === 'queued' && !job.active.has(item.id) && (item.summary.target.kind !== 'a6api' || availableSlot));
+        if (!data) break;
         const slot = data.summary.target.kind === 'a6api' ? availableSlot : null;
         if (slot) job.slotBusy.add(slot.tokenId);
         this.active += 1;
-        const control = { controller: new AbortController(), timer: null, promise: null };
+        const control = { controller: new AbortController(), timer: null, promise: null, resume: data.resumeQueued === true };
         job.active.set(data.id, control);
         control.promise = this.run(job, data, slot, control).catch(() => {}).finally(() => {
           this.active -= 1; job.active.delete(data.id); if (slot) job.slotBusy.delete(slot.tokenId);
-          if (job.runs.every(item => END.has(item.summary.phase)) && !job.active.size) {
-            job.status = job.controller.signal.aborted ? 'cancelled' : job.runs.every(item => item.summary.phase !== 'completed') ? 'failed' : 'done';
-            job.finishedAt = Date.now(); this.touch(job); this.onSettled?.(job);
-          }
+          this.settle(job);
           this.pump();
         });
-      }
-      if (job.controller.signal.aborted && !job.active.size && !job.finishedAt) {
-        job.status = 'cancelled'; job.finishedAt = Date.now(); this.touch(job); this.onSettled?.(job);
       }
     }
   }
@@ -193,12 +216,48 @@ export class CustomCoordinator {
     job.controller.signal.addEventListener('abort', abort, { once: true });
     if (job.controller.signal.aborted) abort();
     const handles = new Map(); const heldRequests = new Set();
+    const openTools = new Map();
+    let stopAt = null;
+    const stopTiming = () => {
+      stopAt = Date.now();
+      for (const row of data.requests) {
+        const timing = row.timing;
+        if (timing && ((row.status === 'running' && timing.streamEndedAt === undefined) || timing.tools.some(tool => tool.endedAt === null))) timing.cancelledAt ??= stopAt;
+      }
+      this.update(job, data); this.saveSoon(data);
+    };
+    signal.addEventListener('abort', stopTiming, { once: true });
+    const onEvent = event => {
+      if (event.type === 'tool' && event.callId && event.executionId) {
+        const timing = findRequest(data, event.executionId)?.timing;
+        if (timing && event.phase === 'call' && !openTools.has(event.callId) && (stopAt === null || event.at < stopAt)) {
+          const tool = { startedAt: event.at, endedAt: null };
+          timing.tools.push(tool);
+          if (stopAt !== null) timing.cancelledAt ??= stopAt;
+          openTools.set(event.callId, { tool, timing });
+        } else if (event.phase === 'result') {
+          const tool = openTools.get(event.callId)?.tool;
+          if (tool && (stopAt === null || event.at <= stopAt)) tool.endedAt = event.at;
+          openTools.delete(event.callId);
+        }
+      }
+      this.event(job, data, event);
+    };
     let identity, lockHeld = false, attemptedPin = false, sandbox, target;
     // A continuation resumes the same DSH session and sandbox; a fresh run creates both.
-    const resume = Boolean(control.resume && data.summary.sessionId && data.root);
+    const resume = control.resume;
+    let submitted = false;
+    const onSubmitted = () => {
+      submitted = true;
+      if (!resume) return;
+      delete data.resumeQueued;
+      data.summary.error = null;
+      data.summary.resumeError = null;
+      data.summary.continuations = (data.summary.continuations ?? 0) + 1;
+      this.update(job, data); this.saveSoon(data);
+    };
     control.startedAt = Date.now();
-    if (resume) { data.summary.finishedAt = null; data.summary.error = null; data.summary.continuations = (data.summary.continuations ?? 0) + 1; }
-    else { data.summary.startedAt = control.startedAt; data.summary.sessionId = `mit-${randomUUID()}`; }
+    if (!resume) { data.summary.startedAt = control.startedAt; data.summary.sessionId = `mit-${randomUUID()}`; }
     this.armTimeout(job, data, control); this.update(job, data, 'preparing');
     const checked = () => { if (signal.aborted || this.disposed || this.removed.has(data.recordId)) throw err('cancelled', '任务已取消'); };
     const onRequest = {
@@ -219,10 +278,16 @@ export class CustomCoordinator {
           // The Agent reports the exact turn/step it is preparing; persisted events are only the fallback.
           const observed = latestTurnStep(data.events);
           const position = { turn: Number.isInteger(meta.turn) ? meta.turn : observed.turn, step: Number.isInteger(meta.step) ? meta.step : observed.step };
-          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: 'running', startedAt: meta.startedAt, finishedAt: null, turn: position.turn, step: position.step, firstDeltaMs: null, trigger: latestTrigger(data.events), usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? 'pending' : 'unknown' });
+          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: 'running', startedAt: meta.startedAt, finishedAt: null, turn: position.turn, step: position.step, firstDeltaMs: null, timing: { tools: [] }, trigger: latestTrigger(data.events), usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? 'pending' : 'unknown' });
           this.aggregate(data); this.update(job, data, 'running'); await this.save(data);
           return meta.id;
         } catch (error) { if (heldRequests.delete(meta.id)) this.capacity.release(1); throw error; }
+      },
+      progress: (id, stamps) => {
+        const row = findRequest(data, id);
+        if (!row?.timing || signal.aborted) return;
+        Object.assign(row.timing, stamps);
+        this.update(job, data); this.saveSoon(data);
       },
       metadata: async (id, meta) => {
         const row = data.requests.find(item => item.id === id); if (!row) return;
@@ -257,6 +322,7 @@ export class CustomCoordinator {
       const onFile = event => { this.event(job, data, { type: 'tool', phase: 'result', name: 'sandbox_file', text: JSON.stringify(event) }); };
       sandbox = resume ? await openSandbox({ root: data.root, onFile, signal }) : await createSandbox({ dataRoot: await this.dataRoot(), runId: data.id, prompt: job.record.prompt, preset: job.record.preset, signal, onFile });
       data.root = sandbox.root; data.summary.sandboxState = 'ready'; await this.save(data);
+      if (resume && !await this.recoveryAvailable(data, sandbox.root)) throw err('resume-unavailable', '原会话已不可恢复，请使用重试');
       checked();
       let stream;
       if (slot) {
@@ -270,13 +336,14 @@ export class CustomCoordinator {
         attemptedPin = true;
         const pin = await this.a6().site.pin(target);
         if (!pin.routeEffective) throw err('pin-unverified', '固定渠道未读回生效，未发送模型请求');
-        checked(); stream = createA6Stream({ key, api: job.record.models.find(model => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId)?.relay?.api ?? 'openai-completions' });
+        const model = job.record.models.find(model => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId && model.a6api?.channelId === target.channelId);
+        checked(); stream = createA6Stream({ key, api: model?.relay?.api ?? 'openai-completions' });
       }
       this.update(job, data, 'running');
-      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: resume ? 'continue' : job.record.prompt, resume, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: event => this.event(job, data, event), stream });
+      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: resume ? 'continue' : job.record.prompt, resume, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent, onSubmitted, stream });
       checked(); this.update(job, data, 'validating');
       data.summary.output = await sandbox.output();
-      if (result.outcome !== 'completed') {
+      if (!submitted || result.outcome !== 'completed') {
         const detail = result.error ? `${result.error.code}: ${result.error.message}` : '';
         const failure = err('session-failed', result.outcome === 'limited' ? '会话已达到执行预算' : `模型会话未完成${detail ? `（${detail}）` : ''}`);
         failure.detail = result.error?.detail ?? null;
@@ -287,13 +354,15 @@ export class CustomCoordinator {
     } catch (error) {
       if (data.summary.sandboxState === 'preparing') data.summary.sandboxState = 'failed';
       const phase = signal.aborted ? (control.timeout ? 'failed' : 'cancelled') : 'failed';
-      // Keep one sanitized line of the real cause: a generic message makes Host-only failures undiagnosable.
-      const raw = typeof error?.message === 'string' ? error.message.replace(/\s+/g, ' ').trim().slice(0, 240) : '';
-      const detail = raw && !(error instanceof FingerprintError) ? `（${raw}）` : '';
-      data.summary.error = { code: control.timeout ? 'timeout' : signal.aborted ? 'cancelled' : error instanceof FingerprintError ? error.code : 'execution-failed', message: control.timeout ? '模型会话超时' : signal.aborted ? '任务已取消' : error instanceof FingerprintError ? error.message : `模型会话执行失败${detail}`, phase: data.summary.phase, detail: error?.detail ?? errorDetail(error) };
+      const detail = error?.detail ?? errorDetail(error);
+      const raw = clipLine(detail?.message, 240);
+      const failure = summaryError(control.timeout ? 'timeout' : signal.aborted ? 'cancelled' : error instanceof FingerprintError ? error.code : 'execution-failed', control.timeout ? '模型会话超时' : signal.aborted ? '任务已取消' : error instanceof FingerprintError ? error.message : `模型会话执行失败${raw ? `（${raw}）` : ''}`, data.summary.phase, detail);
+      if (resume && !submitted) data.summary.resumeError = failure;
+      else data.summary.error = failure;
+      delete data.resumeQueued;
       this.update(job, data, phase);
     } finally {
-      clearTimeout(control.timer); job.controller.signal.removeEventListener('abort', abort);
+      clearTimeout(control.timer); job.controller.signal.removeEventListener('abort', abort); signal.removeEventListener('abort', stopTiming);
       for (const [id, handle] of handles) await this.ledger.finish(handle, { state: 'cancelled', finishKind: 'interrupted', streamUsage: data.requests.find(row => row.id === id)?.streamUsage }).catch(() => {});
       for (const id of heldRequests) { this.capacity.release(1); heldRequests.delete(id); }
       if (attemptedPin && target) {
@@ -308,46 +377,95 @@ export class CustomCoordinator {
       // Release only a lock this run successfully acquired.
       if (lockHeld) this.capacity.tokenSlots.release(identity);
       if (sandbox) { try { data.summary.output = await sandbox.output(); } catch { data.summary.output.validation = 'unknown'; } }
+      for (const { timing } of openTools.values()) timing.toolsClosed = true;
       for (const row of data.requests) if (row.status === 'running') {row.status = signal.aborted ? 'cancelled' : 'failed'; row.finishedAt=Date.now();}
       clearTimeout(this.timers.get(data.id)); this.timers.delete(data.id);
       data.summary.finishedAt = Date.now(); this.aggregate(data); this.update(job, data); await this.save(data);
     }
   }
-  /** Resume a terminal failed/cancelled/interrupted run in its own session ("continue"). */
-  async continueRun({ attemptId, runId }) {
-    const data = await this.load(attemptId, runId);
-    if (!['failed', 'cancelled', 'interrupted'].includes(data.summary.phase)) throw err('not-resumable', '只有失败、取消或中断的模型运行可以继续');
-    if (!data.summary.sessionId || !data.root) throw err('not-resumable', '会话或沙箱尚未创建，请使用重试');
-    let job = [...this.jobs.values()].find(item => item.runs.includes(data));
-    if (!job) {
-      const domain = await this.ready;
-      const record = domain.table('records').get(data.recordId);
-      if (!record) throw err('not-found', '测试记录不存在');
-      job = { id: data.jobId, record, attemptId, revision: 1, status: 'done', finishedAt: Date.now(), controller: new AbortController(), active: new Map(), slotBusy: new Set(), options: { concurrency: 2, timeoutMs: 180_000, ...record.options }, runs: [data] };
-      this.jobs.set(job.id, job);
+  async recoveryAvailable(data, root = data.root) {
+    if (!data.summary.sessionId || !root || data.summary.sandboxState !== 'ready') return false;
+    const persistence = this.ctx.get('sessionPersistence');
+    const agents = this.ctx.get('agents');
+    if (!persistence?.stat || !agents?.resume) return false;
+    const saved = await persistence.stat(data.summary.sessionId, { signal: AbortSignal.timeout(5_000) });
+    return Boolean(saved?.location && saved.formatStatus !== 'migration-required' && saved.header?.id === data.summary.sessionId && saved.header.cwd === root);
+  }
+  /** Called under the record's launch lock. Nothing is runnable until both snapshots are durable. */
+  async continueRun({ record, attempt, runId, bind }) {
+    const data = await this.load(attempt.id, runId);
+    const existing = attempt.jobId ? this.jobs.get(attempt.jobId) : null;
+    if (this.closing || this.disposed || this.removed.has(record.id) || !RESUMABLE.has(data.summary.phase) || existing?.active.has(runId) || (existing?.controller.signal.aborted && existing.active.size)) {
+      throw err('not-resumable', '此模型仍在运行、清理或已经排队，暂不能继续');
     }
-    if (job.active.has(data.id)) throw err('busy', '该模型运行仍在执行');
-    if (job.controller.signal.aborted) job.controller = new AbortController();
-    if (job.record.a6api) { await this.a6().config(); this.a6().assertAccount(job.record.a6api); }
-    const slot = data.summary.target.kind === 'a6api' ? job.record.a6api?.slots.find(item => !job.slotBusy.has(item.tokenId)) : null;
-    if (data.summary.target.kind === 'a6api' && !slot) throw err('slot-busy', '测试令牌正被其它模型使用，请稍后继续');
-    job.status = 'running'; job.finishedAt = null;
-    if (slot) job.slotBusy.add(slot.tokenId);
-    this.active += 1;
-    const control = { controller: new AbortController(), timer: null, promise: null, resume: true };
-    job.active.set(data.id, control);
-    this.update(job, data, 'queued');
-    control.promise = this.run(job, data, slot, control).catch(() => {}).finally(() => {
-      this.active -= 1; job.active.delete(data.id); if (slot) job.slotBusy.delete(slot.tokenId);
-      if (!job.active.size && job.runs.every(item => END.has(item.summary.phase))) { job.status = job.runs.some(item => item.summary.phase === 'completed') ? 'done' : 'failed'; job.finishedAt = Date.now(); this.touch(job); this.onSettled?.(job); }
+    let available = false;
+    try {
+      if (data.root) {
+        const sandbox = await openSandbox({ root: data.root });
+        available = await this.recoveryAvailable(data, sandbox.root);
+      }
+    } catch { throw err('resume-unavailable', '无法读取原会话或沙箱，请检查后重试'); }
+    if (!available) throw err('not-resumable', '原会话未持久化、已迁移或与沙箱不一致，请使用重试');
+    if (data.summary.target.kind === 'a6api' && !record.a6api?.slots.length) throw err('slot-missing', '原轮次没有可用的测试令牌');
+    const domain = await this.ready;
+    const rows = existing?.runs ?? [...domain.table('custom_runs').entries()].map(([, run]) => run).filter(run => run.attemptId === attempt.id && run.recordId === record.id);
+    const job = existing ?? this.makeJob(`custom-${randomUUID()}`, record, attempt, rows);
+    const index = job.runs.findIndex(item => item.id === runId);
+    if (index < 0) throw err('not-found', '原轮次未找到此模型运行');
+    if (this.closing || this.disposed || this.removed.has(record.id) || job.active.has(runId) || (job.controller.signal.aborted && job.active.size) || !RESUMABLE.has(job.runs[index].summary.phase)) throw err('not-resumable', '此模型当前不能继续');
+    const queued = copy(job.runs[index]);
+    Object.assign(queued, { jobId: job.id, resumeQueued: true, revision: queued.revision + 1 });
+    Object.assign(queued.summary, { phase: 'queued', finishedAt: null, updatedAt: Date.now(), resumeError: null, canContinue: false });
+    const wasAborted = job.controller.signal.aborted;
+    job.admitting = true;
+    try {
+      await this.save(queued);
+      if (!wasAborted && job.controller.signal.aborted) throw err('task-cancelled', '本轮已停止，未重新启动此模型');
+      await bind(job.id, job.runs.map((item, i) => publicRun(i === index ? queued : item)), job.revision + 1);
+      job.runs[index] = queued;
+      job.record = record;
+      job.options = { ...job.options, ...record.options };
+      if (wasAborted) job.controller = new AbortController();
+      job.status = 'running'; job.finishedAt = null;
+      this.jobs.set(job.id, job);
+      if (job.controller.signal.aborted) await this.cancelQueued(job, queued).catch(() => {});
+      this.touch(job);
+    } catch (error) {
+      // A saved queue entry is never dispatched if the attempt binding failed.
+      await this.save(job.runs[index]).catch(() => {});
+      throw error;
+    } finally {
+      job.admitting = false;
       this.pump();
-    });
+    }
+    const accepted = publicRun(queued);
+    this.activate(job.id);
+    return accepted;
+  }
+  cancelQueued(job, data) {
+    delete data.resumeQueued;
+    data.summary.finishedAt = Date.now();
+    this.update(job, data, 'cancelled');
+    return this.save(data);
+  }
+  async cancelRun({ attemptId, runId, jobId }) {
+    const data = await this.load(attemptId, runId);
+    const job = this.jobs.get(jobId);
+    if (!job || !job.runs.includes(data)) {
+      if (END.has(data.summary.phase)) return publicRun(data);
+      throw err('not-running', '此模型运行当前未由调度器管理');
+    }
+    const control = job.active.get(runId);
+    if (control) control.controller.abort();
+    else if (data.summary.phase === 'queued') await this.cancelQueued(job, data);
+    this.pump();
     return publicRun(data);
   }
   cancel(id) {
     const job = this.jobs.get(id); if (!job || job.status !== 'running') return;
     job.controller.abort();
-    for (const data of job.runs) if (data.summary.phase === 'queued') { data.summary.finishedAt = Date.now(); this.update(job, data, 'cancelled'); void this.save(data); }
+    for (const data of job.runs) if (data.summary.phase === 'queued') void this.cancelQueued(job, data).catch(() => {});
+    if (job.bound && !this.removed.has(job.record.id)) this.settle(job);
     this.pump();
   }
   configure(id, options) {
@@ -409,14 +527,27 @@ export class CustomCoordinator {
     const data = await this.load(attemptId, runId);
     const requests = copy(data.requests);
     const run = publicRun(data);
+    const revision = data.revision;
+    const events = copy(data.events);
     if (data.summary.target.kind === 'a6api') {
       const ledger = await this.ledger.view({ attemptId });
       const rows = new Map((ledger.executions ?? []).map(item => [item.id, item]));
       this.applyLedgerBilling(data, run, requests, rows);
     }
+    const job = this.jobs.get(data.jobId);
+    run.cleanupPending = RESUMABLE.has(run.phase) && Boolean(job?.active.has(runId) || (job?.controller.signal.aborted && job.active.size));
     let files = [];
-    if (data.root) { try { files = await (await openSandbox({ root: data.root })).files(); } catch { /* files may have been removed externally */ } }
-    return { run, events: copy(data.events), requests: requests.slice(-REQUEST_CAP), files, revision: data.revision, permissions: { allowed: ['sandbox.readRules', 'sandbox.readInput', 'sandbox.readFile', 'sandbox.listFiles', 'sandbox.writeFile', 'sandbox.statFile', 'sandbox.declareOutput'], denied: ['network', 'shell', 'browser', 'workspace', 'credentials', 'provider.configure'] }, metricBoundary: '请求数按 DSH 可观测模型调用计；提供商 SDK 内部 HTTP 重试可能无法单独观察。', eventsTruncated: data.summary.eventCount > data.events.length, ...(requests.length > REQUEST_CAP ? { requestsTruncated: true } : {}) };
+    run.canContinue = false;
+    if (data.root) {
+      try {
+        const sandbox = await openSandbox({ root: data.root });
+        files = await sandbox.files();
+        if (RESUMABLE.has(run.phase) && !run.cleanupPending && !this.closing) {
+          run.canContinue = await this.recoveryAvailable(data, sandbox.root);
+        }
+      } catch { /* Missing or unreadable local data cannot be resumed. */ }
+    }
+    return { run, events, requests: requests.slice(-REQUEST_CAP), files, revision, permissions: { allowed: ['sandbox.readRules', 'sandbox.readInput', 'sandbox.readFile', 'sandbox.listFiles', 'sandbox.writeFile', 'sandbox.statFile', 'sandbox.declareOutput'], denied: ['network', 'shell', 'browser', 'workspace', 'credentials', 'provider.configure'] }, metricBoundary: '请求数按 DSH 可观测模型调用计；提供商 SDK 内部 HTTP 重试可能无法单独观察。', eventsTruncated: run.eventCount > events.length, ...(requests.length > REQUEST_CAP ? { requestsTruncated: true } : {}) };
   }
   async read({ attemptId, runId, path: file }) {
     const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');
@@ -471,7 +602,9 @@ export class CustomCoordinator {
       throw error;
     }
   }
+  stopScheduling() { this.closing = true; }
   async dispose() {
+    this.stopScheduling();
     for (const job of this.jobs.values()) this.cancel(job.id);
     await Promise.allSettled([...this.jobs.keys()].map(id => this.drain(id)));
     await Promise.allSettled([...this.writes.values()]);

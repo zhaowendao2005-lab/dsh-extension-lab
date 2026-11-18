@@ -46,6 +46,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
   const selected = new Map<string, string>();
   const entries = new Map<string, AttemptEntry>();
   const watched = new Set<string>();
+  const dirtyAttempts = new Set<string>();
 
   // ---- projection -------------------------------------------------------------------------------
   function attemptOf(record: StoredRecord): AttemptSummary | undefined {
@@ -127,7 +128,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     if (!attempt) return undefined;
     const entry = entries.get(attempt.id);
     if (!entry || entry.loading) return entry ? undefined : attempt;
-    if (ACTIVE.has(attempt.status) || entry.seenStatus !== attempt.status) return attempt;
+    if (dirtyAttempts.has(attempt.id) || ACTIVE.has(attempt.status) || entry.seenStatus !== attempt.status) return attempt;
     const result = entry.result;
     const billingPending = result && 'custom' in result && Boolean(result.custom?.billingPending);
     const finishedAt = attempt.finishedAt ?? attempt.createdAt;
@@ -139,9 +140,10 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     entries.set(attempt.id, entry);
     if (entry.loading) return;
     entry.loading = true;
+    const forced = dirtyAttempts.delete(attempt.id);
     try {
-      const result = await readAttempt(transport, attempt.id, entry.seenStatus === attempt.status ? entry.revision : -1);
-      if (disposed) return;
+      const result = await readAttempt(transport, attempt.id, !forced && entry.seenStatus === attempt.status ? entry.revision : -1);
+      if (disposed || dirtyAttempts.has(attempt.id)) return;
       if (!('unchanged' in result)) { entry.result = result; entry.revision = result.revision; }
       entry.seenStatus = attempt.status;
       entry.error = undefined;
@@ -207,6 +209,11 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
 
   return {
     store,
+    refreshAttempt(attemptId: string): void {
+      if (disposed) return;
+      dirtyAttempts.add(attemptId);
+      refreshSoon();
+    },
     /** Records whose selected attempt should be loaded (open tabs). */
     watch(ids: string[]): void {
       const next = new Set(ids);

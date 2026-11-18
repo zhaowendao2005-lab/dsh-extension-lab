@@ -7,6 +7,7 @@ import { FingerprintConfigPanel } from './FingerprintConfigPanel';
 import { MonitorTable } from '../monitor/MonitorTable';
 import {LedgerOverview} from '../a6/LedgerOverview';
 import {OperationKeyPicker} from '../a6/OperationKeyPicker';
+import {ResultTarget} from '../a6/ResultTarget';
 import { ATTEMPT_STATUS_LABELS,currentAttempt } from './modelLabel';
 import { CustomMonitorView, type CustomMonitorRow } from '../custom/CustomMonitorView';
 import { CustomOutputPreview } from '../custom/CustomOutputPreview';
@@ -105,7 +106,7 @@ function CustomResults({ store,record,resultOnly }: {
   }));
   // Selecting a row only records navigation; Panel renders the run as its own content sub-page.
   return <>
-    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} />
+    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} renderChannelActions={record.a6api ? model => model.a6api ? <ResultTarget store={store} record={record} model={model} /> : null : undefined} />
     <CustomOutputPreview store={store} />
   </>;
 }

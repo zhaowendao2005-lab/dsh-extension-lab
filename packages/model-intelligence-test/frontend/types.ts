@@ -81,6 +81,9 @@ export interface CustomRunSummary {
  usage: {requestCount: number | null; inputTokens: number | null; inputTotalTokens?: number | null; outputTokens: number | null; cacheReadTokens: number | null; cacheWriteTokens: number | null; cost: number | null; currency: string | null; billingState: CustomBillingState};
  metrics: {ttftMs: number | null; generationMs: number | null; e2eMs: number | null; modelTokensPerSecond: number | null; endToEndTokensPerSecond: number | null; cacheRate: number | null};
  error: {code: string | null; message: string; phase: string; detail?: CustomErrorDetail | null} | null;
+ resumeError?: CustomRunSummary['error'];
+ canContinue?: boolean;
+ cleanupPending?: boolean;
  continuations?: number;
 }
 export interface CustomEvent {
@@ -122,6 +125,16 @@ export interface CustomRequestView {
  step?: number | null;
  /** Milliseconds from request start to the first streamed delta of any kind. */
  firstDeltaMs?: number | null;
+ /** Host-observed timestamps in Unix milliseconds; absent on older requests. */
+ timing?: {
+  dispatchedAt?: number;
+  firstTextAt?: number;
+  firstOutputAt?: number;
+  streamEndedAt?: number;
+  cancelledAt?: number;
+  toolsClosed?: true;
+  tools: {startedAt: number; endedAt: number | null}[];
+ };
  /** What prompted this step: a user message or the previous tool result. */
  trigger?: string | null;
  error?: string | {code?: string; message?: string; status?: number; detail?: CustomErrorDetail | null} | null;
@@ -153,7 +166,9 @@ export interface CustomRunDetailEntry {
  previewOpen?: boolean;
  previewPath?: string;
  previewLoading?: boolean;
- continuing?: boolean;
+ action?: 'continue' | 'cancel';
+ actionError?: string;
+ cancelRequested?: boolean;
  tab: CustomDetailTab;
 }
 export interface CustomDraftState {
@@ -186,7 +201,8 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  customRunDetail(request: {attemptId: string; runId: string; revision?: number}): Promise<CustomRunDetailResult>;
  customFileRead(request: {attemptId: string; runId: string; path: string}): Promise<CustomFileReadResult>;
  customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal'; application?: string}): Promise<CustomOutputOpenResult>;
-  customRunContinue(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
+ customRunContinue(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
+ customRunCancel(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  a6CustomFromRecord(request: {recordId: string; name: string; models: CustomA6ModelRef[]; slots?: A6Slot[]; dshModels?: RecordModelRef[]; prompt: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; timeoutMs?: number}): Promise<{record: StoredRecord; attemptId: string}>;
  a6Config(): Promise<A6Config>;
  a6ConfigSave(request: {accessToken?: string; userId?: string}): Promise<A6Config & {ok: true; account: {id: number; name: string}; pins: number}>;
@@ -233,7 +249,7 @@ export interface Workbench {
   cancelRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
   beginCustomFromFingerprint(recordId: string, runId?: string | string[]): void; startCustomSelection(recordId: string): void; toggleCustomRunSelection(recordId: string, runId: string): void; cancelCustomSelection(): void; createCustomFromSelection(recordId: string): void;
   patchCustom(value: Partial<Pick<CustomDraftState, 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; setCustomProtocol(key: string | null, api: A6Protocol): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
-  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void;
+  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void; cancelCustomRun(runId: string): void;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;

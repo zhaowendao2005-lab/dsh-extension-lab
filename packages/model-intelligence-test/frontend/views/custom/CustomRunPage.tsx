@@ -26,7 +26,7 @@ export function CustomRunPage({ store,recordId,runId }: {
       <button type="button" className="mit-text-button" onClick={back}>返回模型列表</button>
     </div>;
   const attempt=currentAttempt(record.attempts??[],record.attemptId);
-  const summary=run.custom;
+  const summary=entry?.detail?.run??run.custom;
   const phase=summary.phase;
   return <div className="mit-detail-page mit-custom-run-page">
     <nav className="mit-breadcrumb mit-detail-breadcrumb" aria-label="测试详情路径">
@@ -40,16 +40,16 @@ export function CustomRunPage({ store,recordId,runId }: {
       <Icon name="chevron" size={12} />
       <span aria-current="page">{providerLabel(run.model)}/{modelLabel(run.model)}</span>
     </nav>
-    <CustomTaskView model={run.model} summary={summary} detail={entry?.detail} loading={entry?.loading??true} error={entry?.error}
+    <CustomTaskView model={run.model} summary={summary} detail={entry?.detail} loading={entry?.loading??true} error={entry?.error} actionError={entry?.actionError}
       activeTab={entry?.tab??'chat'} file={entry?.file} fileLoading={Boolean(entry?.fileLoading)}
-      canRetry={CONTINUABLE.includes(phase)} canCancel={!TERMINAL.includes(phase)}
-      canContinue={CONTINUABLE.includes(phase)&&Boolean(summary.sessionId)} continuing={Boolean(entry?.continuing)}
+      canRetry={CONTINUABLE.includes(phase)&&!entry?.action} canCancel={!TERMINAL.includes(phase)}
+      canContinue={CONTINUABLE.includes(phase)&&summary.canContinue===true} continuing={entry?.action==='continue'} cancelling={entry?.action==='cancel'||Boolean(entry?.cancelRequested)}
       onTabChange={tab => store.actions.setCustomDetailTab(runId,tab)}
       onReadFile={path => store.actions.readCustomFile(runId,path)}
       onOpenOutput={mode => store.actions.openCustomOutput(runId,mode)}
       onRetry={() => store.actions.retryFailedSample(record.id,runId)}
       onContinue={() => store.actions.continueCustomRun(runId)}
-      onCancel={() => store.actions.cancelRecord(record.id)}
+      onCancel={() => store.actions.cancelCustomRun(runId)}
       onClose={back} />
     <CustomOutputPreview store={store} />
   </div>;

@@ -173,6 +173,16 @@
 .mit-workbench .mit-custom-steps-caret { display: flex; align-items: center; justify-content: center; padding-right: 4px; }
 .mit-workbench .mit-custom-steps-caret::before { content: ''; width: 5px; height: 5px; border-right: 1px solid var(--mit-muted); border-bottom: 1px solid var(--mit-muted); transform: rotate(-45deg); transition: transform 0.12s ease; }
 .mit-workbench .mit-custom-steps-row[open] > .mit-custom-steps-summary .mit-custom-steps-caret::before { transform: rotate(45deg); }
+.mit-workbench .mit-custom-steps-timing { grid-column: 1 / -2; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 0 9px 8px; }
+.mit-workbench .mit-custom-steps-timing-phase { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 6px; color: var(--mit-muted); font-size: 10px; }
+.mit-workbench .mit-custom-steps-timing-phase.is-first { --mit-phase: var(--mit-warn); }
+.mit-workbench .mit-custom-steps-timing-phase.is-model { --mit-phase: var(--mit-brand); }
+.mit-workbench .mit-custom-steps-timing-phase.is-tool { --mit-phase: var(--mit-success); }
+.mit-workbench .mit-custom-steps-timing-value { color: var(--mit-text); white-space: nowrap; }
+.mit-workbench .mit-custom-steps-timing-track { grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; overflow: hidden; background: var(--mit-border); }
+.mit-workbench .mit-custom-steps-timing-track > span { display: block; height: 100%; border-radius: inherit; background: var(--mit-phase); }
+.mit-workbench .mit-custom-steps-timing-phase.is-live .mit-custom-steps-timing-track > span { transition: width 120ms linear; }
+@media (prefers-reduced-motion: reduce) { .mit-workbench .mit-custom-steps-timing-phase.is-live .mit-custom-steps-timing-track > span { transition: none; } }
 .mit-workbench .mit-custom-steps-events { padding: 8px 12px 10px 22px; background: var(--mit-layer-2); border-top: 1px solid var(--mit-border); display: flex; flex-direction: column; gap: 2px; }
 .mit-workbench .mit-custom-steps-event { display: flex; align-items: baseline; gap: 8px; font-size: 11px; line-height: 1.6; }
 .mit-workbench .mit-custom-steps-event-kind { flex: 0 0 30px; font-size: 9px; color: var(--mit-muted); text-align: right; }

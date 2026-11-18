@@ -3,6 +3,7 @@ import type { CustomEvent, CustomRequestView, CustomRunSummary } from '../../typ
 import { Empty } from '../../components/common';
 import { reasoningText } from '../../chat/rows/reasoning-text';
 import { count, decimal, millis, observed, rate } from './presentation';
+import { useStepClock } from '../../presentation/step-clock';
 
 export interface CustomStepsViewProps {
   requests: CustomRequestView[];
@@ -87,8 +88,8 @@ function toolEventsForStep(request: CustomRequestView, matched: CustomEvent[], e
   for (const event of events) {
     if (event.type !== 'tool' || seen.has(event.id)) continue;
     if (event.turn !== request.turn || event.step !== request.step) continue;
-    // A tool event that already names another request's execution stays with that request.
-    if (event.executionId && request.executionId && event.executionId !== request.executionId) continue;
+    // Events with an execution id were already grouped by the Host; never duplicate them via turn/step fallback.
+    if (event.executionId) continue;
     extra.push(event);
   }
   return extra;
@@ -149,6 +150,52 @@ function durationCell(request: CustomRequestView): { text: string; title: string
   if (observed(request.metrics.e2eMs)) return { text: millis(request.metrics.e2eMs), title: '端到端执行耗时' };
   if (observed(request.startedAt) && observed(request.finishedAt)) return { text: millis(request.finishedAt - request.startedAt), title: '由开始/结束时间推导' };
   return { text: UNKNOWN, title: request.status === 'running' ? '该步仍在执行，结束时间未知' : 'Host 未回填该步耗时' };
+}
+
+function elapsed(start: number | null | undefined, end: number | null | undefined): number | null {
+  return observed(start) && observed(end) ? Math.max(0, end - start) : null;
+}
+
+/** Parallel calls occupy the same wall-clock interval; count overlap only once. */
+function toolElapsed(tools: NonNullable<CustomRequestView['timing']>['tools'], cutoff: number | null) {
+  if (!tools.length) return null;
+  const intervals: {start: number; end: number}[] = [];
+  for (const {startedAt, endedAt} of tools) {
+    const end = endedAt ?? cutoff;
+    if (!observed(startedAt) || !observed(end)) return null;
+    intervals.push({start: startedAt, end: Math.max(startedAt, end)});
+  }
+  intervals.sort((a, b) => a.start - b.start);
+  let total = 0;
+  let coveredUntil = 0;
+  for (const { start, end } of intervals) {
+    total += Math.max(0, end - Math.max(start, coveredUntil));
+    coveredUntil = Math.max(coveredUntil, end);
+  }
+  return total;
+}
+
+function StepTiming({ request, runActive }: { request: CustomRequestView; runActive: boolean }) {
+  const timing = request.timing;
+  const streaming = runActive && request.status === 'running' && observed(timing?.dispatchedAt) && !observed(timing?.streamEndedAt) && !observed(timing?.cancelledAt);
+  const waiting = streaming && !observed(timing?.firstTextAt);
+  const generating = streaming && observed(timing?.firstOutputAt);
+  const tooling = runActive && !timing?.toolsClosed && !observed(timing?.cancelledAt) && (timing?.tools.some(tool => tool.endedAt === null) ?? false);
+  const now = useStepClock(waiting || generating || tooling);
+  const firstWaitEnd = timing?.firstTextAt ?? (waiting ? now : timing?.streamEndedAt ?? timing?.cancelledAt);
+  const noText = !waiting && !observed(timing?.firstTextAt) && elapsed(timing?.dispatchedAt, firstWaitEnd) !== null;
+  const cells = [
+    { kind: 'first', label: '模型首字', value: elapsed(timing?.dispatchedAt, firstWaitEnd), live: waiting, title: '从发起 DSH 模型调用到首个可观测文本；没有文本时，显示截至流结束或取消的等待时间' },
+    { kind: 'model', label: '模型生成', value: elapsed(timing?.firstOutputAt, timing?.streamEndedAt ?? (generating ? now : timing?.cancelledAt)), live: generating, title: '首个可观测输出（文本、推理或工具参数）到流结束；可能与首字等待重叠' },
+    { kind: 'tool', label: '工具调用', value: timing ? toolElapsed(timing.tools, tooling ? now : timing.cancelledAt ?? null) : null, live: tooling, title: '从会话工具调用至结果；并行工具重叠只计一次，取消以取消时刻为截止' },
+  ];
+  return <span className="mit-custom-steps-timing">
+    {cells.map(({ kind, label, value, live, title }) => <span key={kind} className={`mit-custom-steps-timing-phase is-${kind}${live ? ' is-live' : ''}`} title={`${title}${value === null ? '；未观测' : ''}。同一刻度：10 秒占半格。`}>
+      <span className="mit-custom-steps-timing-label">{label}</span>
+      <span className="mit-custom-steps-timing-value">{kind === 'first' && noText ? '未见文本 · ' : null}{millis(value)}{live ? <span className="mit-custom-sr-only"> · 进行中</span> : null}</span>
+      <span className="mit-custom-steps-timing-track" aria-hidden="true"><span style={{ width: value === null ? '0%' : `${100 * value / (value + 10_000)}%` }} /></span>
+    </span>)}
+  </span>;
 }
 
 interface StepLine { id: string; label: string; text: string; error: boolean }
@@ -223,6 +270,8 @@ export function CustomStepsView({ requests, events, summary, truncated }: Custom
   const outputTotal = total(rows.map(row => row.request.usage.outputTokens));
   const durationTotal = total(rows.map(row => observed(row.request.metrics.e2eMs) ? row.request.metrics.e2eMs : observed(row.request.startedAt) && observed(row.request.finishedAt) ? row.request.finishedAt - row.request.startedAt : null));
   const summaryText = '合计仅在每一步都回填用量时给出；未知不按 0 计算。';
+  const runActive = summary.phase === 'running' || summary.phase === 'tooling';
+  const latestRequest = requests.at(-1);
   return <div className="mit-custom-steps">
     <div className="mit-custom-steps-toolbar">
       <span className="mit-custom-steps-hint">一步 = 一次数据面请求；未知显示 —</span>
@@ -245,6 +294,7 @@ export function CustomStepsView({ requests, events, summary, truncated }: Custom
             <span className="mit-custom-steps-cell is-num" title={row.speed.title}>{row.speed.text}</span>
             <span className="mit-custom-steps-cell is-num" title={row.duration.title}>{row.duration.text}</span>
             <span className="mit-custom-steps-caret" aria-hidden="true" />
+            <StepTiming request={row.request} runActive={runActive && row.request === latestRequest} />
           </summary>
           <StepEvents events={row.matched} executionId={row.executionId} />
         </details>)}
