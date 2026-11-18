@@ -15,9 +15,10 @@ import { AssistantNodeView } from './AssistantNodeView';
 import { TurnErrorItem, UserMessageNodeView } from './MessageItem';
 import { ReasoningRow } from './ReasoningRow';
 import { TurnTailNodeView } from './TurnTailNodeView';
+import { ChatTurnUsagePanel } from './TurnUsageRow';
 import { chatRowActions } from './actions';
 import type {
-  ChatAssistantRow, ChatErrorRow, ChatReasoningRow, ChatTurnRow, ChatUserRow,
+  ChatAssistantRow, ChatErrorRow, ChatReasoningRow, ChatTurnRow, ChatTurnUsageRow, ChatUserRow,
 } from '../model';
 
 /**
@@ -125,6 +126,20 @@ export function ChatTurnRowView({ row }: { row: ChatTurnRow }): React.JSX.Elemen
         // TODO(host): real fork intake; the control keeps its place meanwhile.
         onBranch={() => { chatRowActions.branchAt(row.id); }}
       />
+    </FlowItem>
+  );
+}
+
+/**
+ * Render the usage summary that closes one turn (DSH `TurnUsagePanel` inside the
+ * turn tail), as its own `turn-tail` flow item so the tail spacing rules apply.
+ * @param props.row - mirrored turn usage row.
+ * @returns the flow item holding the usage pill.
+ */
+export function ChatTurnUsageRowView({ row }: { row: ChatTurnUsageRow }): React.JSX.Element {
+  return (
+    <FlowItem kind="turn-tail" rowKey={row.id} turn={row.turn}>
+      <ChatTurnUsagePanel turn={row.turn} usage={row.usage} />
     </FlowItem>
   );
 }

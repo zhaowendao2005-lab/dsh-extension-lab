@@ -11,6 +11,7 @@ export {
   ChatReasoningRowView,
   ChatErrorRowView,
   ChatTurnRowView,
+  ChatTurnUsageRowView,
   ChatFlow,
 } from './views';
 
@@ -23,6 +24,7 @@ export { UserMessageNodeView, TurnErrorItem, type UserRowProps, type TurnErrorNo
 export { UserContent, type UserContentData } from './UserContent';
 export { MessageIconActions, type MessageIconActionsProps } from './MessageIconActions';
 export { TurnTailNodeView, type TurnTailProps } from './TurnTailNodeView';
+export { ChatTurnUsagePanel } from './TurnUsageRow';
 export { TurnUsagePanel, type TurnUsagePanelProps } from './TurnUsagePanel';
 export { ActivityPill, UsagePill, formatDuration, cacheHitPercent, billedInputTokens } from './StatsPills';
 export type { PerformanceUsageMode, SessionTokenUsage, StatPillProps, WindowStats } from './StatsPills';

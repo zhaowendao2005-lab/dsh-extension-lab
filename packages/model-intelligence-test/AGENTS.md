@@ -19,6 +19,9 @@
 - pin 关闭智能兜底；新的日常固定不创建恢复租约，历史租约保留兼容恢复；任务侧固定由 worker 自行解除，外部修改不覆盖。`dsh://open` 只唤起安装版（不解析任何 path/query/hash）；选择数据走 Host intake，常驻 Client 用 `sidebarRight.openTab` 导航，不能编造原生插件路径或宣称能切 Host/profile。
 - 用户预设只在当前浏览器持久化；读取验证，失败可见。运行保存 prompt/footer/preset 快照，指纹另保存共享挑战和参考库版本。
 - 自定义任务由 Host 为每个模型创建独立 DSH Agent 会话与 UUID 沙箱目录；只挂载该 run 的受限文件工具，无 shell、网络、浏览器、外部 workspace、凭据或其它 run 访问。这是工具能力隔离，不是操作系统容器；不得声称可抵御有权限访问 Host 进程/文件系统的恶意插件。不得启动成果服务；预览仅在无 same-origin 权限、带 CSP 的 iframe 中执行。输出格式由沙箱白名单控制；只有「龙猫测试」预设强制 HTML，预设本身只是提示词快照。真实推理仅由用户显式启动，构建与静态检查不得调用模型。
+- 自定义运行详情是 Panel content 级独立子页（`navigation.runId` → `CustomRunPage`），不嵌在记录视图里。Chat 只读镜像照搬 DSH ui-chat 呈现层（reasoning 每 block 一行、默认折叠、turn usage），不自创样式；模块顶层禁止 JSX 与 `React.memo/forwardRef/createContext`（React 在 ModuleLoader factory 才注入）。
+- 失败必须保留可诊断信息：Host 持久化脱敏后的 message/stack/cause/上游 HTTP 状态与响应体（`backend/custom/errors.js`），界面折叠展示。失败/取消/中断的 run 可「补发 continue」：`agents.resume` 同一会话与沙箱后发送 `continue`；「重试」才是新轮次新沙箱。
+- a6api 自定义的接口格式只用 DSH 原生协议 id（openai-completions / openai-responses / anthropic-messages / google-generative-ai），草稿可批量或逐渠道设置；指纹仍走旧 chat/messages 三题传输。「在 VS Code 打开」必须走 Host `sessionController.workspacePathApplications/openWorkspacePath`，找不到 VS Code 时如实告知并在访达中显示，不得假装成功。
 - CSS 限定 `.mit-workbench`，Tailwind 禁用 preflight，继承 Host 字体及主题令牌。
 - `pnpm build` 包含 TypeScript 编译诊断和静态依赖约束；lib 为生成产物，禁止手改。
 - 遵守上层 README：未经用户批准，不编写/运行测试、不浏览器验证、不截图。不要默认安装插件。

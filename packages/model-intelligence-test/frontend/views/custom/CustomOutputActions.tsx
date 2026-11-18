@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from '../../runtime';
 import type { CustomOutputOpenResult } from '../../types';
 import { Icon } from '../../components/common';
 
-export function CustomOutputActions({ ready, path, onOpenOutput }: { ready: boolean; path: string | null; onOpenOutput(mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult> }) {
+export function CustomOutputActions({ ready, path, onOpenOutput }: { ready: boolean; path: string | null; onOpenOutput(mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult> }) {
   const modal = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const status = useRef<HTMLParagraphElement>(null);
@@ -40,12 +40,18 @@ export function CustomOutputActions({ ready, path, onOpenOutput }: { ready: bool
     if (feedback.current) feedback.current.textContent = '正在请求打开成果…';
     try {
       const result = await onOpenOutput('vscode');
-      if (feedback.current?.isConnected) feedback.current.textContent = result.opened ? '已请求在 VS Code 中打开。' : 'Host 未确认打开，请稍后重试。';
+      if (!feedback.current?.isConnected) return;
+      if (result.opened) { feedback.current.textContent = `已用 ${result.application?.name ?? '桌面应用'} 打开 ${result.path ?? ''}。`; return; }
+      // No VS Code registered for this file: say so honestly and fall back to revealing the file.
+      const names = (result.applications ?? []).map(item => item.name).join('、');
+      const revealed = await onOpenOutput('reveal');
+      if (feedback.current?.isConnected) feedback.current.textContent = `系统未登记可打开此文件的 VS Code${names ? `（可用：${names}）` : ''}；${revealed.opened ? '已在访达中显示该文件。' : '也未能在访达中显示。'}`;
     } catch (error) { if (feedback.current?.isConnected) feedback.current.textContent = error instanceof Error ? error.message : '打开成果失败。'; }
   };
   return <div className="mit-custom-output-actions">
     <button type="button" className="mit-button mit-button-primary" disabled={!ready} onClick={() => { void preview(); }}>预览成果</button>
     <button type="button" className="mit-button" disabled={!ready} onClick={() => { void openEditor(); }}>在 VS Code 打开</button>
+    <button type="button" className="mit-button" disabled={!ready} onClick={() => { void onOpenOutput('reveal').then(result => { if (feedback.current?.isConnected) feedback.current.textContent = result.opened ? '已在访达中显示。' : '未能显示文件。'; }, error => { if (feedback.current?.isConnected) feedback.current.textContent = error instanceof Error ? error.message : '显示文件失败。'; }); }}>在访达中显示</button>
     <p className="mit-custom-action-feedback" aria-live="polite" ref={feedback} />
     <dialog className="mit-custom-preview" ref={modal} onClose={clear} onCancel={clear} aria-label="成果隔离预览">
       <header><div><strong>成果预览</strong><code ref={resultPath}>{path || 'output.html'}</code></div><button type="button" className="mit-icon-button" aria-label="关闭成果预览" onClick={() => modal.current?.close()}><Icon name="close" /></button></header>

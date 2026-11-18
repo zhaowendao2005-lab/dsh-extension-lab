@@ -21,7 +21,7 @@ export interface FingerprintOptions { concurrency?: number; timeoutMs?: number }
 
 export interface A6MarketSnapshot { capturedAt: number; chargeType?: string; currency?: string; unit?: string; inputPriceMicros?: number; outputPriceMicros?: number; cacheReadPriceMicros?: number; cacheWritePriceMicros?: number; perRequestPriceMicros?: number; exchangeRate?: number; cacheHitRate24h?: number; cacheHitState?: string }
 export interface A6Channel { listingId: number; channelId: number; supplierId: number; model: string; supplierName?: string; channelName?: string; brand?: string; market?: A6MarketSnapshot }
-export interface CustomA6ModelRef { channelId: number; model: string }
+export interface CustomA6ModelRef { channelId: number; model: string; api?: A6Protocol }
 export interface A6OperationToken { id: number; name: string; maskedKey?: string; status?: number | string; expiredTime?: number }
 export type A6RelationKind = 'pins' | 'routes' | 'all';
 export interface A6OperationView { accountId: string; revision: number; tokenId: number | null; tokens: A6OperationToken[]; tokensAt: number | null; pins: {model: string; channelId: number; routeEffective: boolean; status: string}[]; routes: {model: string; channelIds: number[]}[]; pinsAt: number | null; routesAt: number | null; loading: {tokens: boolean; pins: boolean; routes: boolean}; errors: {tokens?: string; pins?: string; routes?: string}; legacyLeases: {recordId: string | null; tokenId: number; model: string; channelId: number; stage: string}[] }
@@ -39,11 +39,27 @@ export interface A6Selection { id: string; accountId: string; siteOrigin: string
 /** Credential state as the panel sees it: the access token itself never leaves Host storage. */
 export interface A6Config { configured: boolean; mask: string; userId: string; intakeToken: string; origin: string; link?: string; userscript?: {version: string; protocolVersion: number; installUrl: string; updateUrl: string; recent?: {version: string; protocolVersion: number | null; seenAt: number; accountId: string}} }
 export type A6SelectionsView = {revision: number; selections: A6Selection[]} | {revision: number; unchanged: true};
-export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[]; kind?: TestKind; prompt?: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; dshModels?: RecordModelRef[] }
+export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[]; kind?: TestKind; prompt?: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; dshModels?: RecordModelRef[]; protocols?: {channelId: number; model: string; api: A6Protocol}[] }
 export interface A6Record { accountId: string; siteOrigin: string; selectionId: string; slots: A6Slot[] }
 export interface A6Draft { name: string; models: A6Channel[]; tokens: number[]; timeoutMs?: number; creating: boolean; error?: string; feedback?: string }
 export interface A6State { selections: A6Selection[]; drafts: Record<string, A6Draft>; loaded: boolean; error?: string; config: A6Config | null; configLoading: boolean; configError?: string; configFeedback?: string; form: {accessToken: string; userId: string}; saving: boolean; rotating: boolean; copying: boolean }
-export type RelayApi = 'chat' | 'responses' | 'messages';
+export type RelayApi = 'chat' | 'responses' | 'messages' | A6Protocol;
+/** DSH-native wire protocols (dsh-llm-pi-ai PROTOCOLS); legacy chat/messages are read-compatible aliases. */
+export type A6Protocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai';
+export const A6_PROTOCOLS: {id: A6Protocol; label: string}[] = [
+  { id: 'openai-completions', label: 'OpenAI Chat Completions' },
+  { id: 'openai-responses', label: 'OpenAI Responses' },
+  { id: 'anthropic-messages', label: 'Anthropic Messages' },
+  { id: 'google-generative-ai', label: 'Google Gemini' },
+];
+export function normalizeProtocol(api: string | null | undefined): A6Protocol {
+  if (api === 'chat') return 'openai-completions';
+  if (api === 'messages') return 'anthropic-messages';
+  if (api === 'responses') return 'openai-responses';
+  return A6_PROTOCOLS.some(item => item.id === api) ? api as A6Protocol : 'openai-completions';
+}
+/** Host-persisted sanitized failure: full message, stack, cause chain, upstream status/body. */
+export interface CustomErrorDetail { name?: string; message?: string; stack?: string; status?: number; requestId?: string; body?: string; causes?: {name?: string; message?: string; code?: string; stack?: string}[] }
 export interface RelayRef { siteId: string; channelId: number; model: string; api: RelayApi; listingId?: number; supplierId?: number }
 export type AttemptStatus = 'queued' | 'running' | 'done' | 'cancelled' | 'failed' | 'interrupted';
 export interface AttemptSummary { id: string; recordId: string; number: number; status: AttemptStatus; createdAt: number; startedAt: number | null; finishedAt: number | null; error: string | null; summary: {total: number; ended: number; completed: number; failed: number} | null }
@@ -64,7 +80,8 @@ export interface CustomRunSummary {
  output: {state: 'none' | 'writing' | 'ready' | 'invalid'; relativePath: string | null; size: number | null; modifiedAt: number | null; validation: 'pending' | 'valid' | 'invalid' | 'unknown'; format?: string; errors?: string[]; checkedAt?: number};
  usage: {requestCount: number | null; inputTokens: number | null; inputTotalTokens?: number | null; outputTokens: number | null; cacheReadTokens: number | null; cacheWriteTokens: number | null; cost: number | null; currency: string | null; billingState: CustomBillingState};
  metrics: {ttftMs: number | null; generationMs: number | null; e2eMs: number | null; modelTokensPerSecond: number | null; endToEndTokensPerSecond: number | null; cacheRate: number | null};
- error: {code: string | null; message: string; phase: string} | null;
+ error: {code: string | null; message: string; phase: string; detail?: CustomErrorDetail | null} | null;
+ continuations?: number;
 }
 export interface CustomEvent {
  id: string;
@@ -85,6 +102,7 @@ export interface CustomEvent {
  isError?: boolean;
  arguments?: string | null;
  content?: string | null;
+ detail?: CustomErrorDetail | null;
 }
 export interface CustomRequestView {
  id: string;
@@ -98,7 +116,8 @@ export interface CustomRequestView {
  usage: {inputTokens: number | null; inputTotalTokens?: number | null; outputTokens: number | null; cacheReadTokens: number | null; cacheWriteTokens: number | null; cost: number | null; currency: string | null};
  metrics: {ttftMs: number | null; generationMs: number | null; e2eMs: number | null; modelTokensPerSecond: number | null; endToEndTokensPerSecond: number | null; cacheRate: number | null};
  billingState: CustomBillingState;
- error?: string | null;
+ httpStatus?: number | null;
+ error?: string | {code?: string; message?: string; status?: number; detail?: CustomErrorDetail | null} | null;
 }
 export interface CustomFileView { path: string; size: number; modifiedAt: number }
 export interface CustomRunDetail {
@@ -114,7 +133,7 @@ export interface CustomRunDetail {
 }
 export type CustomRunDetailResult = CustomRunDetail | {runId: string; revision: number; unchanged: true};
 export interface CustomFileReadResult { path: string; text: string; previewable: boolean }
-export interface CustomOutputOpenResult { html?: string; path?: string; opened?: boolean }
+export interface CustomOutputOpenResult { html?: string; path?: string; opened?: boolean; application?: {id: string; name: string} | null; applications?: {id: string; name: string}[] }
 export type CustomDetailTab = 'chat' | 'files' | 'metrics' | 'billing' | 'permissions';
 export interface CustomRunDetailEntry {
  loading: boolean;
@@ -126,12 +145,15 @@ export interface CustomRunDetailEntry {
  previewOpen?: boolean;
  previewPath?: string;
  previewLoading?: boolean;
+ continuing?: boolean;
  tab: CustomDetailTab;
 }
 export interface CustomDraftState {
  sourceSelectionId?: string;
  sourceRecordId?: string;
  a6Models: A6Channel[];
+ /** Per-channel wire protocol, keyed by `${channelId}:${model}`; missing = inferred default. */
+ protocols: Record<string, A6Protocol>;
  a6Tokens: A6Token[];
  concurrency: number;
  timeoutMs: number;
@@ -155,7 +177,8 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  attemptRetry(request: {attemptId: string; model: {provider: string; id: string}}): Promise<AttemptViewResult>;
  customRunDetail(request: {attemptId: string; runId: string; revision?: number}): Promise<CustomRunDetailResult>;
  customFileRead(request: {attemptId: string; runId: string; path: string}): Promise<CustomFileReadResult>;
- customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode'}): Promise<CustomOutputOpenResult>;
+ customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal'; application?: string}): Promise<CustomOutputOpenResult>;
+  customRunContinue(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  a6CustomFromRecord(request: {recordId: string; name: string; models: CustomA6ModelRef[]; slots?: A6Slot[]; dshModels?: RecordModelRef[]; prompt: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; timeoutMs?: number}): Promise<{record: StoredRecord; attemptId: string}>;
  a6Config(): Promise<A6Config>;
  a6ConfigSave(request: {accessToken?: string; userId?: string}): Promise<A6Config & {ok: true; account: {id: number; name: string}; pins: number}>;
@@ -199,8 +222,8 @@ export interface Workbench {
   selectPreset(id: string): void; addPreset(): void; renamePreset(id: string): void; deletePreset(id: string): void; savePreset(): void; togglePresets(): void;
   cancelRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
   beginCustomFromFingerprint(recordId: string, runId?: string | string[]): void; startCustomSelection(recordId: string): void; toggleCustomRunSelection(recordId: string, runId: string): void; cancelCustomSelection(): void; createCustomFromSelection(recordId: string): void;
-  patchCustom(value: Partial<Pick<CustomDraftState, 'concurrency' | 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
-  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>; dismissPreview(): void;
+  patchCustom(value: Partial<Pick<CustomDraftState, 'concurrency' | 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; setCustomProtocol(key: string | null, api: A6Protocol): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
+  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;

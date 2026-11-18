@@ -36,7 +36,10 @@ var id = (max = 128) => z2.string().min(1).max(max);
 var siteId = id(64);
 var concurrency = z2.number().int().min(1).max(6);
 var timeoutMs = z2.number().int().min(3e4).max(18e5);
-var relayApi = z2.enum(["chat", "responses", "messages"]);
+var A6_PROTOCOLS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
+var protocol = z2.enum(A6_PROTOCOLS);
+var relayApi = z2.enum(["chat", "responses", "messages", ...A6_PROTOCOLS]);
+var protocolEntry = z2.strictObject({ channelId: z2.number().int().positive(), model: id(256), api: protocol });
 var relayRef = z2.strictObject({ siteId, channelId: z2.number().int().min(1), model: id(256), api: relayApi, listingId: z2.number().int().min(0).optional(), supplierId: z2.number().int().min(0).optional() });
 var modelRef = z2.strictObject({ provider: id(128), id: id(256) });
 var a6Channel = z2.strictObject({ listingId: z2.number().int().nonnegative(), channelId: z2.number().int().positive(), supplierId: z2.number().int().nonnegative(), model: id(256), supplierName: z2.string().max(256).optional(), channelName: z2.string().max(256).optional(), brand: z2.string().max(256).optional(), market: marketSchema.optional() });
@@ -66,11 +69,12 @@ var schemas = {
   attemptRetry: z2.strictObject({ attemptId: id(), model: modelRef }),
   customRunDetail: z2.strictObject({ ...customRun, revision: z2.number().int().nonnegative().optional() }),
   customFileRead: z2.strictObject({ ...customRun, path: z2.string().min(1).max(512) }),
-  customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode"]).optional() }),
+  customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode", "reveal"]).optional(), application: z2.string().min(1).max(512).optional() }),
+  customRunContinue: z2.strictObject({ ...customRun }),
   a6ConfigSave: z2.strictObject({ accessToken: z2.string().max(512).optional(), userId: z2.string().max(40).optional() }),
   a6Selections: z2.strictObject({ revision: z2.number().int().nonnegative().optional() }),
-  a6Create: z2.strictObject({ selectionId: id(), kind: z2.enum(["fingerprint", "custom"]).optional(), ...customPrompt, name: z2.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z2.array(a6Channel).min(1).max(64).optional() }),
-  a6CustomFromRecord: z2.strictObject({ recordId: id(), name: z2.string().max(120), models: z2.array(z2.strictObject({ channelId: z2.number().int().positive(), model: id(256) })).min(1).max(64).optional(), slots: a6Slots.optional(), ...customPrompt, timeoutMs: timeoutMs.optional() }),
+  a6Create: z2.strictObject({ selectionId: id(), kind: z2.enum(["fingerprint", "custom"]).optional(), ...customPrompt, name: z2.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z2.array(a6Channel).min(1).max(64).optional(), protocols: z2.array(protocolEntry).max(64).optional() }),
+  a6CustomFromRecord: z2.strictObject({ recordId: id(), name: z2.string().max(120), models: z2.array(z2.strictObject({ channelId: z2.number().int().positive(), model: id(256), api: protocol.optional() })).min(1).max(64).optional(), slots: a6Slots.optional(), ...customPrompt, timeoutMs: timeoutMs.optional() }),
   a6OperationState: z2.strictObject({ refreshTokens: z2.boolean().optional(), refreshRelations: z2.boolean().optional() }),
   a6OperationSelect: z2.strictObject({ tokenId: z2.number().int().positive().nullable() }),
   a6OperationRefresh: z2.strictObject({ kind: z2.enum(["pins", "routes", "all"]) }),
@@ -91,6 +95,7 @@ var DESCRIPTIONS = {
   customRunDetail: "Read bounded events, requests and sandbox metadata for a custom run belonging to an attempt.",
   customFileRead: "Read a bounded relative file inside a verified custom-run sandbox.",
   customOutputOpen: "Preview a validated output or open that exact file with the discovered VS Code application.",
+  customRunContinue: "Resume a failed/cancelled custom run in its original DSH session and send a continue message (real inference).",
   a6CustomFromRecord: "Create custom sessions from channels of an existing fingerprint record; uses its account and dedicated test slots.",
   a6Config: "Read a6api credential state (masked access token, intake token, loopback origin); never returns the access token.",
   a6ConfigSave: "Verify and store the a6api access token plus user id in Host storage.",
@@ -1276,6 +1281,9 @@ var ModelIntelligenceService = class extends Service {
   customOutputOpen(request) {
     return this.guard(() => this.records.custom.open(request));
   }
+  customRunContinue(request) {
+    return this.guard(() => this.records.custom.continueRun(request));
+  }
   // Owner-only control plane. The only page-facing surface is the one-way selection intake.
   a6Config() {
     return this.guard(() => this.a6.config());
@@ -1365,6 +1373,7 @@ var REMOTE_METHODS = [
   "customRunDetail",
   "customFileRead",
   "customOutputOpen",
+  "customRunContinue",
   "a6Config",
   "a6ConfigSave",
   "a6IntakeRotate",
@@ -2549,6 +2558,12 @@ var A6Operations = class {
 };
 
 // backend/a6/service.js
+function protocolFor(channel, overrides, custom) {
+  const legacy = channel.model && /claude|anthropic/i.test(`${channel.brand} ${channel.model}`) ? "messages" : "chat";
+  if (!custom) return legacy;
+  const wanted = overrides?.find((entry) => entry.channelId === channel.channelId && entry.model === channel.model)?.api;
+  return wanted ?? (legacy === "messages" ? "anthropic-messages" : "openai-completions");
+}
 var CONFIG_KEY = "a6-site";
 var KEY_TTL_MS = 10 * 6e4;
 var A6Service = class {
@@ -2780,7 +2795,7 @@ var A6Service = class {
           id: channel.model,
           name: channel.model,
           a6api: channel,
-          relay: { siteId: "a6api", channelId: channel.channelId, supplierId: channel.supplierId, listingId: channel.listingId, model: channel.model, api: channel.model && /claude|anthropic/i.test(`${channel.brand} ${channel.model}`) ? "messages" : "chat" }
+          relay: { siteId: "a6api", channelId: channel.channelId, supplierId: channel.supplierId, listingId: channel.listingId, model: channel.model, api: protocolFor(channel, input2.protocols, (input2.kind ?? selection.kind) === "custom") }
         })), ...(input2.kind ?? selection.kind) === "custom" ? input2.dshModels ?? [] : []]
       });
     } finally {
@@ -2796,6 +2811,10 @@ var A6Service = class {
     if (!source?.a6api || source.kind !== "fingerprint") throw new A6Error("invalid-source", "\u8BF7\u4ECE a6api \u6307\u7EB9\u7ED3\u679C\u521B\u5EFA\u81EA\u5B9A\u4E49\u6D4B\u8BD5");
     this.assertAccount(source.a6api);
     const selected = input2.models ? source.models.filter((row) => input2.models.some((target) => target.channelId === row.a6api?.channelId && target.model === row.id)) : source.models;
+    const withProtocol = selected.map((row) => {
+      const wanted = input2.models?.find((target) => target.channelId === row.a6api?.channelId && target.model === row.id)?.api;
+      return wanted && row.relay ? { ...row, relay: { ...row.relay, api: wanted } } : row;
+    });
     if (!selected.length || input2.models && selected.length !== input2.models.length) throw new A6Error("invalid-selection", "\u6E20\u9053\u6A21\u578B\u4E0D\u5C5E\u4E8E\u6B64\u6307\u7EB9\u8BB0\u5F55");
     const slots = input2.slots ? input2.slots.map((slot) => source.a6api.slots.find((row) => row.tokenId === slot.tokenId)) : source.a6api.slots;
     if (!slots?.length || slots.some((slot) => !slot) || new Set(slots.map((slot) => slot.tokenId)).size !== slots.length) throw new A6Error("invalid-slots", "\u6D4B\u8BD5\u69FD\u4F4D\u4E0D\u5C5E\u4E8E\u539F\u8BB0\u5F55\u6216\u91CD\u590D");
@@ -2810,7 +2829,7 @@ var A6Service = class {
         prompt: input2.prompt,
         footerVersion: input2.footerVersion,
         preset: input2.preset,
-        models: [...selected, ...input2.dshModels ?? []],
+        models: [...withProtocol, ...input2.dshModels ?? []],
         a6api: { ...source.a6api, slots },
         options: { timeoutMs: input2.timeoutMs ?? source.options?.timeoutMs ?? 18e4, concurrency: input2.concurrency ?? Math.min(6, slots.length) }
       });
@@ -4051,6 +4070,25 @@ async function removeSandbox({ root, expectedRunId, signal } = {}) {
 import { randomUUID as randomUUID4 } from "node:crypto";
 import { createUserMessage as createUserMessage2, LlmError } from "@deepseek-ai/dsh-llm";
 import { NativeToolExecutor } from "@deepseek-ai/dsh-tool-executor-native";
+
+// backend/custom/errors.js
+var SECRET = /(sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._~+/=-]{8,}|"?(?:api[_-]?key|authorization|access[_-]?token)"?\s*[:=]\s*"?[^\s",}]{6,})/gi;
+var scrub = (value, max) => typeof value === "string" && value ? value.replace(SECRET, "[redacted]").slice(0, max) : void 0;
+function errorDetail(error) {
+  if (!error || typeof error !== "object") return error === void 0 ? null : { message: scrub(String(error), 4e3) };
+  const causes = [];
+  let cause = error.cause;
+  const seen = /* @__PURE__ */ new Set([error]);
+  while (cause && typeof cause === "object" && !seen.has(cause) && causes.length < 5) {
+    seen.add(cause);
+    causes.push({ name: scrub(cause.name, 120), message: scrub(cause.message, 2e3), code: scrub(typeof cause.code === "string" ? cause.code : void 0, 64), stack: scrub(cause.stack, 4e3) });
+    cause = cause.cause;
+  }
+  const status = Number.isInteger(error.status) ? error.status : Number.isInteger(error.httpStatus) ? error.httpStatus : void 0;
+  return { name: scrub(error.name, 120), message: scrub(error.message, 4e3), stack: scrub(error.stack, 8e3), ...status ? { status } : {}, ...typeof error.requestId === "string" ? { requestId: error.requestId.slice(0, 200) } : {}, ...typeof error.body === "string" ? { body: scrub(error.body, 4e3) } : {}, ...causes.length ? { causes } : {} };
+}
+
+// backend/custom/session.js
 var DEFAULT_LIMITS = Object.freeze({ maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: 18e4 });
 var SAFETY_PROMPT = [
   "Complete the supplied task using only the tools provided for this isolated test.",
@@ -4078,9 +4116,16 @@ function publicFailure(error) {
   const code = typeof raw?.code === "string" && /^[A-Z][A-Z0-9_-]{0,63}$/.test(raw.code) ? raw.code : "CUSTOM_SESSION_FAILED";
   return {
     code,
-    // Do not publish raw adapter error bodies, stack traces, or credential-bearing URLs.
-    message: code === "CUSTOM_BOUNDARY" ? `\u9694\u79BB\u4F1A\u8BDD\u62D2\u7EDD\u4E86\u989D\u5916\u4E0A\u4E0B\u6587\u6216\u5DE5\u5177\uFF08${String(raw?.message ?? "").slice(0, 220)}\uFF09\uFF0C\u672A\u53D1\u9001\u8BE5\u8BF7\u6C42\u3002` : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210\uFF08${code}\uFF09\u3002`,
-    ...Number.isInteger(raw?.status) && raw.status >= 100 && raw.status <= 599 ? { status: raw.status } : {}
+    // Short headline plus a scrubbed detail (message, stack, cause chain, upstream status/body); secrets are redacted.
+    message: code === "CUSTOM_BOUNDARY" ? `\u9694\u79BB\u4F1A\u8BDD\u62D2\u7EDD\u4E86\u989D\u5916\u4E0A\u4E0B\u6587\u6216\u5DE5\u5177\uFF08${String(raw?.message ?? "").slice(0, 220)}\uFF09\uFF0C\u672A\u53D1\u9001\u8BE5\u8BF7\u6C42\u3002` : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210\uFF08${code}${Number.isInteger(raw?.status) ? ` \xB7 HTTP ${raw.status}` : ""}\uFF09\uFF1A${String(raw?.message ?? error?.message ?? "\u672A\u77E5\u9519\u8BEF").replace(/\s+/g, " ").slice(0, 300)}`,
+    ...Number.isInteger(raw?.status) && raw.status >= 100 && raw.status <= 599 ? { status: raw.status } : {},
+    detail: (() => {
+      const base = errorDetail(error instanceof Error ? error : raw) ?? {};
+      if (Number.isInteger(raw?.status) && !base.status) base.status = raw.status;
+      if (typeof raw?.requestId === "string" && !base.requestId) base.requestId = raw.requestId.slice(0, 200);
+      if (!base.body && typeof raw?.body === "string") base.body = errorDetail({ message: raw.body }).message;
+      return base;
+    })()
   };
 }
 function limitSnapshot(value = {}) {
@@ -4090,7 +4135,7 @@ function limitSnapshot(value = {}) {
     return [name2, selected];
   }));
 }
-async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = "", sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream }) {
+async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = "", sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream, resume = false }) {
   if (!sessionId || typeof sessionId !== "string" || !provider || !model || typeof prompt !== "string" || !prompt.trim()) throw new TypeError("Invalid custom Agent request");
   if (!sandbox?.root || !Array.isArray(sandbox.tools) || sandbox.tools.length === 0) throw new TypeError("Custom Agent requires rooted tools");
   const limits = limitSnapshot(proposedLimits);
@@ -4222,63 +4267,59 @@ async function executeSession(ctx, { sessionId, provider, model, prompt, systemP
     await emit({ type: "phase", phase: "creating" });
     const agents = ctx.get("agents");
     if (!agents) throw new TypeError("Agent service is unavailable in the plugin context");
-    handle = await agents.create({
-      sessionId,
-      meta: { cwd: sandbox.root },
-      agentOptions: { provider: route, model, maxTokens: limits.maxTokens },
-      signal,
-      setup(agentCtx, createdAgent) {
-        agent = createdAgent;
-        scopeDisposers.push(agentCtx.tools.restrict({ allow: [] }));
-        scopeDisposers.push(agentCtx.tools.setExecutor(new NativeToolExecutor(agentCtx, () => 1)));
-        for (const definition of sandbox.tools) scopeDisposers.push(agentCtx.tools.register(definition));
-        scopeDisposers.push(agentCtx.tools.guard((execution) => {
-          if (execution.agent !== agent || !toolNames.has(execution.name)) return "Tool is outside this custom test";
-          if (++toolCount > limits.maxToolCalls) {
-            markLimited("maxToolCalls");
-            return "Custom test tool limit reached";
-          }
-          return void 0;
-        }));
-        scopeDisposers.push(agentCtx.systemPrompt.section({ name: "mit:custom-complete", order: 0, text: promptText, interpolate: false, complete: true }));
-        scopeDisposers.push(agentCtx.systemPrompt.suppressRuntimeContext());
-        scopeDisposers.push(agentCtx.on("system-prompt/assemble", async (_assembly, _context, next) => {
-          const assembly = await next();
-          return { ...assembly, contexts: [] };
-        }));
-        scopeDisposers.push(agentCtx.on("agent/pre-step", async (payload, next) => {
-          if (payload.agent !== agent) return next();
-          if (payload.step > limits.maxSteps) {
-            markLimited("maxSteps");
-            return { kind: "reject" };
-          }
-          return next();
-        }));
-        scopeDisposers.push(agentCtx.on("llm/stream", (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));
-        scopeDisposers.push(agentCtx.on("session/event", (session, event) => {
-          if (session !== agent.session) return;
-          const data = event.data;
-          if (event.type === "turn/start") {
-            turns = data.turn;
-            observe({ type: "phase", phase: "turn-start", turn: data.turn, seq: event.seq });
-          } else if (event.type === "step/start") {
-            steps = data.step;
-            observe({ type: "phase", phase: "step-start", turn: data.turn, step: data.step, seq: event.seq });
-          } else if (event.type === "turn/end") {
-            lastReason = data.reason;
-            observe({ type: "phase", phase: "turn-end", turn: data.turn, reason: data.reason.kind, seq: event.seq });
-          } else if (event.type === "tool/call") {
-            toolCallNames.set(data.callId, data.name);
-            observe({ type: "tool", phase: "call", callId: data.callId, name: data.name, arguments: data.arguments, turn: data.turn, step: data.step, seq: event.seq });
-          } else if (event.type === "tool/result") {
-            observe({ type: "tool", phase: "result", callId: data.message.toolCallId, name: toolCallNames.get(data.message.toolCallId) ?? "", content: data.message.content, isError: data.message.isError === true, turn: data.turn, step: data.step, seq: event.seq });
-          }
-        }));
-        scopeDisposers.push(agentCtx.on("agent/error", (payload) => {
-          if (payload.agent === agent) runtimeError ??= payload.error;
-        }));
-      }
-    });
+    const setup = (agentCtx, createdAgent) => {
+      agent = createdAgent;
+      scopeDisposers.push(agentCtx.tools.restrict({ allow: [] }));
+      scopeDisposers.push(agentCtx.tools.setExecutor(new NativeToolExecutor(agentCtx, () => 1)));
+      for (const definition of sandbox.tools) scopeDisposers.push(agentCtx.tools.register(definition));
+      scopeDisposers.push(agentCtx.tools.guard((execution) => {
+        if (execution.agent !== agent || !toolNames.has(execution.name)) return "Tool is outside this custom test";
+        if (++toolCount > limits.maxToolCalls) {
+          markLimited("maxToolCalls");
+          return "Custom test tool limit reached";
+        }
+        return void 0;
+      }));
+      scopeDisposers.push(agentCtx.systemPrompt.section({ name: "mit:custom-complete", order: 0, text: promptText, interpolate: false, complete: true }));
+      scopeDisposers.push(agentCtx.systemPrompt.suppressRuntimeContext());
+      scopeDisposers.push(agentCtx.on("system-prompt/assemble", async (_assembly, _context, next) => {
+        const assembly = await next();
+        return { ...assembly, contexts: [] };
+      }));
+      scopeDisposers.push(agentCtx.on("agent/pre-step", async (payload, next) => {
+        if (payload.agent !== agent) return next();
+        if (payload.step > limits.maxSteps) {
+          markLimited("maxSteps");
+          return { kind: "reject" };
+        }
+        return next();
+      }));
+      scopeDisposers.push(agentCtx.on("llm/stream", (request, next) => request.sessionId === sessionId ? observeRequest(request, next) : next()));
+      scopeDisposers.push(agentCtx.on("session/event", (session, event) => {
+        if (session !== agent.session) return;
+        const data = event.data;
+        if (event.type === "turn/start") {
+          turns = data.turn;
+          observe({ type: "phase", phase: "turn-start", turn: data.turn, seq: event.seq });
+        } else if (event.type === "step/start") {
+          steps = data.step;
+          observe({ type: "phase", phase: "step-start", turn: data.turn, step: data.step, seq: event.seq });
+        } else if (event.type === "turn/end") {
+          lastReason = data.reason;
+          observe({ type: "phase", phase: "turn-end", turn: data.turn, reason: data.reason.kind, seq: event.seq });
+        } else if (event.type === "tool/call") {
+          toolCallNames.set(data.callId, data.name);
+          observe({ type: "tool", phase: "call", callId: data.callId, name: data.name, arguments: data.arguments, turn: data.turn, step: data.step, seq: event.seq });
+        } else if (event.type === "tool/result") {
+          observe({ type: "tool", phase: "result", callId: data.message.toolCallId, name: toolCallNames.get(data.message.toolCallId) ?? "", content: data.message.content, isError: data.message.isError === true, turn: data.turn, step: data.step, seq: event.seq });
+        }
+      }));
+      scopeDisposers.push(agentCtx.on("agent/error", (payload) => {
+        if (payload.agent === agent) runtimeError ??= payload.error;
+      }));
+    };
+    const agentOptions = { provider: route, model, maxTokens: limits.maxTokens };
+    handle = resume ? await agents.resume({ resumeSessionId: sessionId, agentOptions, signal, setup }) : await agents.create({ sessionId, meta: { cwd: sandbox.root }, agentOptions, signal, setup });
     agent = handle.agent;
     signal?.addEventListener("abort", cancel, { once: true });
     signal?.throwIfAborted();
@@ -4332,6 +4373,9 @@ var MAX_FRAME_BYTES = 8 * 1024 * 1024;
 var MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 var MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 var MAX_USAGE_FRAMES = 32;
+var MAX_ERROR_BODY_BYTES = 4096;
+var ERROR_BODY_TIMEOUT_MS = 2e3;
+var MAX_BLOCK_INDEX = 1024;
 var USAGE_FRAME_FIELDS = /* @__PURE__ */ new Set([
   "input_tokens",
   "output_tokens",
@@ -4341,15 +4385,39 @@ var USAGE_FRAME_FIELDS = /* @__PURE__ */ new Set([
   "cache_read_input_tokens",
   "cache_creation_input_tokens",
   "cache_write_input_tokens",
-  "prompt_cache_hit_tokens"
+  "prompt_cache_hit_tokens",
+  // Gemini usageMetadata
+  "promptTokenCount",
+  "candidatesTokenCount",
+  "totalTokenCount",
+  "cachedContentTokenCount",
+  "thoughtsTokenCount",
+  "toolUsePromptTokenCount"
 ]);
+var USAGE_DETAIL_OBJECTS = ["prompt_tokens_details", "completion_tokens_details", "input_tokens_details", "output_tokens_details"];
 var USAGE_DETAIL_FIELDS = /* @__PURE__ */ new Set(["cached_tokens", "reasoning_tokens"]);
+var A6_PROTOCOLS2 = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
+var LEGACY_PROTOCOLS = { chat: "openai-completions", messages: "anthropic-messages" };
+function normalizeA6Api(value) {
+  if (typeof value !== "string") return "openai-completions";
+  const id2 = value.trim();
+  if (A6_PROTOCOLS2.includes(id2)) return id2;
+  return LEGACY_PROTOCOLS[id2] ?? "openai-completions";
+}
+var PROTOCOL_PATHS = {
+  "openai-completions": () => "/v1/chat/completions",
+  "openai-responses": () => "/v1/responses",
+  "anthropic-messages": () => "/v1/messages",
+  "google-generative-ai": (model) => `/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`
+};
+var REPLAY_MESSAGES = "mit-a6/messages";
+var REPLAY_GOOGLE = "mit-a6/google";
 var count = (value) => Number.isFinite(value) && value >= 0 ? value : void 0;
 function usageFrame(raw) {
   const frame = {};
   for (const [key, value] of Object.entries(raw)) {
     if (USAGE_FRAME_FIELDS.has(key) && count(value) !== void 0) frame[key] = value;
-    else if (["prompt_tokens_details", "completion_tokens_details", "output_tokens_details"].includes(key) && value && typeof value === "object" && !Array.isArray(value)) {
+    else if (USAGE_DETAIL_OBJECTS.includes(key) && value && typeof value === "object" && !Array.isArray(value)) {
       const details = Object.fromEntries(Object.entries(value).filter(([name2, amount2]) => USAGE_DETAIL_FIELDS.has(name2) && count(amount2) !== void 0));
       if (Object.keys(details).length) frame[key] = details;
     }
@@ -4369,38 +4437,51 @@ function textOf(content) {
   if (!Array.isArray(content) || content.some((block) => block.type !== "text")) throw new LlmError2("Unsupported a6 text content", "A6_UNSUPPORTED_CONTENT");
   return content.map((block) => block.text).join("\n");
 }
+function userTextBlocks(content) {
+  return content.map((block) => {
+    if (block.type !== "text") throw new LlmError2("Attachments are unavailable in custom a6 tests", "A6_UNSUPPORTED_CONTENT");
+    return block.text;
+  });
+}
 function finishReason(value) {
-  if (value === "length" || value === "max_tokens" || value === "model_context_window_exceeded") return "max-tokens";
+  if (value === "length" || value === "max_tokens" || value === "max_output_tokens" || value === "model_context_window_exceeded") return "max-tokens";
   if (value === "tool_calls" || value === "tool_use" || value === "function_call") return "tool-calls";
   if (["stop", "end_turn", "stop_sequence", "pause_turn"].includes(value)) return "stop";
   if (value === "content_filter" || value === "refusal") throw new LlmError2("a6api refused the response", "A6_REFUSED");
   throw new LlmError2("a6api returned an unsupported finish reason", "A6_INVALID_STREAM");
 }
 function toolsOf(tools = [], api) {
-  return tools.map((tool) => api === "messages" ? { name: tool.name, description: tool.description, input_schema: tool.parameters } : { type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } });
+  if (api === "anthropic-messages") return tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters }));
+  if (api === "openai-responses") return tools.map((tool) => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.parameters }));
+  if (api === "google-generative-ai") return [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }];
+  return tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } }));
 }
-function buildA6Request(options2, api = "chat") {
-  if (!["chat", "messages"].includes(api)) throw new TypeError("Unsupported a6 protocol");
+function mergeAdjacent(turns, field) {
+  for (let index = turns.length - 1; index > 0; index--) if (turns[index].role === turns[index - 1].role) {
+    turns[index - 1][field].push(...turns[index][field]);
+    turns.splice(index, 1);
+  }
+  return turns;
+}
+function buildChatOrMessages(options2, api) {
   const messages = [];
   const system = options2.system ? [options2.system] : [];
+  const anthropic = api === "anthropic-messages";
   for (const message of options2.messages ?? []) {
     const content = message.content ?? [];
     if (message.role === "system" || message.role === "developer") {
       const text4 = textOf(content);
-      if (api === "messages") {
+      if (anthropic) {
         if (text4) system.push(text4);
       } else messages.push({ role: message.role, content: text4 });
     } else if (message.role === "user") {
-      messages.push({ role: "user", content: api === "messages" ? content.map((block) => {
-        if (block.type !== "text") throw new LlmError2("Attachments are unavailable in custom a6 tests", "A6_UNSUPPORTED_CONTENT");
-        return { type: "text", text: block.text };
-      }) : textOf(content) });
+      messages.push({ role: "user", content: anthropic ? userTextBlocks(content).map((text4) => ({ type: "text", text: text4 })) : textOf(content) });
     } else if (message.role === "tool") {
       const text4 = textOf(content);
-      if (api === "messages") messages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: message.toolCallId, content: text4, ...message.isError ? { is_error: true } : {} }] });
+      if (anthropic) messages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: message.toolCallId, content: text4, ...message.isError ? { is_error: true } : {} }] });
       else messages.push({ role: "tool", tool_call_id: message.toolCallId, content: text4 });
     } else if (message.role === "assistant") {
-      if (api === "messages") {
+      if (anthropic) {
         const replay = message.source?.replayState;
         const projected = [];
         for (let index = 0; index < content.length; index++) {
@@ -4408,7 +4489,7 @@ function buildA6Request(options2, api = "chat") {
           if (block.type === "text") projected.push({ type: "text", text: block.text });
           else if (block.type === "tool-call") projected.push({ type: "tool_use", id: block.id, name: block.name, input: toolArguments(block.arguments) });
           else if (block.type === "reasoning") {
-            const native = replay?.response?.protocol === "mit-a6/messages" ? replay.blocks?.[index] : null;
+            const native = replay?.response?.protocol === REPLAY_MESSAGES ? replay.blocks?.[index] : null;
             if (native?.type === "thinking" && typeof native.signature === "string" && native.signature) projected.push({ type: "thinking", thinking: block.text, signature: native.signature });
             else if (native?.type === "redacted_thinking" && typeof native.data === "string") projected.push({ type: "redacted_thinking", data: native.data });
             else if (block.text) throw new LlmError2("a6api reasoning lacked a replay signature", "A6_MISSING_REASONING_SIGNATURE");
@@ -4429,16 +4510,12 @@ function buildA6Request(options2, api = "chat") {
       }
     } else throw new LlmError2("Unsupported a6 message role", "A6_UNSUPPORTED_CONTENT");
   }
-  if (api === "messages") {
-    for (let index = messages.length - 1; index > 0; index--) if (messages[index].role === messages[index - 1].role) {
-      messages[index - 1].content.push(...messages[index].content);
-      messages.splice(index, 1);
-    }
-  } else if (system.length) messages.unshift({ role: "system", content: system.join("\n\n") });
+  if (anthropic) mergeAdjacent(messages, "content");
+  else if (system.length) messages.unshift({ role: "system", content: system.join("\n\n") });
   const body = { model: options2.model, messages, stream: true };
   if (options2.tools?.length) body.tools = toolsOf(options2.tools, api);
   if (options2.temperature !== void 0) body.temperature = options2.temperature;
-  if (api === "messages") {
+  if (anthropic) {
     body.max_tokens = options2.maxTokens ?? 8192;
     if (system.length) body.system = system.join("\n\n");
     if (options2.stop?.length) body.stop_sequences = options2.stop;
@@ -4450,6 +4527,107 @@ function buildA6Request(options2, api = "chat") {
     if (options2.reasoningEffort !== void 0) body.reasoning_effort = options2.reasoningEffort;
   }
   return body;
+}
+function buildResponses(options2) {
+  const input2 = [];
+  const instructions = options2.system ? [options2.system] : [];
+  for (const message of options2.messages ?? []) {
+    const content = message.content ?? [];
+    if (message.role === "system" || message.role === "developer") {
+      const text4 = textOf(content);
+      if (text4) input2.push({ role: message.role, content: [{ type: "input_text", text: text4 }] });
+    } else if (message.role === "user") {
+      input2.push({ role: "user", content: userTextBlocks(content).map((text4) => ({ type: "input_text", text: text4 })) });
+    } else if (message.role === "tool") {
+      input2.push({ type: "function_call_output", call_id: message.toolCallId, output: textOf(content) });
+    } else if (message.role === "assistant") {
+      let run = null;
+      for (const block of content) {
+        if (block.type === "text") {
+          if (!block.text) continue;
+          if (!run) {
+            run = { role: "assistant", content: [] };
+            input2.push(run);
+          }
+          run.content.push({ type: "output_text", text: block.text });
+        } else if (block.type === "tool-call") {
+          run = null;
+          input2.push({ type: "function_call", call_id: block.id, name: block.name, arguments: block.arguments || "{}" });
+        } else if (block.type === "reasoning") {
+        } else throw new LlmError2("Unsupported a6 assistant content", "A6_UNSUPPORTED_CONTENT");
+      }
+    } else throw new LlmError2("Unsupported a6 message role", "A6_UNSUPPORTED_CONTENT");
+  }
+  const body = { model: options2.model, input: input2, stream: true, reasoning: { summary: "auto" } };
+  if (instructions.length) body.instructions = instructions.join("\n\n");
+  if (options2.tools?.length) body.tools = toolsOf(options2.tools, "openai-responses");
+  if (options2.maxTokens !== void 0) body.max_output_tokens = options2.maxTokens;
+  if (options2.temperature !== void 0) body.temperature = options2.temperature;
+  if (options2.reasoningEffort !== void 0) body.reasoning.effort = options2.reasoningEffort;
+  if (options2.stop?.length) throw new LlmError2("a6 Responses does not support stop sequences", "A6_UNSUPPORTED_STOP");
+  return body;
+}
+function buildGoogle(options2) {
+  const contents = [];
+  const system = options2.system ? [options2.system] : [];
+  const callNames = /* @__PURE__ */ new Map();
+  for (const message of options2.messages ?? []) {
+    const content = message.content ?? [];
+    if (message.role === "system" || message.role === "developer") {
+      const text4 = textOf(content);
+      if (text4) system.push(text4);
+    } else if (message.role === "user") {
+      contents.push({ role: "user", parts: userTextBlocks(content).map((text4) => ({ text: text4 })) });
+    } else if (message.role === "tool") {
+      const name2 = callNames.get(message.toolCallId);
+      if (!name2) throw new LlmError2("a6 Gemini tool result has no matching call", "A6_UNSUPPORTED_CONTENT");
+      contents.push({ role: "user", parts: [{ functionResponse: { name: name2, response: { content: textOf(content) } } }] });
+    } else if (message.role === "assistant") {
+      const replay = message.source?.replayState;
+      const native = replay?.response?.protocol === REPLAY_GOOGLE && Array.isArray(replay.blocks) ? replay.blocks : [];
+      const parts = [];
+      let pendingSignature = null;
+      for (let index = 0; index < content.length; index++) {
+        const block = content[index];
+        const own = typeof native[index]?.signature === "string" && native[index].signature ? native[index].signature : null;
+        const signature = own ?? pendingSignature;
+        const signed = (part) => {
+          if (signature) {
+            part.thoughtSignature = signature;
+            pendingSignature = null;
+          }
+          return part;
+        };
+        if (block.type === "text") {
+          if (block.text) parts.push(signed({ text: block.text }));
+          else if (own) pendingSignature = own;
+        } else if (block.type === "tool-call") {
+          callNames.set(block.id, block.name);
+          parts.push(signed({ functionCall: { name: block.name, args: toolArguments(block.arguments) } }));
+        } else if (block.type === "reasoning") {
+          if (own) pendingSignature = own;
+        } else throw new LlmError2("Unsupported a6 assistant content", "A6_UNSUPPORTED_CONTENT");
+      }
+      if (parts.length) contents.push({ role: "model", parts });
+    } else throw new LlmError2("Unsupported a6 message role", "A6_UNSUPPORTED_CONTENT");
+  }
+  mergeAdjacent(contents, "parts");
+  const generationConfig = { thinkingConfig: { includeThoughts: true } };
+  if (options2.maxTokens !== void 0) generationConfig.maxOutputTokens = options2.maxTokens;
+  if (options2.temperature !== void 0) generationConfig.temperature = options2.temperature;
+  if (options2.stop?.length) generationConfig.stopSequences = options2.stop;
+  if (options2.reasoningEffort !== void 0) throw new LlmError2("a6 Gemini reasoning effort requires an explicit provider mapping", "A6_UNSUPPORTED_REASONING_EFFORT");
+  const body = { contents };
+  if (system.length) body.systemInstruction = { parts: [{ text: system.join("\n\n") }] };
+  if (options2.tools?.length) body.tools = toolsOf(options2.tools, "google-generative-ai");
+  body.generationConfig = generationConfig;
+  return body;
+}
+function buildA6Request(options2, api = "openai-completions") {
+  const protocol2 = normalizeA6Api(api);
+  if (protocol2 === "openai-responses") return buildResponses(options2);
+  if (protocol2 === "google-generative-ai") return buildGoogle(options2);
+  return buildChatOrMessages(options2, protocol2);
 }
 async function* frames2(body, signal) {
   const reader = body.getReader();
@@ -4491,29 +4669,41 @@ async function* frames2(body, signal) {
 function mergeUsage(previous, raw, api) {
   if (!raw || typeof raw !== "object") return previous;
   const next = { ...previous, streamUsageFrames: [...previous.streamUsageFrames ?? [], usageFrame(raw)].slice(-MAX_USAGE_FRAMES) };
-  const input2 = count(api === "messages" ? raw.input_tokens : raw.prompt_tokens ?? raw.input_tokens);
-  const output = count(api === "messages" ? raw.output_tokens : raw.completion_tokens ?? raw.output_tokens);
-  const read = count(raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens ?? raw.prompt_cache_hit_tokens);
-  const write = count(raw.cache_creation_input_tokens ?? raw.cache_write_input_tokens);
+  const anthropic = api === "anthropic-messages";
+  let input2, output, read, write, reasoning, total;
+  if (api === "google-generative-ai") {
+    input2 = count(raw.promptTokenCount);
+    const candidates = count(raw.candidatesTokenCount);
+    const thoughts = count(raw.thoughtsTokenCount);
+    output = candidates === void 0 && thoughts === void 0 ? void 0 : (candidates ?? 0) + (thoughts ?? 0);
+    read = count(raw.cachedContentTokenCount);
+    reasoning = thoughts;
+    total = count(raw.totalTokenCount);
+  } else {
+    input2 = count(anthropic ? raw.input_tokens : raw.prompt_tokens ?? raw.input_tokens);
+    output = count(anthropic ? raw.output_tokens : raw.completion_tokens ?? raw.output_tokens);
+    read = count(raw.cache_read_input_tokens ?? raw.prompt_tokens_details?.cached_tokens ?? raw.input_tokens_details?.cached_tokens ?? raw.prompt_cache_hit_tokens);
+    write = count(raw.cache_creation_input_tokens ?? raw.cache_write_input_tokens);
+    reasoning = count(raw.completion_tokens_details?.reasoning_tokens ?? raw.output_tokens_details?.reasoning_tokens);
+    total = count(raw.total_tokens);
+  }
   if (read !== void 0) next.cacheReadTokens = read;
   if (write !== void 0) next.cacheWriteTokens = write;
   if (input2 !== void 0) {
     next.promptTokens = input2;
   }
-  if (api === "messages" && next.promptTokens !== void 0 && (next.cacheReadTokens !== void 0 || next.cacheWriteTokens !== void 0)) {
+  if (anthropic && next.promptTokens !== void 0 && (next.cacheReadTokens !== void 0 || next.cacheWriteTokens !== void 0)) {
     next.inputTotalTokens = next.promptTokens + (next.cacheReadTokens ?? 0) + (next.cacheWriteTokens ?? 0);
     next.inputTokens = Math.max(0, next.inputTotalTokens - (next.cacheReadTokens ?? 0) - (next.cacheWriteTokens ?? 0));
-  } else if (api === "messages" && next.promptTokens !== void 0) {
+  } else if (anthropic && next.promptTokens !== void 0) {
     next.inputTokens = next.promptTokens;
   }
-  if (api !== "messages" && next.promptTokens !== void 0) {
+  if (!anthropic && next.promptTokens !== void 0) {
     next.inputTotalTokens = next.promptTokens;
     next.inputTokens = Math.max(0, next.promptTokens - (next.cacheReadTokens ?? 0) - (next.cacheWriteTokens ?? 0));
   }
   if (output !== void 0) next.outputTokens = output;
-  const reasoning = count(raw.completion_tokens_details?.reasoning_tokens ?? raw.output_tokens_details?.reasoning_tokens);
   if (reasoning !== void 0) next.reasoningTokens = reasoning;
-  const total = count(raw.total_tokens);
   if (total !== void 0) next.totalTokens = total;
   else if (next.inputTokens !== void 0 && next.outputTokens !== void 0) next.totalTokens = next.inputTokens + next.outputTokens + (next.cacheReadTokens ?? 0) + (next.cacheWriteTokens ?? 0);
   return next;
@@ -4525,28 +4715,91 @@ function exposedUsage(value) {
 function llmUsage(value) {
   return Object.fromEntries(["inputTokens", "outputTokens", "totalTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokens"].filter((field) => Number.isFinite(value[field]) && value[field] >= 0).map((field) => [field, value[field]]));
 }
-function terminalFailure(payload, status = 200) {
-  const code = payload?.error?.code ?? payload?.error?.type;
-  return { code: code === "specific_channel_rate_limited" ? "A6_PLATFORM_QUOTA" : "A6_STREAM_ERROR", message: "a6api \u6D41\u8FD4\u56DE\u9519\u8BEF\u3002", status };
+function redactBody(text4, credential) {
+  if (typeof text4 !== "string") return "";
+  let safe = credential ? text4.split(credential).join("***") : text4;
+  const bytes = Buffer.from(safe, "utf8");
+  if (bytes.byteLength > MAX_ERROR_BODY_BYTES) safe = bytes.subarray(0, MAX_ERROR_BODY_BYTES).toString("utf8").replace(/\uFFFD+$/, "");
+  return safe;
 }
-function createA6Stream({ key, api = "chat", fetchImpl = globalThis.fetch }) {
+async function readErrorBody(response, credential) {
+  const stream = response?.body;
+  let reader = null;
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(null), ERROR_BODY_TIMEOUT_MS);
+  });
+  try {
+    if (stream && typeof stream.getReader === "function") {
+      reader = stream.getReader();
+      const chunks = [];
+      let size = 0;
+      const limit = MAX_ERROR_BODY_BYTES + credential.length;
+      while (size < limit) {
+        const next = await Promise.race([reader.read(), deadline]);
+        if (!next || next.done) break;
+        const value = next.value instanceof Uint8Array ? next.value : new Uint8Array(0);
+        chunks.push(value.subarray(0, limit - size));
+        size += value.byteLength;
+      }
+      if (!chunks.length) return "";
+      return redactBody(Buffer.concat(chunks).toString("utf8"), credential);
+    }
+    if (typeof response?.text === "function") {
+      const text4 = await Promise.race([response.text(), deadline]);
+      return text4 === null ? null : redactBody(String(text4), credential);
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    if (reader) {
+      reader.cancel().catch(() => {
+      });
+      try {
+        reader.releaseLock();
+      } catch {
+      }
+    }
+  }
+}
+function httpError(status, requestId, body, extra = {}) {
+  const excerpt = body ? body.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+  const error = new LlmError2(`a6api HTTP ${status}${excerpt ? `: ${excerpt}` : ""}`, "A6_HTTP_ERROR", {
+    status,
+    ...requestId ? { requestId } : {},
+    ...body !== null && body !== void 0 ? { body } : {},
+    ...extra
+  });
+  if (body !== null && body !== void 0) error.body = body;
+  return error;
+}
+function terminalFailure(payload, status, raw, credential) {
+  const code = payload?.error?.code ?? payload?.error?.type;
+  return { code: code === "specific_channel_rate_limited" ? "A6_PLATFORM_QUOTA" : "A6_STREAM_ERROR", message: "a6api \u6D41\u8FD4\u56DE\u9519\u8BEF\u3002", status, body: redactBody(raw, credential) };
+}
+function streamError(payload, raw, status, requestId, credential) {
+  const failure2 = terminalFailure(payload, status, raw, credential);
+  const error = new LlmError2(failure2.message, failure2.code, { status, ...requestId ? { requestId } : {}, body: failure2.body });
+  error.body = failure2.body;
+  return error;
+}
+function createA6Stream({ key, api = "openai-completions", fetchImpl = globalThis.fetch }) {
   if (typeof key !== "string" || !key.trim() || /[^\x21-\x7e]/.test(key.trim())) throw new TypeError("Invalid a6 key");
-  if (!["chat", "messages"].includes(api)) throw new TypeError("Unsupported a6 protocol");
+  const protocol2 = normalizeA6Api(api);
   if (typeof fetchImpl !== "function") throw new TypeError("a6 fetch is unavailable");
   const credential = key.trim();
   return async function* stream(options2, callbacks = {}) {
-    const body = JSON.stringify(buildA6Request(options2, api));
+    if (protocol2 === "google-generative-ai" && (typeof options2.model !== "string" || !options2.model)) throw new LlmError2("a6 Gemini request requires a model id", "A6_UNSUPPORTED_CONTENT");
+    const body = JSON.stringify(buildA6Request(options2, protocol2));
     if (Buffer.byteLength(body, "utf8") > MAX_REQUEST_BYTES) throw new LlmError2("a6api request exceeded the limit", "A6_REQUEST_LIMIT");
     options2.signal?.throwIfAborted();
-    const headers = {
-      ...attributionHeaders(),
-      "content-type": "application/json",
-      accept: "text/event-stream",
-      ...api === "messages" ? { "x-api-key": credential, "anthropic-version": "2023-06-01" } : { authorization: `Bearer ${credential}` }
-    };
+    const auth = protocol2 === "anthropic-messages" ? { "x-api-key": credential, "anthropic-version": "2023-06-01" } : protocol2 === "google-generative-ai" ? { "x-goog-api-key": credential } : { authorization: `Bearer ${credential}` };
+    const headers = { ...attributionHeaders(), "content-type": "application/json", accept: "text/event-stream", ...auth };
     let response;
     try {
-      response = await fetchImpl(`${ENDPOINT2}${api === "messages" ? "/v1/messages" : "/v1/chat/completions"}`, { method: "POST", headers, body, signal: options2.signal, redirect: "error" });
+      response = await fetchImpl(`${ENDPOINT2}${PROTOCOL_PATHS[protocol2](options2.model)}`, { method: "POST", headers, body, signal: options2.signal, redirect: "error" });
     } catch (error) {
       if (options2.signal?.aborted) throw error;
       throw new LlmError2("Unable to connect to a6api", "A6_NETWORK");
@@ -4558,30 +4811,286 @@ function createA6Stream({ key, api = "chat", fetchImpl = globalThis.fetch }) {
       await callbacks.metadata?.({ requestId, httpStatus: response.status });
       if (!response.ok || !response.body) {
         const retry = Number(response.headers?.get?.("retry-after"));
-        throw new LlmError2(`a6api HTTP ${response.status}`, "A6_HTTP_ERROR", {
-          status: response.status,
-          ...requestId ? { requestId } : {},
-          ...Number.isFinite(retry) && retry > 0 ? { providerRetryAfterMs: Math.min(retry, 300) * 1e3 } : {}
-        });
+        const errorBody = response.ok ? null : await readErrorBody(response, credential);
+        consumed = errorBody !== null;
+        throw httpError(response.status, requestId, errorBody, Number.isFinite(retry) && retry > 0 ? { providerRetryAfterMs: Math.min(retry, 300) * 1e3 } : {});
       }
-      let usage = {};
-      let reason = null;
-      let failure2 = null;
-      let terminal = false;
-      let sawContent = false;
-      const blocks = /* @__PURE__ */ new Map();
-      const order = [];
+      const s = { usage: {}, reason: null, failure: null, terminal: false, sawContent: false, hasToolCall: false, blocks: /* @__PURE__ */ new Map(), order: [], current: null, nextIndex: 0, callSeq: 0 };
+      const { blocks } = s;
       const started = (index, type) => {
         if (!blocks.has(index)) {
           blocks.set(index, { type, text: "", arguments: "", name: "", id: "", signature: "" });
-          order.push(index);
+          s.order.push(index);
           return true;
         }
         return false;
       };
+      const checkIndex = (index) => {
+        if (!Number.isSafeInteger(index) || index < 0 || index > MAX_BLOCK_INDEX) throw new LlmError2("Invalid a6api output index", "A6_INVALID_STREAM");
+        return index;
+      };
+      const endBlock = (index, block) => {
+        block.ended = true;
+        if (block.type === "tool-call") {
+          if (!block.id || !block.name) throw new LlmError2("a6api tool identity is missing", "A6_INVALID_STREAM");
+          const args = block.arguments || JSON.stringify(block.initialInput ?? {});
+          if (s.reason !== "max-tokens" && !block.incomplete) toolArguments(args);
+          return { type: "block-end", index, block: { type: "tool-call", id: block.id, name: block.name, arguments: args } };
+        }
+        return { type: "block-end", index, block: { type: block.type, text: block.text } };
+      };
+      function* onCompletions(payload) {
+        const choice = payload.choices?.[0];
+        const delta = choice?.delta;
+        const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+        if (typeof reasoning === "string" && reasoning) {
+          if (started(0, "reasoning")) yield { type: "block-start", index: 0, blockType: "reasoning" };
+          blocks.get(0).text += reasoning;
+          s.sawContent = true;
+          yield { type: "reasoning-delta", index: 0, text: reasoning };
+        }
+        if (typeof delta?.content === "string" && delta.content) {
+          if (started(1, "text")) yield { type: "block-start", index: 1, blockType: "text" };
+          blocks.get(1).text += delta.content;
+          s.sawContent = true;
+          yield { type: "text-delta", index: 1, text: delta.content };
+        }
+        if (delta?.function_call) throw new LlmError2("Legacy a6api function_call is unsupported", "A6_UNSUPPORTED_CONTENT");
+        for (const call of delta?.tool_calls ?? []) {
+          if (!Number.isSafeInteger(call.index) || call.index < 0 || call.index > MAX_BLOCK_INDEX) throw new LlmError2("Invalid a6api tool index", "A6_INVALID_STREAM");
+          const index = call.index + 2;
+          if (started(index, "tool-call")) yield { type: "block-start", index, blockType: "tool-call" };
+          const block = blocks.get(index);
+          if (call.id) block.id += call.id;
+          if (call.function?.name) block.name += call.function.name;
+          if (call.function?.arguments) block.arguments += call.function.arguments;
+          s.sawContent = true;
+          if (block.id) {
+            const argumentsDelta = block.arguments.slice(block.emittedArguments ?? 0);
+            block.emittedArguments = block.arguments.length;
+            yield { type: "tool-call-delta", index, id: block.id, ...block.name ? { name: block.name } : {}, argumentsDelta };
+          }
+        }
+        if (choice?.finish_reason) {
+          s.reason = finishReason(choice.finish_reason);
+          s.terminal = true;
+        }
+      }
+      function* onMessages(payload) {
+        const index = payload.index;
+        if (payload.type === "content_block_start") {
+          const native = payload.content_block;
+          const type = ["thinking", "redacted_thinking"].includes(native?.type) ? "reasoning" : native?.type === "tool_use" ? "tool-call" : native?.type === "text" ? "text" : null;
+          if (!type || !Number.isSafeInteger(index) || index < 0 || index > MAX_BLOCK_INDEX || blocks.has(index)) throw new LlmError2("a6api returned unsupported Messages content", "A6_UNSUPPORTED_CONTENT");
+          if (started(index, type)) yield { type: "block-start", index, blockType: type };
+          const block = blocks.get(index);
+          if (native.type === "redacted_thinking") {
+            if (typeof native.data !== "string") throw new LlmError2("Invalid redacted a6api reasoning", "A6_INVALID_STREAM");
+            block.redacted = native.data;
+            s.sawContent = true;
+          }
+          if (type === "tool-call") {
+            block.id = native.id;
+            block.name = native.name;
+            block.initialInput = native.input ?? {};
+            if (typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name) throw new LlmError2("a6api tool identity is missing", "A6_INVALID_STREAM");
+            yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta: "" };
+            s.sawContent = true;
+          } else {
+            const initial = type === "text" ? native.text : native.thinking;
+            if (initial) {
+              block.text += initial;
+              s.sawContent = true;
+              yield { type: type === "text" ? "text-delta" : "reasoning-delta", index, text: initial };
+            }
+            if (native.signature) block.signature = native.signature;
+          }
+        } else if (payload.type === "content_block_delta") {
+          const block = blocks.get(index);
+          if (!block) throw new LlmError2("a6api delta has no content block", "A6_INVALID_STREAM");
+          const delta = payload.delta;
+          if (delta?.type === "signature_delta") block.signature += delta.signature ?? "";
+          else if (delta?.type === "input_json_delta" && block.type === "tool-call") {
+            const value = delta.partial_json ?? "";
+            block.arguments += value;
+            yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta: value };
+          } else if (delta?.type === "text_delta" || delta?.type === "thinking_delta") {
+            const value = delta.type === "text_delta" ? delta.text : delta.thinking;
+            if (typeof value !== "string") throw new LlmError2("Invalid a6api text delta", "A6_INVALID_STREAM");
+            block.text += value;
+            s.sawContent ||= Boolean(value);
+            yield { type: delta.type === "text_delta" ? "text-delta" : "reasoning-delta", index, text: value };
+          } else throw new LlmError2("Unsupported a6api content delta", "A6_INVALID_STREAM");
+        } else if (payload.type === "message_delta" && payload.delta?.stop_reason) s.reason = finishReason(payload.delta.stop_reason);
+        else if (payload.type === "message_stop") {
+          s.terminal = true;
+          s.stop = true;
+        }
+      }
+      function* responsesText(index, type, value, part) {
+        if (typeof value !== "string") throw new LlmError2("Invalid a6api text delta", "A6_INVALID_STREAM");
+        checkIndex(index);
+        if (started(index, type)) yield { type: "block-start", index, blockType: type };
+        const block = blocks.get(index);
+        if (block.type !== type || block.ended) throw new LlmError2("a6api delta does not match its output item", "A6_INVALID_STREAM");
+        if (part !== void 0 && block.part !== void 0 && part !== block.part && block.text) {
+          block.text += "\n\n";
+          yield { type: "reasoning-delta", index, text: "\n\n" };
+        }
+        if (part !== void 0) block.part = part;
+        if (!value) return;
+        block.text += value;
+        s.sawContent = true;
+        yield { type: type === "text" ? "text-delta" : "reasoning-delta", index, text: value };
+      }
+      function* responsesToolStart(index, item) {
+        checkIndex(index);
+        if (!started(index, "tool-call")) throw new LlmError2("a6api reused a Responses output index", "A6_INVALID_STREAM");
+        yield { type: "block-start", index, blockType: "tool-call" };
+        const block = blocks.get(index);
+        block.id = item.call_id;
+        block.name = item.name;
+        if (typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name) throw new LlmError2("a6api tool identity is missing", "A6_INVALID_STREAM");
+        s.sawContent = true;
+        s.hasToolCall = true;
+        yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta: "" };
+      }
+      function* responsesToolArguments(index, full) {
+        const block = blocks.get(index);
+        if (typeof full !== "string" || !full || full === block.arguments) return;
+        if (!full.startsWith(block.arguments)) throw new LlmError2("a6api tool arguments diverged from their deltas", "A6_INVALID_STREAM");
+        const argumentsDelta = full.slice(block.arguments.length);
+        block.arguments = full;
+        yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta };
+      }
+      function* onResponses(payload, raw) {
+        const index = payload.output_index;
+        switch (payload.type) {
+          case "error":
+          case "response.failed":
+            throw streamError(payload.type === "error" ? payload : { error: payload.response?.error }, raw, response.status, requestId, credential);
+          case "response.output_text.delta":
+            yield* responsesText(index, "text", payload.delta);
+            break;
+          case "response.reasoning_summary_text.delta":
+            yield* responsesText(index, "reasoning", payload.delta, `s${payload.summary_index ?? 0}`);
+            break;
+          case "response.reasoning_text.delta":
+            yield* responsesText(index, "reasoning", payload.delta, `c${payload.content_index ?? 0}`);
+            break;
+          case "response.output_item.added":
+            if (payload.item?.type === "function_call") {
+              yield* responsesToolStart(index, payload.item);
+              yield* responsesToolArguments(index, payload.item.arguments);
+            }
+            break;
+          case "response.function_call_arguments.delta": {
+            const block = blocks.get(index);
+            if (!block || block.type !== "tool-call" || block.ended) throw new LlmError2("a6api arguments delta has no tool call", "A6_INVALID_STREAM");
+            const value = payload.delta ?? "";
+            if (typeof value !== "string") throw new LlmError2("Invalid a6api arguments delta", "A6_INVALID_STREAM");
+            block.arguments += value;
+            yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta: value };
+            break;
+          }
+          case "response.function_call_arguments.done":
+            if (blocks.get(index)?.type === "tool-call") yield* responsesToolArguments(index, payload.arguments);
+            break;
+          case "response.output_item.done": {
+            const item = payload.item ?? {};
+            if (item.type === "function_call") {
+              if (!blocks.has(index)) yield* responsesToolStart(index, item);
+              const block = blocks.get(index);
+              if (block.type !== "tool-call" || block.ended) throw new LlmError2("a6api output item does not match its block", "A6_INVALID_STREAM");
+              yield* responsesToolArguments(index, item.arguments);
+              block.incomplete = item.status === "incomplete";
+              yield endBlock(index, block);
+            } else if (item.type === "message" || item.type === "reasoning") {
+              if (!blocks.has(index)) {
+                const type = item.type === "message" ? "text" : "reasoning";
+                const texts = item.type === "message" ? (item.content ?? []).filter((part) => part?.type === "output_text").map((part) => part.text) : [...item.summary ?? [], ...item.content ?? []].filter((part) => typeof part?.text === "string").map((part) => part.text);
+                const text4 = texts.filter((value) => typeof value === "string" && value).join(type === "text" ? "" : "\n\n");
+                if (text4) yield* responsesText(index, type, text4);
+              }
+              const block = blocks.get(index);
+              if (block && !block.ended) yield endBlock(index, block);
+            }
+            break;
+          }
+          case "response.completed":
+          case "response.incomplete": {
+            const result = payload.response ?? {};
+            if (result.status === "incomplete") {
+              const why = result.incomplete_details?.reason;
+              s.reason = why === "max_output_tokens" ? "max-tokens" : finishReason(why);
+            } else if (result.status === void 0 || result.status === "completed") {
+              s.reason = s.hasToolCall || (result.output ?? []).some((item) => item?.type === "function_call") ? "tool-calls" : "stop";
+            } else throw streamError({ error: result.error }, raw, response.status, requestId, credential);
+            s.terminal = true;
+            s.stop = true;
+            break;
+          }
+          default:
+            if (payload.error && payload.type === void 0) throw streamError(payload, raw, response.status, requestId, credential);
+            break;
+        }
+      }
+      const nextGoogleIndex = () => {
+        if (s.nextIndex > MAX_BLOCK_INDEX) throw new LlmError2("a6api returned too many Gemini parts", "A6_INVALID_STREAM");
+        return s.nextIndex++;
+      };
+      function* onGoogle(payload, raw) {
+        const candidate = payload.candidates?.[0];
+        if (!candidate && payload.promptFeedback?.blockReason) throw new LlmError2("a6api refused the response", "A6_REFUSED");
+        for (const part of candidate?.content?.parts ?? []) {
+          const signature = typeof part?.thoughtSignature === "string" && part.thoughtSignature ? part.thoughtSignature : null;
+          if (part?.functionCall) {
+            const name2 = part.functionCall.name;
+            const args = part.functionCall.args ?? {};
+            if (typeof name2 !== "string" || !name2) throw new LlmError2("a6api tool identity is missing", "A6_INVALID_STREAM");
+            if (!args || typeof args !== "object" || Array.isArray(args)) throw new LlmError2("a6api returned invalid tool arguments", "A6_INVALID_TOOL_ARGUMENTS");
+            const index = nextGoogleIndex();
+            started(index, "tool-call");
+            const block = blocks.get(index);
+            block.id = `gemini-call-${++s.callSeq}`;
+            block.name = name2;
+            block.arguments = JSON.stringify(args);
+            if (signature) block.signature = signature;
+            s.current = null;
+            s.sawContent = true;
+            s.hasToolCall = true;
+            yield { type: "block-start", index, blockType: "tool-call" };
+            yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta: block.arguments };
+          } else if (typeof part?.text === "string") {
+            const type = part.thought === true ? "reasoning" : "text";
+            if (s.current === null || blocks.get(s.current).type !== type) {
+              s.current = nextGoogleIndex();
+              started(s.current, type);
+              yield { type: "block-start", index: s.current, blockType: type };
+            }
+            const block = blocks.get(s.current);
+            if (signature) block.signature = signature;
+            if (part.text) {
+              block.text += part.text;
+              s.sawContent = true;
+              yield { type: type === "text" ? "text-delta" : "reasoning-delta", index: s.current, text: part.text };
+            }
+          } else if (signature && s.current !== null) blocks.get(s.current).signature = signature;
+          else if (!signature) throw new LlmError2("a6api returned unsupported Gemini content", "A6_UNSUPPORTED_CONTENT");
+        }
+        const why = candidate?.finishReason;
+        if (why) {
+          if (why === "STOP") s.reason = s.hasToolCall ? "tool-calls" : "stop";
+          else if (why === "MAX_TOKENS") s.reason = "max-tokens";
+          else s.failure = { code: "A6_STREAM_ERROR", message: `a6api Gemini \u7ED3\u675F\u539F\u56E0 ${String(why).slice(0, 64)}\u3002`, status: response.status, body: redactBody(raw, credential) };
+          s.terminal = true;
+        }
+      }
+      const handlers = { "openai-completions": onCompletions, "anthropic-messages": onMessages, "openai-responses": onResponses, "google-generative-ai": onGoogle };
+      const handle = handlers[protocol2];
       for await (const data of frames2(response.body, options2.signal)) {
         if (data === "[DONE]") {
-          terminal = true;
+          s.terminal = true;
           break;
         }
         let payload;
@@ -4590,126 +5099,37 @@ function createA6Stream({ key, api = "chat", fetchImpl = globalThis.fetch }) {
         } catch {
           throw new LlmError2("a6api sent invalid SSE JSON", "A6_INVALID_STREAM");
         }
-        if (payload.error || payload.type === "error") {
-          failure2 = terminalFailure(payload, response.status);
-          terminal = true;
+        if (!payload || typeof payload !== "object") throw new LlmError2("a6api sent invalid SSE JSON", "A6_INVALID_STREAM");
+        if (protocol2 !== "openai-responses" && (payload.error || payload.type === "error")) {
+          s.failure = terminalFailure(payload, response.status, data, credential);
+          s.terminal = true;
           break;
         }
-        const rawUsage = api === "messages" ? payload.usage ?? payload.message?.usage : payload.usage;
+        const rawUsage = protocol2 === "anthropic-messages" ? payload.usage ?? payload.message?.usage : protocol2 === "openai-responses" ? ["response.completed", "response.incomplete"].includes(payload.type) ? payload.response?.usage : void 0 : protocol2 === "google-generative-ai" ? payload.usageMetadata : payload.usage;
         if (rawUsage) {
-          usage = mergeUsage(usage, rawUsage, api);
-          await callbacks.usage?.(exposedUsage(usage));
+          s.usage = mergeUsage(s.usage, rawUsage, protocol2);
+          await callbacks.usage?.(exposedUsage(s.usage));
         }
-        if (api === "messages") {
-          const index = payload.index;
-          if (payload.type === "content_block_start") {
-            const native = payload.content_block;
-            const type = ["thinking", "redacted_thinking"].includes(native?.type) ? "reasoning" : native?.type === "tool_use" ? "tool-call" : native?.type === "text" ? "text" : null;
-            if (!type || !Number.isSafeInteger(index) || index < 0 || index > 1024 || blocks.has(index)) throw new LlmError2("a6api returned unsupported Messages content", "A6_UNSUPPORTED_CONTENT");
-            if (started(index, type)) yield { type: "block-start", index, blockType: type };
-            const block = blocks.get(index);
-            if (native.type === "redacted_thinking") {
-              if (typeof native.data !== "string") throw new LlmError2("Invalid redacted a6api reasoning", "A6_INVALID_STREAM");
-              block.redacted = native.data;
-              sawContent = true;
-            }
-            if (type === "tool-call") {
-              block.id = native.id;
-              block.name = native.name;
-              block.initialInput = native.input ?? {};
-              if (typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name) throw new LlmError2("a6api tool identity is missing", "A6_INVALID_STREAM");
-              yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta: "" };
-              sawContent = true;
-            } else {
-              const initial = type === "text" ? native.text : native.thinking;
-              if (initial) {
-                block.text += initial;
-                sawContent = true;
-                yield { type: type === "text" ? "text-delta" : "reasoning-delta", index, text: initial };
-              }
-              if (native.signature) block.signature = native.signature;
-            }
-          } else if (payload.type === "content_block_delta") {
-            const block = blocks.get(index);
-            if (!block) throw new LlmError2("a6api delta has no content block", "A6_INVALID_STREAM");
-            const delta = payload.delta;
-            if (delta?.type === "signature_delta") block.signature += delta.signature ?? "";
-            else if (delta?.type === "input_json_delta" && block.type === "tool-call") {
-              const value = delta.partial_json ?? "";
-              block.arguments += value;
-              yield { type: "tool-call-delta", index, id: block.id, name: block.name, argumentsDelta: value };
-            } else if (delta?.type === "text_delta" || delta?.type === "thinking_delta") {
-              const value = delta.type === "text_delta" ? delta.text : delta.thinking;
-              if (typeof value !== "string") throw new LlmError2("Invalid a6api text delta", "A6_INVALID_STREAM");
-              block.text += value;
-              sawContent ||= Boolean(value);
-              yield { type: delta.type === "text_delta" ? "text-delta" : "reasoning-delta", index, text: value };
-            } else throw new LlmError2("Unsupported a6api content delta", "A6_INVALID_STREAM");
-          } else if (payload.type === "message_delta" && payload.delta?.stop_reason) reason = finishReason(payload.delta.stop_reason);
-          else if (payload.type === "message_stop") {
-            terminal = true;
-            break;
-          }
-        } else {
-          const choice = payload.choices?.[0];
-          const delta = choice?.delta;
-          const reasoning = delta?.reasoning_content ?? delta?.reasoning;
-          if (typeof reasoning === "string" && reasoning) {
-            if (started(0, "reasoning")) yield { type: "block-start", index: 0, blockType: "reasoning" };
-            blocks.get(0).text += reasoning;
-            sawContent = true;
-            yield { type: "reasoning-delta", index: 0, text: reasoning };
-          }
-          if (typeof delta?.content === "string" && delta.content) {
-            if (started(1, "text")) yield { type: "block-start", index: 1, blockType: "text" };
-            blocks.get(1).text += delta.content;
-            sawContent = true;
-            yield { type: "text-delta", index: 1, text: delta.content };
-          }
-          if (delta?.function_call) throw new LlmError2("Legacy a6api function_call is unsupported", "A6_UNSUPPORTED_CONTENT");
-          for (const call of delta?.tool_calls ?? []) {
-            if (!Number.isSafeInteger(call.index) || call.index < 0 || call.index > 1024) throw new LlmError2("Invalid a6api tool index", "A6_INVALID_STREAM");
-            const index = call.index + 2;
-            if (started(index, "tool-call")) yield { type: "block-start", index, blockType: "tool-call" };
-            const block = blocks.get(index);
-            if (call.id) block.id += call.id;
-            if (call.function?.name) block.name += call.function.name;
-            if (call.function?.arguments) block.arguments += call.function.arguments;
-            sawContent = true;
-            if (block.id) {
-              const argumentsDelta = block.arguments.slice(block.emittedArguments ?? 0);
-              block.emittedArguments = block.arguments.length;
-              yield { type: "tool-call-delta", index, id: block.id, ...block.name ? { name: block.name } : {}, argumentsDelta };
-            }
-          }
-          if (choice?.finish_reason) {
-            reason = finishReason(choice.finish_reason);
-            terminal = true;
-          }
-        }
+        yield* handle(payload, data);
+        if (s.stop) break;
       }
       consumed = true;
-      if (!terminal || !reason && !failure2) throw new LlmError2("a6api stream ended without a complete response", "A6_TRUNCATED_STREAM");
-      if (!sawContent && !failure2) throw new LlmError2("a6api returned no content", "A6_EMPTY_STREAM");
-      for (const index of order) {
+      if (!s.terminal || !s.reason && !s.failure) throw new LlmError2("a6api stream ended without a complete response", "A6_TRUNCATED_STREAM");
+      if (!s.sawContent && !s.failure) throw new LlmError2("a6api returned no content", "A6_EMPTY_STREAM");
+      for (const index of s.order) {
         const block = blocks.get(index);
-        if (block.type === "tool-call") {
-          if (!block.id || !block.name) throw new LlmError2("a6api tool identity is missing", "A6_INVALID_STREAM");
-          const args = block.arguments || JSON.stringify(block.initialInput ?? {});
-          if (reason !== "max-tokens") toolArguments(args);
-          yield { type: "block-end", index, block: { type: "tool-call", id: block.id, name: block.name, arguments: args } };
-        } else yield { type: "block-end", index, block: { type: block.type, text: block.text } };
+        if (!block.ended) yield endBlock(index, block);
       }
-      const nativeUsage = llmUsage(usage);
+      const nativeUsage = llmUsage(s.usage);
       if (nativeUsage.inputTokens !== void 0 && nativeUsage.outputTokens !== void 0) yield { type: "usage", usage: nativeUsage };
-      yield {
-        type: "finish",
-        reason: failure2 ? { kind: "error", failure: failure2 } : { kind: reason },
-        ...api === "messages" && !failure2 ? { replayState: { response: { protocol: "mit-a6/messages" }, blocks: order.map((index) => {
-          const block = blocks.get(index);
-          return block.type === "reasoning" ? block.redacted !== void 0 ? { type: "redacted_thinking", data: block.redacted } : { type: "thinking", signature: block.signature } : null;
-        }) } } : {}
-      };
+      const replayState = s.failure ? null : protocol2 === "anthropic-messages" ? { response: { protocol: REPLAY_MESSAGES }, blocks: s.order.map((index) => {
+        const block = blocks.get(index);
+        return block.type === "reasoning" ? block.redacted !== void 0 ? { type: "redacted_thinking", data: block.redacted } : { type: "thinking", signature: block.signature } : null;
+      }) } : protocol2 === "google-generative-ai" && s.order.some((index) => blocks.get(index).signature) ? { response: { protocol: REPLAY_GOOGLE }, blocks: s.order.map((index) => {
+        const signature = blocks.get(index).signature;
+        return signature ? { signature } : null;
+      }) } : null;
+      yield { type: "finish", reason: s.failure ? { kind: "error", failure: s.failure } : { kind: s.reason }, ...replayState ? { replayState } : {} };
     } finally {
       if (!consumed) try {
         await response.body?.cancel?.();
@@ -4834,10 +5254,10 @@ var CustomCoordinator = class {
     this.touch(job);
   }
   event(job, data, input2) {
-    const event = { id: `event-${randomUUID5()}`, at: Date.now(), type: input2.type, role: input2.role ?? null, delta: input2.delta === true, phase: input2.phase ?? null, name: input2.name ?? null, callId: input2.callId ?? null, executionId: input2.executionId ?? null, turn: Number.isInteger(input2.turn) ? input2.turn : null, step: Number.isInteger(input2.step) ? input2.step : null, index: Number.isInteger(input2.index) ? input2.index : null, text: typeof input2.text === "string" ? input2.text.slice(0, 32e3) : input2.type === "error" && typeof input2.message === "string" ? input2.message.slice(0, 800) : null, ...input2.type === "error" && typeof input2.code === "string" ? { code: input2.code.slice(0, 64) } : {}, ...input2.content !== void 0 ? { content: JSON.stringify(input2.content).slice(0, 32e3) } : {}, ...input2.arguments !== void 0 ? { arguments: JSON.stringify(input2.arguments).slice(0, 32e3) } : {}, isError: input2.isError === true || input2.type === "error" };
+    const event = { id: `event-${randomUUID5()}`, at: Date.now(), type: input2.type, role: input2.role ?? null, delta: input2.delta === true, phase: input2.phase ?? null, name: input2.name ?? null, callId: input2.callId ?? null, executionId: input2.executionId ?? null, turn: Number.isInteger(input2.turn) ? input2.turn : null, step: Number.isInteger(input2.step) ? input2.step : null, index: Number.isInteger(input2.index) ? input2.index : null, text: typeof input2.text === "string" ? input2.text.slice(0, 32e3) : input2.type === "error" && typeof input2.message === "string" ? input2.message.slice(0, 800) : null, ...input2.type === "error" && typeof input2.code === "string" ? { code: input2.code.slice(0, 64) } : {}, ...input2.type === "error" && input2.detail ? { detail: input2.detail } : {}, ...input2.content !== void 0 ? { content: JSON.stringify(input2.content).slice(0, 32e3) } : {}, ...input2.arguments !== void 0 ? { arguments: JSON.stringify(input2.arguments).slice(0, 32e3) } : {}, isError: input2.isError === true || input2.type === "error" };
     if (typeof event.text === "string") event.text = event.text.slice(0, 1e5);
     const previous = data.events.at(-1);
-    if (event.delta && previous?.type === event.type && previous.role === event.role && (previous.text?.length ?? 0) < 1e5) previous.text = `${previous.text ?? ""}${event.text ?? ""}`.slice(0, 1e5);
+    if (event.delta && previous?.delta && previous.type === event.type && previous.role === event.role && previous.executionId === event.executionId && previous.index === event.index && (previous.text?.length ?? 0) < 1e5) previous.text = `${previous.text ?? ""}${event.text ?? ""}`.slice(0, 1e5);
     else data.events.push(event);
     if (data.events.length > 500) data.events.splice(0, data.events.length - 500);
     while (data.events.length > 1 && JSON.stringify(data.events).length > 5e5) data.events.shift();
@@ -4887,7 +5307,7 @@ var CustomCoordinator = class {
     }
   }
   armTimeout(job, data, control) {
-    const requestedDeadline = data.summary.startedAt + job.options.timeoutMs;
+    const requestedDeadline = (control.startedAt ?? data.summary.startedAt) + job.options.timeoutMs;
     if (control.deadlineAt !== void 0 && requestedDeadline <= control.deadlineAt) return;
     control.deadlineAt = requestedDeadline;
     clearTimeout(control.timer);
@@ -4916,8 +5336,16 @@ var CustomCoordinator = class {
     const handles = /* @__PURE__ */ new Map();
     const heldRequests = /* @__PURE__ */ new Set();
     let identity2, lockHeld = false, attemptedPin = false, sandbox, target;
-    data.summary.startedAt = Date.now();
-    data.summary.sessionId = `mit-${randomUUID5()}`;
+    const resume = Boolean(control.resume && data.summary.sessionId && data.root);
+    control.startedAt = Date.now();
+    if (resume) {
+      data.summary.finishedAt = null;
+      data.summary.error = null;
+      data.summary.continuations = (data.summary.continuations ?? 0) + 1;
+    } else {
+      data.summary.startedAt = control.startedAt;
+      data.summary.sessionId = `mit-${randomUUID5()}`;
+    }
     this.armTimeout(job, data, control);
     this.update(job, data, "preparing");
     const checked = () => {
@@ -4972,6 +5400,7 @@ var CustomCoordinator = class {
             row.status = finish.status;
             row.finishedAt = finish.finishedAt;
             row.finishReason = finish.finishReason ?? null;
+            row.error = finish.error ? { code: finish.error.code ?? null, message: finish.error.message ?? "", ...finish.error.status ? { status: finish.error.status } : {}, detail: finish.error.detail ?? null } : null;
             const duration = known(finish.durationMs);
             const generation = known(finish.generationMs);
             const output = row.usage.outputTokens;
@@ -4989,9 +5418,10 @@ var CustomCoordinator = class {
     };
     try {
       checked();
-      sandbox = await createSandbox({ dataRoot: await this.dataRoot(), runId: data.id, prompt: job.record.prompt, preset: job.record.preset, signal, onFile: (event) => {
+      const onFile = (event) => {
         this.event(job, data, { type: "tool", phase: "result", name: "sandbox_file", text: JSON.stringify(event) });
-      } });
+      };
+      sandbox = resume ? await openSandbox({ root: data.root, onFile, signal }) : await createSandbox({ dataRoot: await this.dataRoot(), runId: data.id, prompt: job.record.prompt, preset: job.record.preset, signal, onFile });
       data.root = sandbox.root;
       data.summary.sandboxState = "ready";
       await this.save(data);
@@ -5013,16 +5443,18 @@ var CustomCoordinator = class {
         const pin = await this.a6().site.pin(target);
         if (!pin.routeEffective) throw err("pin-unverified", "\u56FA\u5B9A\u6E20\u9053\u672A\u8BFB\u56DE\u751F\u6548\uFF0C\u672A\u53D1\u9001\u6A21\u578B\u8BF7\u6C42");
         checked();
-        stream = createA6Stream({ key, api: job.record.models.find((model) => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId)?.relay?.api ?? "chat" });
+        stream = createA6Stream({ key, api: job.record.models.find((model) => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId)?.relay?.api ?? "openai-completions" });
       }
       this.update(job, data, "running");
-      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: job.record.prompt, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: (event) => this.event(job, data, event), stream });
+      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: resume ? "continue" : job.record.prompt, resume, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: (event) => this.event(job, data, event), stream });
       checked();
       this.update(job, data, "validating");
       data.summary.output = await sandbox.output();
       if (result.outcome !== "completed") {
         const detail = result.error ? `${result.error.code}: ${result.error.message}` : "";
-        throw err("session-failed", result.outcome === "limited" ? "\u4F1A\u8BDD\u5DF2\u8FBE\u5230\u6267\u884C\u9884\u7B97" : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210${detail ? `\uFF08${detail}\uFF09` : ""}`);
+        const failure2 = err("session-failed", result.outcome === "limited" ? "\u4F1A\u8BDD\u5DF2\u8FBE\u5230\u6267\u884C\u9884\u7B97" : `\u6A21\u578B\u4F1A\u8BDD\u672A\u5B8C\u6210${detail ? `\uFF08${detail}\uFF09` : ""}`);
+        failure2.detail = result.error?.detail ?? null;
+        throw failure2;
       }
       if (data.summary.output.state !== "ready") throw err("output-invalid", "\u4F1A\u8BDD\u5DF2\u7ED3\u675F\uFF0C\u4F46\u672A\u58F0\u660E\u6709\u6548\u8F93\u51FA\u6587\u4EF6");
       this.update(job, data, "completed");
@@ -5031,7 +5463,7 @@ var CustomCoordinator = class {
       const phase = signal.aborted ? control.timeout ? "failed" : "cancelled" : "failed";
       const raw = typeof error?.message === "string" ? error.message.replace(/\s+/g, " ").trim().slice(0, 240) : "";
       const detail = raw && !(error instanceof FingerprintError) ? `\uFF08${raw}\uFF09` : "";
-      data.summary.error = { code: control.timeout ? "timeout" : signal.aborted ? "cancelled" : error instanceof FingerprintError ? error.code : "execution-failed", message: control.timeout ? "\u6A21\u578B\u4F1A\u8BDD\u8D85\u65F6" : signal.aborted ? "\u4EFB\u52A1\u5DF2\u53D6\u6D88" : error instanceof FingerprintError ? error.message : `\u6A21\u578B\u4F1A\u8BDD\u6267\u884C\u5931\u8D25${detail}`, phase: data.summary.phase };
+      data.summary.error = { code: control.timeout ? "timeout" : signal.aborted ? "cancelled" : error instanceof FingerprintError ? error.code : "execution-failed", message: control.timeout ? "\u6A21\u578B\u4F1A\u8BDD\u8D85\u65F6" : signal.aborted ? "\u4EFB\u52A1\u5DF2\u53D6\u6D88" : error instanceof FingerprintError ? error.message : `\u6A21\u578B\u4F1A\u8BDD\u6267\u884C\u5931\u8D25${detail}`, phase: data.summary.phase, detail: error?.detail ?? errorDetail(error) };
       this.update(job, data, phase);
     } finally {
       clearTimeout(control.timer);
@@ -5071,6 +5503,49 @@ var CustomCoordinator = class {
       this.update(job, data);
       await this.save(data);
     }
+  }
+  /** Resume a terminal failed/cancelled/interrupted run in its own session ("continue"). */
+  async continueRun({ attemptId, runId }) {
+    const data = await this.load(attemptId, runId);
+    if (!["failed", "cancelled", "interrupted"].includes(data.summary.phase)) throw err("not-resumable", "\u53EA\u6709\u5931\u8D25\u3001\u53D6\u6D88\u6216\u4E2D\u65AD\u7684\u6A21\u578B\u8FD0\u884C\u53EF\u4EE5\u7EE7\u7EED");
+    if (!data.summary.sessionId || !data.root) throw err("not-resumable", "\u4F1A\u8BDD\u6216\u6C99\u7BB1\u5C1A\u672A\u521B\u5EFA\uFF0C\u8BF7\u4F7F\u7528\u91CD\u8BD5");
+    let job = [...this.jobs.values()].find((item) => item.runs.includes(data));
+    if (!job) {
+      const domain = await this.ready;
+      const record = domain.table("records").get(data.recordId);
+      if (!record) throw err("not-found", "\u6D4B\u8BD5\u8BB0\u5F55\u4E0D\u5B58\u5728");
+      job = { id: data.jobId, record, attemptId, revision: 1, status: "done", finishedAt: Date.now(), controller: new AbortController(), active: /* @__PURE__ */ new Map(), slotBusy: /* @__PURE__ */ new Set(), options: { concurrency: 2, timeoutMs: 18e4, ...record.options }, runs: [data] };
+      this.jobs.set(job.id, job);
+    }
+    if (job.active.has(data.id)) throw err("busy", "\u8BE5\u6A21\u578B\u8FD0\u884C\u4ECD\u5728\u6267\u884C");
+    if (job.controller.signal.aborted) job.controller = new AbortController();
+    if (job.record.a6api) {
+      await this.a6().config();
+      this.a6().assertAccount(job.record.a6api);
+    }
+    const slot = data.summary.target.kind === "a6api" ? job.record.a6api?.slots.find((item) => !job.slotBusy.has(item.tokenId)) : null;
+    if (data.summary.target.kind === "a6api" && !slot) throw err("slot-busy", "\u6D4B\u8BD5\u4EE4\u724C\u6B63\u88AB\u5176\u5B83\u6A21\u578B\u4F7F\u7528\uFF0C\u8BF7\u7A0D\u540E\u7EE7\u7EED");
+    job.status = "running";
+    job.finishedAt = null;
+    if (slot) job.slotBusy.add(slot.tokenId);
+    this.active += 1;
+    const control = { controller: new AbortController(), timer: null, promise: null, resume: true };
+    job.active.set(data.id, control);
+    this.update(job, data, "queued");
+    control.promise = this.run(job, data, slot, control).catch(() => {
+    }).finally(() => {
+      this.active -= 1;
+      job.active.delete(data.id);
+      if (slot) job.slotBusy.delete(slot.tokenId);
+      if (!job.active.size && job.runs.every((item) => END.has(item.summary.phase))) {
+        job.status = job.runs.some((item) => item.summary.phase === "completed") ? "done" : "failed";
+        job.finishedAt = Date.now();
+        this.touch(job);
+        this.onSettled?.(job);
+      }
+      this.pump();
+    });
+    return publicRun(data);
   }
   cancel(id2) {
     const job = this.jobs.get(id2);
@@ -5163,22 +5638,39 @@ var CustomCoordinator = class {
     if (!data.root) throw err("sandbox-unavailable", "\u6C99\u7BB1\u5C1A\u672A\u5C31\u7EEA");
     return (await openSandbox({ root: data.root })).read(file);
   }
-  async open({ attemptId, runId, mode = "preview" }) {
+  async open({ attemptId, runId, mode = "preview", application }) {
     const data = await this.load(attemptId, runId);
     if (!data.root) throw err("sandbox-unavailable", "\u6C99\u7BB1\u5C1A\u672A\u5C31\u7EEA");
     const sandbox = await openSandbox({ root: data.root });
     const output = await sandbox.output();
     if (output.state !== "ready") throw err("output-invalid", "\u8F93\u51FA\u6587\u4EF6\u4E0D\u5B58\u5728\u6216\u672A\u901A\u8FC7\u9A8C\u8BC1");
-    if (mode === "vscode") {
-      const opener = this.ctx.get("sessionController");
-      if (!opener?.canOpenWorkspacePath()) throw err("opener-unavailable", "\u5F53\u524D\u8FD0\u884C\u65F6\u4E0D\u652F\u6301\u5728\u684C\u9762\u6253\u5F00\u8F93\u51FA\u6587\u4EF6");
+    if (mode === "vscode" || mode === "reveal") {
+      let opener;
+      try {
+        opener = this.ctx.get("sessionController");
+      } catch {
+        opener = null;
+      }
+      if (!opener?.openWorkspacePath || !opener.canOpenWorkspacePath?.()) throw err("opener-unavailable", "\u5F53\u524D\u8FD0\u884C\u65F6\u4E0D\u662F\u684C\u9762\u7248\uFF0C\u65E0\u6CD5\u5728\u672C\u673A\u5E94\u7528\u4E2D\u6253\u5F00\u6587\u4EF6");
       const filename = path2.join(sandbox.root, output.relativePath);
-      const signal = new AbortController().signal;
-      const apps = await opener.workspacePathApplications({ path: filename }, signal);
-      const app = apps.find((item) => /visual studio code|^code$|vscode/i.test(item.name));
-      if (!app) throw err("opener-unavailable", "\u7CFB\u7EDF\u672A\u63D0\u4F9B\u53EF\u7528\u4E8E\u6B64\u6587\u4EF6\u7684 VS Code \u5E94\u7528");
-      const opened = await opener.openWorkspacePath({ path: filename, application: app.id }, signal);
-      return { ...opened, path: output.relativePath };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15e3);
+      try {
+        if (mode === "reveal") {
+          const opened2 = await opener.openWorkspacePath({ path: filename, action: "reveal" }, controller.signal);
+          return { ...opened2, path: output.relativePath };
+        }
+        const apps = (await opener.workspacePathApplications({ path: filename }, controller.signal)).map((item) => ({ id: String(item.id), name: String(item.name ?? item.id) }));
+        const app = (application ? apps.find((item) => item.id === application) : null) ?? apps.find((item) => /visual studio code|^code$|vscode|vscodium|^code - insiders$/i.test(item.name));
+        if (!app) return { opened: false, path: output.relativePath, application: null, applications: apps };
+        const opened = await opener.openWorkspacePath({ path: filename, application: app.id }, controller.signal);
+        return { ...opened, path: output.relativePath, application: app, applications: apps };
+      } catch (error) {
+        if (controller.signal.aborted) throw err("opener-timeout", "\u684C\u9762\u5E94\u7528 15 \u79D2\u5185\u6CA1\u6709\u54CD\u5E94");
+        throw err("opener-failed", `\u684C\u9762\u6253\u5F00\u5931\u8D25\uFF1A${String(error?.message ?? error).slice(0, 300)}`);
+      } finally {
+        clearTimeout(timer);
+      }
     }
     const preview = await sandbox.preview();
     if (!preview) throw err("preview-unavailable", "\u6B64\u8F93\u51FA\u7C7B\u578B\u4E0D\u652F\u6301 HTML \u9884\u89C8\uFF0C\u8BF7\u5728\u6587\u4EF6\u4E2D\u67E5\u770B");

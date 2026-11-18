@@ -103,6 +103,14 @@ export const usageCss = {
   label: 'mit-chat-usage-label',
 } as const;
 
+/** Plugin per-turn usage row (after `TurnUsagePanel.module.css` + `TurnTailNodeView.module.css`). */
+export const turnUsageRowCss = {
+  root: 'mit-chat-rows-turnusage-root',
+  pill: 'mit-chat-rows-turnusage-pill',
+  trigger: 'mit-chat-rows-turnusage-trigger',
+  label: 'mit-chat-rows-turnusage-label',
+} as const;
+
 /** `StatsPills.module.css` — composer-dock stat pills. */
 export const statsCss = {
   anchor: 'mit-chat-stats-anchor',

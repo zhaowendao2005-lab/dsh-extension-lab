@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { createUserMessage, LlmError } from '@deepseek-ai/dsh-llm';
 import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native';
+import { errorDetail } from './errors.js';
 
 const DEFAULT_LIMITS = Object.freeze({ maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: 180_000 });
 const SAFETY_PROMPT = [
@@ -35,9 +36,16 @@ function publicFailure(error) {
   const code = typeof raw?.code === 'string' && /^[A-Z][A-Z0-9_-]{0,63}$/.test(raw.code) ? raw.code : 'CUSTOM_SESSION_FAILED';
   return {
     code,
-    // Do not publish raw adapter error bodies, stack traces, or credential-bearing URLs.
-    message: code === 'CUSTOM_BOUNDARY' ? `隔离会话拒绝了额外上下文或工具（${String(raw?.message ?? '').slice(0, 220)}），未发送该请求。` : `模型会话未完成（${code}）。`,
+    // Short headline plus a scrubbed detail (message, stack, cause chain, upstream status/body); secrets are redacted.
+    message: code === 'CUSTOM_BOUNDARY' ? `隔离会话拒绝了额外上下文或工具（${String(raw?.message ?? '').slice(0, 220)}），未发送该请求。` : `模型会话未完成（${code}${Number.isInteger(raw?.status) ? ` · HTTP ${raw.status}` : ''}）：${String(raw?.message ?? error?.message ?? '未知错误').replace(/\s+/g, ' ').slice(0, 300)}`,
     ...(Number.isInteger(raw?.status) && raw.status >= 100 && raw.status <= 599 ? { status: raw.status } : {}),
+    detail: (() => {
+      const base = errorDetail(error instanceof Error ? error : raw) ?? {};
+      if (Number.isInteger(raw?.status) && !base.status) base.status = raw.status;
+      if (typeof raw?.requestId === 'string' && !base.requestId) base.requestId = raw.requestId.slice(0, 200);
+      if (!base.body && typeof raw?.body === 'string') base.body = errorDetail({ message: raw.body }).message;
+      return base;
+    })(),
   };
 }
 function limitSnapshot(value = {}) {
@@ -63,7 +71,7 @@ function boundaryError(where = 'unknown') { return new LlmError(`boundary:${wher
  * Usage callbacks are cumulative snapshots for ONE request, never deltas.
  * stream(options,{metadata,usage}) is optional and normally an a6 closure.
  */
-export async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = '', sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream }) {
+export async function executeSession(ctx, { sessionId, provider, model, prompt, systemPrompt = '', sandbox, signal, limits: proposedLimits, onEvent, onRequest = {}, stream, resume = false }) {
   if (!sessionId || typeof sessionId !== 'string' || !provider || !model || typeof prompt !== 'string' || !prompt.trim()) throw new TypeError('Invalid custom Agent request');
   if (!sandbox?.root || !Array.isArray(sandbox.tools) || sandbox.tools.length === 0) throw new TypeError('Custom Agent requires rooted tools');
   const limits = limitSnapshot(proposedLimits);
@@ -189,12 +197,8 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
     // Cordis hides services the plugin did not inject; read it explicitly instead of ctx.agents.
     const agents = ctx.get('agents');
     if (!agents) throw new TypeError('Agent service is unavailable in the plugin context');
-    handle = await agents.create({
-      sessionId,
-      meta: { cwd: sandbox.root },
-      agentOptions: { provider: route, model, maxTokens: limits.maxTokens },
-      signal,
-      setup(agentCtx, createdAgent) {
+    // "continue" reloads the persisted DSH session (same history, same sandbox cwd) instead of a fresh one.
+    const setup = (agentCtx, createdAgent) => {
         agent = createdAgent;
         // Empty allow is valid DSH API: inherited/global tools disappear; scoped definitions remain.
         scopeDisposers.push(agentCtx.tools.restrict({ allow: [] }));
@@ -233,8 +237,11 @@ export async function executeSession(ctx, { sessionId, provider, model, prompt, 
           }
         }));
         scopeDisposers.push(agentCtx.on('agent/error', payload => { if (payload.agent === agent) runtimeError ??= payload.error; }));
-      },
-    });
+    };
+    const agentOptions = { provider: route, model, maxTokens: limits.maxTokens };
+    handle = resume
+      ? await agents.resume({ resumeSessionId: sessionId, agentOptions, signal, setup })
+      : await agents.create({ sessionId, meta: { cwd: sandbox.root }, agentOptions, signal, setup });
     agent = handle.agent;
     signal?.addEventListener('abort', cancel, { once: true });
     signal?.throwIfAborted();

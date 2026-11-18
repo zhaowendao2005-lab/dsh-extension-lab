@@ -590,6 +590,59 @@
     margin-left: 0;}
 }
 
+/* ---- plugin turn usage row (TurnTailNodeView + TurnUsagePanel) → .mit-chat-rows-turnusage-* ---- */
+
+.mit-chat-rows-turnusage-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 4px;
+  margin-left: -6px;}
+.mit-chat-rows-turnusage-pill {
+  display: inline-flex;
+  min-width: 0;
+  align-self: flex-start;}
+.mit-chat-rows-turnusage-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: calc(28px + var(--dsh-content-font-delta, 0px));
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  font-variant-numeric: tabular-nums;
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  white-space: nowrap;
+  cursor: pointer;}
+.mit-chat-rows-turnusage-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;}
+.mit-chat-rows-turnusage-trigger svg {
+  width: calc(15px + var(--dsh-content-font-delta, 0px));
+  height: calc(15px + var(--dsh-content-font-delta, 0px));
+  flex: none;}
+.mit-chat-rows-turnusage-trigger[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);}
+@media (hover: hover) {
+  .mit-chat-rows-turnusage-trigger:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-tertiary);}
+}
+@media (max-width: 480px) {
+  .mit-chat-rows-turnusage-trigger {
+    justify-content: center;
+    width: calc(28px + var(--dsh-content-font-delta, 0px));
+    padding: 6px;}
+  .mit-chat-rows-turnusage-trigger .mit-chat-rows-turnusage-label {
+    display: none;}
+}
+
 /* ---- chat/StatsPills.module.css → .mit-chat-stats-* ---- */
 
 .mit-chat-stats-anchor {

@@ -14,7 +14,7 @@ export interface CustomMonitorViewProps {
   onFilter(value: string): void;
   onSelectRun(runId: string): void;
   onRetry(runId: string): void;
-  onOpenOutput?(runId: string, mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>;
+  onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal'): Promise<CustomOutputOpenResult>;
 }
 export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput }: CustomMonitorViewProps) {
   const needle = filter.trim().toLowerCase();

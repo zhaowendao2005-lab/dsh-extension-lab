@@ -9,7 +9,6 @@ import {LedgerOverview} from '../a6/LedgerOverview';
 import {OperationKeyPicker} from '../a6/OperationKeyPicker';
 import { ATTEMPT_STATUS_LABELS,currentAttempt } from './modelLabel';
 import { CustomMonitorView, type CustomMonitorRow } from '../custom/CustomMonitorView';
-import { CustomTaskView } from '../custom/CustomTaskView';
 import { CustomOutputPreview } from '../custom/CustomOutputPreview';
 
 const VIEW_OPTIONS: MenuOption<'progress'|'results'>[] = [
@@ -104,15 +103,9 @@ function CustomResults({ store,record,resultOnly }: {
   const rows=useStore(store.evaluations,state => record.runIds.flatMap(id => {
     const run=state.runs[id]; return run?.custom? [{id,model:run.model,summary:run.custom}]:[];
   }));
-  const selectedRunId=useStore(store.workbench,state => state.navigation[state.activeTab]?.runId);
-  const detailEntry=useStore(store.custom,state => record.attemptId&&selectedRunId? state.details[`${record.attemptId}:${selectedRunId}`]:undefined);
-  const selected=rows.find(row => row.id===selectedRunId);
-  const monitor=<CustomMonitorView record={record} rows={rows} selectedRunId={selectedRunId} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} />;
-  const detail=selected&&record.attemptId?<CustomTaskView model={selected.model} summary={selected.summary} detail={detailEntry?.detail} loading={detailEntry?.loading??true} error={detailEntry?.error} activeTab={detailEntry?.tab??'chat'} file={detailEntry?.file} fileLoading={Boolean(detailEntry?.fileLoading)} canRetry={['failed','cancelled','interrupted'].includes(selected.summary.phase)} canCancel={!['completed','failed','cancelled','interrupted'].includes(selected.summary.phase)} onTabChange={tab => store.actions.setCustomDetailTab(selected.id,tab)} onReadFile={path => store.actions.readCustomFile(selected.id,path)} onOpenOutput={mode => store.actions.openCustomOutput(selected.id,mode)} onRetry={() => store.actions.retryFailedSample(record.id,selected.id)} onCancel={() => store.actions.cancelRecord(record.id)} onClose={() => store.actions.navigate({runId:undefined})} />:null;
-  const stale=Boolean(selectedRunId&&!selected);
+  // Selecting a row only records navigation; Panel renders the run as its own content sub-page.
   return <>
-    {detail?<div className="mit-custom-page">{detail}</div>:monitor}
-    {stale&&<p className="mit-custom-page-note" role="status">该模型运行已不在当前轮次，已返回执行概览。</p>}
+    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} />
     <CustomOutputPreview store={store} />
   </>;
 }

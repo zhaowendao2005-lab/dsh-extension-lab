@@ -170,7 +170,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     const slots = customDraft.tokens.map(tokenId => ({ tokenId, name: customDraft.a6Tokens.find(token => token.id === tokenId)?.name }));
     customDomain.store.setState(state => ({ draft: { ...state.draft, creating: true, error: undefined } }));
     draft.setState({ error: undefined, pickerOpen: false });
-    void customDomain.createTask({ selectionId: customDraft.sourceSelectionId, sourceRecordId: customDraft.sourceRecordId, name, a6Models: customDraft.a6Models, slots, dshModels, prompt: value.body, footerVersion: FIXED_FOOTER_VERSION, preset, concurrency: customDraft.concurrency, timeoutMs: customDraft.timeoutMs }).then(({ record, attemptId }) => {
+    void customDomain.createTask({ selectionId: customDraft.sourceSelectionId, sourceRecordId: customDraft.sourceRecordId, name, a6Models: customDraft.a6Models, protocols: customDraft.protocols, slots, dshModels, prompt: value.body, footerVersion: FIXED_FOOTER_VERSION, preset, concurrency: customDraft.concurrency, timeoutMs: customDraft.timeoutMs }).then(({ record, attemptId }) => {
       if (disposed) return;
       evaluationsDomain.acceptCreated(record, attemptId);
       customDomain.resetSource();
@@ -245,11 +245,13 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     },
     patchCustom: customDomain.patchDraft,
     removeCustomA6Model: customDomain.removeA6Model,
+    setCustomProtocol: customDomain.setProtocol,
     toggleCustomToken: customDomain.toggleToken,
     resetCustomSource: customDomain.resetSource,
     setCustomDetailTab(runId, tab) { const context = customContext(runId); if (context) customDomain.setTab(context.attemptId, runId, tab); },
     readCustomFile(runId, path) { const context = customContext(runId); if (context) void customDomain.readFile(context.attemptId, runId, path); },
-    openCustomOutput(runId, mode) { const context = customContext(runId); return context ? customDomain.openOutput(context.attemptId, runId, mode) : Promise.reject(new Error('自定义运行已不可用')); },
+    openCustomOutput(runId, mode, application) { const context = customContext(runId); return context ? customDomain.openOutput(context.attemptId, runId, mode, application) : Promise.reject(new Error('自定义运行已不可用')); },
+    continueCustomRun(runId) { const context = customContext(runId); if (context) void customDomain.continueRun(context.attemptId, runId); },
     dismissPreview() { customDomain.dismissPreview(); },
     submit() {
       const value = draft.getState();

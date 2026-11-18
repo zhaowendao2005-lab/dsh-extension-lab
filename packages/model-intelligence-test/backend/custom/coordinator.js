@@ -5,6 +5,7 @@ import { tokenIdentity } from '../a6/slots.js';
 import { createSandbox, openSandbox, removeSandbox } from './sandbox.js';
 import { executeSession } from './session.js';
 import { createA6Stream } from './a6-llm.js';
+import { errorDetail } from './errors.js';
 
 const END = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 const MAX_MODELS = 6;
@@ -16,7 +17,6 @@ const err = (code, message) => new FingerprintError(code, message);
 const emptyUsage = () => ({ requestCount: 0, inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null, billingState: 'unknown' });
 const emptyMetrics = () => ({ ttftMs: null, generationMs: null, e2eMs: null, modelTokensPerSecond: null, endToEndTokensPerSecond: null, cacheRate: null });
 const publicRun = data => copy(data.summary);
-
 /** Real per-model Agent sessions. Secrets remain in short-lived transport closures only. */
 export class CustomCoordinator {
   constructor(ctx, { storage, capacity, ledger, a6, onTouch, onSettled }) {
@@ -97,11 +97,11 @@ export class CustomCoordinator {
     data.revision += 1; data.summary.updatedAt = Date.now(); this.touch(job);
   }
   event(job, data, input) {
-    const event = { id: `event-${randomUUID()}`, at: Date.now(), type: input.type, role:input.role ?? null, delta:input.delta === true, phase:input.phase ?? null, name:input.name ?? null, callId:input.callId ?? null, executionId:input.executionId ?? null, turn:Number.isInteger(input.turn) ? input.turn : null, step:Number.isInteger(input.step) ? input.step : null, index:Number.isInteger(input.index) ? input.index : null, text:typeof input.text === 'string' ? input.text.slice(0,32000) : (input.type === 'error' && typeof input.message === 'string' ? input.message.slice(0, 800) : null), ...(input.type === 'error' && typeof input.code === 'string' ? {code: input.code.slice(0, 64)} : {}), ...(input.content !== undefined ? {content:JSON.stringify(input.content).slice(0,32000)} : {}), ...(input.arguments !== undefined ? {arguments:JSON.stringify(input.arguments).slice(0,32000)} : {}), isError:input.isError === true || input.type === 'error' };
+    const event = { id: `event-${randomUUID()}`, at: Date.now(), type: input.type, role:input.role ?? null, delta:input.delta === true, phase:input.phase ?? null, name:input.name ?? null, callId:input.callId ?? null, executionId:input.executionId ?? null, turn:Number.isInteger(input.turn) ? input.turn : null, step:Number.isInteger(input.step) ? input.step : null, index:Number.isInteger(input.index) ? input.index : null, text:typeof input.text === 'string' ? input.text.slice(0,32000) : (input.type === 'error' && typeof input.message === 'string' ? input.message.slice(0, 800) : null), ...(input.type === 'error' && typeof input.code === 'string' ? {code: input.code.slice(0, 64)} : {}), ...(input.type === 'error' && input.detail ? {detail: input.detail} : {}), ...(input.content !== undefined ? {content:JSON.stringify(input.content).slice(0,32000)} : {}), ...(input.arguments !== undefined ? {arguments:JSON.stringify(input.arguments).slice(0,32000)} : {}), isError:input.isError === true || input.type === 'error' };
     // Keep bounded durable events; coalesce adjacent text deltas.
     if (typeof event.text === 'string') event.text = event.text.slice(0, 100_000);
     const previous = data.events.at(-1);
-    if (event.delta && previous?.type === event.type && previous.role === event.role && (previous.text?.length ?? 0) < 100_000) previous.text = `${previous.text ?? ''}${event.text ?? ''}`.slice(0, 100_000);
+    if (event.delta && previous?.delta && previous.type === event.type && previous.role === event.role && previous.executionId === event.executionId && previous.index === event.index && (previous.text?.length ?? 0) < 100_000) previous.text = `${previous.text ?? ''}${event.text ?? ''}`.slice(0, 100_000);
     else data.events.push(event);
     if (data.events.length > 500) data.events.splice(0, data.events.length - 500);
     while (data.events.length > 1 && JSON.stringify(data.events).length > 500000) data.events.shift();
@@ -139,7 +139,7 @@ export class CustomCoordinator {
     }
   }
   armTimeout(job, data, control) {
-    const requestedDeadline = data.summary.startedAt + job.options.timeoutMs;
+    const requestedDeadline = (control.startedAt ?? data.summary.startedAt) + job.options.timeoutMs;
     if (control.deadlineAt !== undefined && requestedDeadline <= control.deadlineAt) return;
     control.deadlineAt = requestedDeadline;
     clearTimeout(control.timer);
@@ -163,7 +163,11 @@ export class CustomCoordinator {
     if (job.controller.signal.aborted) abort();
     const handles = new Map(); const heldRequests = new Set();
     let identity, lockHeld = false, attemptedPin = false, sandbox, target;
-    data.summary.startedAt = Date.now(); data.summary.sessionId = `mit-${randomUUID()}`;
+    // A continuation resumes the same DSH session and sandbox; a fresh run creates both.
+    const resume = Boolean(control.resume && data.summary.sessionId && data.root);
+    control.startedAt = Date.now();
+    if (resume) { data.summary.finishedAt = null; data.summary.error = null; data.summary.continuations = (data.summary.continuations ?? 0) + 1; }
+    else { data.summary.startedAt = control.startedAt; data.summary.sessionId = `mit-${randomUUID()}`; }
     this.armTimeout(job, data, control); this.update(job, data, 'preparing');
     const checked = () => { if (signal.aborted || this.disposed || this.removed.has(data.recordId)) throw err('cancelled', '任务已取消'); };
     const onRequest = {
@@ -204,6 +208,7 @@ export class CustomCoordinator {
           const row = data.requests.find(item => item.id === id);
           if (row) {
             row.status = finish.status; row.finishedAt = finish.finishedAt; row.finishReason = finish.finishReason ?? null;
+            row.error = finish.error ? { code: finish.error.code ?? null, message: finish.error.message ?? '', ...(finish.error.status ? { status: finish.error.status } : {}), detail: finish.error.detail ?? null } : null;
             const duration = known(finish.durationMs); const generation = known(finish.generationMs); const output = row.usage.outputTokens;
             row.metrics = { ttftMs: known(finish.firstTokenMs), generationMs: generation, e2eMs: duration, modelTokensPerSecond: output !== null && generation > 0 ? output * 1000 / generation : null, endToEndTokensPerSecond: output !== null && duration > 0 ? output * 1000 / duration : null, cacheRate: row.usage.cacheReadTokens !== null && row.usage.inputTotalTokens > 0 ? Math.min(1, row.usage.cacheReadTokens / row.usage.inputTotalTokens) : null };
             if (handles.has(id)) await this.ledger.finish(handles.get(id), { state: finish.status, finishKind: finish.finishReason, streamUsage: row.streamUsage });
@@ -214,7 +219,8 @@ export class CustomCoordinator {
     };
     try {
       checked();
-      sandbox = await createSandbox({ dataRoot: await this.dataRoot(), runId: data.id, prompt: job.record.prompt, preset: job.record.preset, signal, onFile: event => { this.event(job, data, { type: 'tool', phase: 'result', name: 'sandbox_file', text: JSON.stringify(event) }); } });
+      const onFile = event => { this.event(job, data, { type: 'tool', phase: 'result', name: 'sandbox_file', text: JSON.stringify(event) }); };
+      sandbox = resume ? await openSandbox({ root: data.root, onFile, signal }) : await createSandbox({ dataRoot: await this.dataRoot(), runId: data.id, prompt: job.record.prompt, preset: job.record.preset, signal, onFile });
       data.root = sandbox.root; data.summary.sandboxState = 'ready'; await this.save(data);
       checked();
       let stream;
@@ -229,15 +235,17 @@ export class CustomCoordinator {
         attemptedPin = true;
         const pin = await this.a6().site.pin(target);
         if (!pin.routeEffective) throw err('pin-unverified', '固定渠道未读回生效，未发送模型请求');
-        checked(); stream = createA6Stream({ key, api: job.record.models.find(model => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId)?.relay?.api ?? 'chat' });
+        checked(); stream = createA6Stream({ key, api: job.record.models.find(model => model.provider === data.summary.target.providerId && model.id === data.summary.target.modelId)?.relay?.api ?? 'openai-completions' });
       }
       this.update(job, data, 'running');
-      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: job.record.prompt, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: event => this.event(job, data, event), stream });
+      const result = await executeSession(this.ctx, { sessionId: data.summary.sessionId, provider: slot ? `mit-a6-${data.id}` : data.summary.target.providerId, model: data.summary.target.modelId, prompt: resume ? 'continue' : job.record.prompt, resume, systemPrompt: sandbox.systemPrompt, sandbox, signal, limits: { maxRequests: 24, maxSteps: 24, maxToolCalls: 96, maxTokens: 8192, maxDurationMs: job.options.timeoutMs }, onRequest, onEvent: event => this.event(job, data, event), stream });
       checked(); this.update(job, data, 'validating');
       data.summary.output = await sandbox.output();
       if (result.outcome !== 'completed') {
         const detail = result.error ? `${result.error.code}: ${result.error.message}` : '';
-        throw err('session-failed', result.outcome === 'limited' ? '会话已达到执行预算' : `模型会话未完成${detail ? `（${detail}）` : ''}`);
+        const failure = err('session-failed', result.outcome === 'limited' ? '会话已达到执行预算' : `模型会话未完成${detail ? `（${detail}）` : ''}`);
+        failure.detail = result.error?.detail ?? null;
+        throw failure;
       }
       if (data.summary.output.state !== 'ready') throw err('output-invalid', '会话已结束，但未声明有效输出文件');
       this.update(job, data, 'completed');
@@ -247,7 +255,7 @@ export class CustomCoordinator {
       // Keep one sanitized line of the real cause: a generic message makes Host-only failures undiagnosable.
       const raw = typeof error?.message === 'string' ? error.message.replace(/\s+/g, ' ').trim().slice(0, 240) : '';
       const detail = raw && !(error instanceof FingerprintError) ? `（${raw}）` : '';
-      data.summary.error = { code: control.timeout ? 'timeout' : signal.aborted ? 'cancelled' : error instanceof FingerprintError ? error.code : 'execution-failed', message: control.timeout ? '模型会话超时' : signal.aborted ? '任务已取消' : error instanceof FingerprintError ? error.message : `模型会话执行失败${detail}`, phase: data.summary.phase };
+      data.summary.error = { code: control.timeout ? 'timeout' : signal.aborted ? 'cancelled' : error instanceof FingerprintError ? error.code : 'execution-failed', message: control.timeout ? '模型会话超时' : signal.aborted ? '任务已取消' : error instanceof FingerprintError ? error.message : `模型会话执行失败${detail}`, phase: data.summary.phase, detail: error?.detail ?? errorDetail(error) };
       this.update(job, data, phase);
     } finally {
       clearTimeout(control.timer); job.controller.signal.removeEventListener('abort', abort);
@@ -269,6 +277,37 @@ export class CustomCoordinator {
       clearTimeout(this.timers.get(data.id)); this.timers.delete(data.id);
       data.summary.finishedAt = Date.now(); this.aggregate(data); this.update(job, data); await this.save(data);
     }
+  }
+  /** Resume a terminal failed/cancelled/interrupted run in its own session ("continue"). */
+  async continueRun({ attemptId, runId }) {
+    const data = await this.load(attemptId, runId);
+    if (!['failed', 'cancelled', 'interrupted'].includes(data.summary.phase)) throw err('not-resumable', '只有失败、取消或中断的模型运行可以继续');
+    if (!data.summary.sessionId || !data.root) throw err('not-resumable', '会话或沙箱尚未创建，请使用重试');
+    let job = [...this.jobs.values()].find(item => item.runs.includes(data));
+    if (!job) {
+      const domain = await this.ready;
+      const record = domain.table('records').get(data.recordId);
+      if (!record) throw err('not-found', '测试记录不存在');
+      job = { id: data.jobId, record, attemptId, revision: 1, status: 'done', finishedAt: Date.now(), controller: new AbortController(), active: new Map(), slotBusy: new Set(), options: { concurrency: 2, timeoutMs: 180_000, ...record.options }, runs: [data] };
+      this.jobs.set(job.id, job);
+    }
+    if (job.active.has(data.id)) throw err('busy', '该模型运行仍在执行');
+    if (job.controller.signal.aborted) job.controller = new AbortController();
+    if (job.record.a6api) { await this.a6().config(); this.a6().assertAccount(job.record.a6api); }
+    const slot = data.summary.target.kind === 'a6api' ? job.record.a6api?.slots.find(item => !job.slotBusy.has(item.tokenId)) : null;
+    if (data.summary.target.kind === 'a6api' && !slot) throw err('slot-busy', '测试令牌正被其它模型使用，请稍后继续');
+    job.status = 'running'; job.finishedAt = null;
+    if (slot) job.slotBusy.add(slot.tokenId);
+    this.active += 1;
+    const control = { controller: new AbortController(), timer: null, promise: null, resume: true };
+    job.active.set(data.id, control);
+    this.update(job, data, 'queued');
+    control.promise = this.run(job, data, slot, control).catch(() => {}).finally(() => {
+      this.active -= 1; job.active.delete(data.id); if (slot) job.slotBusy.delete(slot.tokenId);
+      if (!job.active.size && job.runs.every(item => END.has(item.summary.phase))) { job.status = job.runs.some(item => item.summary.phase === 'completed') ? 'done' : 'failed'; job.finishedAt = Date.now(); this.touch(job); this.onSettled?.(job); }
+      this.pump();
+    });
+    return publicRun(data);
   }
   cancel(id) {
     const job = this.jobs.get(id); if (!job || job.status !== 'running') return;
@@ -348,21 +387,27 @@ export class CustomCoordinator {
     const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');
     return (await openSandbox({ root: data.root })).read(file);
   }
-  async open({ attemptId, runId, mode = 'preview' }) {
+  async open({ attemptId, runId, mode = 'preview', application }) {
     const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');
     const sandbox = await openSandbox({ root: data.root });
     const output = await sandbox.output();
     if (output.state !== 'ready') throw err('output-invalid', '输出文件不存在或未通过验证');
-    if (mode === 'vscode') {
-      const opener = this.ctx.get('sessionController');
-      if (!opener?.canOpenWorkspacePath()) throw err('opener-unavailable', '当前运行时不支持在桌面打开输出文件');
+    if (mode === 'vscode' || mode === 'reveal') {
+      let opener; try { opener = this.ctx.get('sessionController'); } catch { opener = null; }
+      if (!opener?.openWorkspacePath || !opener.canOpenWorkspacePath?.()) throw err('opener-unavailable', '当前运行时不是桌面版，无法在本机应用中打开文件');
       const filename = path.join(sandbox.root, output.relativePath);
-      const signal = new AbortController().signal;
-      const apps = await opener.workspacePathApplications({path:filename}, signal);
-      const app = apps.find(item=>/visual studio code|^code$|vscode/i.test(item.name));
-      if (!app) throw err('opener-unavailable', '系统未提供可用于此文件的 VS Code 应用');
-      const opened = await opener.openWorkspacePath({path:filename, application:app.id}, signal);
-      return {...opened,path:output.relativePath};
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15_000);
+      try {
+        if (mode === 'reveal') { const opened = await opener.openWorkspacePath({ path: filename, action: 'reveal' }, controller.signal); return { ...opened, path: output.relativePath }; }
+        const apps = (await opener.workspacePathApplications({ path: filename }, controller.signal)).map(item => ({ id: String(item.id), name: String(item.name ?? item.id) }));
+        const app = (application ? apps.find(item => item.id === application) : null) ?? apps.find(item => /visual studio code|^code$|vscode|vscodium|^code - insiders$/i.test(item.name));
+        if (!app) return { opened: false, path: output.relativePath, application: null, applications: apps };
+        const opened = await opener.openWorkspacePath({ path: filename, application: app.id }, controller.signal);
+        return { ...opened, path: output.relativePath, application: app, applications: apps };
+      } catch (error) {
+        if (controller.signal.aborted) throw err('opener-timeout', '桌面应用 15 秒内没有响应');
+        throw err('opener-failed', `桌面打开失败：${String(error?.message ?? error).slice(0, 300)}`);
+      } finally { clearTimeout(timer); }
     }
     const preview = await sandbox.preview();
     if (!preview) throw err('preview-unavailable', '此输出类型不支持 HTML 预览，请在文件中查看');

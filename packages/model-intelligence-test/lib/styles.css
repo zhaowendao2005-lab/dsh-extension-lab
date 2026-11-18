@@ -2305,6 +2305,12 @@
   .mit-workbench .mit-a6-selection .mit-draft-footer { align-items:stretch; flex-direction:column }
 }
 
+/* Per-channel / batch wire protocol (DSH-native protocol ids). */
+.mit-workbench .mit-a6-protocol-batch { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mit-muted); }
+.mit-workbench .mit-a6-protocol-batch select,
+.mit-workbench .mit-a6-protocol { height: 26px; padding: 0 6px; font-size: 11px; border: 1px solid var(--mit-border); border-radius: 6px; background: var(--mit-bg); color: var(--mit-text); }
+.mit-workbench .mit-a6-channel-row .mit-a6-protocol { margin-left: auto; margin-right: 6px; }
+
 /* chat-md.css */
 /*
  * Markdown rendering styles for the embedded, read-only session mirror.
@@ -4103,6 +4109,59 @@
     margin-left: 0;}
 }
 
+/* ---- plugin turn usage row (TurnTailNodeView + TurnUsagePanel) → .mit-chat-rows-turnusage-* ---- */
+
+.mit-chat-rows-turnusage-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 4px;
+  margin-left: -6px;}
+.mit-chat-rows-turnusage-pill {
+  display: inline-flex;
+  min-width: 0;
+  align-self: flex-start;}
+.mit-chat-rows-turnusage-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: calc(28px + var(--dsh-content-font-delta, 0px));
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  font-variant-numeric: tabular-nums;
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  white-space: nowrap;
+  cursor: pointer;}
+.mit-chat-rows-turnusage-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;}
+.mit-chat-rows-turnusage-trigger svg {
+  width: calc(15px + var(--dsh-content-font-delta, 0px));
+  height: calc(15px + var(--dsh-content-font-delta, 0px));
+  flex: none;}
+.mit-chat-rows-turnusage-trigger[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);}
+@media (hover: hover) {
+  .mit-chat-rows-turnusage-trigger:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-tertiary);}
+}
+@media (max-width: 480px) {
+  .mit-chat-rows-turnusage-trigger {
+    justify-content: center;
+    width: calc(28px + var(--dsh-content-font-delta, 0px));
+    padding: 6px;}
+  .mit-chat-rows-turnusage-trigger .mit-chat-rows-turnusage-label {
+    display: none;}
+}
+
 /* ---- chat/StatsPills.module.css → .mit-chat-stats-* ---- */
 
 .mit-chat-stats-anchor {
@@ -5288,6 +5347,16 @@ button.mit-chat-tool-disclosure-leading {
 .mit-workbench .mit-custom-detail button:focus-visible, .mit-workbench .mit-custom-monitor button:focus-visible { outline: 2px solid var(--mit-brand); outline-offset: 3px; }
 @media (max-width: 1050px) { .mit-workbench .mit-custom-detail-heading .mit-custom-tabs { margin-left: 0; } }
 @media (max-width: 600px) { .mit-workbench .mit-custom-monitor-tools { align-items: flex-start; flex-direction: column; } .mit-workbench .mit-custom-tabs { padding: 0 5px; } .mit-workbench .mit-custom-tabs button { padding-left: 11px; padding-right: 11px; } .mit-workbench .mit-custom-detail-body { padding: 12px; } .mit-workbench .mit-custom-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Error detail disclosure (stack / upstream body / cause chain). */
+.mit-workbench .mit-custom-error-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mit-workbench .mit-custom-error-detail { margin-top: 8px; font-size: 11px; }
+.mit-workbench .mit-custom-error-detail > summary { cursor: pointer; color: var(--mit-muted); user-select: none; }
+.mit-workbench .mit-custom-error-detail > summary > span { font-variant-numeric: tabular-nums; }
+.mit-workbench .mit-custom-error-detail section { margin-top: 8px; }
+.mit-workbench .mit-custom-error-detail h5 { margin: 0 0 4px; font-size: 11px; font-weight: 600; color: var(--mit-muted); }
+.mit-workbench .mit-custom-error-detail pre { margin: 0; max-height: 260px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--mit-layer-2); border: 1px solid var(--mit-border); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: var(--mit-text); }
+.mit-workbench .mit-custom-cell-sub.is-error { color: var(--mit-error); }
 
 /* records.css */
 /* Records, attempts (请求), relay chips and model-picker source sidebar. Loaded after styles.css. */

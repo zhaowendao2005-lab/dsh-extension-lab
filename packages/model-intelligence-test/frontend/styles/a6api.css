@@ -60,3 +60,9 @@
   .mit-workbench .mit-a6-channel-market { flex-basis:100%; order:3 }
   .mit-workbench .mit-a6-selection .mit-draft-footer { align-items:stretch; flex-direction:column }
 }
+
+/* Per-channel / batch wire protocol (DSH-native protocol ids). */
+.mit-workbench .mit-a6-protocol-batch { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mit-muted); }
+.mit-workbench .mit-a6-protocol-batch select,
+.mit-workbench .mit-a6-protocol { height: 26px; padding: 0 6px; font-size: 11px; border: 1px solid var(--mit-border); border-radius: 6px; background: var(--mit-bg); color: var(--mit-text); }
+.mit-workbench .mit-a6-channel-row .mit-a6-protocol { margin-left: auto; margin-right: 6px; }

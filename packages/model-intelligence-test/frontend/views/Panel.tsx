@@ -5,6 +5,7 @@ import { NoticeModal } from './workbench/NoticeModal';
 import { DraftView } from './creation/DraftView';
 import { RecordView } from './results/RecordView';
 import { RunDetailPage } from './results/RunDetailPage';
+import { CustomRunPage } from './custom/CustomRunPage';
 import { FeatureHub } from './features/FeatureHub';
 import { A6SelectionView } from './creation/A6SelectionView';
 function TabBar({ store }: {
@@ -103,7 +104,7 @@ export function Panel({ store }: {
   const activeRecord=useStore(store.evaluations,state => state.records.find(record => record.id===active?.recordId));
   let content=<DraftView store={store} />;
   if(active?.type==='record'&&active.recordId)
-    content=activeRecord?.kind==='custom'? <RecordView key={active.recordId} store={store} id={active.recordId} />:navigation?.runId? <RunDetailPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:<RecordView key={active.recordId} store={store} id={active.recordId} />;
+    content=navigation?.runId&&activeRecord?.kind==='custom'? <CustomRunPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:navigation?.runId? <RunDetailPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:<RecordView key={active.recordId} store={store} id={active.recordId} />;
   else if(active?.type==='feature')
     content=<FeatureHub store={store} />;
   else if(active?.type==='a6'&&active.selectionId)

@@ -133,3 +133,13 @@
 .mit-workbench .mit-custom-detail button:focus-visible, .mit-workbench .mit-custom-monitor button:focus-visible { outline: 2px solid var(--mit-brand); outline-offset: 3px; }
 @media (max-width: 1050px) { .mit-workbench .mit-custom-detail-heading .mit-custom-tabs { margin-left: 0; } }
 @media (max-width: 600px) { .mit-workbench .mit-custom-monitor-tools { align-items: flex-start; flex-direction: column; } .mit-workbench .mit-custom-tabs { padding: 0 5px; } .mit-workbench .mit-custom-tabs button { padding-left: 11px; padding-right: 11px; } .mit-workbench .mit-custom-detail-body { padding: 12px; } .mit-workbench .mit-custom-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Error detail disclosure (stack / upstream body / cause chain). */
+.mit-workbench .mit-custom-error-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mit-workbench .mit-custom-error-detail { margin-top: 8px; font-size: 11px; }
+.mit-workbench .mit-custom-error-detail > summary { cursor: pointer; color: var(--mit-muted); user-select: none; }
+.mit-workbench .mit-custom-error-detail > summary > span { font-variant-numeric: tabular-nums; }
+.mit-workbench .mit-custom-error-detail section { margin-top: 8px; }
+.mit-workbench .mit-custom-error-detail h5 { margin: 0 0 4px; font-size: 11px; font-weight: 600; color: var(--mit-muted); }
+.mit-workbench .mit-custom-error-detail pre { margin: 0; max-height: 260px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--mit-layer-2); border: 1px solid var(--mit-border); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: var(--mit-text); }
+.mit-workbench .mit-custom-cell-sub.is-error { color: var(--mit-error); }

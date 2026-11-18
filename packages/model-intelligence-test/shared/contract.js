@@ -10,7 +10,11 @@ const id = (max = 128) => z.string().min(1).max(max);
 const siteId = id(64);
 const concurrency = z.number().int().min(1).max(6);
 const timeoutMs = z.number().int().min(30_000).max(1_800_000);
-const relayApi = z.enum(['chat', 'responses', 'messages']);
+// DSH-native wire protocols (dsh-llm-pi-ai PROTOCOLS); chat/responses/messages stay readable for old records.
+export const A6_PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'];
+const protocol = z.enum(A6_PROTOCOLS);
+const relayApi = z.enum(['chat', 'responses', 'messages', ...A6_PROTOCOLS]);
+const protocolEntry = z.strictObject({ channelId: z.number().int().positive(), model: id(256), api: protocol });
 const relayRef = z.strictObject({ siteId, channelId: z.number().int().min(1), model: id(256), api: relayApi, listingId: z.number().int().min(0).optional(), supplierId: z.number().int().min(0).optional() });
 const modelRef = z.strictObject({ provider: id(128), id: id(256) });
 const a6Channel = z.strictObject({ listingId: z.number().int().nonnegative(), channelId: z.number().int().positive(), supplierId: z.number().int().nonnegative(), model: id(256), supplierName: z.string().max(256).optional(), channelName: z.string().max(256).optional(), brand: z.string().max(256).optional(), market: marketSchema.optional() });
@@ -39,11 +43,12 @@ const schemas = {
   attemptRetry: z.strictObject({ attemptId: id(), model: modelRef }),
   customRunDetail: z.strictObject({ ...customRun, revision: z.number().int().nonnegative().optional() }),
   customFileRead: z.strictObject({ ...customRun, path: z.string().min(1).max(512) }),
-  customOutputOpen: z.strictObject({ ...customRun, mode: z.enum(['preview', 'vscode']).optional() }),
+  customOutputOpen: z.strictObject({ ...customRun, mode: z.enum(['preview', 'vscode', 'reveal']).optional(), application: z.string().min(1).max(512).optional() }),
+  customRunContinue: z.strictObject({ ...customRun }),
   a6ConfigSave: z.strictObject({ accessToken: z.string().max(512).optional(), userId: z.string().max(40).optional() }),
   a6Selections: z.strictObject({ revision: z.number().int().nonnegative().optional() }),
-  a6Create: z.strictObject({ selectionId: id(), kind: z.enum(['fingerprint', 'custom']).optional(), ...customPrompt, name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional() }),
-  a6CustomFromRecord: z.strictObject({ recordId: id(), name: z.string().max(120), models: z.array(z.strictObject({channelId:z.number().int().positive(), model:id(256)})).min(1).max(64).optional(), slots: a6Slots.optional(), ...customPrompt, timeoutMs: timeoutMs.optional() }),
+  a6Create: z.strictObject({ selectionId: id(), kind: z.enum(['fingerprint', 'custom']).optional(), ...customPrompt, name: z.string().max(120), slots: a6Slots, timeoutMs: timeoutMs.optional(), models: z.array(a6Channel).min(1).max(64).optional(), protocols: z.array(protocolEntry).max(64).optional() }),
+  a6CustomFromRecord: z.strictObject({ recordId: id(), name: z.string().max(120), models: z.array(z.strictObject({channelId:z.number().int().positive(), model:id(256), api: protocol.optional()})).min(1).max(64).optional(), slots: a6Slots.optional(), ...customPrompt, timeoutMs: timeoutMs.optional() }),
   a6OperationState: z.strictObject({ refreshTokens: z.boolean().optional(), refreshRelations: z.boolean().optional() }),
   a6OperationSelect: z.strictObject({ tokenId: z.number().int().positive().nullable() }),
   a6OperationRefresh: z.strictObject({ kind: z.enum(['pins', 'routes', 'all']) }),
@@ -65,6 +70,7 @@ const DESCRIPTIONS = {
   customRunDetail: 'Read bounded events, requests and sandbox metadata for a custom run belonging to an attempt.',
   customFileRead: 'Read a bounded relative file inside a verified custom-run sandbox.',
   customOutputOpen: 'Preview a validated output or open that exact file with the discovered VS Code application.',
+  customRunContinue: 'Resume a failed/cancelled custom run in its original DSH session and send a continue message (real inference).',
   a6CustomFromRecord: 'Create custom sessions from channels of an existing fingerprint record; uses its account and dedicated test slots.',
   a6Config: 'Read a6api credential state (masked access token, intake token, loopback origin); never returns the access token.',
   a6ConfigSave: 'Verify and store the a6api access token plus user id in Host storage.',

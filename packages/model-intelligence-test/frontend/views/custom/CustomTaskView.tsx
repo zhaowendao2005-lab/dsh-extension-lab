@@ -1,7 +1,7 @@
 import React from '../../runtime';
-import type { CustomDetailTab, CustomFileReadResult, CustomOutputOpenResult, CustomRunDetail, CustomRunSummary, Model } from '../../types';
+import type { CustomDetailTab, CustomErrorDetail, CustomFileReadResult, CustomOutputOpenResult, CustomRunDetail, CustomRunSummary, Model } from '../../types';
 import { buildChatRows, type ChatRow } from '../../chat/model';
-import { ChatFlow, ChatAssistantRowView, ChatErrorRowView, ChatReasoningRowView, ChatTurnRowView, ChatUserRowView } from '../../chat/rows';
+import { ChatFlow, ChatAssistantRowView, ChatErrorRowView, ChatReasoningRowView, ChatTurnRowView, ChatTurnUsageRowView, ChatUserRowView } from '../../chat/rows';
 import { ChatToolCall } from '../../chat/tools';
 import { Empty, Icon } from '../../components/common';
 import { CustomMetricsChart } from '../../components/CustomMetricsChart';
@@ -19,9 +19,12 @@ export interface CustomTaskViewProps {
   fileLoading: boolean;
   canRetry: boolean;
   canCancel: boolean;
+  canContinue?: boolean;
+  continuing?: boolean;
+  onContinue?(): void;
   onTabChange(tab: CustomDetailTab): void;
   onReadFile(path: string): void;
-  onOpenOutput(mode: 'preview' | 'vscode'): Promise<CustomOutputOpenResult>;
+  onOpenOutput(mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult>;
   onRetry(): void;
   onCancel(): void;
   onClose?(): void;
@@ -35,11 +38,12 @@ function ChatRowView({ row }: { row: ChatRow }) {
     case 'reasoning': return <ChatReasoningRowView row={row} />;
     case 'error': return <ChatErrorRowView row={row} />;
     case 'turn': return <ChatTurnRowView row={row} />;
+    case 'turnUsage': return <ChatTurnUsageRowView row={row} />;
     case 'tool': return <ChatToolCall name={row.name} status={row.status} arguments={row.arguments} content={row.content} />;
   }
 }
 function Chat({ detail, summary }: { detail: CustomRunDetail; summary: CustomRunSummary }) {
-  const rows = React.useMemo(() => buildChatRows(detail.events, summary), [detail.events, summary]);
+  const rows = React.useMemo(() => buildChatRows(detail.events, summary, detail.requests), [detail.events, summary, detail.requests]);
   const scroller = React.useRef<HTMLDivElement | null>(null);
   const stick = React.useRef(true);
   const count = rows.length;
@@ -54,6 +58,18 @@ function Chat({ detail, summary }: { detail: CustomRunDetail; summary: CustomRun
     {detail.eventsTruncated && <p className="mit-chat-mirror-note" role="note">Host 仅保留最近的会话事件，更早内容未展示。</p>}
     <ChatFlow>{rows.map(row => <ChatRowView key={row.id} row={row} />)}</ChatFlow>
   </div>;
+}
+/** Full failure detail: stack, cause chain, upstream HTTP status / body / request id. Native <details>, collapsed. */
+export function ErrorDetailView({ detail }: { detail?: CustomErrorDetail | null }) {
+  if (!detail) return null;
+  const meta = [detail.status ? `HTTP ${detail.status}` : null, detail.requestId ? `请求 ID ${detail.requestId}` : null, detail.name || null].filter(Boolean).join(' · ');
+  return <details className="mit-custom-error-detail">
+    <summary>错误详情{meta ? <span> · {meta}</span> : null}</summary>
+    {detail.message && <section><h5>消息</h5><pre>{detail.message}</pre></section>}
+    {detail.body && <section><h5>上游响应</h5><pre>{detail.body}</pre></section>}
+    {detail.stack && <section><h5>堆栈</h5><pre>{detail.stack}</pre></section>}
+    {detail.causes?.map((cause, index) => <section key={index}><h5>Cause #{index + 1}{cause.name ? ` · ${cause.name}` : ''}{cause.code ? ` · ${cause.code}` : ''}</h5><pre>{[cause.message, cause.stack].filter(Boolean).join('\n\n')}</pre></section>)}
+  </details>;
 }
 function Files({ detail, file, loading, onReadFile, summary, onOpenOutput }: { detail: CustomRunDetail; file?: CustomFileReadResult; loading: boolean; onReadFile(path: string): void; summary: CustomRunSummary; onOpenOutput: CustomTaskViewProps['onOpenOutput'] }) {
   const ready = summary.output.state === 'ready' && summary.output.validation === 'valid';
@@ -82,7 +98,7 @@ function Metrics({ detail, summary }: { detail: CustomRunDetail; summary: Custom
 function Billing({ detail, summary }: { detail: CustomRunDetail; summary: CustomRunSummary }) {
   return <div className="mit-custom-billing"><div className="mit-custom-billing-total"><span>已知费用 · {CUSTOM_BILLING_LABELS[summary.usage.billingState]}</span><strong>{cost(summary.usage.cost, summary.usage.currency)}</strong><small>{count(summary.usage.requestCount)} 次请求 · 输入 {count(summary.usage.inputTokens)} / 输出 {count(summary.usage.outputTokens)} Token</small></div>
     <p className="mit-custom-data-note">费用仅展示 Host 回填值。未知账单不按零元计算，部分回填不代表最终账单。</p>
-    {detail.requests.length ? <div className="mit-custom-request-scroll"><table className="mit-custom-request-table"><thead><tr><th scope="col">请求</th><th scope="col">输入 / 输出</th><th scope="col">费用</th><th scope="col">账单</th></tr></thead><tbody>{detail.requests.map((request, index) => <tr key={request.id}><th scope="row" title={request.requestId || '请求 ID 未提供'}>#{index + 1}<span className="mit-custom-cell-sub">{request.status === 'completed' ? '已完成' : request.status === 'failed' ? '失败' : request.status === 'cancelled' ? '已取消' : '请求中'}</span></th><td>{count(request.usage.inputTokens)}<span className="mit-custom-cell-sub">{count(request.usage.outputTokens)}</span></td><td>{cost(request.usage.cost, request.usage.currency)}</td><td>{CUSTOM_BILLING_LABELS[request.billingState]}</td></tr>)}</tbody></table></div> : <Empty title="暂无请求账单">请求登记后在此显示账单状态。</Empty>}
+    {detail.requests.length ? <div className="mit-custom-request-scroll"><table className="mit-custom-request-table"><thead><tr><th scope="col">请求</th><th scope="col">输入 / 输出</th><th scope="col">费用</th><th scope="col">账单</th></tr></thead><tbody>{detail.requests.map((request, index) => <tr key={request.id}><th scope="row" title={request.requestId || '请求 ID 未提供'}>#{index + 1}<span className="mit-custom-cell-sub">{request.status === 'completed' ? '已完成' : request.status === 'failed' ? '失败' : request.status === 'cancelled' ? '已取消' : '请求中'}</span></th><td>{count(request.usage.inputTokens)}<span className="mit-custom-cell-sub">{count(request.usage.outputTokens)}</span></td><td>{cost(request.usage.cost, request.usage.currency)}</td><td>{CUSTOM_BILLING_LABELS[request.billingState]}{request.error && typeof request.error === 'object' ? <><span className="mit-custom-cell-sub is-error">{request.error.status ? `HTTP ${request.error.status} · ` : ''}{request.error.code || '失败'}</span><ErrorDetailView detail={request.error.detail} /></> : null}</td></tr>)}</tbody></table></div> : <Empty title="暂无请求账单">请求登记后在此显示账单状态。</Empty>}
   </div>;
 }
 function Permissions({ detail, summary }: { detail: CustomRunDetail; summary: CustomRunSummary }) {
@@ -92,7 +108,7 @@ function Permissions({ detail, summary }: { detail: CustomRunDetail; summary: Cu
   </div>;
 }
 export function CustomTaskView(props: CustomTaskViewProps) {
-  const { model, summary, detail, loading, error, activeTab, file, fileLoading, canRetry, canCancel, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose } = props;
+  const { model, summary, detail, loading, error, activeTab, file, fileLoading, canRetry, canCancel, canContinue, continuing, onContinue, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose } = props;
   const tab = TABS.find(item => item.id === activeTab) || TABS[0];
   return <section className="mit-custom-detail" aria-label="自定义执行详情" aria-busy={loading}>
     <header className="mit-custom-detail-heading">
@@ -110,9 +126,9 @@ export function CustomTaskView(props: CustomTaskViewProps) {
         <span>{clock(summary.startedAt)} 开始</span>
       </div>
     </header>
-    {summary.error && <div className="mit-custom-error" role="alert"><strong>{summary.error.code || '执行错误'}</strong><p>{summary.error.message}</p></div>}
+    {summary.error && <div className="mit-custom-error" role="alert"><div className="mit-custom-error-head"><strong>{summary.error.code || '执行错误'}</strong>{canContinue && onContinue && <button type="button" className="mit-button mit-button-primary" disabled={continuing} onClick={onContinue}><Icon name="refresh" size={13} />{continuing ? '正在继续…' : '补发 continue'}</button>}</div><p>{summary.error.message}</p><ErrorDetailView detail={summary.error.detail} /></div>}
     {error && <div className="mit-custom-error" role="alert">{error}</div>}
     <div className="mit-custom-detail-body" aria-label={tab.label}>{!detail ? !loading && <Empty title="详情暂不可用">{summary.phase === 'cancelled' ? '任务已取消，等待 Host 返回已保留的执行记录。' : '连接恢复后会继续读取已有运行数据。'}</Empty> : tab.id === 'chat' ? <Chat detail={detail} summary={summary} /> : tab.id === 'files' ? <Files detail={detail} file={file} loading={fileLoading} onReadFile={onReadFile} summary={summary} onOpenOutput={onOpenOutput} /> : tab.id === 'metrics' ? <Metrics detail={detail} summary={summary} /> : tab.id === 'billing' ? <Billing detail={detail} summary={summary} /> : <Permissions detail={detail} summary={summary} />}</div>
-    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" onClick={onCancel}><Icon name="stop" size={13} />取消运行</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry}><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
+    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{summary.continuations ? ` · 已继续 ${summary.continuations} 次` : ''}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" onClick={onCancel}><Icon name="stop" size={13} />取消运行</button>}{canContinue && onContinue && <button type="button" className="mit-button" disabled={continuing} onClick={onContinue} title="在同一 DSH 会话中发送 continue，保留已有上下文与沙箱">{continuing ? '正在继续…' : '继续会话'}</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry} title="新建一轮与新沙箱重新运行"><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
   </section>;
 }

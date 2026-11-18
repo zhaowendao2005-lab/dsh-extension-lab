@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
-import type { A6Draft, A6Selection, CustomDetailTab, CustomRunDetailEntry, CustomState, ModelIntelligenceTransport } from '../types';
-import { createCustomTask as createCustomTaskService, loadRunDetail, openOutput, readFile } from './custom.datasource';
+import type { A6Protocol, A6Draft, A6Selection, CustomDetailTab, CustomRunDetailEntry, CustomState, ModelIntelligenceTransport } from '../types';
+import { continueRun, createCustomTask as createCustomTaskService, loadRunDetail, openOutput, readFile } from './custom.datasource';
 
 const ACTIVE = new Set(['queued', 'preparing', 'running', 'tooling', 'validating']);
 const BILLING_PENDING = new Set(['pending', 'observed', 'partial']);
@@ -8,7 +8,7 @@ const BILLING_GRACE_MS = 420_000;
 const keyOf = (attemptId: string, runId: string): string => `${attemptId}:${runId}`;
 
 export function createCustomDomain(transport: ModelIntelligenceTransport) {
-  const store = createStore<CustomState>(() => ({ draft: { a6Models: [], a6Tokens: [], tokens: [], concurrency: 2, timeoutMs: 180_000, creating: false, step: 1 }, details: {}, selectedRunIds: [], preview: { open: false, loading: false, html: null, path: null, label: null } }));
+  const store = createStore<CustomState>(() => ({ draft: { a6Models: [], protocols: {}, a6Tokens: [], tokens: [], concurrency: 2, timeoutMs: 180_000, creating: false, step: 1 }, details: {}, selectedRunIds: [], preview: { open: false, loading: false, html: null, path: null, label: null } }));
   let disposed = false;
   let active: {attemptId: string; runId: string} | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -60,13 +60,13 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
       return createCustomTaskService(transport, input);
     },
     beginFromSelection(selection: A6Selection, draft?: A6Draft): void {
-      store.setState(state => ({ draft: { ...state.draft, sourceSelectionId: selection.id, sourceRecordId: undefined, a6Models: draft?.models ?? selection.models, a6Tokens: selection.tokens, tokens: draft?.tokens ?? selection.tokens.map(token => token.id), timeoutMs: draft?.timeoutMs ?? state.draft.timeoutMs, step: 1, error: undefined } }));
+      store.setState(state => ({ draft: { ...state.draft, sourceSelectionId: selection.id, sourceRecordId: undefined, protocols: {}, a6Models: draft?.models ?? selection.models, a6Tokens: selection.tokens, tokens: draft?.tokens ?? selection.tokens.map(token => token.id), timeoutMs: draft?.timeoutMs ?? state.draft.timeoutMs, step: 1, error: undefined } }));
     },
     beginFromFingerprint(recordId: string, models: import('../types').Model[], slots: {tokenId: number; name?: string}[] = []): void {
       const channels = models.flatMap(model => model.a6api ? [model.a6api] : []);
       if (!channels.length) return;
       const chosen = slots.slice(0, 1);
-      store.setState(state => ({ selectedRunIds: [], selectionRecordId: undefined, draft: { ...state.draft, sourceRecordId: recordId, sourceSelectionId: undefined, a6Models: channels, a6Tokens: slots.map(slot => ({ id: slot.tokenId, name: slot.name ?? `token #${slot.tokenId}` })), tokens: chosen.map(slot => slot.tokenId), concurrency: 1, step: 1, error: undefined } }));
+      store.setState(state => ({ selectedRunIds: [], selectionRecordId: undefined, draft: { ...state.draft, sourceRecordId: recordId, sourceSelectionId: undefined, protocols: {}, a6Models: channels, a6Tokens: slots.map(slot => ({ id: slot.tokenId, name: slot.name ?? `token #${slot.tokenId}` })), tokens: chosen.map(slot => slot.tokenId), concurrency: 1, step: 1, error: undefined } }));
     },
     startSelection(recordId: string): void { store.setState({ selectionRecordId: recordId, selectedRunIds: [] }); },
     toggleRunSelection(recordId: string, runId: string): void {
@@ -80,10 +80,14 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
     removeA6Model(key: string): void {
       store.setState(state => ({ draft: { ...state.draft, a6Models: state.draft.a6Models.filter(model => `${model.channelId}:${model.model}` !== key), error: undefined } }));
     },
+    /** key=null applies the protocol to every a6api channel in the draft (batch); otherwise one channel. */
+    setProtocol(key: string | null, api: A6Protocol): void {
+      store.setState(state => ({ draft: { ...state.draft, protocols: key === null ? Object.fromEntries(state.draft.a6Models.map(model => [`${model.channelId}:${model.model}`, api])) : { ...state.draft.protocols, [key]: api }, error: undefined } }));
+    },
     toggleToken(tokenId: number): void {
       store.setState(state => ({ draft: { ...state.draft, tokens: state.draft.tokens.includes(tokenId) ? state.draft.tokens.filter(id => id !== tokenId) : [...state.draft.tokens, tokenId], error: undefined } }));
     },
-    resetSource(): void { store.setState(state => ({ draft: { ...state.draft, sourceSelectionId: undefined, sourceRecordId: undefined, a6Models: [], a6Tokens: [], tokens: [], error: undefined } })); },
+    resetSource(): void { store.setState(state => ({ draft: { ...state.draft, sourceSelectionId: undefined, sourceRecordId: undefined, a6Models: [], protocols: {}, a6Tokens: [], tokens: [], error: undefined } })); },
     watch(attemptId: string | undefined, runId: string | undefined): void {
       const next = attemptId && runId ? { attemptId, runId } : undefined;
       if (active?.attemptId === next?.attemptId && active?.runId === next?.runId) return;
@@ -99,12 +103,12 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
       try { const file = await readFile(transport, { attemptId, runId, path }); if (!disposed && requests.get(`${id}:file`) === request) setEntry(id, { file, fileLoading: false }); }
       catch (error) { if (!disposed && requests.get(`${id}:file`) === request) setEntry(id, { fileLoading: false, error: error instanceof Error ? error.message : '读取文件失败' }); }
     },
-    async openOutput(attemptId: string, runId: string, mode: 'preview' | 'vscode') {
+    async openOutput(attemptId: string, runId: string, mode: 'preview' | 'vscode' | 'reveal', application?: string) {
       const id = keyOf(attemptId, runId);
       setEntry(id, { previewLoading: true, error: undefined });
       if (mode === 'preview') store.setState({ preview: { open: true, loading: true, html: null, path: null, label: runId } });
       try {
-        const result = await openOutput(transport, { attemptId, runId, mode });
+        const result = await openOutput(transport, { attemptId, runId, mode, ...(application ? { application } : {}) });
         setEntry(id, { previewLoading: false, previewPath: result.path });
         if (mode === 'preview' && !disposed) store.setState({ preview: { open: true, loading: false, html: result.html ?? null, path: result.path ?? null, label: runId } });
         return result;
@@ -114,6 +118,13 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
         if (mode === 'preview' && !disposed) store.setState({ preview: { open: true, loading: false, html: null, path: null, label: runId, error: message } });
         throw error;
       }
+    },
+    /** Resume a failed run in its own DSH session with a "continue" message; the Host owns the real run. */
+    async continueRun(attemptId: string, runId: string): Promise<void> {
+      const id = keyOf(attemptId, runId);
+      setEntry(id, { continuing: true, error: undefined });
+      try { await continueRun(transport, { attemptId, runId }); if (!disposed) { setEntry(id, { continuing: false }); void load(attemptId, runId); } }
+      catch (error) { if (!disposed) setEntry(id, { continuing: false, error: error instanceof Error ? error.message : '继续会话失败' }); }
     },
     closeOutput(attemptId: string, runId: string): void { setEntry(keyOf(attemptId, runId), { previewOpen: false, previewPath: undefined }); },
     dismissPreview(): void { if (!disposed) store.setState(state => ({ preview: { ...state.preview, open: false, html: null, path: null, label: null } })); },
