@@ -20,7 +20,9 @@ const message = (error: unknown, fallback: string): string => error instanceof E
  * The single global workbench: records are Host-persisted and shared by every session, so one
  * instance serves all mounted panels. The plugin lifecycle owns dispose.
  */
-export function createWorkbench(sessionId: string, transport: ModelIntelligenceTransport, openPane: (selectionId: string) => void = () => {}): Workbench {
+export interface WorkbenchWindow { fullscreen: boolean; open(): void; close(): void }
+const singletonWindow: WorkbenchWindow = { fullscreen: false, open() {}, close() {} };
+export function createWorkbench(sessionId: string, transport: ModelIntelligenceTransport, openPane: (selectionId: string) => void = () => {}, window: WorkbenchWindow = singletonWindow): Workbench {
   const draft = createDraftStore();
   const modelsDomain = createModelsDomain(transport, keys => draft.setState(state => ({ selected: state.selected.filter(key => keys.has(key)) })));
   const presetsDomain = createPresetsDomain();
@@ -45,7 +47,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     created(record, attemptId) { evaluationsDomain.acceptCreated(record, attemptId); openRecord(record.id); },
   });
   const stores = {
-    workbench: createStore<WorkbenchState>(() => ({ tabs: [{ id: 'draft', title: '新建测试', type: 'draft' }], activeTab: 'draft', sidebarCollapsed: false, navigation: {} })),
+    workbench: createStore<WorkbenchState>(() => ({ tabs: [{ id: 'draft', title: '新建测试', type: 'draft' }], activeTab: 'draft', sidebarCollapsed: false, navigation: {}, fullscreen: window.fullscreen })),
     a6Insights: insightsDomain.store,
     draft, custom: customDomain.store, models: modelsDomain.store, presets: presetsDomain.store, evaluations: evaluationsDomain.store, presentation: presentationDomain.store, a6: a6Domain.store, notice: createNoticeStore(),
   };
@@ -162,7 +164,8 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     if (!count || count > 64) { draft.setState({ error: '自定义任务需选择 1–64 个 DSH/a6api 模型。' }); return; }
     if (customDraft.a6Models.length && !customDraft.sourceSelectionId && !customDraft.sourceRecordId) { draft.setState({ error: 'a6api 渠道只能来自网页选择或已完成的指纹记录。' }); return; }
     if (customDraft.a6Models.length && !customDraft.tokens.length) { draft.setState({ error: '请至少选择一个 a6api 测试令牌槽位。' }); return; }
-    if (!Number.isInteger(customDraft.concurrency) || customDraft.concurrency < 1 || customDraft.concurrency > 6) { draft.setState({ error: '并发数须在 1–6 之间。' }); return; }
+    // Concurrency is not a user setting: it is exactly the allocated a6api test tokens (or the target count for DSH-only tasks), capped by the Host.
+    const concurrency = Math.max(1, Math.min(6, customDraft.a6Models.length ? customDraft.tokens.length : count));
     if (!Number.isInteger(customDraft.timeoutMs) || customDraft.timeoutMs < 30_000 || customDraft.timeoutMs > 1_800_000) { draft.setState({ error: '单模型最长时长须为 30–1800 秒的整数。' }); return; }
     const preset = presets.getState().items.find(item => item.id === value.presetId) ?? null;
     const name = value.name.trim() || `自定义测试 ${evaluations.getState().records.length + 1}`;
@@ -170,7 +173,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     const slots = customDraft.tokens.map(tokenId => ({ tokenId, name: customDraft.a6Tokens.find(token => token.id === tokenId)?.name }));
     customDomain.store.setState(state => ({ draft: { ...state.draft, creating: true, error: undefined } }));
     draft.setState({ error: undefined, pickerOpen: false });
-    void customDomain.createTask({ selectionId: customDraft.sourceSelectionId, sourceRecordId: customDraft.sourceRecordId, name, a6Models: customDraft.a6Models, protocols: customDraft.protocols, slots, dshModels, prompt: value.body, footerVersion: FIXED_FOOTER_VERSION, preset, concurrency: customDraft.concurrency, timeoutMs: customDraft.timeoutMs }).then(({ record, attemptId }) => {
+    void customDomain.createTask({ selectionId: customDraft.sourceSelectionId, sourceRecordId: customDraft.sourceRecordId, name, a6Models: customDraft.a6Models, protocols: customDraft.protocols, slots, dshModels, prompt: value.body, footerVersion: FIXED_FOOTER_VERSION, preset, concurrency, timeoutMs: customDraft.timeoutMs }).then(({ record, attemptId }) => {
       if (disposed) return;
       evaluationsDomain.acceptCreated(record, attemptId);
       customDomain.resetSource();
@@ -202,6 +205,8 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
       } else close();
     },
     toggleSidebar() { workbench.setState(state => ({ sidebarCollapsed: !state.sidebarCollapsed })); },
+    openFullscreen() { window.open(); },
+    closeFullscreen() { window.close(); },
     navigate,
     patchDraft(value) {
       const apply = (): void => { draft.setState(state => {
@@ -353,6 +358,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
       });
     },
     toggleColumn: presentationDomain.toggleColumn,
+    toggleSort: presentationDomain.toggleSort,
     resizeColumn: presentationDomain.resizeColumn,
     toggleColumns: presentationDomain.toggleColumns,
     toggleView: presentationDomain.toggleView,

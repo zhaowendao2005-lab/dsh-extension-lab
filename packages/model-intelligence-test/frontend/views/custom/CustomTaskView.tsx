@@ -7,6 +7,7 @@ import { Empty, Icon } from '../../components/common';
 import { CustomMetricsChart } from '../../components/CustomMetricsChart';
 import { CustomOutputActions } from './CustomOutputActions';
 import { count, decimal, millis, rate, cost, fileSize, clock, outputLabel, CustomPhaseBadge, CUSTOM_BILLING_LABELS } from './presentation';
+import { CustomStepsView } from './CustomStepsView';
 
 export interface CustomTaskViewProps {
   model: Model;
@@ -30,7 +31,7 @@ export interface CustomTaskViewProps {
   onClose?(): void;
   compact?: boolean;
 }
-const TABS: { id: CustomDetailTab; label: string }[] = [{ id: 'chat', label: 'Chat' }, { id: 'files', label: '文件' }, { id: 'metrics', label: '指标' }, { id: 'billing', label: '账单' }, { id: 'permissions', label: '权限' }];
+const TABS: { id: CustomDetailTab; label: string }[] = [{ id: 'chat', label: 'Chat' }, { id: 'steps', label: '步骤' }, { id: 'files', label: '文件' }, { id: 'metrics', label: '指标' }, { id: 'billing', label: '账单' }, { id: 'permissions', label: '权限' }];
 function ChatRowView({ row }: { row: ChatRow }) {
   switch (row.kind) {
     case 'user': return <ChatUserRowView row={row} />;
@@ -128,7 +129,7 @@ export function CustomTaskView(props: CustomTaskViewProps) {
     </header>
     {summary.error && <div className="mit-custom-error" role="alert"><div className="mit-custom-error-head"><strong>{summary.error.code || '执行错误'}</strong>{canContinue && onContinue && <button type="button" className="mit-button mit-button-primary" disabled={continuing} onClick={onContinue}><Icon name="refresh" size={13} />{continuing ? '正在继续…' : '补发 continue'}</button>}</div><p>{summary.error.message}</p><ErrorDetailView detail={summary.error.detail} /></div>}
     {error && <div className="mit-custom-error" role="alert">{error}</div>}
-    <div className="mit-custom-detail-body" aria-label={tab.label}>{!detail ? !loading && <Empty title="详情暂不可用">{summary.phase === 'cancelled' ? '任务已取消，等待 Host 返回已保留的执行记录。' : '连接恢复后会继续读取已有运行数据。'}</Empty> : tab.id === 'chat' ? <Chat detail={detail} summary={summary} /> : tab.id === 'files' ? <Files detail={detail} file={file} loading={fileLoading} onReadFile={onReadFile} summary={summary} onOpenOutput={onOpenOutput} /> : tab.id === 'metrics' ? <Metrics detail={detail} summary={summary} /> : tab.id === 'billing' ? <Billing detail={detail} summary={summary} /> : <Permissions detail={detail} summary={summary} />}</div>
+    <div className="mit-custom-detail-body" aria-label={tab.label}>{!detail ? !loading && <Empty title="详情暂不可用">{summary.phase === 'cancelled' ? '任务已取消，等待 Host 返回已保留的执行记录。' : '连接恢复后会继续读取已有运行数据。'}</Empty> : tab.id === 'chat' ? <Chat detail={detail} summary={summary} /> : tab.id === 'steps' ? <CustomStepsView requests={detail.requests} events={detail.events} summary={summary} truncated={detail.requestsTruncated} /> : tab.id === 'files' ? <Files detail={detail} file={file} loading={fileLoading} onReadFile={onReadFile} summary={summary} onOpenOutput={onOpenOutput} /> : tab.id === 'metrics' ? <Metrics detail={detail} summary={summary} /> : tab.id === 'billing' ? <Billing detail={detail} summary={summary} /> : <Permissions detail={detail} summary={summary} />}</div>
     <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{summary.continuations ? ` · 已继续 ${summary.continuations} 次` : ''}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" onClick={onCancel}><Icon name="stop" size={13} />取消运行</button>}{canContinue && onContinue && <button type="button" className="mit-button" disabled={continuing} onClick={onContinue} title="在同一 DSH 会话中发送 continue，保留已有上下文与沙箱">{continuing ? '正在继续…' : '继续会话'}</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry} title="新建一轮与新沙箱重新运行"><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
   </section>;
 }

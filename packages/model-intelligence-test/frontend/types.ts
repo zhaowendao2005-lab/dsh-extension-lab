@@ -117,6 +117,13 @@ export interface CustomRequestView {
  metrics: {ttftMs: number | null; generationMs: number | null; e2eMs: number | null; modelTokensPerSecond: number | null; endToEndTokensPerSecond: number | null; cacheRate: number | null};
  billingState: CustomBillingState;
  httpStatus?: number | null;
+ /** Agent turn/step this request belongs to, when the Host observed one. */
+ turn?: number | null;
+ step?: number | null;
+ /** Milliseconds from request start to the first streamed delta of any kind. */
+ firstDeltaMs?: number | null;
+ /** What prompted this step: a user message or the previous tool result. */
+ trigger?: string | null;
  error?: string | {code?: string; message?: string; status?: number; detail?: CustomErrorDetail | null} | null;
 }
 export interface CustomFileView { path: string; size: number; modifiedAt: number }
@@ -129,12 +136,13 @@ export interface CustomRunDetail {
  revision: number;
  metricBoundary?: string;
  eventsTruncated?: boolean;
+ requestsTruncated?: boolean;
  unchanged?: true;
 }
 export type CustomRunDetailResult = CustomRunDetail | {runId: string; revision: number; unchanged: true};
 export interface CustomFileReadResult { path: string; text: string; previewable: boolean }
 export interface CustomOutputOpenResult { html?: string; path?: string; opened?: boolean; application?: {id: string; name: string} | null; applications?: {id: string; name: string}[] }
-export type CustomDetailTab = 'chat' | 'files' | 'metrics' | 'billing' | 'permissions';
+export type CustomDetailTab = 'chat' | 'steps' | 'files' | 'metrics' | 'billing' | 'permissions';
 export interface CustomRunDetailEntry {
  loading: boolean;
  revision: number;
@@ -155,7 +163,7 @@ export interface CustomDraftState {
  /** Per-channel wire protocol, keyed by `${channelId}:${model}`; missing = inferred default. */
  protocols: Record<string, A6Protocol>;
  a6Tokens: A6Token[];
- concurrency: number;
+ /** Derived at submit time: effective concurrency = min(allocated test tokens or targets, 6). */
  timeoutMs: number;
  creating: boolean;
  step: 1 | 2 | 3 | 4;
@@ -204,12 +212,14 @@ export interface Evaluation { id: string; name: string; kind: TestKind; createdA
 export interface FingerprintRecord { jobId?: string; status: 'starting' | 'running' | 'done' | 'cancelled' | 'failed'; reference?: {builtAt: string; sdk: string}; challenges: FingerprintChallenge[]; concurrency?: number; timeoutMs?: number; slots?: number; limits?: FingerprintLimits; busy?: 'configure' | 'retry'; error?: string }
 export interface Tab { id: string; title: string; type: 'draft' | 'record' | 'feature' | 'a6'; recordId?: string; feature?: 'hub'; selectionId?: string }
 export interface Navigation { mode: 'progress' | 'results'; runId?: string; artifact?: boolean }
-export interface WorkbenchState { tabs: Tab[]; activeTab: string; sidebarCollapsed: boolean; navigation: Record<string, Navigation> }
+export interface WorkbenchState { tabs: Tab[]; activeTab: string; sidebarCollapsed: boolean; navigation: Record<string, Navigation>; /** Rendered inside the dedicated full-screen window. */ fullscreen: boolean }
 export interface DraftState { name: string; kind: TestKind; selected: string[]; body: string; presetId?: string; dirty: boolean; pickerOpen: boolean; query: string; error?: string }
 export interface ModelsState { items: Model[]; providers: Provider[]; loading: boolean; error?: string }
 export interface PresetsState { items: Preset[]; error?: string; collapsed: boolean }
 export interface EvaluationsState { records: Evaluation[]; runs: Record<string, Run>; /** First Host list arrived. */ loaded: boolean; /** Host sync / action error banner. */ error?: string }
-export interface PresentationState { columns: string[]; widths: Record<string, number>; expanded: Record<string, boolean>; followLatest: boolean; columnsOpen: boolean; viewOpen: boolean; configOpen: boolean; filter: string }
+export type SortDirection = 'asc'|'desc';
+export interface ColumnSort { column: string; direction: SortDirection }
+export interface PresentationState { columns: string[]; widths: Record<string, number>; expanded: Record<string, boolean>; followLatest: boolean; columnsOpen: boolean; viewOpen: boolean; configOpen: boolean; filter: string; /** Per-record column sort chosen by the user; missing = default match order. */ sorts: Record<string, ColumnSort> }
 export interface Notice { title: string; message: string; choices: {id: string; label: string; danger?: boolean}[]; input?: string }
 export interface Store<T> { getState(): T; subscribe(listener: () => void): () => void }
 export interface Workbench {
@@ -217,12 +227,12 @@ export interface Workbench {
  workbench: Store<WorkbenchState>; draft: Store<DraftState>; models: Store<ModelsState>; presets: Store<PresetsState>; evaluations: Store<EvaluationsState>; presentation: Store<PresentationState>; a6: Store<A6State>; notice: Store<Notice | null>;
  a6Insights: Store<A6InsightsState>; custom: Store<CustomState>;
  actions: {
-  openDraft(): void; openRecord(id: string): void; openFeature(feature: 'hub'): void; activateTab(id: string): void; closeTab(id: string): void; toggleSidebar(): void; navigate(value: Partial<Navigation>): void;
+  openDraft(): void; openRecord(id: string): void; openFeature(feature: 'hub'): void; activateTab(id: string): void; closeTab(id: string): void; toggleSidebar(): void; navigate(value: Partial<Navigation>): void; openFullscreen(): void; closeFullscreen(): void;
   patchDraft(value: Partial<Pick<DraftState, 'name' | 'kind' | 'body' | 'pickerOpen' | 'query'>>): void; toggleModel(key: string): void; refreshModels(): void; submit(): void;
   selectPreset(id: string): void; addPreset(): void; renamePreset(id: string): void; deletePreset(id: string): void; savePreset(): void; togglePresets(): void;
   cancelRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
   beginCustomFromFingerprint(recordId: string, runId?: string | string[]): void; startCustomSelection(recordId: string): void; toggleCustomRunSelection(recordId: string, runId: string): void; cancelCustomSelection(): void; createCustomFromSelection(recordId: string): void;
-  patchCustom(value: Partial<Pick<CustomDraftState, 'concurrency' | 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; setCustomProtocol(key: string | null, api: A6Protocol): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
+  patchCustom(value: Partial<Pick<CustomDraftState, 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; setCustomProtocol(key: string | null, api: A6Protocol): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
   setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
@@ -233,7 +243,7 @@ export interface Workbench {
   setA6LedgerScope(recordId: string, scope: 'attempt'|'record'): void; refreshA6Ledger(recordId: string): void;
   setFingerprintConfig(id: string, options: FingerprintOptions): void;
   retryFailedSample(id: string, runId: string): void;
-  toggleColumn(id: string): void; resizeColumn(id: string, width: number): void; toggleColumns(): void; toggleView(): void; toggleConfig(): void; toggleRound(id: string, defaultExpanded: boolean): void; toggleFollow(): void; setFilter(value: string): void;
+  toggleSort(recordId: string, column: string): void; toggleColumn(id: string): void; resizeColumn(id: string, width: number): void; toggleColumns(): void; toggleView(): void; toggleConfig(): void; toggleRound(id: string, defaultExpanded: boolean): void; toggleFollow(): void; setFilter(value: string): void;
   answerNotice(choice: string): void; setNoticeInput(value: string): void;
  };
  dispose(): void;

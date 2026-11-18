@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { generateChallenges, loadDetector, parseNumbers } from 'lmfpd-sdk';
 import { TokenSlots, tokenIdentity } from '../a6/slots.js';
@@ -128,7 +129,13 @@ export class FingerprintEngine {
   }
 
   async detector() {
-    if (this.loaded && Date.now() - this.loaded.at < RELOAD_AFTER_MS) return this.loaded;
+    // The SDK refreshes the reference bank in the background, so the file on disk can become newer
+    // than the detector already loaded in memory. Without this check a fresh bank (new models) would
+    // only appear after RELOAD_AFTER_MS, and a test started moments earlier would silently fall back
+    // to the older bank — the run would then lack candidates for models added in the new one.
+    const stamp = await stat(cachePath()).then(info => info.mtimeMs, () => 0);
+    const refreshed = Boolean(this.loaded) && stamp > this.loaded.at;
+    if (this.loaded && !refreshed && Date.now() - this.loaded.at < RELOAD_AFTER_MS) return this.loaded;
     if (!this.loading) {
       this.loading = loadDetector({ cache: cachePath(), ttl: DATA_TTL_SECONDS })
         .then(detector => {

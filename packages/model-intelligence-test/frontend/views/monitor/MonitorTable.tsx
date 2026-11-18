@@ -2,13 +2,14 @@ import React,{ useStore } from '../../runtime';
 import type { Evaluation,Metrics,Run,Workbench } from '../../types';
 import { COLUMN_LABELS } from '../../types';
 import { Empty,formatMetric,Icon,StageBadge } from '../../components/common';
-import { endedRunIds,isEndedStage } from '../results/runOrder';
+import { endedRunIds,isEndedStage,sortRunIds } from '../results/runOrder';
 import { useDismissablePopover } from '../../components/useDismissablePopover';
 import { modelLabel,providerLabel } from '../results/modelLabel';
 import {MarketPrice,MarketCache} from '../a6/MarketSnapshot';
 import {ResultTarget} from '../a6/ResultTarget';
 import {ActualCost} from '../a6/LedgerOverview';
 import { FINGERPRINT_DECISIONS,formatRankingScore,hasCalibratedProbability,isSampleEnded } from '../results/fingerprintPresentation';
+import { MATCH_VERDICT_LABELS,matchVerdict,matchVerdictTitle } from '../results/matchVerdict';
 
 // Keep in sync with `.mit-table .mit-sticky-match { right: ... }` in styles.css.
 const ACTION_COLUMN_WIDTH=208;
@@ -49,13 +50,18 @@ function CellValue({ run,column,custom,store,record }: {
       const analysis=run.fingerprint?.analysis;
       if(!analysis)
         return <span className="mit-muted">{isEndedStage(run.stage)? '无分析结果':'待分析'}</span>;
+      const verdict=matchVerdict(run);
+      const verdictBadge=<span className={`mit-verdict is-${verdict}`} title={matchVerdictTitle(run,verdict)}>{MATCH_VERDICT_LABELS[verdict]}</span>;
       if(analysis.decision==='not_model'||analysis.decision==='unscorable')
-        return <span title={FINGERPRINT_DECISIONS[analysis.decision]}>{FINGERPRINT_DECISIONS[analysis.decision]}</span>;
+        return <div className="mit-monitor-match is-unknown" title={FINGERPRINT_DECISIONS[analysis.decision]}>{verdictBadge}<span>{FINGERPRINT_DECISIONS[analysis.decision]}</span></div>;
       const calibrated=hasCalibratedProbability(analysis,analysis.probability);
-      return <div className="mit-monitor-match" title={`${FINGERPRINT_DECISIONS[analysis.decision]} · ${calibrated? '参考库内闭集校准概率，不含库外模型':'原始排序分数，非概率'}`}>
-        <strong>{analysis.predictionName||analysis.prediction||'—'}</strong>
-        <span className="mit-tabular">{calibrated? `${((analysis.probability??0)*100).toFixed(1)}% · 库内概率`:`RAW ${formatRankingScore(analysis.rankingScore)}`}</span>
-        {analysis.decision==='partial'&&<span className="mit-muted">部分样本 · {analysis.usedOutputs}/3 有效</span>}
+      return <div className={`mit-monitor-match is-${verdict}`} title={`${FINGERPRINT_DECISIONS[analysis.decision]} · ${calibrated? '参考库内闭集校准概率，不含库外模型':'原始排序分数，非概率'}`}>
+        {verdictBadge}
+        <div className="mit-monitor-match-value">
+          <strong>{analysis.predictionName||analysis.prediction||'—'}</strong>
+          <span className="mit-tabular">{calibrated? `${((analysis.probability??0)*100).toFixed(1)}% · 库内概率`:`RAW ${formatRankingScore(analysis.rankingScore)}`}</span>
+          {analysis.decision==='partial'&&<span className="mit-muted">部分样本 · {analysis.usedOutputs}/3 有效</span>}
+        </div>
       </div>;
     }
     return <span className="mit-muted">不适用</span>;
@@ -120,6 +126,19 @@ function RunRow({ store,record,id,columns,custom,results,selecting,checked }: {
     </td>
   </tr>;
 }
+function SortButton({ store,record,column,label,sort }: {
+  store: Workbench;
+  record: Evaluation;
+  column: string;
+  label: string;
+  sort?: { column: string; direction: 'asc' | 'desc' };
+}) {
+  const active=sort?.column===column;
+  return <button type="button" className={`mit-sort-button${active? ` is-${sort?.direction}`:''}`} title={active? `按${label}${sort?.direction==='desc'? '升序':'降序'}，再次点击恢复匹配排序`:`按${label}降序排序`} onClick={() => store.actions.toggleSort(record.id,column)}>
+    {label}
+    <span className="mit-sort-icon" aria-hidden="true" />
+  </button>;
+}
 function ResizeHandle({ store,column,width,label }: {
   store: Workbench;
   column: string;
@@ -146,12 +165,17 @@ export function MonitorTable({ store,record,results=false }: {
   const selectedRunIds=useStore(store.custom,state => state.selectedRunIds);
   const selecting=selectionRecordId===record.id;
   const columns=presentation.columns.filter(column => supportsColumn(column,record));
+  const custom=record.kind==='custom';
+  const sort=presentation.sorts[record.id];
+  // Market snapshots are channel quotes, not per-run measurements, so only measured columns are sortable.
+  const sortable=(column: string): boolean => !custom&&column!=='target'&&column!=='price'&&column!=='cache24h';
   const rowIds=useStore(store.evaluations,state => {
     const filtered=record.runIds.filter(id => {
       const run=state.runs[id];
       return run&&(!presentation.filter||`${run.model.name} ${providerLabel(run.model)} ${run.model.search}`.toLowerCase().includes(presentation.filter.toLowerCase()));
     });
-    return (results? endedRunIds(filtered,state.runs):filtered).join('\n');
+    const ordered=results? endedRunIds(filtered,state.runs):filtered;
+    return (sort&&sortable(sort.column)? sortRunIds(ordered,state.runs,sort):ordered).join('\n');
   });
   const activeCount=useStore(store.evaluations,state => record.runIds.filter(id => {
     const run=state.runs[id];
@@ -202,11 +226,12 @@ export function MonitorTable({ store,record,results=false }: {
         <thead>
           <tr>
             {selecting&&<th scope="col" className="mit-select-col"><span className="mit-custom-sr-only">选择</span></th>}
-            <th scope="col">参测模型
+            <th scope="col" aria-sort={sort?.column==='model'? (sort.direction==='asc'? 'ascending':'descending'):undefined}>参测模型
+              {sortable('model')&&<SortButton store={store} record={record} column="model" label="模型" sort={sort} />}
               <ResizeHandle store={store} column="model" width={presentation.widths.model||224} label="模型" />
             </th>
-            {columns.map(id => <th scope="col" key={id} className={id==='match'? 'mit-sticky-match':''}>
-              {columnLabel(id)}
+            {columns.map(id => <th scope="col" key={id} className={id==='match'? 'mit-sticky-match':''} aria-sort={sort?.column===id? (sort.direction==='asc'? 'ascending':'descending'):undefined}>
+              {sortable(id)? <SortButton store={store} record={record} column={id} label={columnLabel(id)} sort={sort} />:columnLabel(id)}
               <ResizeHandle store={store} column={id} width={presentation.widths[id]||defaultWidth(id)} label={columnLabel(id)} />
             </th>)}
             <th scope="col" className="mit-sticky-actions">操作

@@ -131,6 +131,7 @@ var hostContribution = { package: remoteInfo.package, face: "host", schemas: [],
 // backend/fingerprint/engine.js
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { generateChallenges, loadDetector, parseNumbers } from "lmfpd-sdk";
 
@@ -473,7 +474,9 @@ var FingerprintEngine = class {
     this.tokenSlots = new TokenSlots();
   }
   async detector() {
-    if (this.loaded && Date.now() - this.loaded.at < RELOAD_AFTER_MS) return this.loaded;
+    const stamp = await stat(cachePath()).then((info) => info.mtimeMs, () => 0);
+    const refreshed = Boolean(this.loaded) && stamp > this.loaded.at;
+    if (this.loaded && !refreshed && Date.now() - this.loaded.at < RELOAD_AFTER_MS) return this.loaded;
     if (!this.loading) {
       this.loading = loadDetector({ cache: cachePath(), ttl: DATA_TTL_SECONDS }).then((detector) => {
         const loaded = { detector, at: Date.now(), builtAt: detector.builtAt };
@@ -3411,13 +3414,13 @@ function contained(root, target) {
 function sameFile(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
 }
-function fileInfo(relative, stat) {
-  return { path: relative, size: stat.size, modifiedAt: stat.mtimeMs };
+function fileInfo(relative, stat2) {
+  return { path: relative, size: stat2.size, modifiedAt: stat2.mtimeMs };
 }
-function regularFile(stat) {
-  if (stat.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in the sandbox.");
-  if (!stat.isFile() || stat.nlink !== 1) fail("UNSUPPORTED_FILE", "Only regular files with a single link are allowed.");
-  if (!Number.isSafeInteger(stat.size) || stat.size < 0 || stat.size > MAX_FILE_BYTES) fail("FILE_TOO_LARGE", "Each sandbox file must be at most 1 MiB.");
+function regularFile(stat2) {
+  if (stat2.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in the sandbox.");
+  if (!stat2.isFile() || stat2.nlink !== 1) fail("UNSUPPORTED_FILE", "Only regular files with a single link are allowed.");
+  if (!Number.isSafeInteger(stat2.size) || stat2.size < 0 || stat2.size > MAX_FILE_BYTES) fail("FILE_TOO_LARGE", "Each sandbox file must be at most 1 MiB.");
 }
 async function lstatOrNull(target) {
   try {
@@ -3476,24 +3479,24 @@ async function hostDirectoryTree(absolute, create, check) {
   for (const part of absolute.slice(base.length).split(path.sep).filter(Boolean)) {
     check();
     current = path.join(current, part);
-    let stat2 = await lstatOrNull(current);
-    if (!stat2 && create) {
+    let stat3 = await lstatOrNull(current);
+    if (!stat3 && create) {
       try {
         await fs.mkdir(current, { mode: 448 });
       } catch (error) {
         if (error?.code !== "EEXIST") throw error;
       }
-      stat2 = await fs.lstat(current);
+      stat3 = await fs.lstat(current);
     }
-    if (!stat2) fail("MISSING_DIRECTORY", "The sandbox directory does not exist.");
-    if (stat2.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in sandbox directory ancestors.");
-    if (!stat2.isDirectory()) fail("INVALID_DIRECTORY", "A sandbox directory component is not a directory.");
+    if (!stat3) fail("MISSING_DIRECTORY", "The sandbox directory does not exist.");
+    if (stat3.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in sandbox directory ancestors.");
+    if (!stat3.isDirectory()) fail("INVALID_DIRECTORY", "A sandbox directory component is not a directory.");
     await fs.realpath(current);
     check();
   }
-  const stat = await fs.lstat(absolute);
-  if (stat.isSymbolicLink() || !stat.isDirectory()) fail("INVALID_DIRECTORY", "The sandbox root is not a regular directory.");
-  return { root: await fs.realpath(absolute), stat };
+  const stat2 = await fs.lstat(absolute);
+  if (stat2.isSymbolicLink() || !stat2.isDirectory()) fail("INVALID_DIRECTORY", "The sandbox root is not a regular directory.");
+  return { root: await fs.realpath(absolute), stat: stat2 };
 }
 function argsObject(value, allowed = []) {
   if (value === void 0) value = {};
@@ -3647,26 +3650,26 @@ async function makeSandbox(root, identity2, onFile, signal) {
       check(extra);
       current = path.join(current, parts[index]);
       if (!contained(root, current)) fail("OUTSIDE_SANDBOX", "The path is outside this run.");
-      let stat = await lstatOrNull(current);
+      let stat2 = await lstatOrNull(current);
       const last = index === parts.length - 1;
-      if (!stat && !last && createParents) {
+      if (!stat2 && !last && createParents) {
         try {
           await fs.mkdir(current, { mode: 448 });
         } catch (error) {
           if (error?.code !== "EEXIST") throw error;
         }
-        stat = await fs.lstat(current);
+        stat2 = await fs.lstat(current);
       }
-      if (!stat) {
+      if (!stat2) {
         if (last && allowMissing) return { relative, absolute: current, stat: null };
         fail("FILE_NOT_FOUND", "The requested sandbox file or parent directory does not exist.");
       }
-      if (stat.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in the sandbox.");
+      if (stat2.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in the sandbox.");
       const canonical = await fs.realpath(current);
       if (!contained(root, canonical)) fail("OUTSIDE_SANDBOX", "The resolved path is outside this run.");
       if (writable && protectedPath(path.relative(root, canonical).split(path.sep).join("/"))) fail("PROTECTED_FILE", "The resolved path belongs to a protected Host file or directory.");
-      if (!last && !stat.isDirectory()) fail("INVALID_DIRECTORY", "A path component is not a directory.");
-      if (last) return { relative, absolute: current, stat };
+      if (!last && !stat2.isDirectory()) fail("INVALID_DIRECTORY", "A path component is not a directory.");
+      if (last) return { relative, absolute: current, stat: stat2 };
     }
     fail("INVALID_PATH", "A file path is required.");
   };
@@ -3745,18 +3748,18 @@ async function makeSandbox(root, identity2, onFile, signal) {
     if (config.preset !== null && (!config.preset || typeof config.preset.id !== "string" || typeof config.preset.name !== "string")) fail("INVALID_CONFIG", "The protected preset identity is invalid.");
     return config;
   };
-  const status = (state, relative, stat, format, errors = []) => ({
+  const status = (state, relative, stat2, format, errors = []) => ({
     state,
     relativePath: relative,
-    size: stat?.size ?? null,
-    modifiedAt: stat?.mtimeMs ?? null,
+    size: stat2?.size ?? null,
+    modifiedAt: stat2?.mtimeMs ?? null,
     validation: state === "none" ? "pending" : state === "ready" ? "valid" : "invalid",
     format,
     errors,
     checkedAt: Date.now()
   });
   const validate = async (relative, config, extra) => {
-    let stat = null;
+    let stat2 = null;
     let format = null;
     try {
       relative = writablePath(relative);
@@ -3764,7 +3767,7 @@ async function makeSandbox(root, identity2, onFile, signal) {
       format = formatOf(relative);
       if (totoro(config.preset) && format !== "html") fail("HTML_REQUIRED", "The \u9F99\u732B\u6D4B\u8BD5 preset requires an .html or .htm output file.");
       const read = await readBuffer(relative, extra);
-      stat = read.stat;
+      stat2 = read.stat;
       const text4 = utf8(read.buffer);
       if (!text4.trim()) fail("EMPTY_OUTPUT", "The declared output file must not be empty.");
       if (text4.includes("\0")) fail("INVALID_TEXT", "The declared output must be a UTF-8 text file without NUL.");
@@ -3775,10 +3778,10 @@ async function makeSandbox(root, identity2, onFile, signal) {
           fail("INVALID_JSON", "The declared JSON output is not valid JSON.");
         }
       }
-      return status("ready", relative, stat, format);
+      return status("ready", relative, stat2, format);
     } catch (error) {
       if (error?.name === "AbortError") throw error;
-      return status("invalid", typeof relative === "string" ? relative : null, stat, format, [safeError(error).message]);
+      return status("invalid", typeof relative === "string" ? relative : null, stat2, format, [safeError(error).message]);
     }
   };
   const outputInternal = async (extra) => {
@@ -5145,6 +5148,8 @@ function createA6Stream({ key, api = "openai-completions", fetchImpl = globalThi
 // backend/custom/coordinator.js
 var END = /* @__PURE__ */ new Set(["completed", "failed", "cancelled", "interrupted"]);
 var MAX_MODELS2 = 6;
+var REQUEST_CAP = 500;
+var TRIGGER_CAP = 120;
 var copy = (value) => JSON.parse(JSON.stringify(value));
 var known = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 var sum = (values) => values.length && values.every((v) => v !== null) ? values.reduce((a, b) => a + b, 0) : null;
@@ -5156,6 +5161,29 @@ var err = (code, message) => new FingerprintError(code, message);
 var emptyUsage = () => ({ requestCount: 0, inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null, billingState: "unknown" });
 var emptyMetrics = () => ({ ttftMs: null, generationMs: null, e2eMs: null, modelTokensPerSecond: null, endToEndTokensPerSecond: null, cacheRate: null });
 var publicRun = (data) => copy(data.summary);
+var clipLine = (value, limit = TRIGGER_CAP) => {
+  const text4 = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  return text4.length > limit ? `${text4.slice(0, limit - 1)}\u2026` : text4;
+};
+var latestTurnStep = (events) => {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (Number.isInteger(event.turn) && Number.isInteger(event.step)) return { turn: event.turn, step: event.step };
+  }
+  return { turn: null, step: null };
+};
+var latestTrigger = (events) => {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.type === "message" && event.role === "user") return clipLine(`\u7528\u6237\u6307\u4EE4\uFF1A${typeof event.text === "string" ? event.text : ""}`);
+    if (event.type !== "tool") continue;
+    const name2 = clipLine(event.name, 48);
+    const preview = clipLine(event.text ?? event.arguments ?? event.content, 60);
+    return clipLine(`${name2 ? `\u5DE5\u5177 ${name2}` : "\u5DE5\u5177\u8C03\u7528"}${preview ? `\uFF1A${preview}` : ""}`);
+  }
+  return null;
+};
+var findRequest = (data, executionId) => typeof executionId === "string" && executionId ? data.requests?.find((row) => row.id === executionId || row.executionId === executionId) ?? null : null;
 var CustomCoordinator = class {
   constructor(ctx, { storage, capacity, ledger, a6, onTouch, onSettled }) {
     Object.assign(this, { ctx, storage, capacity, ledger, a6, onTouch, onSettled });
@@ -5262,6 +5290,10 @@ var CustomCoordinator = class {
     const previous = data.events.at(-1);
     if (event.delta && previous?.delta && previous.type === event.type && previous.role === event.role && previous.executionId === event.executionId && previous.index === event.index && (previous.text?.length ?? 0) < 1e5) previous.text = `${previous.text ?? ""}${event.text ?? ""}`.slice(0, 1e5);
     else data.events.push(event);
+    if (event.delta) {
+      const row = findRequest(data, event.executionId);
+      if (row && (row.firstDeltaMs ?? null) === null && Number.isFinite(event.at) && Number.isFinite(row.startedAt)) row.firstDeltaMs = Math.max(0, event.at - row.startedAt);
+    }
     if (data.events.length > 500) data.events.splice(0, data.events.length - 500);
     while (data.events.length > 1 && JSON.stringify(data.events).length > 5e5) data.events.shift();
     data.summary.eventCount += 1;
@@ -5368,7 +5400,9 @@ var CustomCoordinator = class {
             handles.set(meta.id, handle);
             await this.ledger.dispatch(handle);
           }
-          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: "running", startedAt: meta.startedAt, finishedAt: null, usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? "pending" : "unknown" });
+          const observed = latestTurnStep(data.events);
+          const position = { turn: Number.isInteger(meta.turn) ? meta.turn : observed.turn, step: Number.isInteger(meta.step) ? meta.step : observed.step };
+          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: "running", startedAt: meta.startedAt, finishedAt: null, turn: position.turn, step: position.step, firstDeltaMs: null, trigger: latestTrigger(data.events), usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? "pending" : "unknown" });
           this.aggregate(data);
           this.update(job, data, "running");
           await this.save(data);
@@ -5634,7 +5668,7 @@ var CustomCoordinator = class {
       } catch {
       }
     }
-    return { run, events: copy(data.events), requests: requests.slice(-200), files, revision: data.revision, permissions: { allowed: ["sandbox.readRules", "sandbox.readInput", "sandbox.readFile", "sandbox.listFiles", "sandbox.writeFile", "sandbox.statFile", "sandbox.declareOutput"], denied: ["network", "shell", "browser", "workspace", "credentials", "provider.configure"] }, metricBoundary: "\u8BF7\u6C42\u6570\u6309 DSH \u53EF\u89C2\u6D4B\u6A21\u578B\u8C03\u7528\u8BA1\uFF1B\u63D0\u4F9B\u5546 SDK \u5185\u90E8 HTTP \u91CD\u8BD5\u53EF\u80FD\u65E0\u6CD5\u5355\u72EC\u89C2\u5BDF\u3002", eventsTruncated: data.summary.eventCount > data.events.length };
+    return { run, events: copy(data.events), requests: requests.slice(-REQUEST_CAP), files, revision: data.revision, permissions: { allowed: ["sandbox.readRules", "sandbox.readInput", "sandbox.readFile", "sandbox.listFiles", "sandbox.writeFile", "sandbox.statFile", "sandbox.declareOutput"], denied: ["network", "shell", "browser", "workspace", "credentials", "provider.configure"] }, metricBoundary: "\u8BF7\u6C42\u6570\u6309 DSH \u53EF\u89C2\u6D4B\u6A21\u578B\u8C03\u7528\u8BA1\uFF1B\u63D0\u4F9B\u5546 SDK \u5185\u90E8 HTTP \u91CD\u8BD5\u53EF\u80FD\u65E0\u6CD5\u5355\u72EC\u89C2\u5BDF\u3002", eventsTruncated: data.summary.eventCount > data.events.length, ...requests.length > REQUEST_CAP ? { requestsTruncated: true } : {} };
   }
   async read({ attemptId, runId, path: file }) {
     const data = await this.load(attemptId, runId);

@@ -3,7 +3,7 @@ import type { PresentationState } from '../types';
 import { COLUMN_LABELS } from '../types';
 
 export function createPresentationDomain() {
-  const store = createStore<PresentationState>(() => ({ columns: ['stage', 'input', 'output', 'ttft', 'e2e', 'generation', 'cost', 'price', 'cache24h', 'target', 'match', 'round'], widths: {}, expanded: {}, followLatest: true, columnsOpen: false, viewOpen: false, configOpen: false, filter: '' }));
+  const store = createStore<PresentationState>(() => ({ columns: ['stage', 'input', 'output', 'ttft', 'e2e', 'generation', 'cost', 'price', 'cache24h', 'target', 'match', 'round'], widths: {}, expanded: {}, followLatest: true, columnsOpen: false, viewOpen: false, configOpen: false, filter: '', sorts: {} }));
   return {
     store,
     toggleColumn(id: string): void { if (Object.hasOwn(COLUMN_LABELS, id)) store.setState(state => ({ columns: state.columns.includes(id) ? state.columns.filter(item => item !== id) : [...state.columns, id] })); },
@@ -14,6 +14,16 @@ export function createPresentationDomain() {
     toggleRound(id: string, defaultExpanded: boolean): void { store.setState(state => ({ expanded: { ...state.expanded, [id]: !(state.expanded[id] ?? defaultExpanded) } })); },
     toggleFollow(): void { store.setState(state => ({ followLatest: !state.followLatest })); },
     setFilter(filter: string): void { store.setState({ filter }); },
+    toggleSort(recordId: string, column: string): void {
+      if (!Object.hasOwn(COLUMN_LABELS, column) && column !== 'model') return;
+      store.setState(state => {
+        const current = state.sorts[recordId];
+        if (!current || current.column !== column) return { sorts: { ...state.sorts, [recordId]: { column, direction: 'desc' } } };
+        if (current.direction === 'desc') return { sorts: { ...state.sorts, [recordId]: { column, direction: 'asc' } } };
+        const { [recordId]: _dropped, ...rest } = state.sorts;
+        return { sorts: rest };
+      });
+    },
     resetExpansion(): void { store.setState({ expanded: {} }); },
   };
 }

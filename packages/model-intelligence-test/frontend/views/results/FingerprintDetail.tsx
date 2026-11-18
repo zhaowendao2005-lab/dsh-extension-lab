@@ -124,6 +124,8 @@ export function FingerprintDetail({ store,run }: { store: Workbench; run: Run })
     <MetricGrid metrics={run.metrics} />
     <p className="mit-muted mit-fingerprint-note">TTFT 为首个正文或推理增量的可观测延迟，汇总显示已测样本的均值；生成区间为首尾可观测增量之间的时间。用量与请求耗时汇总已知值，速率仅采用同时有用量与时长的样本，不含排队或分析。缺失项显示 —，实际费用不可用，并非模型质量指标。</p>
     {analysis&&<CandidateRanking analysis={analysis} />}
+    {analysis&&analysis.candidates.length>0&&run.model.a6api&&!analysis.candidates.some(candidate => candidate.model===run.model.id)&&
+      <p className="mit-muted mit-fingerprint-note" role="status">参考库（{record?.fingerprint?.reference?.builtAt||'未知版本'}）的 {analysis.candidates.length} 个候选里没有 <strong>{run.model.id}</strong>：这次用的是旧参考库，新库可能已收录该 id。重新开始一次测试即可加载磁盘上最新的参考库。</p>}
     {analysis?.sequence&&<section aria-label="数字序列诊断">
       <div className="mit-detail-section-title"><h4>数字序列诊断</h4><span className="mit-muted">SDK 返回值 · 不作身份结论</span></div>
       <dl className="mit-sample-diagnostics">

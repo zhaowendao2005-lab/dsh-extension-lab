@@ -1,4 +1,5 @@
-import React,{ useStore } from '../runtime';
+import React,{ useEffect, useRef, useStore } from '../runtime';
+import type { ReactNode } from 'react';
 import type { Workbench } from '../types';
 import { Icon } from '../components/common';
 import { NoticeModal } from './workbench/NoticeModal';
@@ -34,9 +35,14 @@ function TabBar({ store }: {
         </button>
       </div>)}
     </div>
-    <button type="button" className="mit-tab-add" aria-label="打开功能中心" title="功能中心" onClick={() => store.actions.openFeature('hub')}>
-      <Icon name="plus" size={14} />
-    </button>
+    <div className="mit-tabs-actions">
+      <button type="button" className="mit-tab-add" aria-label={state.fullscreen ? '关闭全屏窗口' : '在全屏窗口中打开'} title={state.fullscreen ? '关闭全屏窗口' : '全屏（新窗口，同一端口）'} onClick={() => state.fullscreen ? store.actions.closeFullscreen() : store.actions.openFullscreen()}>
+        <Icon name={state.fullscreen ? 'collapse' : 'expand'} size={14} />
+      </button>
+      <button type="button" className="mit-tab-add" aria-label="打开功能中心" title="功能中心" onClick={() => store.actions.openFeature('hub')}>
+        <Icon name="plus" size={14} />
+      </button>
+    </div>
   </header>;
 }
 function RecordsSidebar({ store }: {
@@ -96,6 +102,27 @@ function RecordsSidebar({ store }: {
     </>}
   </aside>;
 }
+/** Modal dialog puts the panel in the top layer, so a narrow host pane cannot clip it. */
+function FullscreenShell({ active,children }: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  const ref=useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog=ref.current;
+    if(!dialog)
+      return;
+    if(active&&!dialog.open)
+      dialog.showModal();
+    else if(!active&&dialog.open)
+      dialog.close();
+  },[active]);
+  if(!active)
+    return <>{children}</>;
+  return <dialog ref={ref} className="mit-fullscreen-dialog" aria-label="模型智能测试全屏面板">
+    {children}
+  </dialog>;
+}
 export function Panel({ store }: {
   store: Workbench;
 }) {
@@ -109,7 +136,9 @@ export function Panel({ store }: {
     content=<FeatureHub store={store} />;
   else if(active?.type==='a6'&&active.selectionId)
     content=<A6SelectionView key={active.selectionId} store={store} selectionId={active.selectionId} />;
-  return <div className="mit-workbench flex min-w-0 flex-col">
+  const fullscreen=useStore(store.workbench,state => state.fullscreen);
+  return <FullscreenShell active={fullscreen}>
+    <div className={fullscreen? 'mit-workbench is-fullscreen flex min-w-0 flex-col':'mit-workbench flex min-w-0 flex-col'}>
     <TabBar store={store} />
     <div className="mit-workbench-body flex min-w-0">
       {active?.type!=='feature'&&<RecordsSidebar store={store} />}
@@ -118,5 +147,6 @@ export function Panel({ store }: {
       </main>
     </div>
     <NoticeModal store={store} />
-  </div>;
+    </div>
+  </FullscreenShell>;
 }

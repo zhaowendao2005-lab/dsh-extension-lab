@@ -1,6 +1,6 @@
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import esbuild from 'esbuild';
 import ts from 'typescript';
@@ -39,7 +39,30 @@ async function architecture() {
  }
  if (violations.length) throw new Error(violations.join('\n'));
 }
+// Wire diagnostics: the published contract and the Host implementation must name the same remote methods.
+async function wire() {
+  const catalog = await readFile(path.join(root, 'backend/service/catalog.js'), 'utf8');
+  const section = (source, marker, terminator) => {
+    const start = source.indexOf(marker);
+    if (start < 0) return undefined;
+    const end = source.indexOf(terminator, start);
+    return source.slice(start, end < 0 ? undefined : end);
+  };
+  // Import the contract itself: regex-parsing the DESCRIPTIONS block silently missed entries and produced false failures.
+  const contract = await import(pathToFileURL(path.join(root, 'shared/contract.js')).href);
+  const declared = contract.REMOTE_METHOD_NAMES;
+  if (!Array.isArray(declared) || !declared.length) throw new Error('wire: REMOTE_METHOD_NAMES not exported from shared/contract.js');
+  const methods = section(catalog, 'export const REMOTE_METHODS = [', '];');
+  if (!methods) throw new Error('wire: REMOTE_METHODS not found in backend/service/catalog.js');
+  const implemented = [...methods.matchAll(/'([A-Za-z0-9_]+)'/g)].map(match => match[1]);
+  const problems = [
+    ...declared.filter(name => !implemented.includes(name)).map(name => `wire: Host does not implement ${name}`),
+    ...implemented.filter(name => !declared.includes(name)).map(name => `wire: Host exposes undeclared ${name}`),
+  ];
+  if (problems.length) throw new Error(problems.join('\n'));
+}
 await architecture();
+await wire();
 const compiler = spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--project', path.join(root,'tsconfig.json')], {stdio: 'inherit'});
 if (compiler.status !== 0) process.exit(compiler.status ?? 1);
 await mkdir(path.join(root, 'lib'), {recursive: true});

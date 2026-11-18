@@ -1,6 +1,6 @@
 import { createElement, setReact } from './runtime';
 import type * as React from 'react';
-import { remoteInfo } from '../shared/contract.js';
+import { REMOTE_METHOD_NAMES, remoteInfo } from '../shared/contract.js';
 import { createWorkbench } from './stores/workbench.stores';
 import { Panel } from './views/Panel';
 import type { ModelIntelligenceTransport, Workbench } from './types';
@@ -27,16 +27,29 @@ interface ClientContext {
 }
 declare global { interface Window { __ModuleLoader__: {load(module: {id: string; factory(require: (id: string) => typeof React): unknown}): void} } }
 const ID = 'model-intelligence-test';
-/** Every Host method the client may call; each response is unwrapped from the Typert envelope. */
-const METHODS = [
- 'catalog', 'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear', 'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen', 'a6CustomFromRecord',
- 'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create',
- 'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView',
-] as const satisfies readonly (keyof ModelIntelligenceTransport)[];
+/** Every Host method the client may call; derived from the wire contract so a new remote cannot be forgotten here. */
+const METHODS: readonly (keyof ModelIntelligenceTransport)[] = REMOTE_METHOD_NAMES as unknown as readonly (keyof ModelIntelligenceTransport)[];
 function transportOf(remote: Record<string, (request?: unknown) => Promise<unknown>>): ModelIntelligenceTransport {
  const entries = METHODS.map(name => [name, async (request?: unknown) => unwrapRemote(await (request === undefined ? remote[name]() : remote[name](request)))]);
  return Object.fromEntries(entries) as unknown as ModelIntelligenceTransport;
 }
+// The pane is narrow; a dedicated window renders the same panel full-viewport on the same GUI origin and port.
+const fullscreen = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get('mit') === 'fullscreen';
+  } catch {
+    return false;
+  }
+})();
+const paneWindow = {
+ fullscreen,
+ open() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('mit', 'fullscreen');
+  window.open(url.toString(), '_blank', 'noopener');
+ },
+ close() { window.close(); },
+};
 window.__ModuleLoader__.load({id: ID, factory(require) {
  setReact(require('react'));
  return {name: ID, inject: ['slots', 'remote', 'sidebarRightTabs', 'sidebarRight'], async apply(ctx: ClientContext) {
@@ -45,7 +58,7 @@ window.__ModuleLoader__.load({id: ID, factory(require) {
   ctx.inject(['remote.modelIntelligence'], remoteCtx => {
    // Records and selections belong to the Host; one plugin-lifetime store polls even with the pane closed.
    let workbench: Workbench | undefined;
-   const shared = (): Workbench => (workbench ??= createWorkbench('global', transportOf(remoteCtx.get('remote.modelIntelligence')), selectionId => remoteCtx.sidebarRight.openTab(ID, { params: { selectionId } })));
+   const shared = (): Workbench => (workbench ??= createWorkbench('global', transportOf(remoteCtx.get('remote.modelIntelligence')), selectionId => remoteCtx.sidebarRight.openTab(ID, { params: { selectionId } }), paneWindow));
    remoteCtx.effect(() => {
     const style = document.createElement('style');
     style.dataset.plugin = ID; style.textContent = styles; document.head.appendChild(style);

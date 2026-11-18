@@ -2,6 +2,30 @@ import React from '../../runtime';
 import type { A6MarketSnapshot } from '../../types';
 
 const price = (value: number): string => value.toLocaleString('zh-CN', {maximumFractionDigits: 6});
+/** CNY per million tokens for one price field; undefined when the snapshot cannot be converted. */
+function tokenPrice(market: A6MarketSnapshot | null | undefined, micros: number | undefined): number | undefined {
+  if (!market || typeof micros !== 'number' || !Number.isFinite(micros) || micros < 0) return undefined;
+  const currency = market.currency?.toUpperCase();
+  const rate = currency === 'CNY' ? 1 : currency === 'USD' && typeof market.exchangeRate === 'number' && Number.isFinite(market.exchangeRate) && market.exchangeRate > 0 ? market.exchangeRate : undefined;
+  if (rate === undefined) return undefined;
+  const unit = market.unit?.toLowerCase();
+  if (!(unit === 'per_million_tokens' || unit === 'million_tokens' || unit === '1m_tokens' || unit === 'per_1m_tokens') || market.chargeType !== 'per_token') return undefined;
+  return micros / 1_000_000 * rate;
+}
+/** Compact cell for the monitor table: CNY per million tokens, or an explicit unknown. */
+export function marketPriceCell(market: A6MarketSnapshot | null | undefined, field: 'input' | 'output'): string {
+  const value = tokenPrice(market, field === 'input' ? market?.inputPriceMicros : market?.outputPriceMicros);
+  return value === undefined ? '—' : `¥${price(value)}`;
+}
+/** 24h channel cache-hit rate as a percent string; the site scale is basis points. */
+export function marketCacheCell(market: A6MarketSnapshot | null | undefined): string {
+  const rate = market?.cacheHitRate24h;
+  if (market?.cacheHitState === 'no_data') return '暂无数据';
+  return market?.cacheHitState !== 'no_data' && typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 10_000 ? `${(rate / 100).toFixed(1)}%` : '—';
+}
+export function marketTitle(market: A6MarketSnapshot | null | undefined, extra: string): string | undefined {
+  return market ? `${extra} · 网页报价快照 ${new Date(market.capturedAt).toLocaleString('zh-CN')}${market.currency === 'USD' && market.exchangeRate ? ` · USD/CNY ${market.exchangeRate}` : ''} · 不等于实际消费` : undefined;
+}
 export function marketPrices(market?: A6MarketSnapshot): string[] {
   if (!market) return ['未携带报价快照'];
   const currency = market.currency?.toUpperCase();

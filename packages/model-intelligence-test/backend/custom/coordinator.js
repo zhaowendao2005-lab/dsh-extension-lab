@@ -9,6 +9,8 @@ import { errorDetail } from './errors.js';
 
 const END = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 const MAX_MODELS = 6;
+const REQUEST_CAP = 500;
+const TRIGGER_CAP = 120;
 const copy = value => JSON.parse(JSON.stringify(value));
 const known = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const sum = values => values.length && values.every(v => v !== null) ? values.reduce((a, b) => a + b, 0) : null;
@@ -17,6 +19,30 @@ const err = (code, message) => new FingerprintError(code, message);
 const emptyUsage = () => ({ requestCount: 0, inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null, billingState: 'unknown' });
 const emptyMetrics = () => ({ ttftMs: null, generationMs: null, e2eMs: null, modelTokensPerSecond: null, endToEndTokensPerSecond: null, cacheRate: null });
 const publicRun = data => copy(data.summary);
+/** One bounded line: the steps view must never receive embedded newlines from a trigger preview. */
+const clipLine = (value, limit = TRIGGER_CAP) => { const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''; return text.length > limit ? `${text.slice(0, limit - 1)}…` : text; };
+/** Latest integer turn/step pair the Host recorded for the run; both stay null until one is observed. */
+const latestTurnStep = events => {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (Number.isInteger(event.turn) && Number.isInteger(event.step)) return { turn: event.turn, step: event.step };
+  }
+  return { turn: null, step: null };
+};
+/** Short cause for the steps view: whichever of the latest user instruction or tool activity came last. */
+const latestTrigger = events => {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.type === 'message' && event.role === 'user') return clipLine(`用户指令：${typeof event.text === 'string' ? event.text : ''}`);
+    if (event.type !== 'tool') continue;
+    const name = clipLine(event.name, 48);
+    const preview = clipLine(event.text ?? event.arguments ?? event.content, 60);
+    return clipLine(`${name ? `工具 ${name}` : '工具调用'}${preview ? `：${preview}` : ''}`);
+  }
+  return null;
+};
+/** Session events carry the local request id; a persisted row may also know the ledger execution id. */
+const findRequest = (data, executionId) => typeof executionId === 'string' && executionId ? data.requests?.find(row => row.id === executionId || row.executionId === executionId) ?? null : null;
 /** Real per-model Agent sessions. Secrets remain in short-lived transport closures only. */
 export class CustomCoordinator {
   constructor(ctx, { storage, capacity, ledger, a6, onTouch, onSettled }) {
@@ -103,6 +129,11 @@ export class CustomCoordinator {
     const previous = data.events.at(-1);
     if (event.delta && previous?.delta && previous.type === event.type && previous.role === event.role && previous.executionId === event.executionId && previous.index === event.index && (previous.text?.length ?? 0) < 100_000) previous.text = `${previous.text ?? ''}${event.text ?? ''}`.slice(0, 100_000);
     else data.events.push(event);
+    // Any streamed delta (text, reasoning or tool) pins the first-delta latency of its own request row.
+    if (event.delta) {
+      const row = findRequest(data, event.executionId);
+      if (row && (row.firstDeltaMs ?? null) === null && Number.isFinite(event.at) && Number.isFinite(row.startedAt)) row.firstDeltaMs = Math.max(0, event.at - row.startedAt);
+    }
     if (data.events.length > 500) data.events.splice(0, data.events.length - 500);
     while (data.events.length > 1 && JSON.stringify(data.events).length > 500000) data.events.shift();
     data.summary.eventCount += 1;
@@ -184,7 +215,11 @@ export class CustomCoordinator {
             handles.set(meta.id, handle);
             await this.ledger.dispatch(handle);
           }
-          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: 'running', startedAt: meta.startedAt, finishedAt: null, usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? 'pending' : 'unknown' });
+          // The steps view needs the Agent position and the cause that produced this request row.
+          // The Agent reports the exact turn/step it is preparing; persisted events are only the fallback.
+          const observed = latestTurnStep(data.events);
+          const position = { turn: Number.isInteger(meta.turn) ? meta.turn : observed.turn, step: Number.isInteger(meta.step) ? meta.step : observed.step };
+          data.requests.push({ id: meta.id, executionId: handle?.id ?? null, requestId: null, status: 'running', startedAt: meta.startedAt, finishedAt: null, turn: position.turn, step: position.step, firstDeltaMs: null, trigger: latestTrigger(data.events), usage: { inputTokens: null, inputTotalTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, cost: null, currency: null }, metrics: emptyMetrics(), billingState: slot ? 'pending' : 'unknown' });
           this.aggregate(data); this.update(job, data, 'running'); await this.save(data);
           return meta.id;
         } catch (error) { if (heldRequests.delete(meta.id)) this.capacity.release(1); throw error; }
@@ -381,7 +416,7 @@ export class CustomCoordinator {
     }
     let files = [];
     if (data.root) { try { files = await (await openSandbox({ root: data.root })).files(); } catch { /* files may have been removed externally */ } }
-    return { run, events: copy(data.events), requests: requests.slice(-200), files, revision: data.revision, permissions: { allowed: ['sandbox.readRules', 'sandbox.readInput', 'sandbox.readFile', 'sandbox.listFiles', 'sandbox.writeFile', 'sandbox.statFile', 'sandbox.declareOutput'], denied: ['network', 'shell', 'browser', 'workspace', 'credentials', 'provider.configure'] }, metricBoundary: '请求数按 DSH 可观测模型调用计；提供商 SDK 内部 HTTP 重试可能无法单独观察。', eventsTruncated: data.summary.eventCount > data.events.length };
+    return { run, events: copy(data.events), requests: requests.slice(-REQUEST_CAP), files, revision: data.revision, permissions: { allowed: ['sandbox.readRules', 'sandbox.readInput', 'sandbox.readFile', 'sandbox.listFiles', 'sandbox.writeFile', 'sandbox.statFile', 'sandbox.declareOutput'], denied: ['network', 'shell', 'browser', 'workspace', 'credentials', 'provider.configure'] }, metricBoundary: '请求数按 DSH 可观测模型调用计；提供商 SDK 内部 HTTP 重试可能无法单独观察。', eventsTruncated: data.summary.eventCount > data.events.length, ...(requests.length > REQUEST_CAP ? { requestsTruncated: true } : {}) };
   }
   async read({ attemptId, runId, path: file }) {
     const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');

@@ -75,6 +75,8 @@ export function DraftView({ store }: {
   const custom=useStore(store.custom,value => value.draft);
   const selectedCount=draft.selected.length;
   const targetCount=selectedCount+(draft.kind==='custom'? custom.a6Models.length:0);
+  // Concurrency is not a knob: it is exactly the allocated a6api test tokens (or the DSH target count), capped by the Host.
+  const effectiveConcurrency=Math.max(1,Math.min(6,custom.a6Models.length? custom.tokens.length:selectedCount));
   const canSubmit=targetCount>0&&(draft.kind==='fingerprint'||Boolean(draft.body.trim()))&&(draft.kind!=='custom'||!custom.a6Models.length||custom.tokens.length>0)&&!custom.creating;
   return <div className="mit-draft">
     <div className="mit-draft-fields">
@@ -134,10 +136,10 @@ export function DraftView({ store }: {
           {custom.sourceRecordId&&<p className="mit-muted">模型来自已完成的指纹结果；可在此增减执行令牌。</p>}
         </section>}
         <div className="mit-field-row">
-          <label className="mit-field">任务并发<input type="number" min={1} max={6} step={1} value={custom.concurrency} disabled={custom.creating} onChange={event => store.actions.patchCustom({ concurrency: Number(event.currentTarget.value) })} /></label>
+          <div className="mit-field"><span>有效并发</span><strong className="mit-tabular">{effectiveConcurrency}</strong><small className="mit-muted">= {custom.a6Models.length? `已选 ${custom.tokens.length} 个测试令牌（上限 6）`:`目标数（上限 6）`}</small></div>
           <label className="mit-field">单模型最长时长（秒）<input type="number" min={30} max={1800} step={30} value={custom.timeoutMs/1000} disabled={custom.creating} onChange={event => store.actions.patchCustom({ timeoutMs: Number(event.currentTarget.value)*1000 })} /></label>
         </div>
-        <div className="mit-info"><strong>执行快照：</strong>{targetCount} 个目标 · DSH {selectedCount} / a6api {custom.a6Models.length} · 并发上限 {custom.concurrency} · 每模型独立 UUID 工作目录（工具权限隔离，非 OS 容器）。只开放受限文件读取、写入与 declareOutput；成果由 Host 校验后开放。
+        <div className="mit-info"><strong>执行快照：</strong>{targetCount} 个目标 · DSH {selectedCount} / a6api {custom.a6Models.length} · 有效并发 {effectiveConcurrency} · 每模型独立 UUID 工作目录（工具权限隔离，非 OS 容器）。只开放受限文件读取、写入与 declareOutput；成果由 Host 校验后开放。
         </div>
       </>}
       {draft.kind==='fingerprint'&&<div className="mit-info"><strong>真实调用授权提示：</strong>开始后将向每个所选模型发送 3 次真实付费请求，共 {selectedCount*3} 次计划请求，按供应商计费；取消前已发出的请求仍可能产生费用。使用官方 lmfpd-sdk 生成共享挑战并分析。校准概率只在参考库内有效，不包含库外模型；无校准时只显示 RAW 分数，不代表身份鉴定或质量排名。实际费用暂不可用。
