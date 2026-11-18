@@ -1090,10 +1090,23 @@
   font-weight:600;
   white-space:nowrap
 }
+.mit-workbench .mit-select-col {
+  width:46px;
+  padding-right:0
+}
+.mit-workbench .mit-table th.mit-select-col {
+  padding-left:16px
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-table tbody tr.is-selectable {
+  cursor:pointer
+}
+.mit-workbench .mit-monitor.is-bulk-selecting .mit-table tbody tr.is-selectable:hover {
+  background:var(--mit-layer-2)
+}
 .mit-workbench .mit-custom-row-check {
   width:14px;
   height:14px;
-  margin:0 9px 0 0;
+  margin:0;
   vertical-align:middle;
   accent-color:var(--mit-brand);
   cursor:pointer
@@ -1360,6 +1373,14 @@
   align-items:center;
   gap:8px;
   flex:none
+}
+/* Fingerprint run detail reuses the custom sub-page header (back chevron + inline status). */
+.mit-workbench .mit-custom-detail-heading.mit-detail-heading {
+  padding:14px 20px;
+  border-bottom:1px solid var(--mit-border)
+}
+.mit-workbench .mit-custom-detail-heading.mit-detail-heading h3 {
+  font-size:14px
 }
 .mit-workbench .mit-run-detail {
   width:100%;
@@ -1700,6 +1721,9 @@
   padding:12px 10px 0
 }
 .mit-workbench .mit-detail-page-heading {
+  padding:12px 10px
+}
+.mit-workbench .mit-custom-detail-heading.mit-detail-heading {
   padding:12px 10px
 }
 .mit-workbench .mit-run-detail {

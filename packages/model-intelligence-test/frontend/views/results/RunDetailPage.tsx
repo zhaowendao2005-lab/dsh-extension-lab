@@ -1,6 +1,6 @@
 import React,{ useStore } from '../../runtime';
 import type { Workbench } from '../../types';
-import { Empty,Icon } from '../../components/common';
+import { Empty,Icon,StageBadge } from '../../components/common';
 import { RunDetail } from './RunDetail';
 import { currentAttempt,modelLabel,providerLabel } from './modelLabel';
 
@@ -40,21 +40,25 @@ export function RunDetailPage({ store,recordId,runId }: {
         {provider}/{model}
       </span>
     </nav>
-    <header className="mit-detail-page-heading">
-      <div>
-        <h2>
-          {model}
-        </h2>
-        <p className="mit-muted">
-          {provider} · {record.a6api? 'a6api 专项 · Host 直连采样':run.model.relay? `${run.model.relay.api} 接口 · 历史渠道记录`:run.model.id}
-          {attempt? ` · 测试轮次 #${attempt.number}`:''}
-        </p>
+    <header className="mit-custom-detail-heading mit-detail-heading">
+      <div className="mit-custom-detail-lead">
+        <button type="button" className="mit-icon-button is-back" aria-label="返回模型列表" title="返回模型列表" onClick={back}>
+          <Icon name="chevron" />
+        </button>
+        <div>
+          <h3>
+            {model}
+          </h3>
+          <p>
+            {provider} · {record.a6api? 'a6api 专项 · Host 直连采样':run.model.relay? `${run.model.relay.api} 接口 · 历史渠道记录`:run.model.id}
+            {attempt? ` · 测试轮次 #${attempt.number}`:''}
+          </p>
+        </div>
       </div>
-      <div className="mit-detail-page-actions">
+      <div className="mit-custom-detail-actions">
+        <StageBadge stage={run.stage} />
         {record.a6api&&run.model.a6api&&run.stage==='completed'&&<button type="button" className="mit-text-button mit-retry-button" title="以此指纹结果中的 a6api 渠道创建自定义测试" onClick={() => store.actions.beginCustomFromFingerprint(record.id,runId)}>转为自定义测试
         </button>}
-        <button type="button" className="mit-text-button" onClick={back}>返回模型列表
-        </button>
       </div>
     </header>
     {attempt?.status==='interrupted'&&<p className="mit-attempt-note" role="note">运行时重启，测试轮次已中断。</p>}

@@ -12,6 +12,8 @@ import { FINGERPRINT_DECISIONS,formatRankingScore,hasCalibratedProbability,isSam
 
 // Keep in sync with `.mit-table .mit-sticky-match { right: ... }` in styles.css.
 const ACTION_COLUMN_WIDTH=208;
+// Standalone selection column, only rendered in bulk-selection mode.
+const SELECT_COLUMN_WIDTH=46;
 const A6_COLUMNS = new Set(['price','cache24h','target']);
 const defaultWidth = (column: string): number => column === 'target' ? 236 : column === 'price' ? 228 : 144;
 const supportsColumn = (column: string,record: Evaluation): boolean => column in COLUMN_LABELS && (record.kind === 'custom' || column !== 'round') && (Boolean(record.a6api) || !A6_COLUMNS.has(column));
@@ -83,9 +85,18 @@ function RunRow({ store,record,id,columns,custom,results,selecting,checked }: {
   const retryable=failed&&Boolean(fingerprint?.jobId)&&fingerprint?.status!=='cancelled';
   const settled=run.fingerprint?.samples.every(sample => isSampleEnded(sample.state))??false;
   const retryTitle=!settled? '该模型仍有样本未结束，结束后可重试；只重新请求失败的样本，已完成样本保留。':fingerprint?.busy? '正在应用配置或重试，请稍候；只重新请求该模型失败的样本，已完成样本保留。':'只重新请求该模型失败的样本；已完成样本保留，任务会短暂回到运行中。';
-  return <tr className={selected? 'is-selected':''}>
+  const selectable=selecting&&Boolean(run.model.a6api&&run.stage==='completed');
+  // The whole row is a selection target; interactive children keep their own behaviour.
+  const toggle=(event: React.MouseEvent<HTMLTableRowElement>): void => {
+    if(!selectable||(event.target as HTMLElement).closest('button,input,a,label'))
+      return;
+    store.actions.toggleCustomRunSelection(record.id,id);
+  };
+  return <tr className={`${selected? 'is-selected':''}${selectable? ' is-selectable':''}`} onClick={selecting? toggle:undefined}>
+    {selecting&&<td className="mit-select-col">
+      <input type="checkbox" className="mit-custom-row-check" aria-label={`选择 ${modelLabel(run.model)} 创建自定义测试`} checked={checked} disabled={!run.model.a6api||run.stage!=='completed'} onClick={event => event.stopPropagation()} onChange={() => store.actions.toggleCustomRunSelection(record.id,id)} />
+    </td>}
     <th scope="row">
-      {selecting&&<input type="checkbox" className="mit-custom-row-check" aria-label={`选择 ${modelLabel(run.model)} 创建自定义测试`} checked={checked} disabled={!run.model.a6api||run.stage!=='completed'} onChange={() => store.actions.toggleCustomRunSelection(record.id,id)} />}
       <button type="button" className="mit-run-link" onClick={() => store.actions.navigate({ runId: id,artifact: false })}>
         <strong>
           {modelLabel(run.model)}
@@ -181,14 +192,16 @@ export function MonitorTable({ store,record,results=false }: {
       </span>
     </div>}
     <div className="mit-table-scroll">
-      <table className="mit-table" style={{ width: (presentation.widths.model||224)+columns.reduce((sum,id) => sum+(presentation.widths[id]||defaultWidth(id)),0)+ACTION_COLUMN_WIDTH }}>
+      <table className="mit-table" style={{ width: (presentation.widths.model||224)+columns.reduce((sum,id) => sum+(presentation.widths[id]||defaultWidth(id)),0)+ACTION_COLUMN_WIDTH+(selecting? SELECT_COLUMN_WIDTH:0) }}>
         <colgroup>
+          {selecting&&<col style={{ width: SELECT_COLUMN_WIDTH }} />}
           <col style={{ width: presentation.widths.model||224 }} />
           {columns.map(id => <col key={id} style={{ width: presentation.widths[id]||defaultWidth(id) }} />)}
           <col style={{ width: ACTION_COLUMN_WIDTH }} />
         </colgroup>
         <thead>
           <tr>
+            {selecting&&<th scope="col" className="mit-select-col"><span className="mit-custom-sr-only">选择</span></th>}
             <th scope="col">参测模型
               <ResizeHandle store={store} column="model" width={presentation.widths.model||224} label="模型" />
             </th>
