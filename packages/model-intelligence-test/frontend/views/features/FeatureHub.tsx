@@ -29,7 +29,8 @@ export function FeatureHub({ store }: { store: Workbench }) {
           <p className="mit-muted" role="status">{recentScript? `最近报告：v${recentScript.version} · 协议 ${recentScript.protocolVersion??'未知'} · 账号 ${recentScript.accountId||'未知'} · ${Number.isFinite(recentScript.seenAt)? new Date(recentScript.seenAt).toLocaleString('zh-CN'):'时间未知'}${userscript&&recentScript.version!==userscript.version? ' · 与当前包内版本不同':''}`:'尚未收到脚本报告；请在 a6api 页面运行脚本后再查看。'}</p>
           <button type="button" className="mit-text-button" disabled={a6.configLoading} onClick={store.actions.loadA6Config}>{a6.configLoading? '刷新中…':'刷新脚本状态'}</button>
           {userscript?.installUrl? <a className="mit-button" href={userscript.installUrl} target="_blank" rel="noreferrer">安装 / 更新包内油猴脚本</a>:<span className="mit-muted">等待 Host 提供脚本安装地址</span>}
-          <p className="mit-muted">打开安装页后需在 Tampermonkey 中确认。脚本随当前插件包提供；Host 持续运行且接入端口固定时，Tampermonkey 才能检查并获取包内更新。旧版脚本首次需从此入口手动安装迁移；降级也需手动安装。</p>
+          {userscript?.networkInstallUrl? <a className="mit-text-button" href={userscript.networkInstallUrl} target="_blank" rel="noreferrer">从 GitHub 安装（本机链接打不开时用这个）</a>:null}
+          <p className="mit-muted">打开安装页后需在 Tampermonkey 中确认。本机安装链接随 DSH 端口变化；脚本的 @updateURL/@downloadURL 一律指向固定的 GitHub 地址，所以之后的重启不会再让自动更新失效。若本机链接只显示 Tampermonkey 的「SCRIPT INSTALLATION」中间页而不自动完成，改用上面的 GitHub 链接安装，或把包内 integration/a6api-userscript.user.js 拖进 Tampermonkey。</p>
           <p className="mit-muted">安装后点下面的连接链接，油猴会自己记住接入点并从地址栏抹掉口令；之后在 a6api 页面勾选渠道直接发送即可。</p>
           {config?.link? <a className="mit-button" href={config.link} target="_blank" rel="noreferrer">一键连接 a6api 页面</a> : <span className="mit-muted">等待 Host 报告接入点</span>}
           <details className="mit-a6-manual"><summary className="mit-muted">手动填写（可选）</summary>

@@ -17,6 +17,7 @@
 - a6api 的指纹测试只从油猴网页选择创建；自定义测试可由油猴直接创建，也可从 a6api 指纹结果创建。普通创建页不提供渠道查询、密钥输入或 JSON 导入。网页的测试令牌选择按站点 origin + a6api 账号 ID 存入 localStorage，只存 ID/name。网页只是发令器：一次 POST 到 `/mit-a6/select`（口令鉴权），不回传、不轮询、不持有 cookie。固定/取 key/解除固定全部由 Host 用账户访问令牌直连站点完成。
 - 槽位就是用户勾选的测试令牌（数量以用户选择为准），不核验 key、不修改 DSH 提供商配置。每令牌一 worker、跨作业共享身份锁。指纹测试在固定读回 `route_effective` 后用该令牌的 key 经 `backend/a6/transport.js` 同时采样三题；自定义 a6 会话由独立 Agent stream 发出实际请求。两者均须等待全部请求/流清理和固定恢复后才领取下一项；固定未生效必须零采样请求；专项与普通任务共用全局请求池；取消不得提前复用令牌，恢复失败必须可见。
 - pin 关闭智能兜底；新的日常固定不创建恢复租约，历史租约保留兼容恢复；任务侧固定由 worker 自行解除，外部修改不覆盖。`dsh://open` 只唤起安装版（不解析任何 path/query/hash）；选择数据走 Host intake，常驻 Client 用 `sidebarRight.openTab` 导航，不能编造原生插件路径或宣称能切 Host/profile。
+- 油猴脚本的 `@updateURL`/`@downloadURL` 必须指向固定的网络地址（仓库内该文件的 raw 链接），不得使用本机回环端口：DSH 每次重启都会换端口，写死端口会让已安装脚本的自动更新永久失效。本机安装路由只用于「应用正在运行时」的一次性安装。
 - 用户预设只在当前浏览器持久化；读取验证，失败可见。运行保存 prompt/footer/preset 快照，指纹另保存共享挑战和参考库版本。
 - 自定义任务由 Host 为每个模型创建独立 DSH Agent 会话与 UUID 沙箱目录；只挂载该 run 的受限文件工具，无 shell、网络、浏览器、外部 workspace、凭据或其它 run 访问。这是工具能力隔离，不是操作系统容器；不得声称可抵御有权限访问 Host 进程/文件系统的恶意插件。不得启动成果服务；预览仅在无 same-origin 权限、带 CSP 的 iframe 中执行。输出格式由沙箱白名单控制；只有「龙猫测试」预设强制 HTML，预设本身只是提示词快照。真实推理仅由用户显式启动，构建与静态检查不得调用模型。
 - 自定义运行详情是 Panel content 级独立子页（`navigation.runId` → `CustomRunPage`），不嵌在记录视图里。Chat 只读镜像照搬 DSH ui-chat 呈现层（reasoning 每 block 一行、默认折叠、turn usage），不自创样式；模块顶层禁止 JSX 与 `React.memo/forwardRef/createContext`（React 在 ModuleLoader factory 才注入）。

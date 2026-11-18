@@ -2012,6 +2012,7 @@ var A6Site = class {
 import { readFile } from "node:fs/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 var PATH = "/mit-a6/select";
+var SCRIPT_NETWORK_BASE = "https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/packages/model-intelligence-test/integration/a6api-userscript.user.js";
 var SITE_ORIGINS = /* @__PURE__ */ new Set(["https://a6api.vip", "https://www.a6api.vip"]);
 var MAX_BODY = 256e3;
 var MAX_MODELS = 64;
@@ -2143,6 +2144,8 @@ var A6Intake = class {
       protocolVersion: 1,
       installUrl: this.origin ? `${this.origin}/mit-a6/userscript/install.user.js` : "",
       updateUrl: this.origin ? `${this.origin}/mit-a6/userscript/update.meta.js` : "",
+      networkInstallUrl: SCRIPT_NETWORK_BASE,
+      networkUpdateUrl: SCRIPT_NETWORK_BASE,
       ...this.recent ? { recent: this.recent } : {}
     };
   }
@@ -2186,8 +2189,8 @@ var A6Intake = class {
             }
             const info = await this.scriptInfo();
             const source = this.script.source.replace(/^\/\/\s*@(updateURL|downloadURL)\s+.*\r?\n/gm, "");
-            const rendered = source.replace("// ==/UserScript==", `// @updateURL ${info.updateUrl}
-// @downloadURL ${info.installUrl}
+            const rendered = source.replace("// ==/UserScript==", `// @updateURL ${info.networkUpdateUrl}
+// @downloadURL ${info.networkInstallUrl}
 // ==/UserScript==`);
             const body = path3.endsWith(".meta.js") ? rendered.slice(0, rendered.indexOf("// ==/UserScript==") + "// ==/UserScript==".length) + "\n" : rendered;
             res.setHeader("Content-Type", "application/javascript; charset=utf-8");

@@ -15,6 +15,9 @@ import { A6Error } from './errors.js';
 import { marketOf } from '../../shared/market.js';
 
 const PATH = '/mit-a6/select';
+// Auto-update must not depend on the ephemeral loopback port: every DSH restart picks a new port,
+// which would leave an installed userscript pointing at a dead @updateURL/@downloadURL forever.
+const SCRIPT_NETWORK_BASE = 'https://raw.githubusercontent.com/zhaowendao2005-lab/dsh-extension-lab/main/packages/model-intelligence-test/integration/a6api-userscript.user.js';
 const SITE_ORIGINS = new Set(['https://a6api.vip', 'https://www.a6api.vip']);
 const MAX_BODY = 256_000;
 const MAX_MODELS = 64;
@@ -146,6 +149,8 @@ export class A6Intake {
     return { version: this.script.version, protocolVersion: 1,
       installUrl: this.origin ? `${this.origin}/mit-a6/userscript/install.user.js` : '',
       updateUrl: this.origin ? `${this.origin}/mit-a6/userscript/update.meta.js` : '',
+      networkInstallUrl: SCRIPT_NETWORK_BASE,
+      networkUpdateUrl: SCRIPT_NETWORK_BASE,
       ...(this.recent ? { recent: this.recent } : {}) };
   }
 
@@ -181,7 +186,7 @@ export class A6Intake {
             if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) { res.statusCode = 403; res.end(); return; }
             const info = await this.scriptInfo();
             const source = this.script.source.replace(/^\/\/\s*@(updateURL|downloadURL)\s+.*\r?\n/gm, '');
-            const rendered = source.replace('// ==/UserScript==', `// @updateURL ${info.updateUrl}\n// @downloadURL ${info.installUrl}\n// ==/UserScript==`);
+            const rendered = source.replace('// ==/UserScript==', `// @updateURL ${info.networkUpdateUrl}\n// @downloadURL ${info.networkInstallUrl}\n// ==/UserScript==`);
             const body = path.endsWith('.meta.js') ? rendered.slice(0, rendered.indexOf('// ==/UserScript==') + '// ==/UserScript=='.length) + '\n' : rendered;
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
             res.end(req.method === 'HEAD' ? undefined : body);

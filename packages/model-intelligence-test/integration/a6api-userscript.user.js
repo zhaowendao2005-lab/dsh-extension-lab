@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a6api · 模型智能测试 v3
 // @namespace    dsh.model-intelligence-test
-// @version      3.3.0
+// @version      3.3.1
 // @description  在市场与令牌表格中提供勾选列，把所选渠道与测试令牌一次性发送给本机 DSH；不执行站点写操作，不读取或导出 API 密钥。
 // @match        https://a6api.vip/*
 // @match        https://www.a6api.vip/*
@@ -32,7 +32,7 @@
   // Only these response fields enter the cache. Never observe key/reveal/copy endpoints,
   // React internals, authorization headers, or complete token objects.
   const SESSION_KEY = 'a6api_session_user_id';
-  const SCRIPT_VERSION = '3.3.0';
+  const SCRIPT_VERSION = '3.3.1';
   const PREFIX = 'mit-a6-v3:';
   const CONFIG_KEY = 'mit-a6-config-v3';
   const SEND_TIMEOUT_MS = 12000;
