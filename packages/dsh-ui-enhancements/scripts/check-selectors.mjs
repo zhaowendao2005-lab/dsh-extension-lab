@@ -23,11 +23,20 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const ASAR =
-  process.env.DSH_APP_ASAR ??
-  "/Applications/DeepSeek Harness.app/Contents/Resources/app.asar";
+function resolveDefaultAsar() {
+  if (process.platform === "win32") {
+    const candidates = [
+      path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"), "Programs", "DeepSeek Harness", "resources", "app.asar"),
+      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "DeepSeek Harness", "resources", "app.asar"),
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+  }
+  return "/Applications/DeepSeek Harness.app/Contents/Resources/app.asar";
+}
+
+const ASAR = process.env.DSH_APP_ASAR ?? resolveDefaultAsar();
 const PROFILE =
-  process.env.DSH_PROFILE_DIR ?? path.join(os.homedir(), ".dsh/profiles/desktop");
+  process.env.DSH_PROFILE_DIR ?? path.join(process.env.DSH_HOME ?? path.join(os.homedir(), ".dsh"), "profiles", "desktop");
 
 const CHECKS = [
   {

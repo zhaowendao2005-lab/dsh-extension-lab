@@ -12,13 +12,23 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { chromium } = require(
-  "/Users/qihoo/.local/lib/node_modules/@playwright/cli/node_modules/playwright",
-);
+function loadPlaywright() {
+  const candidates = [
+    process.env.PLAYWRIGHT_PATH,
+    "playwright",
+    path.join(os.homedir(), ".local", "lib", "node_modules", "@playwright", "cli", "node_modules", "playwright"),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try { return require(candidate); } catch { /* try next */ }
+  }
+  throw new Error("Could not locate playwright module (install playwright or set PLAYWRIGHT_PATH)");
+}
+const { chromium } = loadPlaywright();
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");

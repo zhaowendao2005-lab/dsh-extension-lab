@@ -43,9 +43,18 @@ const PREVIEW_DIR = path.join(ROOT, "preview");
 const VENDOR_DIR = path.join(PREVIEW_DIR, "vendor");
 const INDEX_HTML = path.join(PREVIEW_DIR, "index.html");
 
-const ASAR =
-  process.env.DSH_ASAR ??
-  "/Applications/DeepSeek Harness.app/Contents/Resources/app.asar";
+function resolveDefaultAsar() {
+  if (process.platform === "win32") {
+    const candidates = [
+      path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"), "Programs", "DeepSeek Harness", "resources", "app.asar"),
+      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "DeepSeek Harness", "resources", "app.asar"),
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+  }
+  return "/Applications/DeepSeek Harness.app/Contents/Resources/app.asar";
+}
+
+const ASAR = process.env.DSH_ASAR ?? resolveDefaultAsar();
 const PROFILE_MODULES = path.join(
   process.env.DSH_PROFILE_DIR ??
     path.join(
