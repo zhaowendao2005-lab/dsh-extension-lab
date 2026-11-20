@@ -1,0 +1,17 @@
+- insert:
+    - id: dsh-delivery-orchestrator
+      name: dsh-delivery-orchestrator
+      config:
+        enabled: true
+        workspaceRoots: []
+        maxConcurrent: 3
+        maxUnits: 16
+        maxRequestChars: 32000
+        maxDurationMs: 900000
+        roleTimeoutMs: 180000
+        maxSteps: 8
+        maxOutputBytes: 1000000
+        maxRepairAttempts: 1
+        maxEvents: 3000
+        judgeMode: none
+        runnerApproved: false

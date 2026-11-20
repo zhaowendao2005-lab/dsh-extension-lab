@@ -1,0 +1,11 @@
+{
+  "name": "dsh-delivery-experiment-base",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run": "node driver.mjs",
+    "runner": "node runner.mjs",
+    "plan-matrix": "node matrix.mjs"
+  },
+  "engines": {"node": ">=22.19.0"}
+}

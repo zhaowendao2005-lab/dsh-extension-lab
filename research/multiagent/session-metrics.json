@@ -1,0 +1,8917 @@
+{
+ "corpus": {
+  "sessions": 303,
+  "roots": 143,
+  "children": 160,
+  "children_seeded(fork)": 33,
+  "inherited_events_dropped": 98397,
+  "child_kind": {
+   "subagent_fork": 36,
+   "teammate": 20,
+   "subagent": 104
+  },
+  "max_depth": 1,
+  "time_range": [
+   1793526455723,
+   1794924929013
+  ],
+  "tool_calls_total": 26775,
+  "agent_tool_calls": {
+   "list_agents": 103,
+   "team_task_get": 80,
+   "team_task_update": 96,
+   "send_message": 474,
+   "job_kill": 36,
+   "team_task_list": 74,
+   "job_output": 122,
+   "subagent": 109,
+   "spawn_teammate": 20,
+   "wait_agent": 59,
+   "interrupt_agent": 1,
+   "team_task_create": 45,
+   "subagent_fork": 26,
+   "get_goal": 39,
+   "create_goal": 26,
+   "update_goal": 34
+  },
+  "agent_tool_calls_via_ptc": {
+   "list_agents": 23,
+   "create_goal": 7,
+   "get_goal": 7,
+   "update_goal": 8,
+   "schedule_list": 1,
+   "team_task_get": 39,
+   "team_task_update": 38,
+   "job_output": 24,
+   "team_task_create": 17,
+   "subagent": 19,
+   "team_task_list": 28,
+   "job_kill": 6,
+   "send_message": 209,
+   "wait_agent": 10
+  },
+  "agent_tool_calls_by_role": {
+   "root": {
+    "list_agents": 97,
+    "job_kill": 27,
+    "job_output": 104,
+    "subagent": 109,
+    "send_message": 183,
+    "spawn_teammate": 20,
+    "wait_agent": 59,
+    "interrupt_agent": 1,
+    "team_task_create": 43,
+    "team_task_list": 42,
+    "subagent_fork": 26,
+    "get_goal": 39,
+    "create_goal": 26,
+    "update_goal": 34,
+    "team_task_get": 9,
+    "team_task_update": 12
+   },
+   "child": {
+    "team_task_get": 71,
+    "team_task_update": 84,
+    "send_message": 291,
+    "team_task_list": 32,
+    "job_output": 18,
+    "job_kill": 9,
+    "list_agents": 6,
+    "team_task_create": 2
+   }
+  }
+ },
+ "q1": {
+  "roots_with_children": 24,
+  "roots_total": 143,
+  "children_per_root": {
+   "n": 24,
+   "p50": 4.0,
+   "p90": 16.7,
+   "max": 22,
+   "mean": 6.7,
+   "sum": 160
+  },
+  "children_per_root_hist": {
+   "2": 4,
+   "9": 3,
+   "1": 3,
+   "4": 3,
+   "6": 1,
+   "10": 2,
+   "3": 4,
+   "16": 1,
+   "17": 2,
+   "22": 1
+  },
+  "depth_hist": {
+   "0": 143,
+   "1": 160
+  },
+  "top_roots": [
+   [
+    22,
+    "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "--Volumes-Lenovo-dsh-extension-lab--",
+    {
+     "subagent": 19,
+     "subagent_fork": 3
+    }
+   ],
+   [
+    17,
+    "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+    "--Volumes-Lenovo-dsh-extension-lab--",
+    {
+     "subagent": 17
+    }
+   ],
+   [
+    17,
+    "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+    "s-Lenovo-code-dev-~5FEB~901F~6392~7248--",
+    {
+     "subagent": 14,
+     "teammate": 3
+    }
+   ],
+   [
+    16,
+    "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "--Volumes-Lenovo-dsh-extension-lab--",
+    {
+     "subagent_fork": 11,
+     "subagent": 4,
+     "teammate": 1
+    }
+   ],
+   [
+    10,
+    "session-a2f4714b-97f1-4633-af90-303209586d3c",
+    "--Volumes-Lenovo-dsh-extension-lab--",
+    {
+     "subagent": 10
+    }
+   ],
+   [
+    10,
+    "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+    "--Volumes-Lenovo-code-dev-movie-ppt--",
+    {
+     "subagent": 10
+    }
+   ],
+   [
+    9,
+    "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+    "--Volumes-Lenovo-dsh-extension-lab--",
+    {
+     "subagent": 4,
+     "subagent_fork": 5
+    }
+   ],
+   [
+    9,
+    "session-3c876f97-1873-497a-8958-f30f3bf75730",
+    "--Volumes-Lenovo-dsh-extension-lab--",
+    {
+     "subagent": 6,
+     "teammate": 2,
+     "subagent_fork": 1
+    }
+   ],
+   [
+    9,
+    "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+    "nts-deepseek-harness-default-workspace--",
+    {
+     "subagent": 9
+    }
+   ],
+   [
+    6,
+    "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+    "--Volumes-Lenovo-code-dev-movie-ppt--",
+    {
+     "subagent_fork": 6
+    }
+   ]
+  ],
+  "roots_by_kind": {
+   "subagent_fork": 12,
+   "subagent": 15,
+   "teammate": 8
+  }
+ },
+ "q2": {
+  "active_s": {
+   "n": 160,
+   "p50": 492.9,
+   "p90": 1398.7,
+   "max": 5583.5,
+   "mean": 666.4,
+   "sum": 106620.5
+  },
+  "wall_s": {
+   "n": 160,
+   "p50": 515.0,
+   "p90": 2457.0,
+   "max": 71176.8,
+   "mean": 2485.5,
+   "sum": 397679.6
+  },
+  "turns": {
+   "n": 160,
+   "p50": 1.0,
+   "p90": 2.0,
+   "max": 12,
+   "mean": 1.4,
+   "sum": 221
+  },
+  "steps": {
+   "n": 160,
+   "p50": 26.0,
+   "p90": 88.1,
+   "max": 225,
+   "mean": 39.5,
+   "sum": 6327
+  },
+  "tool_calls": {
+   "n": 160,
+   "p50": 37.0,
+   "p90": 107.5,
+   "max": 388,
+   "mean": 50.9,
+   "sum": 8150
+  },
+  "out_tok": {
+   "n": 160,
+   "p50": 27035.5,
+   "p90": 81110.9,
+   "max": 174117,
+   "mean": 35173.2,
+   "sum": 5627720
+  },
+  "prompt_tok": {
+   "n": 160,
+   "p50": 2308060.5,
+   "p90": 7801218.8,
+   "max": 29664463,
+   "mean": 3480182.0,
+   "sum": 556829114
+  },
+  "peak_ctx": {
+   "n": 160,
+   "p50": 116819.5,
+   "p90": 216976.4,
+   "max": 688703,
+   "mean": 132134.0,
+   "sum": 21141434
+  },
+  "gen_share_of_active": 0.906,
+  "tool_share_of_active": 0.056,
+  "by_kind": {
+   "subagent_fork": {
+    "n": 36,
+    "active_s": {
+     "n": 36,
+     "p50": 342.8,
+     "p90": 1173.8,
+     "max": 1877.5,
+     "mean": 399.0,
+     "sum": 14362.8
+    },
+    "tool_calls": {
+     "n": 36,
+     "p50": 0.0,
+     "p90": 62.5,
+     "max": 139,
+     "mean": 20.3,
+     "sum": 730
+    },
+    "out_tok": {
+     "n": 36,
+     "p50": 649.0,
+     "p90": 41180.5,
+     "max": 114726,
+     "mean": 15315.9,
+     "sum": 551374
+    }
+   },
+   "teammate": {
+    "n": 20,
+    "active_s": {
+     "n": 20,
+     "p50": 521.2,
+     "p90": 1020.7,
+     "max": 1457.9,
+     "mean": 628.6,
+     "sum": 12572.2
+    },
+    "tool_calls": {
+     "n": 20,
+     "p50": 79.5,
+     "p90": 129.8,
+     "max": 199,
+     "mean": 88.7,
+     "sum": 1774
+    },
+    "out_tok": {
+     "n": 20,
+     "p50": 50765.5,
+     "p90": 91896.6,
+     "max": 133251,
+     "mean": 57358,
+     "sum": 1147160
+    }
+   },
+   "subagent": {
+    "n": 104,
+    "active_s": {
+     "n": 104,
+     "p50": 528.8,
+     "p90": 1514.5,
+     "max": 5583.5,
+     "mean": 766.2,
+     "sum": 79685.5
+    },
+    "tool_calls": {
+     "n": 104,
+     "p50": 37.0,
+     "p90": 113.3,
+     "max": 388,
+     "mean": 54.3,
+     "sum": 5646
+    },
+    "out_tok": {
+     "n": 104,
+     "p50": 26879.0,
+     "p90": 89021.7,
+     "max": 174117,
+     "mean": 37780.6,
+     "sum": 3929186
+    }
+   }
+  },
+  "child_tool_mix": [
+   [
+    "bash",
+    3243
+   ],
+   [
+    "read",
+    1526
+   ],
+   [
+    "edit",
+    795
+   ],
+   [
+    "run_code",
+    644
+   ],
+   [
+    "send_message",
+    291
+   ],
+   [
+    "write",
+    273
+   ],
+   [
+    "grep",
+    266
+   ],
+   [
+    "glob",
+    256
+   ],
+   [
+    "compress",
+    156
+   ],
+   [
+    "read_image",
+    144
+   ],
+   [
+    "team_task_update",
+    84
+   ],
+   [
+    "cordis_inspect_query",
+    76
+   ],
+   [
+    "team_task_get",
+    71
+   ],
+   [
+    "mcp__tavily-proxy__tavily-search",
+    61
+   ],
+   [
+    "web_fetch",
+    47
+   ]
+  ],
+  "step_latency_s": {
+   "n": 6277,
+   "p50": 9.3,
+   "p90": 31.5,
+   "max": 372.1,
+   "mean": 15.4,
+   "sum": 96563.9
+  },
+  "by_model": {
+   "claude-sonnet-5-5": {
+    "n": 1,
+    "active_s": {
+     "n": 1,
+     "p50": 13.1,
+     "p90": 13.1,
+     "max": 13.1,
+     "mean": 13.1,
+     "sum": 13.1
+    },
+    "step_p50_s": 13.0
+   },
+   "deepseek/deepseek-v4.1-flash": {
+    "n": 49,
+    "active_s": {
+     "n": 49,
+     "p50": 521.5,
+     "p90": 1169.4,
+     "max": 1843.8,
+     "mean": 664.2,
+     "sum": 32543.5
+    },
+    "step_p50_s": 5.7
+   },
+   "gpt-6.1-sol": {
+    "n": 47,
+    "active_s": {
+     "n": 47,
+     "p50": 470.2,
+     "p90": 2269.8,
+     "max": 5583.5,
+     "mean": 885.4,
+     "sum": 41612.3
+    },
+    "step_p50_s": 13.1
+   },
+   "deepseek-flash": {
+    "n": 3,
+    "active_s": {
+     "n": 3,
+     "p50": 78.5,
+     "p90": 124.7,
+     "max": 136.3,
+     "mean": 73.4,
+     "sum": 220.1
+    },
+    "step_p50_s": 4.6
+   },
+   "anthropic/claude-opus-5-5": {
+    "n": 16,
+    "active_s": {
+     "n": 16,
+     "p50": 506.9,
+     "p90": 1401.3,
+     "max": 1470.7,
+     "mean": 640.0,
+     "sum": 10240.7
+    },
+    "step_p50_s": 13.6
+   },
+   "anthropic-ccmax/claude-sonnet-5-5": {
+    "n": 10,
+    "active_s": {
+     "n": 10,
+     "p50": 316.1,
+     "p90": 560.9,
+     "max": 850.0,
+     "mean": 374.3,
+     "sum": 3742.9
+    },
+    "step_p50_s": 29.1
+   },
+   "anthropic-ccmax/claude-opus-5-5": {
+    "n": 3,
+    "active_s": {
+     "n": 3,
+     "p50": 477.6,
+     "p90": 583.3,
+     "max": 609.7,
+     "mean": 387.0,
+     "sum": 1161.1
+    },
+    "step_p50_s": 8.7
+   },
+   "anthropic-ccmax/claude-sonnet-5": {
+    "n": 3,
+    "active_s": {
+     "n": 3,
+     "p50": 515.5,
+     "p90": 754.9,
+     "max": 814.8,
+     "mean": 605.3,
+     "sum": 1816.0
+    },
+    "step_p50_s": 9.2
+   },
+   "gpt-6-astra": {
+    "n": 6,
+    "active_s": {
+     "n": 6,
+     "p50": 718.0,
+     "p90": 896.2,
+     "max": 953.8,
+     "mean": 543.5,
+     "sum": 3260.8
+    },
+    "step_p50_s": 11.8
+   },
+   "deepseek-v4.1-flash-1017": {
+    "n": 9,
+    "active_s": {
+     "n": 9,
+     "p50": 586.9,
+     "p90": 1600.5,
+     "max": 1869.7,
+     "mean": 729.4,
+     "sum": 6565.0
+    },
+    "step_p50_s": 8.0
+   },
+   "codex-ccmax/gpt-6-astra": {
+    "n": 4,
+    "active_s": {
+     "n": 4,
+     "p50": 476.0,
+     "p90": 628.7,
+     "max": 664.5,
+     "mean": 414.7,
+     "sum": 1658.7
+    },
+    "step_p50_s": 27.9
+   },
+   "openai/gpt-6-astra": {
+    "n": 5,
+    "active_s": {
+     "n": 5,
+     "p50": 465.1,
+     "p90": 1153.0,
+     "max": 1457.9,
+     "mean": 642.8,
+     "sum": 3213.8
+    },
+    "step_p50_s": 9.6
+   },
+   "gemini-4-argon": {
+    "n": 2,
+    "active_s": {
+     "n": 2,
+     "p50": 93.6,
+     "p90": 103.4,
+     "max": 105.9,
+     "mean": 93.6,
+     "sum": 187.2
+    },
+    "step_p50_s": 4.2
+   },
+   "codex-ccmax/gpt-6.1-terra": {
+    "n": 2,
+    "active_s": {
+     "n": 2,
+     "p50": 192.7,
+     "p90": 221.2,
+     "max": 228.3,
+     "mean": 192.7,
+     "sum": 385.3
+    },
+    "step_p50_s": 0.0
+   }
+  },
+  "token_share_children": {
+   "child_out": 5627720,
+   "root_out": 11521991,
+   "child_prompt": 556829114,
+   "root_prompt": 2128894057
+  }
+ },
+ "q3": {
+  "totals_s": {
+   "llm_generating": 38530,
+   "poll_sleep_joboutput": 3766,
+   "other_tool": 1738,
+   "wait_agent": 6719,
+   "idle_turn_ended": 3138,
+   "in_turn_other": 206
+  },
+  "total_run_s": 54097,
+  "shares": {
+   "llm_generating": 0.712,
+   "poll_sleep_joboutput": 0.07,
+   "other_tool": 0.032,
+   "wait_agent": 0.124,
+   "idle_turn_ended": 0.058,
+   "in_turn_other": 0.004
+  },
+  "blocked_share_per_root": {
+   "n": 24,
+   "p50": 0.2,
+   "p90": 0.7,
+   "max": 1.0,
+   "mean": 0.3,
+   "sum": 7.7
+  },
+  "rows": [
+   {
+    "root": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "children": 22,
+    "child_run_s": 13609,
+    "llm_generating": 11908,
+    "in_turn_other": 59,
+    "idle_turn_ended": 389,
+    "other_tool": 31,
+    "wait_agent": 1222,
+    "blocked_share": 0.118
+   },
+   {
+    "root": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+    "children": 17,
+    "child_run_s": 6227,
+    "llm_generating": 5796,
+    "other_tool": 320,
+    "idle_turn_ended": 111,
+    "blocked_share": 0.018
+   },
+   {
+    "root": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+    "children": 17,
+    "child_run_s": 4301,
+    "wait_agent": 1807,
+    "llm_generating": 1740,
+    "other_tool": 680,
+    "poll_sleep_joboutput": 74,
+    "blocked_share": 0.437
+   },
+   {
+    "root": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+    "children": 10,
+    "child_run_s": 4103,
+    "llm_generating": 2769,
+    "wait_agent": 1227,
+    "other_tool": 5,
+    "in_turn_other": 53,
+    "idle_turn_ended": 49,
+    "blocked_share": 0.311
+   },
+   {
+    "root": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+    "children": 9,
+    "child_run_s": 3805,
+    "poll_sleep_joboutput": 2502,
+    "llm_generating": 1019,
+    "other_tool": 20,
+    "wait_agent": 233,
+    "idle_turn_ended": 31,
+    "blocked_share": 0.727
+   },
+   {
+    "root": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "children": 16,
+    "child_run_s": 3586,
+    "idle_turn_ended": 912,
+    "llm_generating": 2591,
+    "other_tool": 8,
+    "in_turn_other": 75,
+    "blocked_share": 0.254
+   },
+   {
+    "root": "session-71004046-8c37-4156-aa8b-2009f518ac64",
+    "children": 4,
+    "child_run_s": 3149,
+    "llm_generating": 2444,
+    "other_tool": 39,
+    "wait_agent": 311,
+    "idle_turn_ended": 38,
+    "poll_sleep_joboutput": 317,
+    "blocked_share": 0.211
+   },
+   {
+    "root": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+    "children": 9,
+    "child_run_s": 2781,
+    "llm_generating": 2694,
+    "poll_sleep_joboutput": 14,
+    "other_tool": 10,
+    "idle_turn_ended": 63,
+    "blocked_share": 0.028
+   },
+   {
+    "root": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+    "children": 10,
+    "child_run_s": 2131,
+    "llm_generating": 1836,
+    "other_tool": 295,
+    "blocked_share": 0.0
+   },
+   {
+    "root": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+    "children": 6,
+    "child_run_s": 1862,
+    "llm_generating": 788,
+    "other_tool": 96,
+    "poll_sleep_joboutput": 80,
+    "in_turn_other": 9,
+    "idle_turn_ended": 889,
+    "blocked_share": 0.52
+   },
+   {
+    "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+    "children": 9,
+    "child_run_s": 1711,
+    "poll_sleep_joboutput": 727,
+    "llm_generating": 952,
+    "other_tool": 32,
+    "blocked_share": 0.425
+   },
+   {
+    "root": "session-b00561bd-8403-4236-88c7-7fa0a732c3fb",
+    "children": 3,
+    "child_run_s": 1545,
+    "llm_generating": 1411,
+    "other_tool": 59,
+    "poll_sleep_joboutput": 46,
+    "idle_turn_ended": 29,
+    "blocked_share": 0.049
+   },
+   {
+    "root": "session-33c9e77d-4269-488b-8e60-708338b13455",
+    "children": 3,
+    "child_run_s": 1155,
+    "llm_generating": 1028,
+    "idle_turn_ended": 88,
+    "in_turn_other": 8,
+    "other_tool": 31,
+    "blocked_share": 0.076
+   },
+   {
+    "root": "session-8e8ab84c-0347-44bb-8d0e-2659c5740fb0",
+    "children": 3,
+    "child_run_s": 1137,
+    "idle_turn_ended": 216,
+    "llm_generating": 275,
+    "other_tool": 21,
+    "wait_agent": 623,
+    "in_turn_other": 2,
+    "blocked_share": 0.738
+   },
+   {
+    "root": "session-2d3b5436-e7ad-4d08-a366-a83875e28e2c",
+    "children": 4,
+    "child_run_s": 996,
+    "llm_generating": 211,
+    "other_tool": 51,
+    "wait_agent": 734,
+    "blocked_share": 0.737
+   }
+  ],
+  "wait_agent": {
+   "calls": 59,
+   "dur_s": {
+    "n": 59,
+    "p50": 85.9,
+    "p90": 243.0,
+    "max": 600.0,
+    "mean": 112.9,
+    "sum": 6663.8
+   },
+   "timedOut": 27,
+   "aborted": 2,
+   "requested_timeout_ms": [
+    [
+     180000,
+     11
+    ],
+    [
+     300000,
+     10
+    ],
+    [
+     240000,
+     7
+    ],
+    [
+     120000,
+     5
+    ],
+    [
+     20000,
+     5
+    ],
+    [
+     30000,
+     5
+    ]
+   ]
+  },
+  "polling_calls_during_child_run": {
+   "bash_sleep": 64,
+   "list_agents": 60,
+   "wait_agent": 59,
+   "job_list": 8,
+   "job_output": 16
+  }
+ },
+ "q4": {
+  "parent_to_child": 250,
+  "children_receiving": 60,
+  "p2c_dt_s": {
+   "n": 250,
+   "p50": 622.9,
+   "p90": 8284.3,
+   "max": 71174.5,
+   "mean": 3627.7,
+   "sum": 906928.8
+  },
+  "p2c_while_child_running": 240,
+  "p2c_status_chasing": 20,
+  "p2c_status_samples": [
+   {
+    "child": "2963cb4a-d9c3-4275-b968-7494afb5807f",
+    "parent": "session-901238ed-7d65-45cd-aaf2-f70adb199f58",
+    "dt_s": 409.119,
+    "dt_turn_s": 409.119,
+    "text": "Team message from lead:状态同步：task-1/2/4 已交付，只等你 task-3。请立即：① 把已掌握的内容先落盘到 research/03-browser-use.md（哪怕只有 Browser Use CLI 2.0/3.0 的真实命令与官方原文，1.0 可标\"无公开资料\"）；② 然后用 ",
+    "child_running": true,
+    "len": 348
+   },
+   {
+    "child": "37c85430-5d14-4ca3-b35c-b5caf679f602",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "dt_s": 338.414,
+    "dt_turn_s": 338.414,
+    "text": "Agent lead sent a message: market原站字段：chargeType=per_token|per_request，unit=per_1m_tokens|per_request，currency=USD|CNY(未知可能其他必须不猜)。exchangeRate来自网页观察/api/status",
+    "child_running": true,
+    "len": 313
+   },
+   {
+    "child": "efb59243-4f2c-41d2-ac06-88c90a5b9ea6",
+    "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+    "dt_s": 48079.346,
+    "dt_turn_s": 0.0,
+    "text": "Team message from lead:你上一轮被异常中止，没有 closing message。请立即恢复 task-3：先 get/list 查看当前状态并检查已写文件，继续 frontend/views/** + styles.css + components/common.tsx 真实指纹 UI（scop",
+    "child_running": true,
+    "len": 267
+   },
+   {
+    "child": "69a04b8d-9284-4b91-aec3-04126e1b166f",
+    "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+    "dt_s": 825.138,
+    "dt_turn_s": -0.001,
+    "text": "Agent lead sent a message: 感谢，task-4 已创建 ready，请 list/get/claim 并只读审查 lead 的 adapter/context/catalog/host 集成，重点状态前缀与并发卸载、SDK接口使用。当前我在写测试修少量 engine生命周期，避免编辑同文件；问",
+    "child_running": false,
+    "len": 186
+   },
+   {
+    "child": "8a04bd1e-f0b5-4d97-b41d-02bfb0ee74a0",
+    "parent": "session-71004046-8c37-4156-aa8b-2009f518ac64",
+    "dt_s": 815.424,
+    "dt_turn_s": 815.424,
+    "text": "Team message from lead:Lead status check (~20 min running): design/btw/research/client-ui.md does not exist yet. Please write the file NOW with whatever is veri",
+    "child_running": true,
+    "len": 918
+   },
+   {
+    "child": "63aa0424-6113-4c07-affd-9af3052337fc",
+    "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+    "dt_s": 216.823,
+    "dt_turn_s": 216.823,
+    "text": "Agent lead sent a message: 请尽快收束报告（优先级、行号、复杂度、需要运行确认部分）。已独立读到files分页join与CM全文toString，以及shortcut现有regions page modals[]；不用再扩范围。watch若token:null且没有status setInte",
+    "child_running": true,
+    "len": 173
+   },
+   {
+    "child": "79d3817b-87d2-45ae-9fcb-38c8e6bdca4c",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "dt_s": 1134.034,
+    "dt_turn_s": 1134.034,
+    "text": "Agent lead sent a message: 真实页面只读检查发现token页可复现缺陷：table.ct-table，headers=['','令牌名称','状态','API Key',...]，tr.ct-row无tokenId，name cell .ct-col-name 内含 <span class=c",
+    "child_running": true,
+    "len": 484
+   },
+   {
+    "child": "38e5b65c-005d-4d48-bcb0-d00d766a0d4e",
+    "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+    "dt_s": 2522.493,
+    "dt_turn_s": 0.0,
+    "text": "Agent lead sent a message: 继续task-9文档同步；当前为恢复后收尾，读取最新任务和源文件后完成文档专属scope，不改源码或构建。完成task并汇报。",
+    "child_running": true,
+    "len": 90
+   }
+  ],
+  "child_to_parent": 291,
+  "children_sending": 58,
+  "children_total": 160,
+  "c2p_by_kind": {
+   "teammate": 45,
+   "subagent": 210,
+   "subagent_fork": 36
+  },
+  "c2p_to": {
+   "parent": 183,
+   "sibling/other": 108
+  },
+  "c2p_to_parent": 183,
+  "children_sending_to_parent": 36,
+  "c2p_parent_dt_turn_s": {
+   "n": 183,
+   "p50": 413.3,
+   "p90": 1258.3,
+   "max": 3995.0,
+   "mean": 581.1,
+   "sum": 106347.8
+  },
+  "c2p_parent_frac_of_turn": {
+   "n": 183,
+   "p50": 0.6,
+   "p90": 1.0,
+   "max": 1.0,
+   "mean": 0.6,
+   "sum": 101.8
+  },
+  "c2p_parent_midway": 141,
+  "children_with_midway_parent_report": 18,
+  "c2p_parent_by_kind": {
+   "teammate": 45,
+   "subagent": 110,
+   "subagent_fork": 28
+  },
+  "c2p_targets": [
+   [
+    "lead",
+    183
+   ],
+   [
+    null,
+    39
+   ],
+   [
+    "frontend-impl",
+    23
+   ],
+   [
+    "providers-impl",
+    13
+   ],
+   [
+    "integration-review",
+    13
+   ],
+   [
+    "frontend-research",
+    8
+   ],
+   [
+    "custom-ui",
+    6
+   ],
+   [
+    "ledger-impl",
+    4
+   ],
+   [
+    "runtime-research",
+    1
+   ],
+   [
+    "sandbox-implementation",
+    1
+   ]
+  ],
+  "p2c_dt_turn_s": {
+   "n": 250,
+   "p50": 250.1,
+   "p90": 847.0,
+   "max": 3715.0,
+   "mean": 390.6,
+   "sum": 97658.9
+  },
+  "c2p_dt_s": {
+   "n": 291,
+   "p50": 686.6,
+   "p90": 8169.3,
+   "max": 16377.2,
+   "mean": 2499.4,
+   "sum": 727318.1
+  },
+  "c2p_before_end_s": {
+   "n": 291,
+   "p50": 900.8,
+   "p90": 12499.9,
+   "max": 48081.5,
+   "mean": 4907.2,
+   "sum": 1428005.7
+  },
+  "c2p_midway(>60s before child end)": 214,
+  "children_with_midway_report": 24,
+  "c2p_len": {
+   "n": 291,
+   "p50": 352.0,
+   "p90": 2327.0,
+   "max": 7234,
+   "mean": 770.4,
+   "sum": 224184
+  },
+  "sibling": {
+   "child->child": 99
+  },
+  "root_send_message_calls": 183,
+  "near_duplicate_spawns": {
+   "pairs": 39,
+   "pairs_gap_gt_60s": 10,
+   "samples": [
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g1b",
+     "b": "g2b",
+     "jaccard": 0.96,
+     "gap_s": 739.2
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g1b",
+     "b": "g5b",
+     "jaccard": 0.96,
+     "gap_s": 749.3
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g1b",
+     "b": "g6b",
+     "jaccard": 0.96,
+     "gap_s": 768.5
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g3b",
+     "b": "g2b",
+     "jaccard": 0.96,
+     "gap_s": 729.0
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g3b",
+     "b": "g5b",
+     "jaccard": 0.96,
+     "gap_s": 739.1
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g3b",
+     "b": "g6b",
+     "jaccard": 0.96,
+     "gap_s": 758.2
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g4b",
+     "b": "g2b",
+     "jaccard": 0.96,
+     "gap_s": 686.5
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g4b",
+     "b": "g5b",
+     "jaccard": 0.96,
+     "gap_s": 696.7
+    },
+    {
+     "root": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+     "a": "g4b",
+     "b": "g6b",
+     "jaccard": 0.96,
+     "gap_s": 715.8
+    },
+    {
+     "root": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+     "a": "Audit session-bound sandbox",
+     "b": "Audit session-bound sandbox",
+     "jaccard": 1.0,
+     "gap_s": 87.1
+    }
+   ]
+  },
+  "agent_tool_errors": {
+   "n": 34,
+   "samples": [
+    [
+     "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+     "send_message",
+     "Error: active teammate \"6889702d-4874-4aa8-a3db-f81ee12438da\" not found"
+    ],
+    [
+     "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+     "send_message",
+     "Error: active teammate \"33918b52-607a-40bd-9579-70ee8cf7010b\" not found"
+    ],
+    [
+     "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+     "send_message",
+     "Error: active teammate \"90cb97b9-0528-451c-9bf1-cddc0959fc0d\" not found"
+    ],
+    [
+     "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+     "send_message",
+     "Error: active teammate \"07134f18-1878-4534-aea1-000d83b1d727\" not found"
+    ],
+    [
+     "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+     "send_message",
+     "Error: active teammate \"1f40e708-c8ea-4c16-8098-79653196358b\" not found"
+    ],
+    [
+     "session-b00561bd-8403-4236-88c7-7fa0a732c3fb",
+     "send_message",
+     "Error: active teammate \"d59c6234-d935-435a-b8ec-d06fad954148\" not found"
+    ],
+    [
+     "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+     "subagent",
+     "Error: child LLM route \"openai/gpt-6-astra\" is not allowed for this Session; without a recorded model-selection policy, explicit selection (including reasoning_"
+    ],
+    [
+     "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+     "subagent",
+     "Error: child LLM route \"openai/gpt-6-astra\" is not allowed for this Session; without a recorded model-selection policy, explicit selection (including reasoning_"
+    ],
+    [
+     "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+     "subagent",
+     "Error: child LLM route \"openai/gpt-6-astra\" is not allowed for this Session; without a recorded model-selection policy, explicit selection (including reasoning_"
+    ],
+    [
+     "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+     "subagent",
+     "Error: child LLM `provider` must be non-empty"
+    ],
+    [
+     "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+     "subagent",
+     "Error: child LLM `provider` must be non-empty"
+    ],
+    [
+     "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+     "subagent",
+     "Error: child LLM route \"codex-ccmax/gpt-6-astra\" is not allowed for this Session; without a recorded model-selection policy, explicit selection (including reaso"
+    ]
+   ],
+   "by_msg": [
+    [
+     "Error: child LLM `provider` must be non-empty",
+     15
+    ],
+    [
+     "Error: active teammate \"#\" not found",
+     9
+    ],
+    [
+     "Error: child LLM route \"openai/gpt-#-astra\" is not allowed for this Session; without a rec",
+     3
+    ],
+    [
+     "Error: invalid arguments: missing required property \"description\"; missing required proper",
+     2
+    ],
+    [
+     "Error: child LLM route \"codex-ccmax/gpt-#-astra\" is not allowed for this Session; without ",
+     1
+    ],
+    [
+     "Error: subagent \"session#\" is unavailable",
+     1
+    ],
+    [
+     "Error: child LLM route \"openai/gpt-#.#-sol\" is not allowed for this Session; without a rec",
+     1
+    ],
+    [
+     "Error: child LLM route \"codex-ccmax/gpt-#.#-terra\" is not allowed for this Session; withou",
+     1
+    ]
+   ]
+  }
+ },
+ "q5": {
+  "notices": 203,
+  "len_chars": {
+   "n": 203,
+   "p50": 453.0,
+   "p90": 3355.2,
+   "max": 36648,
+   "mean": 1613.3,
+   "sum": 327501
+  },
+  "len_gt_4000": 15,
+  "react_s": {
+   "n": 203,
+   "p50": 11.3,
+   "p90": 69.1,
+   "max": 1731.2,
+   "mean": 39.3,
+   "sum": 7979.1
+  },
+  "react_s_parent_idle": {
+   "n": 3,
+   "p50": 35.8,
+   "p90": 894.6,
+   "max": 1109.3,
+   "mean": 387.5,
+   "sum": 1162.5
+  },
+  "react_s_parent_busy": {
+   "n": 200,
+   "p50": 11.3,
+   "p90": 68.5,
+   "max": 1731.2,
+   "mean": 34.1,
+   "sum": 6816.6
+  },
+  "parent_in_turn_at_notice": 200,
+  "notice_lag_after_child_end_s": {
+   "n": 203,
+   "p50": 0.0,
+   "p90": 0.0,
+   "max": 0.1,
+   "mean": 0.0,
+   "sum": 3.7
+  },
+  "stopReason": {
+   "completed": 114,
+   "null": 71,
+   "error": 17,
+   "aborted": 1
+  },
+  "top_slow_react": [
+   {
+    "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+    "child": "154eda6a-560d-491c-9d64-e7f0a9d31b71",
+    "len": 3211,
+    "stop": "completed",
+    "react_s": 1731.189,
+    "parent_in_turn": true,
+    "target": "next-step",
+    "notice_lag_after_child_end_s": 0.013
+   },
+   {
+    "parent": "session-b00561bd-8403-4236-88c7-7fa0a732c3fb",
+    "child": "d59c6234-d935-435a-b8ec-d06fad954148",
+    "len": 115,
+    "stop": null,
+    "react_s": 1109.29,
+    "parent_in_turn": false,
+    "target": "next-turn",
+    "notice_lag_after_child_end_s": 0.014
+   },
+   {
+    "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+    "child": "54c26bb8-99d7-46da-93a2-ebf2afc9115a",
+    "len": 91,
+    "stop": "error",
+    "react_s": 318.12,
+    "parent_in_turn": true,
+    "target": "next-step",
+    "notice_lag_after_child_end_s": 0.024
+   },
+   {
+    "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+    "child": "2b3837ad-80af-44c3-85af-2552e7a5f640",
+    "len": 88,
+    "stop": "error",
+    "react_s": 318.098,
+    "parent_in_turn": true,
+    "target": "next-step",
+    "notice_lag_after_child_end_s": 0.008
+   },
+   {
+    "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+    "child": "81dc5ac9-66a5-4578-add6-d8ff5a063798",
+    "len": 90,
+    "stop": "error",
+    "react_s": 251.159,
+    "parent_in_turn": true,
+    "target": "next-step",
+    "notice_lag_after_child_end_s": 0.014
+   },
+   {
+    "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+    "child": "10697b3d-f669-4aed-ab01-c63649a4bd3a",
+    "len": 170,
+    "stop": "completed",
+    "react_s": 158.655,
+    "parent_in_turn": true,
+    "target": "next-step",
+    "notice_lag_after_child_end_s": 0.027
+   }
+  ]
+ },
+ "q6": {
+  "top": [
+   {
+    "id": "2834f5e0-c9e1-4d77-872c-e761b6b0e723",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "kind": "subagent",
+    "label": "梳理前端接入结构",
+    "model": "gpt-6.1-sol",
+    "wall_s": 5595.3,
+    "active_s": 5583.5,
+    "turns": 2,
+    "steps": 225,
+    "tool_calls": 388,
+    "out_tok": 174117,
+    "prompt_tok": 29664463,
+    "peak_ctx": 221930,
+    "gen_s": 5540.0,
+    "tool_s": 23.2,
+    "retries": 1,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "error:PI_AI_ERROR": 1,
+     "completed": 1
+    },
+    "top_tools": [
+     [
+      "read",
+      168
+     ],
+     [
+      "edit",
+      109
+     ],
+     [
+      "glob",
+      26
+     ],
+     [
+      "bash",
+      24
+     ],
+     [
+      "grep",
+      18
+     ]
+    ],
+    "max_gap": [
+     111.5,
+     "llm/retry-started",
+     "assistant/message"
+    ],
+    "most_repeated_call": [
+     3,
+     "read",
+     "{\"file_path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test/frontend/stores/workbench.stores.ts\",\"l"
+    ],
+    "slowest_tools": [
+     [
+      "bash",
+      3.8,
+      "{\"command\":\"pnpm exec tsc --project tsconfig.json --noEmit\",\"description\":\"检查前端 TypeScript 类型\",\"just"
+     ],
+     [
+      "glob",
+      1.6,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab\",\"pattern\":\"packages/model-intelligence-test/**\"}"
+     ],
+     [
+      "bash",
+      1.0,
+      "{\"command\":\"pnpm --ignore-scripts exec tsc --project tsconfig.json --noEmit\",\"description\":\"仅检查前端 Ty"
+     ]
+    ],
+    "gen_share": 0.99,
+    "tool_share": 0.0,
+    "task": "梳理前端接入结构 | 只读研究当前 /Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test 前端Mock自定义测试实现，用户已确认plan/custom-testing/prototype.html交互并授权实施（不发布安装）。读AGENTS、requirements、frontend store/datasource/service/typ",
+    "p2c_msgs": 18
+   },
+   {
+    "id": "dc93c68a-78da-4870-8fef-d7e83e1e4e69",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "kind": "subagent",
+    "label": "核实会话沙箱契约",
+    "model": "gpt-6.1-sol",
+    "wall_s": 2547.3,
+    "active_s": 2547.3,
+    "turns": 1,
+    "steps": 191,
+    "tool_calls": 196,
+    "out_tok": 67982,
+    "prompt_tok": 18262731,
+    "peak_ctx": 143078,
+    "gen_s": 2531.5,
+    "tool_s": 13.6,
+    "retries": 1,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 1
+    },
+    "top_tools": [
+     [
+      "read",
+      85
+     ],
+     [
+      "edit",
+      43
+     ],
+     [
+      "cordis_inspect_query",
+      17
+     ],
+     [
+      "send_message",
+      16
+     ],
+     [
+      "grep",
+      12
+     ]
+    ],
+    "max_gap": [
+     72.2,
+     "agent/inbox/spliced",
+     "assistant/message"
+    ],
+    "most_repeated_call": [
+     2,
+     "cordis_inspect_query",
+     "{\"input\":{\"service\":\"tools\"},\"method\":\"listService\",\"platform\":\"host\",\"provider\":\"Service\"}"
+    ],
+    "slowest_tools": [
+     [
+      "cordis_inspect_query",
+      10.0,
+      "{\"input\":{},\"method\":\"listService\",\"platform\":\"client\",\"provider\":\"Service\"}"
+     ],
+     [
+      "glob",
+      0.2,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test\",\"pattern\":\"backend/**/*"
+     ],
+     [
+      "glob",
+      0.2,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test\",\"pattern\":\"**/{AGENTS.m"
+     ]
+    ],
+    "gen_share": 0.99,
+    "tool_share": 0.01,
+    "task": "核实会话沙箱契约 | 只读研究：用户已批准实现 packages/model-intelligence-test 自定义测试（替换Mock，完整会话、每模型独立受限沙箱、普通模型+a6api、无网络/外部文件/凭据暴露）。先加载dsh-doc技能并读包AGENTS/plan/custom-testing/architecture.md等。请核实当前 DSH exact APIs 支持如何创建隔离agent/sessio",
+    "p2c_msgs": 10
+   },
+   {
+    "id": "ec44f52a-ec84-42f9-8deb-920bb454c3c4",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "kind": "subagent",
+    "label": "实现模型独立沙箱能力",
+    "model": "gpt-6.1-sol",
+    "wall_s": 2610.8,
+    "active_s": 2504.9,
+    "turns": 3,
+    "steps": 118,
+    "tool_calls": 116,
+    "out_tok": 57549,
+    "prompt_tok": 10066766,
+    "peak_ctx": 125346,
+    "gen_s": 2499.0,
+    "tool_s": 4.6,
+    "retries": 0,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 3
+    },
+    "top_tools": [
+     [
+      "read",
+      40
+     ],
+     [
+      "edit",
+      20
+     ],
+     [
+      "send_message",
+      13
+     ],
+     [
+      "grep",
+      13
+     ],
+     [
+      "glob",
+      9
+     ]
+    ],
+    "max_gap": [
+     111.8,
+     "step/start",
+     "assistant/message"
+    ],
+    "most_repeated_call": [
+     2,
+     "team_task_get",
+     "{\"task_id\":\"task-11\"}"
+    ],
+    "slowest_tools": [
+     [
+      "glob",
+      1.9,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab\",\"pattern\":\"packages/model-intelligence-test/**/AGENTS.md"
+     ],
+     [
+      "glob",
+      0.2,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test\",\"pattern\":\"backend/cust"
+     ],
+     [
+      "bash",
+      0.1,
+      "{\"command\":\"node --check packages/model-intelligence-test/backend/custom/sandbox.js\",\"description\":\""
+     ]
+    ],
+    "gen_share": 1.0,
+    "tool_share": 0.0,
+    "task": "实现模型独立沙箱能力 | 实现 packages/model-intelligence-test/backend/custom/sandbox.js（仅此文件，别碰其它），用户已授权将已确认HTML原型落为真实自定义Agent测试。请读包AGENTS（旧Mock/禁sandbox条款已被本次显式授权覆盖），需求plan/custom-testing/requirements.md。不得运行tests/浏览器/付费请求/安装",
+    "p2c_msgs": 8
+   },
+   {
+    "id": "410e312e-7d26-42f5-ba2b-f0b59d90b677",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "kind": "subagent",
+    "label": "实现提供商匹配与持久选择",
+    "model": "gpt-6.1-sol",
+    "wall_s": 13119.9,
+    "active_s": 2441.6,
+    "turns": 6,
+    "steps": 118,
+    "tool_calls": 180,
+    "out_tok": 61123,
+    "prompt_tok": 10829225,
+    "peak_ctx": 135751,
+    "gen_s": 2433.9,
+    "tool_s": 8.3,
+    "retries": 1,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 6
+    },
+    "top_tools": [
+     [
+      "read",
+      57
+     ],
+     [
+      "send_message",
+      36
+     ],
+     [
+      "bash",
+      19
+     ],
+     [
+      "edit",
+      15
+     ],
+     [
+      "glob",
+      11
+     ]
+    ],
+    "max_gap": [
+     6420.9,
+     "turn/end",
+     "session/end-seed"
+    ],
+    "most_repeated_call": [
+     3,
+     "team_task_get",
+     "{\"task_id\":\"task-5\"}"
+    ],
+    "slowest_tools": [
+     [
+      "glob",
+      1.6,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab\",\"pattern\":\"**/dsh-storage-domain/**\"}"
+     ],
+     [
+      "glob",
+      0.3,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab\",\"pattern\":\"**/a6api-usage-provider-cache.md\"}"
+     ],
+     [
+      "read",
+      0.3,
+      "{\"file_path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test/AGENTS.md\",\"limit\":"
+     ]
+    ],
+    "gen_share": 1.0,
+    "tool_share": 0.0,
+    "task": "实现提供商匹配与持久选择 | 接手共享task-5，先get/claim。用户授权实施。独占backend/a6/{service,providers}.js，新增test/a6-providers.test.mjs可用；不碰其他scope。读研究/AGENTS，dsh-doc及cordis Inspect确认Host凭据API。不要读真实配置secret来测试，离线mock即可。主代理实现site.tokens全分页、sub",
+    "p2c_msgs": 19
+   },
+   {
+    "id": "38e5b65c-005d-4d48-bcb0-d00d766a0d4e",
+    "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+    "kind": "subagent",
+    "label": "修正编辑器偏好即时生效",
+    "model": "gpt-6.1-sol",
+    "wall_s": 37085.5,
+    "active_s": 2416.6,
+    "turns": 7,
+    "steps": 111,
+    "tool_calls": 104,
+    "out_tok": 72600,
+    "prompt_tok": 13587629,
+    "peak_ctx": 261242,
+    "gen_s": 2104.7,
+    "tool_s": 8.2,
+    "retries": 4,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 6,
+     "interrupted": 1
+    },
+    "top_tools": [
+     [
+      "run_code",
+      104
+     ]
+    ],
+    "max_gap": [
+     33166.7,
+     "turn/end",
+     "session/end-seed"
+    ],
+    "most_repeated_call": [
+     1,
+     "run_code",
+     "{\"code\":\"console.log(await tools.working_directory({})); console.log(await tools.team_task_list({})); console.log(await "
+    ],
+    "slowest_tools": [
+     [
+      "run_code",
+      1.8,
+      "{\"code\":\"console.log(await tools.working_directory({})); console.log(await tools.team_task_list({}))"
+     ],
+     [
+      "run_code",
+      0.2,
+      "{\"code\":\"var uiPath='packages/dsh-workspace-ide/docs/ui-spec.md';var uiEdits=[['当前实现新增仓库 / 命令内部标签和整体"
+     ],
+     [
+      "run_code",
+      0.2,
+      "{\"code\":\"console.log(await tools.team_task_get({task_id:'task-7'})); console.log(await tools.team_ta"
+     ]
+    ],
+    "gen_share": 0.87,
+    "tool_share": 0.0,
+    "task": "修正编辑器偏好即时生效 | 用户授权执行计划。先读包AGENTS，按shared task list/get/claim/complete领取“修正编辑器配置生效链路”。仅任务scope可写，其他主代理负责。已诊断createEditor.js:68 editorTheme早于:69 prefsLane，theme.js:14重复fontSize；CM6按reverse style mount导致更早主题高优先，必须字号单来",
+    "p2c_msgs": 7
+   },
+   {
+    "id": "10697b3d-f669-4aed-ab01-c63649a4bd3a",
+    "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+    "kind": "subagent",
+    "label": "审查修正后的交互设计",
+    "model": "gpt-6.1-sol",
+    "wall_s": 37891.8,
+    "active_s": 2171.9,
+    "turns": 12,
+    "steps": 120,
+    "tool_calls": 107,
+    "out_tok": 60481,
+    "prompt_tok": 15396368,
+    "peak_ctx": 237296,
+    "gen_s": 2153.4,
+    "tool_s": 16.3,
+    "retries": 0,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 12
+    },
+    "top_tools": [
+     [
+      "run_code",
+      107
+     ]
+    ],
+    "max_gap": [
+     31078.2,
+     "turn/end",
+     "session/end-seed"
+    ],
+    "most_repeated_call": [
+     1,
+     "run_code",
+     "{\"code\":\"console.log(await tools.skill({name:'dsh-doc'})); console.log(await tools.skill({name:'ui-ux-pro-max'})); conso"
+    ],
+    "slowest_tools": [
+     [
+      "run_code",
+      10.0,
+      "{\"code\":\"console.log(await tools.send_message({agent:'lead',message:'当前本轮源码review独立部分完成；等待quick/visu"
+     ],
+     [
+      "run_code",
+      0.3,
+      "{\"code\":\"console.log(await tools.list_agents({}));console.log(await tools.glob({path:'packages/dsh-w"
+     ],
+     [
+      "run_code",
+      0.3,
+      "{\"code\":\"console.log(await tools.skill({name:'dsh-doc'})); console.log(await tools.skill({name:'ui-u"
+     ]
+    ],
+    "gen_share": 0.99,
+    "tool_share": 0.01,
+    "task": "审查修正后的交互设计 | 对packages/dsh-workspace-ide进行只读UI/UX专家审查，用户目标：SCM真实路径树与文件类型图标、hover暂存/取消暂存、目录动作仅精确路径；字体/tab/缩进配置即时且Diff一致；所有操作按钮有边框；官方快捷键入口清楚且状态可诊断。主代理已改CSS低specificity reset默认border及SettingsView/shortcutCatalog/reac",
+    "p2c_msgs": 18
+   },
+   {
+    "id": "37c85430-5d14-4ca3-b35c-b5caf679f602",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "kind": "subagent",
+    "label": "实现用量和提供商界面",
+    "model": "gpt-6.1-sol",
+    "wall_s": 8903.3,
+    "active_s": 2146.3,
+    "turns": 4,
+    "steps": 130,
+    "tool_calls": 241,
+    "out_tok": 57820,
+    "prompt_tok": 12160438,
+    "peak_ctx": 136391,
+    "gen_s": 2122.1,
+    "tool_s": 35.0,
+    "retries": 0,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 4
+    },
+    "top_tools": [
+     [
+      "edit",
+      97
+     ],
+     [
+      "read",
+      60
+     ],
+     [
+      "send_message",
+      23
+     ],
+     [
+      "bash",
+      15
+     ],
+     [
+      "write",
+      12
+     ]
+    ],
+    "max_gap": [
+     4153.4,
+     "turn/end",
+     "session/end-seed"
+    ],
+    "most_repeated_call": [
+     3,
+     "team_task_get",
+     "{\"task_id\":\"task-6\"}"
+    ],
+    "slowest_tools": [
+     [
+      "grep",
+      10.0,
+      "{\"include\":\"*.md\",\"path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test\",\"patte"
+     ],
+     [
+      "cordis_inspect_query",
+      10.0,
+      "{\"platform\":\"client\",\"provider\":\"Theme\",\"method\":\"listTokens\",\"input\":{}}"
+     ],
+     [
+      "glob",
+      1.9,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab\",\"pattern\":\"node_modules/typescript/bin/tsc\"}"
+     ]
+    ],
+    "gen_share": 0.99,
+    "tool_share": 0.02,
+    "task": "实现用量和提供商界面 | 接手共享task-6，先get/claim，独占frontend目录。用户授权实施渠道报价CNY/cache率、账单概览、提供商匹配搜索与结果行dropdown固定/路由。读task完整契约及AGENTS/研究文档。main实现backend接线/shared；providers-impl后端匹配、ledger-impl账单可send_message协商API。不要构建覆盖lib，main集成构建",
+    "p2c_msgs": 9
+   },
+   {
+    "id": "69a04b8d-9284-4b91-aec3-04126e1b166f",
+    "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+    "kind": "subagent_fork",
+    "label": "实现 MCP 挂起工具桥",
+    "model": "gpt-6.1-sol",
+    "wall_s": 2398.2,
+    "active_s": 1877.5,
+    "turns": 3,
+    "steps": 65,
+    "tool_calls": 139,
+    "out_tok": 46476,
+    "prompt_tok": 6054013,
+    "peak_ctx": 146656,
+    "gen_s": 1868.8,
+    "tool_s": 13.1,
+    "retries": 0,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 3
+    },
+    "top_tools": [
+     [
+      "read",
+      51
+     ],
+     [
+      "send_message",
+      18
+     ],
+     [
+      "glob",
+      16
+     ],
+     [
+      "grep",
+      11
+     ],
+     [
+      "bash",
+      10
+     ]
+    ],
+    "max_gap": [
+     480.6,
+     "turn/end",
+     "session/end-seed"
+    ],
+    "most_repeated_call": [
+     2,
+     "team_task_get",
+     "{\"task_id\":\"task-3\"}"
+    ],
+    "slowest_tools": [
+     [
+      "glob",
+      1.7,
+      "{\"path\":\"/Volumes/Lenovo/dsh-extension-lab\",\"pattern\":\"**/*agent-loop*.md\"}"
+     ],
+     [
+      "read",
+      1.7,
+      "{\"file_path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/dsh-antigravity-acp/src/adapter/engine.js\","
+     ],
+     [
+      "web_fetch",
+      0.9,
+      "{\"url\":\"https://raw.githubusercontent.com/modelcontextprotocol/typescript-sdk/v1.26.0/src/server/str"
+     ]
+    ],
+    "gen_share": 1.0,
+    "tool_share": 0.01,
+    "task": "实现 MCP 挂起工具桥 | Own task-3: get/claim latest. Only src/bridge/, test/bridge.test.mjs,test/schema.test.mjs. Read task docs. Lead installs @modelcontextprotocol/sdk and ajv soon; send desired exact versions/API early. ",
+    "p2c_msgs": 6
+   },
+   {
+    "id": "5ec3bc3f-e3c2-4d71-9623-a178d286487a",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "kind": "subagent",
+    "label": "Port DSH chat rows",
+    "model": "deepseek-v4.1-flash-1017",
+    "wall_s": 1869.8,
+    "active_s": 1869.7,
+    "turns": 1,
+    "steps": 153,
+    "tool_calls": 170,
+    "out_tok": 113636,
+    "prompt_tok": 13666981,
+    "peak_ctx": 125817,
+    "gen_s": 1842.3,
+    "tool_s": 25.5,
+    "retries": 0,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "(unclosed)": 1
+    },
+    "top_tools": [
+     [
+      "bash",
+      154
+     ],
+     [
+      "write",
+      10
+     ],
+     [
+      "compress",
+      4
+     ],
+     [
+      "edit",
+      2
+     ]
+    ],
+    "max_gap": [
+     90.6,
+     "step/start",
+     "assistant/message"
+    ],
+    "most_repeated_call": [
+     1,
+     "bash",
+     "{\"command\":\"ls -la /Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test/frontend/chat/ /Volumes/Lenovo/dsh"
+    ],
+    "slowest_tools": [
+     [
+      "bash",
+      6.7,
+      "{\"command\":\"cd /Volumes/Lenovo/参考项目/deepseek-harness-master && grep -rn \\\"'number.thousand'\\\\|\\\\\\\"nu"
+     ],
+     [
+      "bash",
+      5.4,
+      "{\"command\":\"cd /Volumes/Lenovo/参考项目/deepseek-harness-master && grep -rn \\\"思考中\\\" --include=*.ts --inc"
+     ],
+     [
+      "bash",
+      2.8,
+      "{\"command\":\"cd /Volumes/Lenovo/参考项目/deepseek-harness-master && grep -rn \\\"message.think\\\" --include="
+     ]
+    ],
+    "gen_share": 0.99,
+    "tool_share": 0.01,
+    "task": "Port DSH chat rows | 你要把 DeepSeek Harness（DSH）的\"聊天行\"渲染层照抄进一个 DSH 插件，用于插件内嵌的只读会话镜像。纯搬运：禁止设计创新，禁止改视觉。  ## 参考源码（只读） - 聊天行：`/Volumes/Lenovo/参考项目/deepseek-harness-master/packages/client/ui-chat/src/client/chat/`   重点文件：`Messag",
+    "p2c_msgs": 1
+   },
+   {
+    "id": "e60d2a69-e7b8-401d-99c9-5d8d37afedbc",
+    "parent": "session-71004046-8c37-4156-aa8b-2009f518ac64",
+    "kind": "subagent",
+    "label": "Implement BTW client UI",
+    "model": "deepseek/deepseek-v4.1-flash",
+    "wall_s": 1843.8,
+    "active_s": 1843.8,
+    "turns": 1,
+    "steps": 160,
+    "tool_calls": 218,
+    "out_tok": 153276,
+    "prompt_tok": 14199942,
+    "peak_ctx": 129715,
+    "gen_s": 1732.4,
+    "tool_s": 109.9,
+    "retries": 0,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 1
+    },
+    "top_tools": [
+     [
+      "bash",
+      146
+     ],
+     [
+      "edit",
+      37
+     ],
+     [
+      "read",
+      19
+     ],
+     [
+      "write",
+      9
+     ],
+     [
+      "compress",
+      4
+     ]
+    ],
+    "max_gap": [
+     136.2,
+     "step/start",
+     "assistant/message"
+    ],
+    "most_repeated_call": [
+     2,
+     "read",
+     "{\"file_path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/dsh-btw-side/src/shared/contract.ts\"}"
+    ],
+    "slowest_tools": [
+     [
+      "bash",
+      60.0,
+      "{\"command\":\"find / -name 'dsh-client-ui-conversation' -maxdepth 8 -type d 2>/dev/null | head -10\",\"d"
+     ],
+     [
+      "bash",
+      10.1,
+      "{\"command\":\"cd /Volumes/Lenovo/dsh-extension-lab && grep -rl \\\"conversation.input.dock\\\" --include='"
+     ],
+     [
+      "bash",
+      8.4,
+      "{\"command\":\"cd /Volumes/Lenovo/dsh-extension-lab/extracted_files/dsh/node_modules/@deepseek-ai && gr"
+     ]
+    ],
+    "gen_share": 0.94,
+    "tool_share": 0.06,
+    "task": "Implement BTW client UI | You are implementing the browser/client half of a DeepSeek Harness (DSH) plugin called BTW (旁路提问 / side-ask). Work directly in the existing repo; other work is happening in parallel in `src/host` and ",
+    "p2c_msgs": 0
+   },
+   {
+    "id": "733079b2-8aec-4b99-8b0c-522cee11cd8a",
+    "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+    "kind": "subagent",
+    "label": "写图谱与终端文档",
+    "model": "deepseek/deepseek-v4.1-flash",
+    "wall_s": 1792.3,
+    "active_s": 1792.3,
+    "turns": 1,
+    "steps": 53,
+    "tool_calls": 59,
+    "out_tok": 136747,
+    "prompt_tok": 5886931,
+    "peak_ctx": 157093,
+    "gen_s": 1765.9,
+    "tool_s": 25.7,
+    "retries": 1,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 1
+    },
+    "top_tools": [
+     [
+      "bash",
+      34
+     ],
+     [
+      "read",
+      9
+     ],
+     [
+      "compress",
+      6
+     ],
+     [
+      "edit",
+      6
+     ],
+     [
+      "write",
+      4
+     ]
+    ],
+    "max_gap": [
+     186.0,
+     "llm/retry-started",
+     "assistant/message"
+    ],
+    "most_repeated_call": [
+     1,
+     "read",
+     "{\"file_path\":\"/Volumes/Lenovo/dsh-extension-lab/packages/dsh-workspace-ide/ARCHITECTURE.md\"}"
+    ],
+    "slowest_tools": [
+     [
+      "bash",
+      17.1,
+      "{\"command\":\"cd /Volumes/Lenovo/dsh-extension-lab && grep -rn \\\"dsh-terminal-font-size\\\\|dsh-code-fon"
+     ],
+     [
+      "bash",
+      7.1,
+      "{\"command\":\"cd /Volumes/Lenovo/dsh-extension-lab && grep -rhno \\\"\\\\-\\\\-dsw-alias-[a-z0-9-]*\\\" --incl"
+     ],
+     [
+      "bash",
+      0.1,
+      "{\"command\":\"cd /Volumes/Lenovo/dsh-extension-lab/packages/dsh-workspace-ide/docs && wc -l graph.md t"
+     ]
+    ],
+    "gen_share": 0.99,
+    "tool_share": 0.01,
+    "task": "写图谱与终端文档 | 你在为一个 DSH（DeepSeek Harness）插件写工程文档。工作目录 `/Volumes/Lenovo/dsh-extension-lab`（pnpm monorepo，中文文档仓库）。  ## 背景（已定，不要重新选型） 插件 = 「小号 VS Code」全局面板：文件树 + CodeMirror 6 编辑器/diff + SCM 面板 + 提交图谱 + 真 PTY 终端。包目录 `p",
+    "p2c_msgs": 0
+   },
+   {
+    "id": "88da0e78-dda8-4220-89d3-8823d4da2294",
+    "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "kind": "subagent",
+    "label": "Port DSH markdown renderer",
+    "model": "deepseek-v4.1-flash-1017",
+    "wall_s": 1533.2,
+    "active_s": 1533.2,
+    "turns": 1,
+    "steps": 125,
+    "tool_calls": 132,
+    "out_tok": 110813,
+    "prompt_tok": 9047493,
+    "peak_ctx": 183926,
+    "gen_s": 1507.6,
+    "tool_s": 24.1,
+    "retries": 0,
+    "compactions": 0,
+    "prunes": 0,
+    "repeat_reminders": 0,
+    "end_reasons": {
+     "completed": 1
+    },
+    "top_tools": [
+     [
+      "bash",
+      128
+     ],
+     [
+      "compress",
+      3
+     ],
+     [
+      "edit",
+      1
+     ]
+    ],
+    "max_gap": [
+     92.8,
+     "step/start",
+     "assistant/message"
+    ],
+    "most_repeated_call": [
+     1,
+     "bash",
+     "{\"command\":\"ls -la /Volumes/Lenovo/参考项目/deepseek-harness-master/packages/client/ui-primitives/src/markdown/ 2>&1 | head "
+    ],
+    "slowest_tools": [
+     [
+      "bash",
+      5.7,
+      "{\"command\":\"cd /Volumes/Lenovo/参考项目/deepseek-harness-master/packages && grep -rn \\\"copyLabel:\\\" --in"
+     ],
+     [
+      "bash",
+      2.3,
+      "{\"command\":\"cd /Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test && ./node_modules/"
+     ],
+     [
+      "bash",
+      1.5,
+      "{\"command\":\"cd /Volumes/Lenovo/dsh-extension-lab/packages/model-intelligence-test && node -e \\\"\\ncon"
+     ]
+    ],
+    "gen_share": 0.98,
+    "tool_share": 0.02,
+    "task": "Port DSH markdown renderer | 你要把 DeepSeek Harness（DSH）的 Markdown 渲染层\"照抄\"进一个 DSH 插件，供插件内嵌的只读会话镜像使用。这是纯搬运任务：禁止设计创新，禁止改视觉。  ## 参考源码（只读） `/Volumes/Lenovo/参考项目/deepseek-harness-master/packages/client/ui-primitives/src/` 关键：`markdown/`",
+    "p2c_msgs": 1
+   }
+  ],
+  "child_turn_end_reasons": {
+   "completed": 168,
+   "(unclosed)": 5,
+   "aborted:parent": 2,
+   "error:ACCOUNT_QUOTA": 2,
+   "error:MALFORMED_RESPONSE": 6,
+   "aborted:user": 4,
+   "aborted:disposed": 2,
+   "error:PI_AI_ERROR": 21,
+   "error:SERVER": 5,
+   "interrupted": 1,
+   "error:CONTEXT_WINDOW_EXCEEDED": 5
+  },
+  "root_turn_end_reasons": {
+   "aborted:user": 193,
+   "error:CUSTOM_BOUNDARY": 18,
+   "completed": 534,
+   "error:NO_ADAPTER": 2,
+   "error:MALFORMED_RESPONSE": 9,
+   "error:SERVER": 20,
+   "aborted:disposed": 6,
+   "(unclosed)": 3,
+   "error:INVALID_REQUEST": 13,
+   "error:ACCOUNT_QUOTA": 3,
+   "error:A6_HTTP_ERROR": 2,
+   "error:PI_AI_ERROR": 18,
+   "error:UNKNOWN": 1,
+   "error:ACP_UPSTREAM_QUOTA": 2,
+   "error:RATE_LIMIT": 11,
+   "error:ACP_PURITY_UNVERIFIED": 1,
+   "error:QUOTA": 2,
+   "interrupted": 1,
+   "error:MODEL_SWITCH_COMPACTION_FAILED": 3,
+   "error:ACP_IMAGE_UNVERIFIED": 1,
+   "error:INVALID_ATTACHMENT_REF": 1
+  },
+  "interrupt_agent": [
+   [
+    "session-cd3e5c4a-9c13-462a-80fe-2f3ed397d761",
+    "{\"target\":\"styling-page-research\"}",
+    "{\"previousStatus\":\"running\"}"
+   ]
+  ],
+  "children_with_compaction": 0,
+  "children_with_prune": 0,
+  "children_with_retries": 26,
+  "child_retries_total": 63,
+  "children_with_repeat_reminder": 4,
+  "children_peak_ctx_gt_200k": 18,
+  "children_peak_ctx_gt_100k": 99,
+  "job_kill_in_roots": 27,
+  "children_never_started_turn": 0
+ },
+ "q7": {
+  "user_msgs_after_first_spawn": 439,
+  "during_child_run": 28,
+  "during_child_run_next_step(steering mid-turn)": 7,
+  "roots_with_steer_during_run": 10,
+  "dt_since_first_spawn_s(active)": {
+   "n": 28,
+   "p50": 40238.1,
+   "p90": 89040.7,
+   "max": 104394.9,
+   "mean": 36731.8,
+   "sum": 1028489.8
+  },
+  "samples": [
+   {
+    "root": "session-cd3e5c4a-9c13-462a-80fe-2f3ed397d761",
+    "active": true,
+    "dt_since_first_spawn_s": 453.386,
+    "target": "next-turn",
+    "text": "你分析了8分钟，可以了。收回你的子智能体之后，立刻给我汇报"
+   },
+   {
+    "root": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+    "active": true,
+    "dt_since_first_spawn_s": 1442.942,
+    "target": "next-turn",
+    "text": "你也不要先闲着 吧带 v4 的 index 做出来 然后把dev 开好 端口给我 我要看预览情况"
+   },
+   {
+    "root": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+    "active": true,
+    "dt_since_first_spawn_s": 1935.463,
+    "target": "next-turn",
+    "text": "但你不要负责回归 我自己看！！！！】"
+   },
+   {
+    "root": "session-f6a1adbc-c1a6-4b7d-9e64-b9c824f03733",
+    "active": true,
+    "dt_since_first_spawn_s": 136.127,
+    "target": "next-turn",
+    "text": "主动去补充和索要子智能体的工作状态 我们调查即可 没必要过于深入 我们在调研技术栈"
+   },
+   {
+    "root": "session-f6a1adbc-c1a6-4b7d-9e64-b9c824f03733",
+    "active": true,
+    "dt_since_first_spawn_s": 138.228,
+    "target": "next-step",
+    "text": "主动去补充和索要子智能体的工作状态 我们调查即可 没必要过于深入 我们在调研技术栈"
+   },
+   {
+    "root": "session-f6a1adbc-c1a6-4b7d-9e64-b9c824f03733",
+    "active": true,
+    "dt_since_first_spawn_s": 308.017,
+    "target": "next-turn",
+    "text": "差不多了 去收回 subagent 然后给我汇报一轮"
+   },
+   {
+    "root": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "active": true,
+    "dt_since_first_spawn_s": 12559.473,
+    "target": "next-turn",
+    "text": "continue"
+   },
+   {
+    "root": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "active": true,
+    "dt_since_first_spawn_s": 28060.612,
+    "target": "next-turn",
+    "text": "现在立刻汇报当前进度 以及不要擅自测试"
+   },
+   {
+    "root": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "active": true,
+    "dt_since_first_spawn_s": 28893.355,
+    "target": "next-turn",
+    "text": "给我汇报一下当前进度"
+   },
+   {
+    "root": "session-33c9e77d-4269-488b-8e60-708338b13455",
+    "active": true,
+    "dt_since_first_spawn_s": 193.095,
+    "target": "next-turn",
+    "text": "就是单纯的 \n这个调试词就是指纹测试的提示词 dsh 的主页面是可以的 但是插件内进行测试这个模型的时候就发现它长时间收不到回复 且基本上同一时间\n感觉会不会是解析端？我们是不是有什么事自己实现的，而没有使用 dsh 自己的模块呢"
+   },
+   {
+    "root": "session-33c9e77d-4269-488b-8e60-708338b13455",
+    "active": true,
+    "dt_since_first_spawn_s": 195.112,
+    "target": "next-step",
+    "text": "就是单纯的 \n这个调试词就是指纹测试的提示词 dsh 的主页面是可以的 但是插件内进行测试这个模型的时候就发现它长时间收不到回复 且基本上同一时间\n感觉会不会是解析端？我们是不是有什么事自己实现的，而没有使用 dsh 自己的模块呢"
+   },
+   {
+    "root": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+    "active": true,
+    "dt_since_first_spawn_s": 726.286,
+    "target": "next-turn",
+    "text": "拿出一份完善的计划给我 以及包含相关的参考信息（特别是 antigravity  cli 和 Google cloud 相关的 以及特别的就是 dsh 插件开发相关的 skill 路径等等 ）\n==="
+   }
+  ],
+  "abort_by_user_in_roots_with_children": 127
+ },
+ "q8": {
+  "goals": 29,
+  "final_phase": {
+   "complete": 22,
+   "active": 7
+  },
+  "ops": {
+   "create": 29,
+   "complete": 22,
+   "edit": 6,
+   "resume": 8
+  },
+  "rounds": {
+   "n": 29,
+   "p50": 0.0,
+   "p90": 0.6,
+   "max": 6,
+   "mean": 0.4,
+   "sum": 13
+  },
+  "max_rounds": {
+   "256": 8,
+   "3": 1,
+   "6": 2,
+   "32": 2,
+   "12": 3,
+   "5": 2,
+   "30": 2,
+   "20": 3,
+   "60": 1,
+   "64": 1,
+   "16": 1,
+   "24": 1,
+   "8": 2
+  },
+  "goal_round_messages": 13,
+  "goals_in_sessions_with_children": 24,
+  "goals_in_child_sessions": 0,
+  "list": [
+   {
+    "session": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "ops": [
+     "create",
+     "edit",
+     "resume",
+     "complete"
+    ],
+    "max": 6,
+    "rounds": 6,
+    "phase": "complete",
+    "t0": 1794373425877,
+    "t1": 1794376488194,
+    "objective": "完成“插件调试沙箱插件”的决策完整实施计划：基于官方 cordis-plugin-development 套件，明确新包、Host/Client API、右侧 ",
+    "is_child": false,
+    "spawns_in_session": 16,
+    "dur_min": 51.0
+   },
+   {
+    "session": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 256,
+    "rounds": 4,
+    "phase": "complete",
+    "t0": 1794733563412,
+    "t1": 1794735147809,
+    "objective": "重构 packages/model-intelligence-test 插件：删除中转站快照/爬取、渠道表格与详情、收藏、分区、渠道/模型标签、插件自带的 pi",
+    "is_child": false,
+    "spawns_in_session": 22,
+    "dur_min": 26.4
+   },
+   {
+    "session": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 256,
+    "rounds": 3,
+    "phase": "complete",
+    "t0": 1794377508987,
+    "t1": 1794378610636,
+    "objective": "补全并验收 dsh-plugin-dev-sandbox：实现完整的 Host/Client 打包格式，补全 sidebar/rightTabs/termina",
+    "is_child": false,
+    "spawns_in_session": 16,
+    "dur_min": 18.4
+   },
+   {
+    "session": "session-ecb80038-5f99-4a93-a783-795667c8f477",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 256,
+    "rounds": 0,
+    "phase": "complete",
+    "t0": 1794312331904,
+    "t1": 1794312834002,
+    "objective": "Clone dsh-extension-lab to /Volumes/Lenovo as the canonical development director",
+    "is_child": false,
+    "spawns_in_session": 0,
+    "dur_min": 8.4
+   },
+   {
+    "session": "session-ecb80038-5f99-4a93-a783-795667c8f477",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 256,
+    "rounds": 0,
+    "phase": "complete",
+    "t0": 1794313086625,
+    "t1": 1794313400610,
+    "objective": "Transfer the current dsh-ui-diy plugin into /Volumes/Lenovo/dsh-extension-lab as",
+    "is_child": false,
+    "spawns_in_session": 0,
+    "dur_min": 5.2
+   },
+   {
+    "session": "session-ecb80038-5f99-4a93-a783-795667c8f477",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 256,
+    "rounds": 0,
+    "phase": "complete",
+    "t0": 1794313695225,
+    "t1": 1794313770057,
+    "objective": "Migrate the active DSH profile from the old plugin link to /Volumes/Lenovo/dsh-e",
+    "is_child": false,
+    "spawns_in_session": 0,
+    "dur_min": 1.2
+   },
+   {
+    "session": "session-ecb80038-5f99-4a93-a783-795667c8f477",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 256,
+    "rounds": 0,
+    "phase": "complete",
+    "t0": 1794313839844,
+    "t1": 1794314167296,
+    "objective": "Add root-level commands and documentation for developing, building, testing, che",
+    "is_child": false,
+    "spawns_in_session": 0,
+    "dur_min": 5.5
+   },
+   {
+    "session": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+    "ops": [
+     "create"
+    ],
+    "max": 3,
+    "rounds": 0,
+    "phase": "active",
+    "t0": 1794472965342,
+    "t1": 1794472965342,
+    "objective": "在 workspace1 内完成《双十一为什么大家不买账了？》旁白：用用户提供的 MiniMax API 报告设置生成音频、对齐实际句级时间戳与现有画面/字幕、",
+    "is_child": false,
+    "spawns_in_session": 10,
+    "dur_min": 0.0
+   },
+   {
+    "session": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 32,
+    "rounds": 0,
+    "phase": "complete",
+    "t0": 1794379379093,
+    "t1": 1794380028639,
+    "objective": "改进 marketplace 安装体系：增加显式安装 spec、移除硬编码开发路径、验证远程 Git ref，并完成测试与发布检查。",
+    "is_child": false,
+    "spawns_in_session": 16,
+    "dur_min": 10.8
+   },
+   {
+    "session": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+    "ops": [
+     "create",
+     "resume"
+    ],
+    "max": 12,
+    "rounds": 0,
+    "phase": "active",
+    "t0": 1794387654075,
+    "t1": 1794390286058,
+    "objective": "修复并验收 dsh-plugin-dev-sandbox：正式 Host/Client 通信、工作区 .dsh 下持久化的会话与插件绑定、仅当前绑定会话右侧入口",
+    "is_child": false,
+    "spawns_in_session": 16,
+    "dur_min": 43.9
+   },
+   {
+    "session": "session-33c9e77d-4269-488b-8e60-708338b13455",
+    "ops": [
+     "create",
+     "complete"
+    ],
+    "max": 5,
+    "rounds": 0,
+    "phase": "complete",
+    "t0": 1794481491128,
+    "t1": 1794483160970,
+    "objective": "将 model-intelligence-test 指纹采样的请求准备、响应记录和组装替换为 DSH 官方公开模块，接入全局请求池，构建更新产物；只做编译不跑模",
+    "is_child": false,
+    "spawns_in_session": 3,
+    "dur_min": 27.8
+   },
+   {
+    "session": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+    "ops": [
+     "create",
+     "edit",
+     "resume",
+     "complete",
+     "edit"
+    ],
+    "max": 30,
+    "rounds": 0,
+    "phase": "complete",
+    "t0": 1794729598398,
+    "t1": 1794758624805,
+    "objective": "定位并修复桌面版 DSH 中 dsh-antigravity 对真实会话请求立即返回 429 的解析端或请求端异常；必要时安装一个只记录脱敏元数据的临时诊断插件",
+    "is_child": false,
+    "spawns_in_session": 9,
+    "dur_min": 483.8
+   }
+  ],
+  "schedule_calls": 0,
+  "workflow_calls": 0,
+  "ralph_calls": 0,
+  "team_task_calls": {
+   "team_task_get": 80,
+   "team_task_update": 96,
+   "team_task_list": 74,
+   "team_task_create": 45
+  },
+  "team_mode_sessions": 10
+ },
+ "child_rows": [
+  {
+   "id": "2834f5e0-c9e1-4d77-872c-e761b6b0e723",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "梳理前端接入结构",
+   "model": "gpt-6.1-sol",
+   "wall_s": 5595.3,
+   "active_s": 5583.5,
+   "turns": 2,
+   "steps": 225,
+   "tool_calls": 388,
+   "out_tok": 174117,
+   "prompt_tok": 29664463,
+   "peak_ctx": 221930,
+   "gen_s": 5540.0,
+   "tool_s": 23.2,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1,
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     168
+    ],
+    [
+     "edit",
+     109
+    ],
+    [
+     "glob",
+     26
+    ],
+    [
+     "bash",
+     24
+    ],
+    [
+     "grep",
+     18
+    ]
+   ]
+  },
+  {
+   "id": "dc93c68a-78da-4870-8fef-d7e83e1e4e69",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "核实会话沙箱契约",
+   "model": "gpt-6.1-sol",
+   "wall_s": 2547.3,
+   "active_s": 2547.3,
+   "turns": 1,
+   "steps": 191,
+   "tool_calls": 196,
+   "out_tok": 67982,
+   "prompt_tok": 18262731,
+   "peak_ctx": 143078,
+   "gen_s": 2531.5,
+   "tool_s": 13.6,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     85
+    ],
+    [
+     "edit",
+     43
+    ],
+    [
+     "cordis_inspect_query",
+     17
+    ],
+    [
+     "send_message",
+     16
+    ],
+    [
+     "grep",
+     12
+    ]
+   ]
+  },
+  {
+   "id": "ec44f52a-ec84-42f9-8deb-920bb454c3c4",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "实现模型独立沙箱能力",
+   "model": "gpt-6.1-sol",
+   "wall_s": 2610.8,
+   "active_s": 2504.9,
+   "turns": 3,
+   "steps": 118,
+   "tool_calls": 116,
+   "out_tok": 57549,
+   "prompt_tok": 10066766,
+   "peak_ctx": 125346,
+   "gen_s": 2499.0,
+   "tool_s": 4.6,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 3
+   },
+   "top_tools": [
+    [
+     "read",
+     40
+    ],
+    [
+     "edit",
+     20
+    ],
+    [
+     "send_message",
+     13
+    ],
+    [
+     "grep",
+     13
+    ],
+    [
+     "glob",
+     9
+    ]
+   ]
+  },
+  {
+   "id": "410e312e-7d26-42f5-ba2b-f0b59d90b677",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "实现提供商匹配与持久选择",
+   "model": "gpt-6.1-sol",
+   "wall_s": 13119.9,
+   "active_s": 2441.6,
+   "turns": 6,
+   "steps": 118,
+   "tool_calls": 180,
+   "out_tok": 61123,
+   "prompt_tok": 10829225,
+   "peak_ctx": 135751,
+   "gen_s": 2433.9,
+   "tool_s": 8.3,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 6
+   },
+   "top_tools": [
+    [
+     "read",
+     57
+    ],
+    [
+     "send_message",
+     36
+    ],
+    [
+     "bash",
+     19
+    ],
+    [
+     "edit",
+     15
+    ],
+    [
+     "glob",
+     11
+    ]
+   ]
+  },
+  {
+   "id": "38e5b65c-005d-4d48-bcb0-d00d766a0d4e",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "修正编辑器偏好即时生效",
+   "model": "gpt-6.1-sol",
+   "wall_s": 37085.5,
+   "active_s": 2416.6,
+   "turns": 7,
+   "steps": 111,
+   "tool_calls": 104,
+   "out_tok": 72600,
+   "prompt_tok": 13587629,
+   "peak_ctx": 261242,
+   "gen_s": 2104.7,
+   "tool_s": 8.2,
+   "retries": 4,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 6,
+    "interrupted": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     104
+    ]
+   ]
+  },
+  {
+   "id": "10697b3d-f669-4aed-ab01-c63649a4bd3a",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "审查修正后的交互设计",
+   "model": "gpt-6.1-sol",
+   "wall_s": 37891.8,
+   "active_s": 2171.9,
+   "turns": 12,
+   "steps": 120,
+   "tool_calls": 107,
+   "out_tok": 60481,
+   "prompt_tok": 15396368,
+   "peak_ctx": 237296,
+   "gen_s": 2153.4,
+   "tool_s": 16.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 12
+   },
+   "top_tools": [
+    [
+     "run_code",
+     107
+    ]
+   ]
+  },
+  {
+   "id": "37c85430-5d14-4ca3-b35c-b5caf679f602",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "实现用量和提供商界面",
+   "model": "gpt-6.1-sol",
+   "wall_s": 8903.3,
+   "active_s": 2146.3,
+   "turns": 4,
+   "steps": 130,
+   "tool_calls": 241,
+   "out_tok": 57820,
+   "prompt_tok": 12160438,
+   "peak_ctx": 136391,
+   "gen_s": 2122.1,
+   "tool_s": 35.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 4
+   },
+   "top_tools": [
+    [
+     "edit",
+     97
+    ],
+    [
+     "read",
+     60
+    ],
+    [
+     "send_message",
+     23
+    ],
+    [
+     "bash",
+     15
+    ],
+    [
+     "write",
+     12
+    ]
+   ]
+  },
+  {
+   "id": "69a04b8d-9284-4b91-aec3-04126e1b166f",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent_fork",
+   "label": "实现 MCP 挂起工具桥",
+   "model": "gpt-6.1-sol",
+   "wall_s": 2398.2,
+   "active_s": 1877.5,
+   "turns": 3,
+   "steps": 65,
+   "tool_calls": 139,
+   "out_tok": 46476,
+   "prompt_tok": 6054013,
+   "peak_ctx": 146656,
+   "gen_s": 1868.8,
+   "tool_s": 13.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 3
+   },
+   "top_tools": [
+    [
+     "read",
+     51
+    ],
+    [
+     "send_message",
+     18
+    ],
+    [
+     "glob",
+     16
+    ],
+    [
+     "grep",
+     11
+    ],
+    [
+     "bash",
+     10
+    ]
+   ]
+  },
+  {
+   "id": "5ec3bc3f-e3c2-4d71-9623-a178d286487a",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "Port DSH chat rows",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 1869.8,
+   "active_s": 1869.7,
+   "turns": 1,
+   "steps": 153,
+   "tool_calls": 170,
+   "out_tok": 113636,
+   "prompt_tok": 13666981,
+   "peak_ctx": 125817,
+   "gen_s": 1842.3,
+   "tool_s": 25.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "(unclosed)": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     154
+    ],
+    [
+     "write",
+     10
+    ],
+    [
+     "compress",
+     4
+    ],
+    [
+     "edit",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "e60d2a69-e7b8-401d-99c9-5d8d37afedbc",
+   "parent": "session-71004046-8c37-4156-aa8b-2009f518ac64",
+   "kind": "subagent",
+   "label": "Implement BTW client UI",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 1843.8,
+   "active_s": 1843.8,
+   "turns": 1,
+   "steps": 160,
+   "tool_calls": 218,
+   "out_tok": 153276,
+   "prompt_tok": 14199942,
+   "peak_ctx": 129715,
+   "gen_s": 1732.4,
+   "tool_s": 109.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     146
+    ],
+    [
+     "edit",
+     37
+    ],
+    [
+     "read",
+     19
+    ],
+    [
+     "write",
+     9
+    ],
+    [
+     "compress",
+     4
+    ]
+   ]
+  },
+  {
+   "id": "733079b2-8aec-4b99-8b0c-522cee11cd8a",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "写图谱与终端文档",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 1792.3,
+   "active_s": 1792.3,
+   "turns": 1,
+   "steps": 53,
+   "tool_calls": 59,
+   "out_tok": 136747,
+   "prompt_tok": 5886931,
+   "peak_ctx": 157093,
+   "gen_s": 1765.9,
+   "tool_s": 25.7,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     34
+    ],
+    [
+     "read",
+     9
+    ],
+    [
+     "compress",
+     6
+    ],
+    [
+     "edit",
+     6
+    ],
+    [
+     "write",
+     4
+    ]
+   ]
+  },
+  {
+   "id": "88da0e78-dda8-4220-89d3-8823d4da2294",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "Port DSH markdown renderer",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 1533.2,
+   "active_s": 1533.2,
+   "turns": 1,
+   "steps": 125,
+   "tool_calls": 132,
+   "out_tok": 110813,
+   "prompt_tok": 9047493,
+   "peak_ctx": 183926,
+   "gen_s": 1507.6,
+   "tool_s": 24.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     128
+    ],
+    [
+     "compress",
+     3
+    ],
+    [
+     "edit",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "07134f18-1878-4534-aea1-000d83b1d727",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scenes S4-S6",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 1470.7,
+   "active_s": 1470.7,
+   "turns": 1,
+   "steps": 47,
+   "tool_calls": 54,
+   "out_tok": 94864,
+   "prompt_tok": 5548627,
+   "peak_ctx": 170851,
+   "gen_s": 1391.5,
+   "tool_s": 78.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     31
+    ],
+    [
+     "read_image",
+     10
+    ],
+    [
+     "read",
+     6
+    ],
+    [
+     "write",
+     3
+    ],
+    [
+     "skill",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "22304cca-7e34-4bd0-bcea-89e31f785903",
+   "parent": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+   "kind": "subagent_fork",
+   "label": "Resume TERRAIN market v4",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 1464.8,
+   "active_s": 1464.5,
+   "turns": 1,
+   "steps": 62,
+   "tool_calls": 64,
+   "out_tok": 114726,
+   "prompt_tok": 9015475,
+   "peak_ctx": 355975,
+   "gen_s": 1421.1,
+   "tool_s": 42.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "aborted:user": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     22
+    ],
+    [
+     "write",
+     20
+    ],
+    [
+     "edit",
+     7
+    ],
+    [
+     "read_image",
+     7
+    ],
+    [
+     "read",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "6e99aeca-fcca-4060-b34f-014db1d74892",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "teammate",
+   "label": "实现纯 Host 核心和测试",
+   "model": "openai/gpt-6-astra",
+   "wall_s": 16389.8,
+   "active_s": 1457.9,
+   "turns": 3,
+   "steps": 104,
+   "tool_calls": 112,
+   "out_tok": 45686,
+   "prompt_tok": 5364306,
+   "peak_ctx": 84316,
+   "gen_s": 1442.2,
+   "tool_s": 14.7,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 3
+   },
+   "top_tools": [
+    [
+     "edit",
+     30
+    ],
+    [
+     "read",
+     18
+    ],
+    [
+     "bash",
+     17
+    ],
+    [
+     "send_message",
+     14
+    ],
+    [
+     "glob",
+     9
+    ]
+   ]
+  },
+  {
+   "id": "2fb53126-ab31-4d62-b3f1-ffd1aa69b7ea",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "实现账单流水和请求计数",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1445.0,
+   "active_s": 1445.0,
+   "turns": 1,
+   "steps": 101,
+   "tool_calls": 139,
+   "out_tok": 26338,
+   "prompt_tok": 7548533,
+   "peak_ctx": 103051,
+   "gen_s": 1438.7,
+   "tool_s": 10.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "edit",
+     72
+    ],
+    [
+     "read",
+     22
+    ],
+    [
+     "send_message",
+     13
+    ],
+    [
+     "glob",
+     11
+    ],
+    [
+     "bash",
+     7
+    ]
+   ]
+  },
+  {
+   "id": "b671d503-15d7-4c64-b73c-edb9dc4fffbb",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent_fork",
+   "label": "实现 ACP 协议与隔离",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1393.7,
+   "active_s": 1393.6,
+   "turns": 1,
+   "steps": 62,
+   "tool_calls": 82,
+   "out_tok": 35885,
+   "prompt_tok": 5123864,
+   "peak_ctx": 120737,
+   "gen_s": 1383.1,
+   "tool_s": 18.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "edit",
+     15
+    ],
+    [
+     "read",
+     10
+    ],
+    [
+     "send_message",
+     9
+    ],
+    [
+     "write",
+     9
+    ],
+    [
+     "web_fetch",
+     9
+    ]
+   ]
+  },
+  {
+   "id": "79d3817b-87d2-45ae-9fcb-38c8e6bdca4c",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "重写油猴界面和站点执行器",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1353.2,
+   "active_s": 1353.1,
+   "turns": 1,
+   "steps": 89,
+   "tool_calls": 107,
+   "out_tok": 38070,
+   "prompt_tok": 7281926,
+   "peak_ctx": 118025,
+   "gen_s": 1316.6,
+   "tool_s": 37.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "edit",
+     54
+    ],
+    [
+     "team_task_list",
+     12
+    ],
+    [
+     "bash",
+     11
+    ],
+    [
+     "read",
+     8
+    ],
+    [
+     "send_message",
+     7
+    ]
+   ]
+  },
+  {
+   "id": "8a91fdb5-e3a6-4eca-9954-369f0a5d4952",
+   "parent": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+   "kind": "subagent_fork",
+   "label": "Resume DESK invest v4",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 1338.4,
+   "active_s": 1338.2,
+   "turns": 1,
+   "steps": 46,
+   "tool_calls": 59,
+   "out_tok": 73809,
+   "prompt_tok": 8203185,
+   "peak_ctx": 353606,
+   "gen_s": 1282.3,
+   "tool_s": 55.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     23
+    ],
+    [
+     "write",
+     18
+    ],
+    [
+     "read",
+     8
+    ],
+    [
+     "read_image",
+     5
+    ],
+    [
+     "edit",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "e106b541-60b4-437f-9f26-b8c774f783c4",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现路径树与悬停操作",
+   "model": "gpt-6.1-sol",
+   "wall_s": 3230.1,
+   "active_s": 1294.9,
+   "turns": 5,
+   "steps": 62,
+   "tool_calls": 57,
+   "out_tok": 39612,
+   "prompt_tok": 6750506,
+   "peak_ctx": 162479,
+   "gen_s": 1290.7,
+   "tool_s": 3.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 5
+   },
+   "top_tools": [
+    [
+     "run_code",
+     57
+    ]
+   ]
+  },
+  {
+   "id": "e2300299-2a4a-4f65-ba9d-b56cfb600a6c",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "Git log 与图谱布局模块",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 1289.7,
+   "active_s": 1289.6,
+   "turns": 1,
+   "steps": 58,
+   "tool_calls": 61,
+   "out_tok": 119897,
+   "prompt_tok": 5629816,
+   "peak_ctx": 147242,
+   "gen_s": 1278.6,
+   "tool_s": 10.3,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     41
+    ],
+    [
+     "read",
+     10
+    ],
+    [
+     "compress",
+     4
+    ],
+    [
+     "edit",
+     4
+    ],
+    [
+     "write",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "8a04bd1e-f0b5-4d97-b41d-02bfb0ee74a0",
+   "parent": "session-71004046-8c37-4156-aa8b-2009f518ac64",
+   "kind": "teammate",
+   "label": "Research DSH Web Client slots + streaming channel for the BTW bar; write design/btw/research/client-ui.md",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 2669.1,
+   "active_s": 1252.9,
+   "turns": 2,
+   "steps": 172,
+   "tool_calls": 199,
+   "out_tok": 133251,
+   "prompt_tok": 14405704,
+   "peak_ctx": 133782,
+   "gen_s": 1068.9,
+   "tool_s": 182.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "bash",
+     169
+    ],
+    [
+     "compress",
+     10
+    ],
+    [
+     "team_task_update",
+     4
+    ],
+    [
+     "cordis_inspect_query",
+     4
+    ],
+    [
+     "team_task_get",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "7a661332-377e-44a2-b151-caa63f41e46c",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "Git diff 解析与写操作模块",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 1218.8,
+   "active_s": 1218.8,
+   "turns": 1,
+   "steps": 54,
+   "tool_calls": 57,
+   "out_tok": 101755,
+   "prompt_tok": 5645209,
+   "peak_ctx": 158629,
+   "gen_s": 1160.5,
+   "tool_s": 5.2,
+   "retries": 5,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:SERVER": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     41
+    ],
+    [
+     "read",
+     12
+    ],
+    [
+     "edit",
+     2
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "8d3e2af3-b523-4f2b-97f6-de020bf513be",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "审查新概览和目标交互",
+   "model": "gpt-6.1-sol",
+   "wall_s": 8208.5,
+   "active_s": 1158.9,
+   "turns": 5,
+   "steps": 53,
+   "tool_calls": 134,
+   "out_tok": 17323,
+   "prompt_tok": 4968684,
+   "peak_ctx": 146967,
+   "gen_s": 1153.6,
+   "tool_s": 11.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 5
+   },
+   "top_tools": [
+    [
+     "read",
+     74
+    ],
+    [
+     "send_message",
+     31
+    ],
+    [
+     "grep",
+     18
+    ],
+    [
+     "glob",
+     4
+    ],
+    [
+     "skill",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "7cee3d9c-85dd-4298-95cb-beaf8676fa1c",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "写编辑器与文件通道文档",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 1157.0,
+   "active_s": 1157.0,
+   "turns": 1,
+   "steps": 60,
+   "tool_calls": 66,
+   "out_tok": 154822,
+   "prompt_tok": 6329282,
+   "peak_ctx": 142988,
+   "gen_s": 1126.7,
+   "tool_s": 29.5,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     48
+    ],
+    [
+     "write",
+     7
+    ],
+    [
+     "read",
+     6
+    ],
+    [
+     "compress",
+     3
+    ],
+    [
+     "edit",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "86fbe78d-cf5b-4339-9991-18b97f6a5e4e",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "批处理脚手架盘点",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 1153.5,
+   "active_s": 1153.5,
+   "turns": 1,
+   "steps": 44,
+   "tool_calls": 73,
+   "out_tok": 43566,
+   "prompt_tok": 3921783,
+   "peak_ctx": 125676,
+   "gen_s": 597.8,
+   "tool_s": 555.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     65
+    ],
+    [
+     "edit",
+     3
+    ],
+    [
+     "write",
+     2
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "job_output",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "d59c6234-d935-435a-b8ec-d06fad954148",
+   "parent": "session-b00561bd-8403-4236-88c7-7fa0a732c3fb",
+   "kind": "subagent",
+   "label": "Build faithful preview harness",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 1080.3,
+   "active_s": 1080.3,
+   "turns": 1,
+   "steps": 122,
+   "tool_calls": 133,
+   "out_tok": 79524,
+   "prompt_tok": 8078217,
+   "peak_ctx": 109773,
+   "gen_s": 1049.2,
+   "tool_s": 30.0,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "aborted:user": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     112
+    ],
+    [
+     "read_image",
+     15
+    ],
+    [
+     "compress",
+     2
+    ],
+    [
+     "read",
+     2
+    ],
+    [
+     "write",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "8ccf008f-55cd-4401-b4de-430440bbe85e",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现统一快速搜索面板",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1517.2,
+   "active_s": 1055.7,
+   "turns": 3,
+   "steps": 50,
+   "tool_calls": 47,
+   "out_tok": 34574,
+   "prompt_tok": 5872512,
+   "peak_ctx": 171758,
+   "gen_s": 1052.9,
+   "tool_s": 2.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 3
+   },
+   "top_tools": [
+    [
+     "run_code",
+     47
+    ]
+   ]
+  },
+  {
+   "id": "efc915ce-de48-436b-87eb-32f2390ff84d",
+   "parent": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+   "kind": "subagent_fork",
+   "label": "Resume REPLAY user v4",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 1009.6,
+   "active_s": 1009.4,
+   "turns": 1,
+   "steps": 48,
+   "tool_calls": 61,
+   "out_tok": 72089,
+   "prompt_tok": 7913411,
+   "peak_ctx": 363314,
+   "gen_s": 978.5,
+   "tool_s": 12.7,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:MALFORMED_RESPONSE": 1
+   },
+   "top_tools": [
+    [
+     "write",
+     23
+    ],
+    [
+     "bash",
+     17
+    ],
+    [
+     "read",
+     15
+    ],
+    [
+     "edit",
+     2
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "9b839c6a-6e8a-49c6-a9da-146c32550b80",
+   "parent": "session-2d3b5436-e7ad-4d08-a366-a83875e28e2c",
+   "kind": "teammate",
+   "label": "测绘公开 API 面与模型渠道目录",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 994.9,
+   "active_s": 994.9,
+   "turns": 1,
+   "steps": 73,
+   "tool_calls": 85,
+   "out_tok": 89332,
+   "prompt_tok": 5035861,
+   "peak_ctx": 106323,
+   "gen_s": 676.1,
+   "tool_s": 318.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     72
+    ],
+    [
+     "compress",
+     3
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ],
+    [
+     "job_output",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "fa6e19d3-195a-46fc-8ca7-ceca4163941c",
+   "parent": "session-71004046-8c37-4156-aa8b-2009f518ac64",
+   "kind": "teammate",
+   "label": "Analyze command/hook/slot/service conflicts and coexistence with existing btw plugin; write design/btw/research/conflicts.md",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 975.5,
+   "active_s": 975.5,
+   "turns": 1,
+   "steps": 181,
+   "tool_calls": 191,
+   "out_tok": 114978,
+   "prompt_tok": 14217995,
+   "peak_ctx": 126865,
+   "gen_s": 909.6,
+   "tool_s": 64.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     171
+    ],
+    [
+     "compress",
+     5
+    ],
+    [
+     "cordis_inspect_query",
+     4
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "07bb0465-2e14-4c11-b7a9-56f1c5dd37d8",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "调研 git 后端与 SCM 面板交互",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 974.1,
+   "active_s": 974.0,
+   "turns": 1,
+   "steps": 53,
+   "tool_calls": 94,
+   "out_tok": 63530,
+   "prompt_tok": 4251974,
+   "peak_ctx": 129552,
+   "gen_s": 715.6,
+   "tool_s": 258.0,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     89
+    ],
+    [
+     "web_search",
+     3
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "5b5ff78a-6a79-421f-b998-9f03e09ab5d8",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "Inspect VS Code reference patterns",
+   "model": "gpt-6-astra",
+   "wall_s": 953.8,
+   "active_s": 953.8,
+   "turns": 1,
+   "steps": 32,
+   "tool_calls": 31,
+   "out_tok": 26386,
+   "prompt_tok": 3990714,
+   "peak_ctx": 215717,
+   "gen_s": 931.1,
+   "tool_s": 22.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     31
+    ]
+   ]
+  },
+  {
+   "id": "0b2703ab-28fb-4cf9-94f1-95d8c9ec4aff",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现扫描与仓库上下文",
+   "model": "gpt-6.1-sol",
+   "wall_s": 2451.6,
+   "active_s": 952.9,
+   "turns": 2,
+   "steps": 45,
+   "tool_calls": 43,
+   "out_tok": 33221,
+   "prompt_tok": 4128358,
+   "peak_ctx": 125204,
+   "gen_s": 947.7,
+   "tool_s": 4.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "run_code",
+     43
+    ]
+   ]
+  },
+  {
+   "id": "1e6d87d9-a3dd-46a4-acd9-4dde92fb5211",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "通用工具链盘点",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 935.8,
+   "active_s": 935.8,
+   "turns": 1,
+   "steps": 47,
+   "tool_calls": 73,
+   "out_tok": 43555,
+   "prompt_tok": 3516672,
+   "peak_ctx": 119320,
+   "gen_s": 551.0,
+   "tool_s": 384.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     58
+    ],
+    [
+     "edit",
+     9
+    ],
+    [
+     "job_output",
+     2
+    ],
+    [
+     "job_kill",
+     1
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "06a1161f-edf9-446e-a087-0909b436024f",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "调研 git 提交图谱渲染方案",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 927.5,
+   "active_s": 927.5,
+   "turns": 1,
+   "steps": 50,
+   "tool_calls": 79,
+   "out_tok": 57544,
+   "prompt_tok": 3874669,
+   "peak_ctx": 118289,
+   "gen_s": 665.3,
+   "tool_s": 261.5,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     75
+    ],
+    [
+     "compress",
+     2
+    ],
+    [
+     "job_output",
+     1
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "b87d44b7-028f-4677-bad4-f46807baa8a6",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "调研代码查看/编辑器与语法高亮",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 922.1,
+   "active_s": 922.1,
+   "turns": 1,
+   "steps": 48,
+   "tool_calls": 78,
+   "out_tok": 66814,
+   "prompt_tok": 4217061,
+   "peak_ctx": 147221,
+   "gen_s": 636.1,
+   "tool_s": 285.2,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     69
+    ],
+    [
+     "edit",
+     6
+    ],
+    [
+     "web_search",
+     2
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "78cba22c-6df6-4d3f-bdfa-f794aaf90028",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "Port DSH tool call row",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 903.8,
+   "active_s": 903.7,
+   "turns": 1,
+   "steps": 66,
+   "tool_calls": 83,
+   "out_tok": 62602,
+   "prompt_tok": 5706886,
+   "peak_ctx": 139539,
+   "gen_s": 890.3,
+   "tool_s": 12.6,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     78
+    ],
+    [
+     "compress",
+     3
+    ],
+    [
+     "read",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "2fde092c-9d7c-4f71-bfd9-dd3cb55e3718",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "实现自定义监控详情界面",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1379.0,
+   "active_s": 880.8,
+   "turns": 2,
+   "steps": 50,
+   "tool_calls": 64,
+   "out_tok": 21125,
+   "prompt_tok": 3825527,
+   "peak_ctx": 112157,
+   "gen_s": 877.2,
+   "tool_s": 3.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "read",
+     23
+    ],
+    [
+     "send_message",
+     10
+    ],
+    [
+     "team_task_list",
+     7
+    ],
+    [
+     "write",
+     6
+    ],
+    [
+     "team_task_update",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "18935c73-4f54-40b5-8752-8e18c87e0ce8",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "写界面规格与构建文档",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 860.3,
+   "active_s": 860.3,
+   "turns": 1,
+   "steps": 64,
+   "tool_calls": 73,
+   "out_tok": 92684,
+   "prompt_tok": 7104462,
+   "peak_ctx": 162978,
+   "gen_s": 815.9,
+   "tool_s": 43.6,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     55
+    ],
+    [
+     "read",
+     11
+    ],
+    [
+     "compress",
+     3
+    ],
+    [
+     "write",
+     3
+    ],
+    [
+     "edit",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "12d8fbed-2e30-477b-a74a-5da063e5406f",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "实现专项创建页及前端桥接",
+   "model": "gpt-6.1-sol",
+   "wall_s": 858.4,
+   "active_s": 858.4,
+   "turns": 1,
+   "steps": 35,
+   "tool_calls": 94,
+   "out_tok": 30502,
+   "prompt_tok": 3705667,
+   "peak_ctx": 143772,
+   "gen_s": 843.6,
+   "tool_s": 45.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     39
+    ],
+    [
+     "edit",
+     19
+    ],
+    [
+     "bash",
+     8
+    ],
+    [
+     "write",
+     7
+    ],
+    [
+     "send_message",
+     6
+    ]
+   ]
+  },
+  {
+   "id": "81dc5ac9-66a5-4578-add6-d8ff5a063798",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "c08-approved 与入库链路",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 850.0,
+   "active_s": 850.0,
+   "turns": 1,
+   "steps": 12,
+   "tool_calls": 15,
+   "out_tok": 12963,
+   "prompt_tok": 868765,
+   "peak_ctx": 109446,
+   "gen_s": 719.8,
+   "tool_s": 28.6,
+   "retries": 2,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     15
+    ]
+   ]
+  },
+  {
+   "id": "efb59243-4f2c-41d2-ac06-88c90a5b9ea6",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "teammate",
+   "label": "工作台和测试页面 React 视图",
+   "model": "gpt-6-astra",
+   "wall_s": 48120.3,
+   "active_s": 838.6,
+   "turns": 4,
+   "steps": 60,
+   "tool_calls": 81,
+   "out_tok": 27252,
+   "prompt_tok": 2658315,
+   "peak_ctx": 70001,
+   "gen_s": 737.2,
+   "tool_s": 11.7,
+   "retries": 15,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1,
+    "completed": 1,
+    "error:SERVER": 2
+   },
+   "top_tools": [
+    [
+     "edit",
+     29
+    ],
+    [
+     "read",
+     12
+    ],
+    [
+     "write",
+     10
+    ],
+    [
+     "send_message",
+     8
+    ],
+    [
+     "bash",
+     5
+    ]
+   ]
+  },
+  {
+   "id": "7e048105-8f9d-430d-a469-7ba53307df60",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "teammate",
+   "label": "状态、数据源和 Mock 运行实现",
+   "model": "gpt-6-astra",
+   "wall_s": 48123.0,
+   "active_s": 817.9,
+   "turns": 3,
+   "steps": 60,
+   "tool_calls": 97,
+   "out_tok": 26819,
+   "prompt_tok": 2526314,
+   "peak_ctx": 63020,
+   "gen_s": 724.5,
+   "tool_s": 12.8,
+   "retries": 15,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1,
+    "error:SERVER": 2
+   },
+   "top_tools": [
+    [
+     "edit",
+     46
+    ],
+    [
+     "write",
+     19
+    ],
+    [
+     "read",
+     10
+    ],
+    [
+     "send_message",
+     6
+    ],
+    [
+     "glob",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "6c4c7c44-2fb5-4249-bb96-0929b70e82b2",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent",
+   "label": "审计请求协议映射",
+   "model": "anthropic-ccmax/claude-sonnet-5",
+   "wall_s": 814.8,
+   "active_s": 814.8,
+   "turns": 1,
+   "steps": 66,
+   "tool_calls": 74,
+   "out_tok": 16840,
+   "prompt_tok": 4676474,
+   "peak_ctx": 108567,
+   "gen_s": 811.9,
+   "tool_s": 2.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 2,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     39
+    ],
+    [
+     "bash",
+     14
+    ],
+    [
+     "glob",
+     8
+    ],
+    [
+     "grep",
+     7
+    ],
+    [
+     "todo_write",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "ae561bf2-17d7-4a23-9b20-1c705343922b",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G4 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 812.6,
+   "active_s": 812.6,
+   "turns": 1,
+   "steps": 22,
+   "tool_calls": 22,
+   "out_tok": 36438,
+   "prompt_tok": 1274856,
+   "peak_ctx": 71306,
+   "gen_s": 807.3,
+   "tool_s": 5.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     10
+    ],
+    [
+     "read_image",
+     8
+    ],
+    [
+     "write",
+     2
+    ],
+    [
+     "edit",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "40fa4c61-9ae4-445c-9d76-5f3855a69eab",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "写总方案、流程与里程碑",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 758.6,
+   "active_s": 758.6,
+   "turns": 1,
+   "steps": 39,
+   "tool_calls": 45,
+   "out_tok": 90183,
+   "prompt_tok": 3768823,
+   "peak_ctx": 139437,
+   "gen_s": 756.9,
+   "tool_s": 1.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     30
+    ],
+    [
+     "read",
+     7
+    ],
+    [
+     "compress",
+     4
+    ],
+    [
+     "write",
+     4
+    ]
+   ]
+  },
+  {
+   "id": "1b5f9954-3b7d-4366-8e8b-3080664166b3",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G3 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 754.0,
+   "active_s": 754.0,
+   "turns": 1,
+   "steps": 27,
+   "tool_calls": 26,
+   "out_tok": 35005,
+   "prompt_tok": 1385868,
+   "peak_ctx": 68777,
+   "gen_s": 738.0,
+   "tool_s": 15.6,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     17
+    ],
+    [
+     "read_image",
+     7
+    ],
+    [
+     "write",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "99527ea6-7e12-48f9-9de3-593a21b8791e",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "PPTX 模块生成机制",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 751.6,
+   "active_s": 751.6,
+   "turns": 1,
+   "steps": 48,
+   "tool_calls": 68,
+   "out_tok": 51669,
+   "prompt_tok": 4302290,
+   "peak_ctx": 126761,
+   "gen_s": 365.0,
+   "tool_s": 386.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     64
+    ],
+    [
+     "read",
+     2
+    ],
+    [
+     "compress",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "c03f0545-9521-4e4e-a94c-2af0da212eed",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "subagent",
+   "label": "Complete real fingerprint views",
+   "model": "openai/gpt-6-astra",
+   "wall_s": 695.7,
+   "active_s": 695.7,
+   "turns": 1,
+   "steps": 39,
+   "tool_calls": 105,
+   "out_tok": 25378,
+   "prompt_tok": 2772802,
+   "peak_ctx": 93544,
+   "gen_s": 683.7,
+   "tool_s": 12.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 1,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     37
+    ],
+    [
+     "edit",
+     37
+    ],
+    [
+     "grep",
+     7
+    ],
+    [
+     "write",
+     6
+    ],
+    [
+     "glob",
+     4
+    ]
+   ]
+  },
+  {
+   "id": "f16e02f4-ccf6-4781-89cf-c6861d53bb47",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Audit session-bound sandbox",
+   "model": "codex-ccmax/gpt-6-astra",
+   "wall_s": 664.7,
+   "active_s": 664.5,
+   "turns": 1,
+   "steps": 17,
+   "tool_calls": 25,
+   "out_tok": 5126,
+   "prompt_tok": 1928411,
+   "peak_ctx": 645241,
+   "gen_s": 663.8,
+   "tool_s": 0.6,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     19
+    ],
+    [
+     "bash",
+     2
+    ],
+    [
+     "glob",
+     1
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "grep",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "bfe823e3-ec99-43dc-a348-d6710652b72a",
+   "parent": "session-33c9e77d-4269-488b-8e60-708338b13455",
+   "kind": "subagent",
+   "label": "静态审阅请求改造",
+   "model": "gpt-6.1-sol",
+   "wall_s": 662.0,
+   "active_s": 662.0,
+   "turns": 1,
+   "steps": 16,
+   "tool_calls": 37,
+   "out_tok": 13362,
+   "prompt_tok": 1320480,
+   "peak_ctx": 216426,
+   "gen_s": 660.0,
+   "tool_s": 2.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     22
+    ],
+    [
+     "grep",
+     8
+    ],
+    [
+     "send_message",
+     3
+    ],
+    [
+     "bash",
+     2
+    ],
+    [
+     "glob",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "9dd5bfb3-b2df-4e48-a8fc-65c04bd41da8",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现命令树和系统 profile",
+   "model": "gpt-6.1-sol",
+   "wall_s": 654.7,
+   "active_s": 654.7,
+   "turns": 1,
+   "steps": 31,
+   "tool_calls": 30,
+   "out_tok": 24882,
+   "prompt_tok": 2969461,
+   "peak_ctx": 125956,
+   "gen_s": 648.5,
+   "tool_s": 5.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     30
+    ]
+   ]
+  },
+  {
+   "id": "19b71ae4-a396-4241-96dd-22ae746d08dc",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "teammate",
+   "label": "分析 pptgen 静态拼接与 presets 预设体系",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 652.3,
+   "active_s": 652.3,
+   "turns": 1,
+   "steps": 73,
+   "tool_calls": 90,
+   "out_tok": 54103,
+   "prompt_tok": 4910975,
+   "peak_ctx": 116863,
+   "gen_s": 447.5,
+   "tool_s": 204.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     58
+    ],
+    [
+     "read",
+     19
+    ],
+    [
+     "compress",
+     3
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "c0616366-e148-4fa9-9798-1d043da188b9",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "梳理 a6api 市场渠道数据接口",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 649.3,
+   "active_s": 649.3,
+   "turns": 1,
+   "steps": 70,
+   "tool_calls": 86,
+   "out_tok": 53698,
+   "prompt_tok": 5798900,
+   "peak_ctx": 140266,
+   "gen_s": 434.6,
+   "tool_s": 213.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     82
+    ],
+    [
+     "read",
+     2
+    ],
+    [
+     "write",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "21b01730-8881-48f8-898d-e839dce0727c",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "预设库各家族盘点",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 631.9,
+   "active_s": 631.9,
+   "turns": 1,
+   "steps": 45,
+   "tool_calls": 59,
+   "out_tok": 40975,
+   "prompt_tok": 3331832,
+   "peak_ctx": 116486,
+   "gen_s": 295.7,
+   "tool_s": 337.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     49
+    ],
+    [
+     "grep",
+     3
+    ],
+    [
+     "job_output",
+     2
+    ],
+    [
+     "job_kill",
+     2
+    ],
+    [
+     "compress",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "471a640d-96ac-4970-8834-478b6398455e",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scene S2",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 628.2,
+   "active_s": 628.2,
+   "turns": 1,
+   "steps": 11,
+   "tool_calls": 13,
+   "out_tok": 56709,
+   "prompt_tok": 959142,
+   "peak_ctx": 130828,
+   "gen_s": 619.6,
+   "tool_s": 0.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     11
+    ],
+    [
+     "read",
+     1
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "a168aa0a-0edb-4dca-b1b5-bc74ccf36f3d",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "Audit IDE feature surfaces",
+   "model": "gpt-6-astra",
+   "wall_s": 674.2,
+   "active_s": 618.0,
+   "turns": 2,
+   "steps": 26,
+   "tool_calls": 24,
+   "out_tok": 36011,
+   "prompt_tok": 2848906,
+   "peak_ctx": 192424,
+   "gen_s": 614.1,
+   "tool_s": 3.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "run_code",
+     24
+    ]
+   ]
+  },
+  {
+   "id": "b4223dde-924f-4328-bcaa-3f762538236f",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现隔离全视图与图标",
+   "model": "gpt-6.1-sol",
+   "wall_s": 677.8,
+   "active_s": 616.0,
+   "turns": 2,
+   "steps": 42,
+   "tool_calls": 40,
+   "out_tok": 24254,
+   "prompt_tok": 5002107,
+   "peak_ctx": 156786,
+   "gen_s": 611.1,
+   "tool_s": 4.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "run_code",
+     40
+    ]
+   ]
+  },
+  {
+   "id": "f74a686f-e5b2-4156-af4a-d7c23e932376",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "subagent",
+   "label": "Relay page views upgrade",
+   "model": "anthropic-ccmax/claude-opus-5-5",
+   "wall_s": 609.7,
+   "active_s": 609.7,
+   "turns": 1,
+   "steps": 34,
+   "tool_calls": 42,
+   "out_tok": 50429,
+   "prompt_tok": 3158002,
+   "peak_ctx": 125473,
+   "gen_s": 608.1,
+   "tool_s": 1.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     17
+    ],
+    [
+     "write",
+     7
+    ],
+    [
+     "bash",
+     6
+    ],
+    [
+     "edit",
+     6
+    ],
+    [
+     "grep",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "76820ad7-6d27-4bf9-bb51-0ffc331382ee",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "subagent",
+   "label": "Fingerprint store config+retry",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 604.5,
+   "active_s": 604.5,
+   "turns": 1,
+   "steps": 56,
+   "tool_calls": 69,
+   "out_tok": 86312,
+   "prompt_tok": 4412886,
+   "peak_ctx": 116776,
+   "gen_s": 602.7,
+   "tool_s": 1.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     30
+    ],
+    [
+     "edit",
+     17
+    ],
+    [
+     "grep",
+     11
+    ],
+    [
+     "bash",
+     8
+    ],
+    [
+     "compress",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "677e05aa-c829-4c0c-93e2-80b2ae860994",
+   "parent": "session-71004046-8c37-4156-aa8b-2009f518ac64",
+   "kind": "teammate",
+   "label": "Research DSH Host APIs for real-request capture and independent side Agent; write design/btw/research/host-api.md",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 2505.9,
+   "active_s": 592.6,
+   "turns": 2,
+   "steps": 88,
+   "tool_calls": 123,
+   "out_tok": 80533,
+   "prompt_tok": 7788753,
+   "peak_ctx": 125036,
+   "gen_s": 557.9,
+   "tool_s": 33.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "bash",
+     86
+    ],
+    [
+     "cordis_inspect_query",
+     13
+    ],
+    [
+     "compress",
+     5
+    ],
+    [
+     "team_task_update",
+     4
+    ],
+    [
+     "read",
+     4
+    ]
+   ]
+  },
+  {
+   "id": "1f40e708-c8ea-4c16-8098-79653196358b",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scenes S1 and S2",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 592.1,
+   "active_s": 592.1,
+   "turns": 1,
+   "steps": 33,
+   "tool_calls": 35,
+   "out_tok": 35997,
+   "prompt_tok": 3171386,
+   "peak_ctx": 130838,
+   "gen_s": 535.5,
+   "tool_s": 56.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     20
+    ],
+    [
+     "read",
+     7
+    ],
+    [
+     "read_image",
+     4
+    ],
+    [
+     "skill",
+     1
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "444f6212-b7e2-48fe-8e94-99e6d913b7d4",
+   "parent": "session-8e8ab84c-0347-44bb-8d0e-2659c5740fb0",
+   "kind": "subagent",
+   "label": "Retest skill after calibration",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 586.9,
+   "active_s": 586.9,
+   "turns": 1,
+   "steps": 65,
+   "tool_calls": 67,
+   "out_tok": 41453,
+   "prompt_tok": 4502207,
+   "peak_ctx": 124274,
+   "gen_s": 516.7,
+   "tool_s": 67.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "aborted:user": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     44
+    ],
+    [
+     "read_image",
+     15
+    ],
+    [
+     "read",
+     3
+    ],
+    [
+     "edit",
+     3
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "9aa11e21-d9c0-4d68-91ca-d1e22fec3f45",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "核查输入素材完整覆盖",
+   "model": "gpt-6.1-sol",
+   "wall_s": 563.3,
+   "active_s": 563.3,
+   "turns": 1,
+   "steps": 18,
+   "tool_calls": 24,
+   "out_tok": 15531,
+   "prompt_tok": 1322680,
+   "peak_ctx": 99983,
+   "gen_s": 449.9,
+   "tool_s": 258.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     7
+    ],
+    [
+     "bash",
+     6
+    ],
+    [
+     "glob",
+     4
+    ],
+    [
+     "grep",
+     3
+    ],
+    [
+     "job_output",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "d7d73288-5b4d-48ed-a40c-2fa0a878dacc",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Research session sidebar APIs",
+   "model": "codex-ccmax/gpt-6-astra",
+   "wall_s": 545.4,
+   "active_s": 545.1,
+   "turns": 1,
+   "steps": 6,
+   "tool_calls": 5,
+   "out_tok": 370,
+   "prompt_tok": 3229160,
+   "peak_ctx": 657070,
+   "gen_s": 222.0,
+   "tool_s": 0.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "glob",
+     2
+    ],
+    [
+     "read",
+     2
+    ],
+    [
+     "grep",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "157f0e54-32a4-4795-be85-7b233cf9c9d2",
+   "parent": "session-2d3b5436-e7ad-4d08-a366-a83875e28e2c",
+   "kind": "teammate",
+   "label": "研判不绑定渠道直发请求的可行性",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 534.5,
+   "active_s": 534.5,
+   "turns": 1,
+   "steps": 60,
+   "tool_calls": 78,
+   "out_tok": 60845,
+   "prompt_tok": 3776485,
+   "peak_ctx": 105313,
+   "gen_s": 434.7,
+   "tool_s": 99.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     59
+    ],
+    [
+     "read",
+     6
+    ],
+    [
+     "compress",
+     3
+    ],
+    [
+     "edit",
+     3
+    ],
+    [
+     "team_task_get",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "aae50f40-2ab4-44c9-bca2-1ed06c0f8c24",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scene S1",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 528.9,
+   "active_s": 528.9,
+   "turns": 1,
+   "steps": 8,
+   "tool_calls": 7,
+   "out_tok": 19898,
+   "prompt_tok": 505329,
+   "peak_ctx": 90878,
+   "gen_s": 264.4,
+   "tool_s": 0.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:MALFORMED_RESPONSE": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     6
+    ],
+    [
+     "read",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "154eda6a-560d-491c-9d64-e7f0a9d31b71",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "批处理脚手架逐文件清单",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 528.8,
+   "active_s": 528.8,
+   "turns": 1,
+   "steps": 7,
+   "tool_calls": 8,
+   "out_tok": 10139,
+   "prompt_tok": 562298,
+   "peak_ctx": 102182,
+   "gen_s": 514.0,
+   "tool_s": 14.6,
+   "retries": 2,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     8
+    ]
+   ]
+  },
+  {
+   "id": "63aa0424-6113-4c07-affd-9af3052337fc",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "分析渲染与请求性能",
+   "model": "gpt-6.1-sol",
+   "wall_s": 528.4,
+   "active_s": 528.4,
+   "turns": 1,
+   "steps": 25,
+   "tool_calls": 23,
+   "out_tok": 15099,
+   "prompt_tok": 2770484,
+   "peak_ctx": 183958,
+   "gen_s": 526.4,
+   "tool_s": 1.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     23
+    ]
+   ]
+  },
+  {
+   "id": "fbc57a06-92be-422b-9614-a02601799a8f",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scenes S1-S3",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 522.8,
+   "active_s": 522.8,
+   "turns": 1,
+   "steps": 7,
+   "tool_calls": 8,
+   "out_tok": 26432,
+   "prompt_tok": 438712,
+   "peak_ctx": 85269,
+   "gen_s": 336.5,
+   "tool_s": 0.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:MALFORMED_RESPONSE": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     6
+    ],
+    [
+     "skill",
+     1
+    ],
+    [
+     "read",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "d1fb8179-6fcb-4699-ad7b-fcba796bee5d",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "teammate",
+   "label": "分析素材入库、客户端外壳与校验工具链",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 521.5,
+   "active_s": 521.5,
+   "turns": 1,
+   "steps": 68,
+   "tool_calls": 74,
+   "out_tok": 56098,
+   "prompt_tok": 5634371,
+   "peak_ctx": 127589,
+   "gen_s": 450.2,
+   "tool_s": 70.8,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     54
+    ],
+    [
+     "read",
+     11
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ],
+    [
+     "compress",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "2963cb4a-d9c3-4275-b968-7494afb5807f",
+   "parent": "session-901238ed-7d65-45cd-aaf2-f70adb199f58",
+   "kind": "teammate",
+   "label": "调研 Browser Use CLI 三代",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 520.9,
+   "active_s": 520.9,
+   "turns": 1,
+   "steps": 34,
+   "tool_calls": 53,
+   "out_tok": 58258,
+   "prompt_tok": 3210492,
+   "peak_ctx": 127149,
+   "gen_s": 356.9,
+   "tool_s": 163.6,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     28
+    ],
+    [
+     "mcp__tavily-proxy__tavily-search",
+     8
+    ],
+    [
+     "mcp__tavily-proxy__tavily-extract",
+     7
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "4c4c1e47-aba9-4a34-87dc-a980b255e8a8",
+   "parent": "session-a2f4714b-97f1-4633-af90-303209586d3c",
+   "kind": "subagent",
+   "label": "写 git 数据模型与安全文档",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 516.7,
+   "active_s": 516.7,
+   "turns": 1,
+   "steps": 28,
+   "tool_calls": 41,
+   "out_tok": 72925,
+   "prompt_tok": 2318359,
+   "peak_ctx": 149144,
+   "gen_s": 515.4,
+   "tool_s": 1.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "edit",
+     16
+    ],
+    [
+     "bash",
+     12
+    ],
+    [
+     "read",
+     10
+    ],
+    [
+     "write",
+     2
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "da7e608d-e139-49a8-9047-e7f303a76b96",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent",
+   "label": "对照 CLI 协议差异",
+   "model": "anthropic-ccmax/claude-sonnet-5",
+   "wall_s": 515.5,
+   "active_s": 515.5,
+   "turns": 1,
+   "steps": 35,
+   "tool_calls": 44,
+   "out_tok": 13228,
+   "prompt_tok": 2126872,
+   "peak_ctx": 122729,
+   "gen_s": 512.3,
+   "tool_s": 2.7,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 4,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "glob",
+     18
+    ],
+    [
+     "read",
+     17
+    ],
+    [
+     "bash",
+     5
+    ],
+    [
+     "grep",
+     3
+    ],
+    [
+     "skill",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "6ddd1b1f-869f-44ce-8d36-a7b0032ef3c4",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "teammate",
+   "label": "分析 generator/ 文本→页面 LLM 生成流程",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 514.5,
+   "active_s": 514.5,
+   "turns": 1,
+   "steps": 72,
+   "tool_calls": 87,
+   "out_tok": 63742,
+   "prompt_tok": 6437532,
+   "peak_ctx": 119480,
+   "gen_s": 509.0,
+   "tool_s": 5.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     42
+    ],
+    [
+     "read",
+     35
+    ],
+    [
+     "compress",
+     4
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "c7994d4b-d766-42ca-a4c8-5ae2c77ca652",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "subagent",
+   "label": "Fingerprint config panel UI",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 500.3,
+   "active_s": 500.2,
+   "turns": 1,
+   "steps": 64,
+   "tool_calls": 84,
+   "out_tok": 73157,
+   "prompt_tok": 5583144,
+   "peak_ctx": 123617,
+   "gen_s": 498.2,
+   "tool_s": 1.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     35
+    ],
+    [
+     "bash",
+     25
+    ],
+    [
+     "edit",
+     18
+    ],
+    [
+     "compress",
+     4
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "f57d7c96-f365-459a-8c0d-be09f531396a",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G4 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 499.6,
+   "active_s": 499.5,
+   "turns": 1,
+   "steps": 12,
+   "tool_calls": 16,
+   "out_tok": 22330,
+   "prompt_tok": 444154,
+   "peak_ctx": 55400,
+   "gen_s": 497.7,
+   "tool_s": 1.7,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     8
+    ],
+    [
+     "read_image",
+     7
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "57fe6ed6-4d9c-42ef-8b55-cef3a741e834",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent_fork",
+   "label": "核查 SDK 工具过滤边界",
+   "model": "gpt-6.1-sol",
+   "wall_s": 961.0,
+   "active_s": 496.2,
+   "turns": 3,
+   "steps": 26,
+   "tool_calls": 72,
+   "out_tok": 13813,
+   "prompt_tok": 3311074,
+   "peak_ctx": 185673,
+   "gen_s": 485.3,
+   "tool_s": 39.7,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 3
+   },
+   "top_tools": [
+    [
+     "web_fetch",
+     32
+    ],
+    [
+     "read",
+     22
+    ],
+    [
+     "grep",
+     6
+    ],
+    [
+     "team_task_update",
+     4
+    ],
+    [
+     "team_task_get",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "13530040-6439-4c87-ada7-46c751f7649f",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G1 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 494.9,
+   "active_s": 494.9,
+   "turns": 1,
+   "steps": 17,
+   "tool_calls": 23,
+   "out_tok": 33134,
+   "prompt_tok": 795966,
+   "peak_ctx": 66453,
+   "gen_s": 491.5,
+   "tool_s": 3.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     14
+    ],
+    [
+     "read_image",
+     8
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "779f1411-fd7d-4a1f-85d3-8841dbcff864",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scene S3",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 491.1,
+   "active_s": 491.0,
+   "turns": 1,
+   "steps": 13,
+   "tool_calls": 12,
+   "out_tok": 36704,
+   "prompt_tok": 1032331,
+   "peak_ctx": 126576,
+   "gen_s": 450.9,
+   "tool_s": 32.8,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     8
+    ],
+    [
+     "read",
+     1
+    ],
+    [
+     "write",
+     1
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "read_image",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "98d7cd84-d0a3-46a3-9b6e-d14a9c4a7eb9",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scenes S7-S9",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 489.2,
+   "active_s": 489.2,
+   "turns": 1,
+   "steps": 10,
+   "tool_calls": 10,
+   "out_tok": 27326,
+   "prompt_tok": 748921,
+   "peak_ctx": 116590,
+   "gen_s": 296.4,
+   "tool_s": 0.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:MALFORMED_RESPONSE": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     6
+    ],
+    [
+     "skill",
+     1
+    ],
+    [
+     "read",
+     1
+    ],
+    [
+     "write",
+     1
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "a2954f4c-ab18-423c-8c80-d12f09da5a5e",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent",
+   "label": "审查修复计划完整性",
+   "model": "anthropic-ccmax/claude-sonnet-5",
+   "wall_s": 485.7,
+   "active_s": 485.7,
+   "turns": 1,
+   "steps": 43,
+   "tool_calls": 54,
+   "out_tok": 10250,
+   "prompt_tok": 3284189,
+   "peak_ctx": 127618,
+   "gen_s": 478.2,
+   "tool_s": 6.8,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 4,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     33
+    ],
+    [
+     "glob",
+     7
+    ],
+    [
+     "grep",
+     7
+    ],
+    [
+     "web_fetch",
+     2
+    ],
+    [
+     "skill",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "8685f432-920b-4fa4-ad2c-1bacf7520286",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "subagent",
+   "label": "Records/picker/settings views",
+   "model": "anthropic-ccmax/claude-opus-5-5",
+   "wall_s": 477.6,
+   "active_s": 477.6,
+   "turns": 1,
+   "steps": 28,
+   "tool_calls": 34,
+   "out_tok": 30789,
+   "prompt_tok": 2383334,
+   "peak_ctx": 105395,
+   "gen_s": 476.4,
+   "tool_s": 0.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     10
+    ],
+    [
+     "write",
+     6
+    ],
+    [
+     "read",
+     6
+    ],
+    [
+     "edit",
+     5
+    ],
+    [
+     "grep",
+     5
+    ]
+   ]
+  },
+  {
+   "id": "494f3a54-3e80-4b82-a7d9-a52295b2c471",
+   "parent": "session-cd3e5c4a-9c13-462a-80fe-2f3ed397d761",
+   "kind": "teammate",
+   "label": "Research DSH deep frontend customization: overrides of styles/layout, new pages with Vue/Pinia",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 472.3,
+   "active_s": 472.3,
+   "turns": 1,
+   "steps": 63,
+   "tool_calls": 82,
+   "out_tok": 49001,
+   "prompt_tok": 4165907,
+   "peak_ctx": 102744,
+   "gen_s": 438.5,
+   "tool_s": 33.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "aborted:parent": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     45
+    ],
+    [
+     "read",
+     30
+    ],
+    [
+     "cordis_inspect_query",
+     3
+    ],
+    [
+     "skill",
+     1
+    ],
+    [
+     "cordis_inspect_list",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "906ad4e2-28ea-4043-a863-d4b863941b13",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "调查 DSH 原生链接接收入口",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1152.1,
+   "active_s": 470.2,
+   "turns": 2,
+   "steps": 33,
+   "tool_calls": 75,
+   "out_tok": 9689,
+   "prompt_tok": 3241478,
+   "peak_ctx": 195819,
+   "gen_s": 455.2,
+   "tool_s": 25.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "read",
+     37
+    ],
+    [
+     "grep",
+     14
+    ],
+    [
+     "bash",
+     7
+    ],
+    [
+     "glob",
+     5
+    ],
+    [
+     "cordis_inspect_query",
+     4
+    ]
+   ]
+  },
+  {
+   "id": "92338c00-29d4-4df1-915b-a78741641256",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Verify sidebar session contract",
+   "model": "openai/gpt-6-astra",
+   "wall_s": 465.2,
+   "active_s": 465.1,
+   "turns": 1,
+   "steps": 48,
+   "tool_calls": 47,
+   "out_tok": 7243,
+   "prompt_tok": 4825344,
+   "peak_ctx": 681081,
+   "gen_s": 463.0,
+   "tool_s": 1.5,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     20
+    ],
+    [
+     "glob",
+     12
+    ],
+    [
+     "grep",
+     10
+    ],
+    [
+     "send_message",
+     3
+    ],
+    [
+     "acp_status",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "54c26bb8-99d7-46da-93a2-ebf2afc9115a",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "源数据/素材资产工具链(重试)",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 454.7,
+   "active_s": 454.7,
+   "turns": 1,
+   "steps": 8,
+   "tool_calls": 8,
+   "out_tok": 3092,
+   "prompt_tok": 450708,
+   "peak_ctx": 97045,
+   "gen_s": 316.1,
+   "tool_s": 63.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     6
+    ],
+    [
+     "read",
+     1
+    ],
+    [
+     "job_output",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "238d3059-b42f-4ff2-a8c5-c22944195b21",
+   "parent": "session-784d6509-d772-4953-925f-e5d5830bf491",
+   "kind": "subagent_fork",
+   "label": "Implement P1 video link extractor",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 442.8,
+   "active_s": 442.8,
+   "turns": 1,
+   "steps": 20,
+   "tool_calls": 22,
+   "out_tok": 32957,
+   "prompt_tok": 2441371,
+   "peak_ctx": 143218,
+   "gen_s": 434.5,
+   "tool_s": 8.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     20
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "send_message",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "d71076b8-32de-44d8-a78b-d3fbe1bb5f58",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G2 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 433.7,
+   "active_s": 433.7,
+   "turns": 1,
+   "steps": 17,
+   "tool_calls": 20,
+   "out_tok": 22096,
+   "prompt_tok": 648089,
+   "peak_ctx": 55347,
+   "gen_s": 427.8,
+   "tool_s": 4.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "(unclosed)": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     10
+    ],
+    [
+     "read_image",
+     9
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "b600f16c-0b46-449d-9be9-6d1a9fcd8839",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G5 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 433.0,
+   "active_s": 433.0,
+   "turns": 1,
+   "steps": 17,
+   "tool_calls": 20,
+   "out_tok": 28505,
+   "prompt_tok": 711350,
+   "peak_ctx": 61420,
+   "gen_s": 414.8,
+   "tool_s": 5.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "(unclosed)": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     10
+    ],
+    [
+     "read_image",
+     9
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "cad8eef7-d559-4a67-9939-d0f0430d0dd8",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "研究提供商匹配与缓存",
+   "model": "gpt-6.1-sol",
+   "wall_s": 797.0,
+   "active_s": 428.5,
+   "turns": 3,
+   "steps": 24,
+   "tool_calls": 67,
+   "out_tok": 12431,
+   "prompt_tok": 1792913,
+   "peak_ctx": 105924,
+   "gen_s": 425.0,
+   "tool_s": 5.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 3
+   },
+   "top_tools": [
+    [
+     "read",
+     38
+    ],
+    [
+     "glob",
+     12
+    ],
+    [
+     "cordis_inspect_query",
+     8
+    ],
+    [
+     "grep",
+     3
+    ],
+    [
+     "compress",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "765ba118-05d9-4f95-85ba-9d45b6c150f2",
+   "parent": "session-b00561bd-8403-4236-88c7-7fa0a732c3fb",
+   "kind": "subagent_fork",
+   "label": "本地预览与截图工具",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 427.5,
+   "active_s": 427.5,
+   "turns": 1,
+   "steps": 33,
+   "tool_calls": 52,
+   "out_tok": 33866,
+   "prompt_tok": 1742397,
+   "peak_ctx": 81928,
+   "gen_s": 354.8,
+   "tool_s": 72.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     49
+    ],
+    [
+     "job_kill",
+     1
+    ],
+    [
+     "send_message",
+     1
+    ],
+    [
+     "exit_plan_mode",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "52072d85-c06f-491d-b6ba-73d16854e9e6",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G6 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 423.6,
+   "active_s": 423.6,
+   "turns": 1,
+   "steps": 20,
+   "tool_calls": 22,
+   "out_tok": 30149,
+   "prompt_tok": 912404,
+   "peak_ctx": 65095,
+   "gen_s": 351.2,
+   "tool_s": 4.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "(unclosed)": 1
+   },
+   "top_tools": [
+    [
+     "read_image",
+     11
+    ],
+    [
+     "bash",
+     10
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "14d6c2a5-eda6-422d-b643-40f56bc077b2",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G1 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 420.2,
+   "active_s": 420.2,
+   "turns": 1,
+   "steps": 20,
+   "tool_calls": 21,
+   "out_tok": 16617,
+   "prompt_tok": 735375,
+   "peak_ctx": 48259,
+   "gen_s": 416.5,
+   "tool_s": 3.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     14
+    ],
+    [
+     "read_image",
+     6
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "a63c48b9-e070-441a-838f-ea6939519b0d",
+   "parent": "session-0fc119a0-92de-441f-929d-4e5ae6ef1df9",
+   "kind": "subagent",
+   "label": "G3 构建",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 415.8,
+   "active_s": 415.8,
+   "turns": 1,
+   "steps": 14,
+   "tool_calls": 13,
+   "out_tok": 28025,
+   "prompt_tok": 614448,
+   "peak_ctx": 57686,
+   "gen_s": 413.3,
+   "tool_s": 2.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     8
+    ],
+    [
+     "read_image",
+     3
+    ],
+    [
+     "write",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "e7b6e292-8121-4c94-a531-11fa43a8ecc8",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Research DSH remote APIs",
+   "model": "codex-ccmax/gpt-6-astra",
+   "wall_s": 5957.2,
+   "active_s": 406.9,
+   "turns": 2,
+   "steps": 11,
+   "tool_calls": 9,
+   "out_tok": 2119,
+   "prompt_tok": 2163383,
+   "peak_ctx": 641324,
+   "gen_s": 354.7,
+   "tool_s": 1.3,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1,
+    "aborted:user": 1
+   },
+   "top_tools": [
+    [
+     "grep",
+     4
+    ],
+    [
+     "read",
+     3
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "glob",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "665522d6-b1f1-4439-98b3-8065463cb3f7",
+   "parent": "session-784d6509-d772-4953-925f-e5d5830bf491",
+   "kind": "subagent_fork",
+   "label": "Implement P3 credentials SSOT",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 399.6,
+   "active_s": 399.5,
+   "turns": 1,
+   "steps": 18,
+   "tool_calls": 27,
+   "out_tok": 22848,
+   "prompt_tok": 2179695,
+   "peak_ctx": 147603,
+   "gen_s": 398.3,
+   "tool_s": 1.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     13
+    ],
+    [
+     "bash",
+     8
+    ],
+    [
+     "grep",
+     3
+    ],
+    [
+     "write",
+     1
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "44f221bb-835f-4818-a7d8-a3e306d2dde5",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "subagent",
+   "label": "Finish fingerprint store lifecycle",
+   "model": "openai/gpt-6-astra",
+   "wall_s": 397.3,
+   "active_s": 397.3,
+   "turns": 1,
+   "steps": 24,
+   "tool_calls": 46,
+   "out_tok": 14169,
+   "prompt_tok": 1363902,
+   "peak_ctx": 75290,
+   "gen_s": 385.1,
+   "tool_s": 12.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     14
+    ],
+    [
+     "edit",
+     8
+    ],
+    [
+     "glob",
+     6
+    ],
+    [
+     "send_message",
+     5
+    ],
+    [
+     "grep",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "07d1c7ea-9d13-44d1-8263-6b828653aab6",
+   "parent": "session-8e8ab84c-0347-44bb-8d0e-2659c5740fb0",
+   "kind": "subagent",
+   "label": "Test skill on new slide",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 394.8,
+   "active_s": 394.8,
+   "turns": 1,
+   "steps": 34,
+   "tool_calls": 37,
+   "out_tok": 44124,
+   "prompt_tok": 2041891,
+   "peak_ctx": 87378,
+   "gen_s": 378.6,
+   "tool_s": 15.8,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     25
+    ],
+    [
+     "read_image",
+     8
+    ],
+    [
+     "read",
+     3
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "6889702d-4874-4aa8-a3db-f81ee12438da",
+   "parent": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+   "kind": "subagent_fork",
+   "label": "Build TERRAIN market v4",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 394.8,
+   "active_s": 394.6,
+   "turns": 1,
+   "steps": 16,
+   "tool_calls": 22,
+   "out_tok": 24067,
+   "prompt_tok": 1868022,
+   "peak_ctx": 245793,
+   "gen_s": 321.8,
+   "tool_s": 58.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "aborted:disposed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     11
+    ],
+    [
+     "mcp__tavily-proxy__tavily-search",
+     6
+    ],
+    [
+     "mcp__tavily-proxy__tavily-extract",
+     2
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "read_image",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "90cb97b9-0528-451c-9bf1-cddc0959fc0d",
+   "parent": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+   "kind": "subagent_fork",
+   "label": "Build DESK invest v4",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 394.8,
+   "active_s": 394.6,
+   "turns": 1,
+   "steps": 16,
+   "tool_calls": 16,
+   "out_tok": 30306,
+   "prompt_tok": 1722652,
+   "peak_ctx": 244683,
+   "gen_s": 358.9,
+   "tool_s": 9.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "aborted:disposed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     8
+    ],
+    [
+     "write",
+     3
+    ],
+    [
+     "mcp__tavily-proxy__tavily-search",
+     2
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "read_image",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "fbb0acb2-34a5-4cf3-a84b-d765d9982bc1",
+   "parent": "session-901238ed-7d65-45cd-aaf2-f70adb199f58",
+   "kind": "teammate",
+   "label": "调研 Playwright CLI 与 Playwright MCP",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 393.1,
+   "active_s": 393.1,
+   "turns": 1,
+   "steps": 51,
+   "tool_calls": 59,
+   "out_tok": 51860,
+   "prompt_tok": 4254106,
+   "peak_ctx": 140587,
+   "gen_s": 353.5,
+   "tool_s": 39.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     24
+    ],
+    [
+     "edit",
+     15
+    ],
+    [
+     "mcp__tavily-proxy__tavily-search",
+     6
+    ],
+    [
+     "mcp__tavily-proxy__tavily-extract",
+     5
+    ],
+    [
+     "team_task_get",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "33918b52-607a-40bd-9579-70ee8cf7010b",
+   "parent": "session-d2513958-7527-43ff-ab80-1b5cc7f51e3f",
+   "kind": "subagent_fork",
+   "label": "Build REPLAY user v4",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 390.8,
+   "active_s": 390.7,
+   "turns": 1,
+   "steps": 17,
+   "tool_calls": 22,
+   "out_tok": 28773,
+   "prompt_tok": 1818038,
+   "peak_ctx": 245963,
+   "gen_s": 337.0,
+   "tool_s": 20.6,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:MALFORMED_RESPONSE": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     8
+    ],
+    [
+     "write",
+     7
+    ],
+    [
+     "mcp__tavily-proxy__tavily-search",
+     3
+    ],
+    [
+     "read_image",
+     2
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "847eec22-02e9-42bf-b2cc-69288bf61366",
+   "parent": "session-2d3b5436-e7ad-4d08-a366-a83875e28e2c",
+   "kind": "teammate",
+   "label": "提取并结构化 A6API 开发者文档简中版",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 377.9,
+   "active_s": 377.9,
+   "turns": 1,
+   "steps": 65,
+   "tool_calls": 67,
+   "out_tok": 49671,
+   "prompt_tok": 3774327,
+   "peak_ctx": 88321,
+   "gen_s": 372.2,
+   "tool_s": 4.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     52
+    ],
+    [
+     "read",
+     5
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ],
+    [
+     "write",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "f92ae391-5f63-401a-9867-448fa3aa860c",
+   "parent": "session-901238ed-7d65-45cd-aaf2-f70adb199f58",
+   "kind": "teammate",
+   "label": "横评 token 成本与社区口碑",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 376.2,
+   "active_s": 376.2,
+   "turns": 1,
+   "steps": 19,
+   "tool_calls": 42,
+   "out_tok": 47133,
+   "prompt_tok": 1624520,
+   "peak_ctx": 127800,
+   "gen_s": 285.1,
+   "tool_s": 90.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "mcp__tavily-proxy__tavily-search",
+     27
+    ],
+    [
+     "bash",
+     4
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ],
+    [
+     "mcp__tavily-proxy__tavily-extract",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "e2f552b5-3e83-44c0-8258-1fe31b96dc31",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "诊断信任与会话状态",
+   "model": "gpt-6.1-sol",
+   "wall_s": 375.2,
+   "active_s": 375.2,
+   "turns": 1,
+   "steps": 18,
+   "tool_calls": 16,
+   "out_tok": 11294,
+   "prompt_tok": 1825383,
+   "peak_ctx": 158816,
+   "gen_s": 373.7,
+   "tool_s": 1.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     16
+    ]
+   ]
+  },
+  {
+   "id": "6495b243-db2f-4cc0-9d3d-d2c8e2468551",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现仓库树与跟踪选项",
+   "model": "gpt-6.1-sol",
+   "wall_s": 366.9,
+   "active_s": 366.9,
+   "turns": 1,
+   "steps": 18,
+   "tool_calls": 17,
+   "out_tok": 12889,
+   "prompt_tok": 1512254,
+   "peak_ctx": 120949,
+   "gen_s": 365.5,
+   "tool_s": 1.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     17
+    ]
+   ]
+  },
+  {
+   "id": "df392150-b360-4bab-8c25-af0fbcfdb3b8",
+   "parent": "session-cd3e5c4a-9c13-462a-80fe-2f3ed397d761",
+   "kind": "teammate",
+   "label": "Research DSH client plugin runtime: React vs Vue, TS support, build/dist vs install flow",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 352.4,
+   "active_s": 352.4,
+   "turns": 1,
+   "steps": 35,
+   "tool_calls": 62,
+   "out_tok": 40764,
+   "prompt_tok": 1991873,
+   "peak_ctx": 95638,
+   "gen_s": 320.7,
+   "tool_s": 31.6,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     49
+    ],
+    [
+     "bash",
+     5
+    ],
+    [
+     "cordis_inspect_query",
+     3
+    ],
+    [
+     "cordis_inspect_list",
+     2
+    ],
+    [
+     "skill",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "9a13c7a1-6994-4d0a-887f-2a33e07d387a",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "诊断拖拽和菜单偏移",
+   "model": "gpt-6.1-sol",
+   "wall_s": 350.3,
+   "active_s": 350.2,
+   "turns": 1,
+   "steps": 21,
+   "tool_calls": 19,
+   "out_tok": 12219,
+   "prompt_tok": 1994504,
+   "peak_ctx": 151065,
+   "gen_s": 348.9,
+   "tool_s": 0.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     19
+    ]
+   ]
+  },
+  {
+   "id": "d5802093-f13a-4ea3-b863-8b725889f110",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Inspect plugin provider settings",
+   "model": "gpt-6.1-sol",
+   "wall_s": 350.3,
+   "active_s": 349.9,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "bcfc9140-4437-40b4-9386-801edd28cb65",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "核查任务包生成器和协议",
+   "model": "gpt-6.1-sol",
+   "wall_s": 346.8,
+   "active_s": 346.8,
+   "turns": 1,
+   "steps": 14,
+   "tool_calls": 22,
+   "out_tok": 9496,
+   "prompt_tok": 1041627,
+   "peak_ctx": 98486,
+   "gen_s": 310.9,
+   "tool_s": 40.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     8
+    ],
+    [
+     "glob",
+     6
+    ],
+    [
+     "grep",
+     5
+    ],
+    [
+     "write",
+     1
+    ],
+    [
+     "team_task_get",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "6b364971-501b-49d6-8492-18ba2433ba65",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scene S8",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 345.7,
+   "active_s": 345.6,
+   "turns": 1,
+   "steps": 15,
+   "tool_calls": 17,
+   "out_tok": 27681,
+   "prompt_tok": 1160795,
+   "peak_ctx": 113380,
+   "gen_s": 304.5,
+   "tool_s": 24.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:MALFORMED_RESPONSE": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     7
+    ],
+    [
+     "read",
+     5
+    ],
+    [
+     "read_image",
+     2
+    ],
+    [
+     "grep",
+     1
+    ],
+    [
+     "write",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "c0c13722-bbe9-4e33-8381-db1bd2640ec3",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Find subprocess PTY contract",
+   "model": "gpt-6.1-sol",
+   "wall_s": 343.4,
+   "active_s": 343.0,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "218d0ac4-2792-459c-8ef0-c8d58e9df15d",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Research sandbox profile config",
+   "model": "gpt-6.1-sol",
+   "wall_s": 342.9,
+   "active_s": 342.6,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "5279c58e-4a61-45d8-9c30-6234649731d2",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现搜索后端排除规则",
+   "model": "gpt-6.1-sol",
+   "wall_s": 339.2,
+   "active_s": 339.1,
+   "turns": 1,
+   "steps": 26,
+   "tool_calls": 25,
+   "out_tok": 18958,
+   "prompt_tok": 2719531,
+   "peak_ctx": 140700,
+   "gen_s": 334.2,
+   "tool_s": 4.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     25
+    ]
+   ]
+  },
+  {
+   "id": "73b8db54-c48b-4685-86a8-61e759beba7b",
+   "parent": "session-901238ed-7d65-45cd-aaf2-f70adb199f58",
+   "kind": "teammate",
+   "label": "调研 Chrome DevTools MCP 与 OpenCLI",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 324.4,
+   "active_s": 324.4,
+   "turns": 1,
+   "steps": 51,
+   "tool_calls": 58,
+   "out_tok": 37848,
+   "prompt_tok": 4371065,
+   "peak_ctx": 111668,
+   "gen_s": 286.6,
+   "tool_s": 37.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     28
+    ],
+    [
+     "mcp__tavily-proxy__tavily-search",
+     9
+    ],
+    [
+     "edit",
+     8
+    ],
+    [
+     "mcp__tavily-proxy__tavily-extract",
+     5
+    ],
+    [
+     "team_task_get",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "f7756079-13e6-4224-b8c4-096a39c448bb",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "核对配置生效和按钮样式",
+   "model": "gpt-6.1-sol",
+   "wall_s": 322.1,
+   "active_s": 322.1,
+   "turns": 1,
+   "steps": 20,
+   "tool_calls": 18,
+   "out_tok": 10025,
+   "prompt_tok": 1735886,
+   "peak_ctx": 124558,
+   "gen_s": 320.8,
+   "tool_s": 0.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     18
+    ]
+   ]
+  },
+  {
+   "id": "1d477414-30da-482b-a57a-a0ffadfad3ca",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "瘦身 a6api 油猴为纯选择器",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 320.0,
+   "active_s": 320.0,
+   "turns": 1,
+   "steps": 26,
+   "tool_calls": 33,
+   "out_tok": 37000,
+   "prompt_tok": 2036881,
+   "peak_ctx": 105297,
+   "gen_s": 317.3,
+   "tool_s": 2.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     21
+    ],
+    [
+     "read",
+     6
+    ],
+    [
+     "edit",
+     4
+    ],
+    [
+     "write",
+     1
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "9ff3095f-d5ff-4daf-a07a-a07741eb3895",
+   "parent": "session-f6a1adbc-c1a6-4b7d-9e64-b9c824f03733",
+   "kind": "teammate",
+   "label": "Map DSH existing file sidebar, document preview, workspace-files API, and what a VS Code-like editor/explorer must add",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 311.0,
+   "active_s": 311.0,
+   "turns": 1,
+   "steps": 52,
+   "tool_calls": 65,
+   "out_tok": 28894,
+   "prompt_tok": 3448000,
+   "peak_ctx": 99310,
+   "gen_s": 299.6,
+   "tool_s": 11.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     53
+    ],
+    [
+     "read",
+     9
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "write",
+     1
+    ],
+    [
+     "send_message",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "5d54a67d-70a4-4457-971b-21880853b5e7",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "实现 Explorer 多选批量",
+   "model": "gpt-6.1-sol",
+   "wall_s": 305.0,
+   "active_s": 305.0,
+   "turns": 1,
+   "steps": 23,
+   "tool_calls": 22,
+   "out_tok": 15785,
+   "prompt_tok": 2297762,
+   "peak_ctx": 147001,
+   "gen_s": 303.4,
+   "tool_s": 1.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     22
+    ]
+   ]
+  },
+  {
+   "id": "8c797ac4-8d4e-4ddb-a1b5-abe9a3309195",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent_fork",
+   "label": "Review custom execution safety",
+   "model": "gpt-6.1-sol",
+   "wall_s": 71176.8,
+   "active_s": 303.6,
+   "turns": 2,
+   "steps": 2,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:CONTEXT_WINDOW_EXCEEDED": 2
+   },
+   "top_tools": []
+  },
+  {
+   "id": "7f40d77f-bd73-439b-83aa-ab806dff813e",
+   "parent": "session-33c9e77d-4269-488b-8e60-708338b13455",
+   "kind": "subagent",
+   "label": "核对聊天请求组装",
+   "model": "gpt-6.1-sol",
+   "wall_s": 295.9,
+   "active_s": 295.9,
+   "turns": 1,
+   "steps": 22,
+   "tool_calls": 57,
+   "out_tok": 6242,
+   "prompt_tok": 1685635,
+   "peak_ctx": 101594,
+   "gen_s": 293.8,
+   "tool_s": 2.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     24
+    ],
+    [
+     "grep",
+     15
+    ],
+    [
+     "glob",
+     15
+    ],
+    [
+     "send_message",
+     3
+    ]
+   ]
+  },
+  {
+   "id": "aefac20a-b9f5-43b1-aa10-009211842056",
+   "parent": "session-f6a1adbc-c1a6-4b7d-9e64-b9c824f03733",
+   "kind": "teammate",
+   "label": "Map DSH client plugin contract: platform modules, slots, build/externals, asset+worker constraints",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 290.9,
+   "active_s": 290.9,
+   "turns": 1,
+   "steps": 59,
+   "tool_calls": 69,
+   "out_tok": 31092,
+   "prompt_tok": 3512687,
+   "peak_ctx": 96300,
+   "gen_s": 270.1,
+   "tool_s": 20.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     61
+    ],
+    [
+     "read",
+     4
+    ],
+    [
+     "write",
+     2
+    ],
+    [
+     "compress",
+     1
+    ],
+    [
+     "send_message",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "1016e2b2-2b98-4cd0-b105-553ee322411b",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "C07/C06 脚手架差异与演化",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 232.7,
+   "active_s": 232.6,
+   "turns": 1,
+   "steps": 2,
+   "tool_calls": 1,
+   "out_tok": 261,
+   "prompt_tok": 53752,
+   "peak_ctx": 53752,
+   "gen_s": 158.3,
+   "tool_s": 0.3,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "82edffb0-ff8e-4eec-a66d-a08f63d76f37",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "多Agent协作包与审阅工具",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 232.2,
+   "active_s": 232.2,
+   "turns": 1,
+   "steps": 2,
+   "tool_calls": 1,
+   "out_tok": 191,
+   "prompt_tok": 53803,
+   "peak_ctx": 53803,
+   "gen_s": 158.1,
+   "tool_s": 0.8,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "65fc557b-8961-4e59-826b-b4bd20e5745e",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "generator 与根工具链运行验证",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 232.2,
+   "active_s": 232.2,
+   "turns": 1,
+   "steps": 2,
+   "tool_calls": 1,
+   "out_tok": 221,
+   "prompt_tok": 53971,
+   "peak_ctx": 53971,
+   "gen_s": 150.8,
+   "tool_s": 0.1,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "66514035-280f-4a90-a97b-b8a4a580c6c4",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "源数据/提取/素材资产工具链",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 232.2,
+   "active_s": 232.2,
+   "turns": 1,
+   "steps": 2,
+   "tool_calls": 1,
+   "out_tok": 150,
+   "prompt_tok": 53929,
+   "peak_ctx": 53929,
+   "gen_s": 150.0,
+   "tool_s": 0.2,
+   "retries": 1,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "b3c70a36-e49b-4fad-bc4e-2721e6d57ab7",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent_fork",
+   "label": "实现油猴界面优化",
+   "model": "codex-ccmax/gpt-6.1-terra",
+   "wall_s": 228.6,
+   "active_s": 228.3,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:CONTEXT_WINDOW_EXCEEDED": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "42c8974c-c81e-4434-a70f-b9639aea894d",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Verify remote host registration",
+   "model": "openai/gpt-6-astra",
+   "wall_s": 198.0,
+   "active_s": 197.8,
+   "turns": 1,
+   "steps": 7,
+   "tool_calls": 6,
+   "out_tok": 284,
+   "prompt_tok": 4107092,
+   "peak_ctx": 688703,
+   "gen_s": 169.3,
+   "tool_s": 0.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     4
+    ],
+    [
+     "glob",
+     1
+    ],
+    [
+     "grep",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "e2bb8644-7870-4784-97c5-88398a383b5f",
+   "parent": "session-33c9e77d-4269-488b-8e60-708338b13455",
+   "kind": "subagent",
+   "label": "核对宿主官方接口",
+   "model": "gpt-6.1-sol",
+   "wall_s": 194.0,
+   "active_s": 194.0,
+   "turns": 1,
+   "steps": 9,
+   "tool_calls": 20,
+   "out_tok": 6447,
+   "prompt_tok": 474143,
+   "peak_ctx": 71388,
+   "gen_s": 193.5,
+   "tool_s": 0.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     11
+    ],
+    [
+     "bash",
+     3
+    ],
+    [
+     "send_message",
+     3
+    ],
+    [
+     "grep",
+     2
+    ],
+    [
+     "glob",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "f34ac7fb-ccc3-4a3c-a4da-ba8077c1909b",
+   "parent": "session-fcd1cbf5-f111-4ab8-a634-eb4bcbb27923",
+   "kind": "subagent",
+   "label": "核实官方快捷键设置入口",
+   "model": "gpt-6.1-sol",
+   "wall_s": 191.8,
+   "active_s": 191.8,
+   "turns": 1,
+   "steps": 11,
+   "tool_calls": 9,
+   "out_tok": 5647,
+   "prompt_tok": 832484,
+   "peak_ctx": 107210,
+   "gen_s": 189.7,
+   "tool_s": 1.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     9
+    ]
+   ]
+  },
+  {
+   "id": "d898f8d5-2c5d-4e50-85d6-b9ac7d39f69a",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "gpt-6.1-sol",
+   "wall_s": 174.3,
+   "active_s": 174.0,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "aborted:parent": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "512916c5-e22a-456a-aa4b-5a208f3a33a5",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent",
+   "label": "Inspect local model config",
+   "model": "gpt-6.1-sol",
+   "wall_s": 173.2,
+   "active_s": 173.2,
+   "turns": 1,
+   "steps": 23,
+   "tool_calls": 41,
+   "out_tok": 4434,
+   "prompt_tok": 789815,
+   "peak_ctx": 44707,
+   "gen_s": 170.6,
+   "tool_s": 2.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "glob",
+     12
+    ],
+    [
+     "read",
+     12
+    ],
+    [
+     "grep",
+     10
+    ],
+    [
+     "bash",
+     4
+    ],
+    [
+     "send_message",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "46553621-08b4-4c24-a1e4-19e47b1e8f13",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent_fork",
+   "label": "实现令牌折叠显示",
+   "model": "codex-ccmax/gpt-6.1-terra",
+   "wall_s": 157.2,
+   "active_s": 157.0,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "ce848376-7eb3-4a2b-b5a0-af3d6512fd47",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "逆向 a6api 令牌固定商家接口",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 153.8,
+   "active_s": 153.7,
+   "turns": 1,
+   "steps": 28,
+   "tool_calls": 32,
+   "out_tok": 18231,
+   "prompt_tok": 1458414,
+   "peak_ctx": 70798,
+   "gen_s": 151.4,
+   "tool_s": 2.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     32
+    ]
+   ]
+  },
+  {
+   "id": "199363f3-d59f-4f43-8040-6d2c9ca85307",
+   "parent": "session-8e8ab84c-0347-44bb-8d0e-2659c5740fb0",
+   "kind": "subagent",
+   "label": "Timed retest of hardened skill",
+   "model": "deepseek-v4.1-flash-1017",
+   "wall_s": 153.7,
+   "active_s": 153.7,
+   "turns": 1,
+   "steps": 17,
+   "tool_calls": 17,
+   "out_tok": 12383,
+   "prompt_tok": 780478,
+   "peak_ctx": 55294,
+   "gen_s": 133.6,
+   "tool_s": 19.9,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     10
+    ],
+    [
+     "read_image",
+     4
+    ],
+    [
+     "read",
+     1
+    ],
+    [
+     "write",
+     1
+    ],
+    [
+     "present",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "e1606663-624b-4c88-b8f5-729a3193a0d2",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent",
+   "label": "Research provider config APIs",
+   "model": "gpt-6.1-sol",
+   "wall_s": 141.4,
+   "active_s": 141.4,
+   "turns": 1,
+   "steps": 13,
+   "tool_calls": 42,
+   "out_tok": 4750,
+   "prompt_tok": 596400,
+   "peak_ctx": 72533,
+   "gen_s": 138.8,
+   "tool_s": 2.5,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "glob",
+     16
+    ],
+    [
+     "read",
+     12
+    ],
+    [
+     "grep",
+     11
+    ],
+    [
+     "working_directory",
+     1
+    ],
+    [
+     "bash",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "2b3837ad-80af-44c3-85af-2552e7a5f640",
+   "parent": "session-22ab4eae-09dd-4b49-9b46-f9bdf96e063f",
+   "kind": "subagent",
+   "label": "多Agent任务包可执行部分",
+   "model": "anthropic-ccmax/claude-sonnet-5-5",
+   "wall_s": 137.9,
+   "active_s": 137.9,
+   "turns": 1,
+   "steps": 3,
+   "tool_calls": 2,
+   "out_tok": 342,
+   "prompt_tok": 108036,
+   "peak_ctx": 54288,
+   "gen_s": 66.4,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "bac95104-dddb-40e8-9bb3-1e9fe1d3364f",
+   "parent": "session-231818b7-356b-4a19-8c9d-1ffc740317ed",
+   "kind": "subagent",
+   "label": "编写应用知识库",
+   "model": "deepseek-flash",
+   "wall_s": 136.3,
+   "active_s": 136.3,
+   "turns": 1,
+   "steps": 11,
+   "tool_calls": 10,
+   "out_tok": 19968,
+   "prompt_tok": 540031,
+   "peak_ctx": 65992,
+   "gen_s": 124.7,
+   "tool_s": 9.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:ACCOUNT_QUOTA": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     10
+    ]
+   ]
+  },
+  {
+   "id": "11c65f96-a72b-46ba-8ea3-b6a952c4e59e",
+   "parent": "session-f07c311a-a5cd-4da6-a701-7ea5181038fe",
+   "kind": "subagent",
+   "label": "审查油猴与记录列表体验",
+   "model": "gpt-6.1-sol",
+   "wall_s": 359.8,
+   "active_s": 117.9,
+   "turns": 2,
+   "steps": 9,
+   "tool_calls": 18,
+   "out_tok": 2873,
+   "prompt_tok": 512326,
+   "peak_ctx": 76888,
+   "gen_s": 117.3,
+   "tool_s": 0.7,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 2
+   },
+   "top_tools": [
+    [
+     "read",
+     11
+    ],
+    [
+     "bash",
+     2
+    ],
+    [
+     "glob",
+     2
+    ],
+    [
+     "skill",
+     1
+    ],
+    [
+     "grep",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "cae888bd-8ca1-4c91-ba88-68881a287514",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent",
+   "label": "Inspect ASAR Host/Remote APIs",
+   "model": "gemini-4-argon",
+   "wall_s": 105.9,
+   "active_s": 105.9,
+   "turns": 1,
+   "steps": 25,
+   "tool_calls": 24,
+   "out_tok": 2477,
+   "prompt_tok": 498962,
+   "peak_ctx": 21370,
+   "gen_s": 105.4,
+   "tool_s": 0.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     19
+    ],
+    [
+     "send_message",
+     2
+    ],
+    [
+     "ask_user_question",
+     1
+    ],
+    [
+     "job_list",
+     1
+    ],
+    [
+     "job_kill",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "50a90fc6-d30a-4754-8536-39784f3c2f10",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scenes S0 and S9",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 105.3,
+   "active_s": 105.3,
+   "turns": 1,
+   "steps": 10,
+   "tool_calls": 12,
+   "out_tok": 1765,
+   "prompt_tok": 708552,
+   "peak_ctx": 99272,
+   "gen_s": 92.3,
+   "tool_s": 0.4,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     7
+    ],
+    [
+     "bash",
+     3
+    ],
+    [
+     "skill",
+     1
+    ],
+    [
+     "read_image",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "a362ef4d-18fc-4249-8bd9-9b4a8feaf4b4",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent",
+   "label": "Inspect ASAR Client UI APIs",
+   "model": "gemini-4-argon",
+   "wall_s": 81.4,
+   "active_s": 81.3,
+   "turns": 1,
+   "steps": 13,
+   "tool_calls": 12,
+   "out_tok": 2792,
+   "prompt_tok": 520204,
+   "peak_ctx": 99474,
+   "gen_s": 72.2,
+   "tool_s": 9.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     6
+    ],
+    [
+     "bash",
+     4
+    ],
+    [
+     "send_message",
+     1
+    ],
+    [
+     "compress",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "5f28a1cb-6833-4cac-b350-1f6ae5d81c4e",
+   "parent": "session-231818b7-356b-4a19-8c9d-1ffc740317ed",
+   "kind": "subagent",
+   "label": "编写清理清单数据",
+   "model": "deepseek-flash",
+   "wall_s": 78.5,
+   "active_s": 78.5,
+   "turns": 1,
+   "steps": 3,
+   "tool_calls": 2,
+   "out_tok": 14790,
+   "prompt_tok": 84270,
+   "peak_ctx": 50182,
+   "gen_s": 77.1,
+   "tool_s": 0.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:ACCOUNT_QUOTA": 1
+   },
+   "top_tools": [
+    [
+     "run_code",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "18283054-2fa9-47cd-a15f-30ae8383a9e2",
+   "parent": "session-5dfa839a-9523-4d1b-97f2-f36dc57dafb0",
+   "kind": "subagent",
+   "label": "Build scene S9",
+   "model": "anthropic/claude-opus-5-5",
+   "wall_s": 74.9,
+   "active_s": 74.9,
+   "turns": 1,
+   "steps": 6,
+   "tool_calls": 6,
+   "out_tok": 940,
+   "prompt_tok": 332567,
+   "peak_ctx": 88142,
+   "gen_s": 67.9,
+   "tool_s": 0.2,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     4
+    ],
+    [
+     "read",
+     2
+    ]
+   ]
+  },
+  {
+   "id": "c70fbd39-252e-4103-823e-e505fcba85e1",
+   "parent": "session-ea917659-822c-4678-8b98-ba32da174382",
+   "kind": "subagent",
+   "label": "分析 DSH 会话多智能体数据",
+   "model": "anthropic-ccmax/claude-opus-5-5",
+   "wall_s": 73.8,
+   "active_s": 73.8,
+   "turns": 1,
+   "steps": 8,
+   "tool_calls": 8,
+   "out_tok": 3981,
+   "prompt_tok": 364072,
+   "peak_ctx": 48868,
+   "gen_s": 72.5,
+   "tool_s": 1.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "(unclosed)": 1
+   },
+   "top_tools": [
+    [
+     "bash",
+     7
+    ],
+    [
+     "load_workspace_dependencies",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "77091daa-ea70-4f22-9e9a-b35074454174",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent",
+   "label": "复核纯净外壳研究证据",
+   "model": "gpt-6.1-sol",
+   "wall_s": 67.1,
+   "active_s": 67.1,
+   "turns": 1,
+   "steps": 7,
+   "tool_calls": 16,
+   "out_tok": 2105,
+   "prompt_tok": 287222,
+   "peak_ctx": 54175,
+   "gen_s": 65.9,
+   "tool_s": 3.1,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": [
+    [
+     "read",
+     8
+    ],
+    [
+     "glob",
+     3
+    ],
+    [
+     "team_task_get",
+     2
+    ],
+    [
+     "team_task_update",
+     2
+    ],
+    [
+     "skill",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "9cbf9722-ea1d-4a59-bfc6-c7519affe523",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "Retry remote API research",
+   "model": "codex-ccmax/gpt-6-astra",
+   "wall_s": 42.4,
+   "active_s": 42.2,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:PI_AI_ERROR": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "dc1987b5-0fb9-4993-9a86-74fb85c9ef04",
+   "parent": "session-b00561bd-8403-4236-88c7-7fa0a732c3fb",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 34.7,
+   "active_s": 34.6,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 2388,
+   "prompt_tok": 435010,
+   "peak_ctx": 435010,
+   "gen_s": 34.6,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "a71c7365-c714-48d7-beb9-defd46fe61a5",
+   "parent": "session-5e730a55-a9de-4cba-9544-a9c5c9f1c11c",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "gpt-6-astra",
+   "wall_s": 17.2,
+   "active_s": 17.1,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 333,
+   "prompt_tok": 32597,
+   "peak_ctx": 32597,
+   "gen_s": 17.1,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "eab1a7f0-e862-4987-85e2-7defbb9d567f",
+   "parent": "session-3c876f97-1873-497a-8958-f30f3bf75730",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "gpt-6-astra",
+   "wall_s": 15.4,
+   "active_s": 15.4,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 221,
+   "prompt_tok": 54920,
+   "peak_ctx": 54920,
+   "gen_s": 15.4,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "5caac69f-a333-499b-bf29-4b93c0c904b0",
+   "parent": "session-6fdc1d21-de7c-49ec-ad62-ed9b0aa6776a",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "claude-sonnet-5-5",
+   "wall_s": 13.2,
+   "active_s": 13.1,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 722,
+   "prompt_tok": 260360,
+   "peak_ctx": 260360,
+   "gen_s": 13.0,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "ee1818f3-0883-45ba-b15f-7842798d46bc",
+   "parent": "session-f6a1adbc-c1a6-4b7d-9e64-b9c824f03733",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 9.6,
+   "active_s": 9.6,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 1374,
+   "prompt_tok": 58696,
+   "peak_ctx": 58696,
+   "gen_s": 9.6,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "83150185-e087-4bef-b301-d97112bf23c1",
+   "parent": "session-6fdc1d21-de7c-49ec-ad62-ed9b0aa6776a",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "gpt-6.1-sol",
+   "wall_s": 8.6,
+   "active_s": 8.6,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 370,
+   "prompt_tok": 39984,
+   "peak_ctx": 39984,
+   "gen_s": 8.6,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "83e362b3-066a-4823-b55e-880dfa5b419c",
+   "parent": "session-f6d8c8d5-6e6c-4ae0-a629-c0cdff3faf78",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "deepseek-flash",
+   "wall_s": 5.3,
+   "active_s": 5.3,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 576,
+   "prompt_tok": 20309,
+   "peak_ctx": 20309,
+   "gen_s": 5.3,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "a8990d52-2db8-4a6a-a65c-949f39dd5bcf",
+   "parent": "session-972f790a-c617-4085-9952-b0efe7395f89",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 4.4,
+   "active_s": 4.4,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 311,
+   "prompt_tok": 18503,
+   "peak_ctx": 18503,
+   "gen_s": 4.4,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "b000e921-560d-4734-9461-e042e199a76d",
+   "parent": "session-2d3b5436-e7ad-4d08-a366-a83875e28e2c",
+   "kind": "subagent_fork",
+   "label": "旁问专家",
+   "model": "deepseek/deepseek-v4.1-flash",
+   "wall_s": 3.8,
+   "active_s": 3.8,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 322,
+   "prompt_tok": 18301,
+   "peak_ctx": 18301,
+   "gen_s": 3.8,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "completed": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "87e9cfea-3ebf-4ec6-8203-60dc9e39327b",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent_fork",
+   "label": "审查真实进程边界兼容性",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1.2,
+   "active_s": 0.9,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:CONTEXT_WINDOW_EXCEEDED": 1
+   },
+   "top_tools": []
+  },
+  {
+   "id": "1c2bf084-5410-49f3-b7ad-7a9e75dbf128",
+   "parent": "session-ae93e81b-b388-4f09-92ad-37a9ef4b3d27",
+   "kind": "subagent_fork",
+   "label": "补齐发布工具的显式首发登记",
+   "model": "gpt-6.1-sol",
+   "wall_s": 1.2,
+   "active_s": 0.9,
+   "turns": 1,
+   "steps": 1,
+   "tool_calls": 0,
+   "out_tok": 0,
+   "prompt_tok": 0,
+   "peak_ctx": 0,
+   "gen_s": 0.0,
+   "tool_s": 0.0,
+   "retries": 0,
+   "compactions": 0,
+   "prunes": 0,
+   "repeat_reminders": 0,
+   "end_reasons": {
+    "error:CONTEXT_WINDOW_EXCEEDED": 1
+   },
+   "top_tools": []
+  }
+ ]
+}

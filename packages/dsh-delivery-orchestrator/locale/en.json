@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Delivery orchestrator",
+    "description": "Runs isolated, durable delivery pipelines with per-unit ownership, artifact leases, and read-only live status updates.",
+    "detail": "README.md"
+  }
+}
