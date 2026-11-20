@@ -1988,50 +1988,6 @@
   color:var(--mit-brand);
   transform:rotate(180deg)
 }
-/* Verdict badge: colour is never the only signal, the label spells it out. */
-.mit-workbench .mit-verdict {
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
-  padding:1px 6px;
-  border-radius:999px;
-  border:1px solid var(--mit-border);
-  font-size:10px;
-  line-height:16px;
-  white-space:nowrap;
-  color:var(--mit-muted)
-}
-.mit-workbench .mit-verdict.is-match {
-  color:var(--mit-success);
-  border-color:color-mix(in srgb, var(--mit-success) 45%, transparent);
-  background:color-mix(in srgb, var(--mit-success) 10%, transparent)
-}
-.mit-workbench .mit-verdict.is-mismatch {
-  color:var(--mit-error);
-  border-color:color-mix(in srgb, var(--mit-error) 45%, transparent);
-  background:color-mix(in srgb, var(--mit-error) 10%, transparent)
-}
-.mit-workbench .mit-monitor-match.is-match,
-.mit-workbench .mit-monitor-match.is-mismatch {
-  padding-left:8px;
-  box-shadow:inset 2px 0 currentColor
-}
-.mit-workbench .mit-monitor-match.is-match {
-  color:var(--mit-success)
-}
-.mit-workbench .mit-monitor-match.is-mismatch {
-  color:var(--mit-error)
-}
-.mit-workbench .mit-monitor-match.is-match .mit-monitor-match-value,
-.mit-workbench .mit-monitor-match.is-mismatch .mit-monitor-match-value {
-  color:var(--mit-text)
-}
-.mit-workbench .mit-monitor-match-value {
-  display:flex;
-  flex-direction:column;
-  align-items:flex-start;
-  gap:3px
-}
 .mit-workbench .mit-monitor-match>strong {
   font-weight:500
 }

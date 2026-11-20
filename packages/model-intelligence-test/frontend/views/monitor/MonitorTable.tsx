@@ -9,7 +9,6 @@ import {MarketPrice,MarketCache} from '../a6/MarketSnapshot';
 import {ResultTarget} from '../a6/ResultTarget';
 import {ActualCost} from '../a6/LedgerOverview';
 import { FINGERPRINT_DECISIONS,formatRankingScore,hasCalibratedProbability,isSampleEnded } from '../results/fingerprintPresentation';
-import { MATCH_VERDICT_LABELS,matchVerdict,matchVerdictTitle } from '../results/matchVerdict';
 
 // Keep in sync with `.mit-table .mit-sticky-match { right: ... }` in styles.css.
 const ACTION_COLUMN_WIDTH=208;
@@ -50,18 +49,13 @@ function CellValue({ run,column,custom,store,record }: {
       const analysis=run.fingerprint?.analysis;
       if(!analysis)
         return <span className="mit-muted">{isEndedStage(run.stage)? '无分析结果':'待分析'}</span>;
-      const verdict=matchVerdict(run);
-      const verdictBadge=<span className={`mit-verdict is-${verdict}`} title={matchVerdictTitle(run,verdict)}>{MATCH_VERDICT_LABELS[verdict]}</span>;
       if(analysis.decision==='not_model'||analysis.decision==='unscorable')
-        return <div className="mit-monitor-match is-unknown" title={FINGERPRINT_DECISIONS[analysis.decision]}>{verdictBadge}<span>{FINGERPRINT_DECISIONS[analysis.decision]}</span></div>;
+        return <span title={FINGERPRINT_DECISIONS[analysis.decision]}>{FINGERPRINT_DECISIONS[analysis.decision]}</span>;
       const calibrated=hasCalibratedProbability(analysis,analysis.probability);
-      return <div className={`mit-monitor-match is-${verdict}`} title={`${FINGERPRINT_DECISIONS[analysis.decision]} · ${calibrated? '参考库内闭集校准概率，不含库外模型':'原始排序分数，非概率'}`}>
-        {verdictBadge}
-        <div className="mit-monitor-match-value">
-          <strong>{analysis.predictionName||analysis.prediction||'—'}</strong>
-          <span className="mit-tabular">{calibrated? `${((analysis.probability??0)*100).toFixed(1)}% · 库内概率`:`RAW ${formatRankingScore(analysis.rankingScore)}`}</span>
-          {analysis.decision==='partial'&&<span className="mit-muted">部分样本 · {analysis.usedOutputs}/3 有效</span>}
-        </div>
+      return <div className="mit-monitor-match" title={`${FINGERPRINT_DECISIONS[analysis.decision]} · ${calibrated? '参考库内闭集校准概率，不含库外模型':'原始排序分数，非概率'}`}>
+        <strong>{analysis.predictionName||analysis.prediction||'—'}</strong>
+        <span className="mit-tabular">{calibrated? `${((analysis.probability??0)*100).toFixed(1)}% · 库内概率`:`RAW ${formatRankingScore(analysis.rankingScore)}`}</span>
+        {analysis.decision==='partial'&&<span className="mit-muted">部分样本 · {analysis.usedOutputs}/3 有效</span>}
       </div>;
     }
     return <span className="mit-muted">不适用</span>;
