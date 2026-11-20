@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
+import { pathInside, removeDirectorySafe, samePath } from './platform.js';
 
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_FILES = 128;
@@ -74,8 +75,7 @@ function relativePath(value) {
   return parts.join('/');
 }
 function contained(root, target) {
-  const relative = path.relative(root, target);
-  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+  return pathInside(root, target);
 }
 function sameFile(left, right) { return left.dev === right.dev && left.ino === right.ino; }
 function fileInfo(relative, stat) { return { path: relative, size: stat.size, modifiedAt: stat.mtimeMs }; }
@@ -254,7 +254,7 @@ async function makeSandbox(root, identity, onFile, signal) {
   const rootCheck = async extra => {
     check(extra);
     const current = await hostDirectoryTree(root, false, () => check(extra));
-    if (current.root !== root || !sameFile(identity, current.stat)) fail('ROOT_CHANGED', 'The sandbox root changed after this run was opened.');
+    if (!samePath(current.root, root) || !sameFile(identity, current.stat)) fail('ROOT_CHANGED', 'The sandbox root changed after this run was opened.');
     return current;
   };
   const resolve = async (value, { createParents = false, allowMissing = false, writable = false } = {}, extra) => {
@@ -548,7 +548,7 @@ export async function createSandbox({ dataRoot, runId, prompt, preset = null, on
     if (!contained(parent.root, created.root) || created.root === parent.root) fail('OUTSIDE_SANDBOX', 'The run directory is outside the injected data root.');
     const verifyCreatedRoot = async () => {
       const current = await hostDirectoryTree(created.root, false, () => checkSignals(signal));
-      if (current.root !== created.root || !sameFile(current.stat, created.stat)) fail('ROOT_CHANGED', 'The new sandbox root changed during creation.');
+      if (!samePath(current.root, created.root) || !sameFile(current.stat, created.stat)) fail('ROOT_CHANGED', 'The new sandbox root changed during creation.');
     };
     for (const name of ['input', 'output', 'session']) {
       await verifyCreatedRoot();
@@ -619,7 +619,7 @@ export async function removeSandbox({ root, expectedRunId, signal } = {}) {
       }
       throw error;
     }
-    if (!contained(parent.root, opened.root) || opened.root === parent.root || path.dirname(opened.root) !== parent.root || path.basename(opened.root) !== expectedRunId) {
+    if (!contained(parent.root, opened.root) || samePath(opened.root, parent.root) || !samePath(path.dirname(opened.root), parent.root) || path.basename(opened.root) !== expectedRunId) {
       fail('UNSAFE_ROOT', 'The sandbox must be a direct UUID-named child of its verified parent.');
     }
     return serialized(opened.root, async () => {
@@ -630,12 +630,12 @@ export async function removeSandbox({ root, expectedRunId, signal } = {}) {
       if (!entry) return { removed: false, runId: expectedRunId };
       if (entry.isSymbolicLink()) fail('SYMLINK_FORBIDDEN', 'The sandbox root cannot be a symbolic link.');
       const current = await hostDirectoryTree(opened.root, false, () => checkSignals(signal));
-      if (current.root !== opened.root || !sameFile(current.stat, opened.stat) || !sameFile(current.stat, entry)
-        || path.dirname(current.root) !== currentParent.root || path.basename(current.root) !== expectedRunId
+      if (!samePath(current.root, opened.root) || !sameFile(current.stat, opened.stat) || !sameFile(current.stat, entry)
+        || !samePath(path.dirname(current.root), currentParent.root) || path.basename(current.root) !== expectedRunId
         || !contained(currentParent.root, current.root)) fail('ROOT_CHANGED', 'The sandbox or its immediate parent changed before removal.');
       await verifyOptionalRunConfig(current.root, expectedRunId, () => checkSignals(signal));
       checkSignals(signal);
-      try { await fs.rm(current.root, { recursive: true, force: false }); }
+      try { await removeDirectorySafe(current.root, { force: false }); }
       catch (error) {
         if (error?.code === 'ENOENT' && !await lstatOrNull(current.root)) return { removed: false, runId: expectedRunId };
         throw error;

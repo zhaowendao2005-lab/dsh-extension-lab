@@ -1936,7 +1936,7 @@ var A6Site = class {
     return { authorization: this.accessToken, "new-api-user": this.userId, accept: "application/json" };
   }
   /** Shared bounded control-plane budget; model inference does not consume this queue. */
-  async request(path3, { method = "GET", query, body, timeoutMs: timeoutMs2 = TIMEOUT_MS } = {}) {
+  async request(path4, { method = "GET", query, body, timeoutMs: timeoutMs2 = TIMEOUT_MS } = {}) {
     const generation = this.generation;
     const headers = this.headers();
     while (this.active >= 2 || Date.now() < this.cooldownUntil) {
@@ -1948,7 +1948,7 @@ var A6Site = class {
     if (this.controller.signal.aborted) throw new A6Error("disposed", "\u670D\u52A1\u5DF2\u5173\u95ED");
     this.active += 1;
     try {
-      const url = new URL(path3, SITE_ORIGIN);
+      const url = new URL(path4, SITE_ORIGIN);
       for (const [key, value] of Object.entries(query ?? {})) if (value !== void 0 && value !== null) url.searchParams.set(key, String(value));
       if (body !== void 0) headers["content-type"] = "application/json";
       let response;
@@ -2234,8 +2234,8 @@ var A6Intake = class {
     try {
       disposers.push(webServer.register({ kind: "exact", path: PATH, handler: (req, res) => this.handle(req, res) }));
       disposers.push(webServer.register({ kind: "exact", path: "/mit-a6/report", handler: (req, res) => this.handle(req, res, true) }));
-      for (const path3 of ["/mit-a6/userscript/install.user.js", "/mit-a6/userscript/update.meta.js"]) {
-        disposers.push(webServer.register({ kind: "exact", path: path3, handler: async (req, res) => {
+      for (const path4 of ["/mit-a6/userscript/install.user.js", "/mit-a6/userscript/update.meta.js"]) {
+        disposers.push(webServer.register({ kind: "exact", path: path4, handler: async (req, res) => {
           res.setHeader("Cache-Control", "no-store");
           res.setHeader("X-Content-Type-Options", "nosniff");
           if (!["GET", "HEAD"].includes(req.method)) {
@@ -2256,7 +2256,7 @@ var A6Intake = class {
             const rendered = source.replace("// ==/UserScript==", `// @updateURL ${info.networkUpdateUrl}
 // @downloadURL ${info.networkInstallUrl}
 // ==/UserScript==`);
-            const body = path3.endsWith(".meta.js") ? rendered.slice(0, rendered.indexOf("// ==/UserScript==") + "// ==/UserScript==".length) + "\n" : rendered;
+            const body = path4.endsWith(".meta.js") ? rendered.slice(0, rendered.indexOf("// ==/UserScript==") + "// ==/UserScript==".length) + "\n" : rendered;
             res.setHeader("Content-Type", "application/javascript; charset=utf-8");
             res.end(req.method === "HEAD" ? void 0 : body);
           } catch {
@@ -3360,13 +3360,69 @@ var A6Ledger = class {
 
 // backend/custom/coordinator.js
 import { randomUUID as randomUUID5 } from "node:crypto";
-import path2 from "node:path";
+import path3 from "node:path";
 
 // backend/custom/sandbox.js
-import * as fs from "node:fs/promises";
+import * as fs2 from "node:fs/promises";
 import { constants } from "node:fs";
-import path from "node:path";
+import path2 from "node:path";
 import { TextDecoder as TextDecoder2 } from "node:util";
+
+// backend/custom/platform.js
+import * as fs from "node:fs/promises";
+import path from "node:path";
+var RETRY_CODES = /* @__PURE__ */ new Set(["EBUSY", "EPERM"]);
+function samePath(left, right, platform = process.platform) {
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  if (platform === "win32") {
+    return path.win32.normalize(left).toLowerCase() === path.win32.normalize(right).toLowerCase();
+  }
+  return path.normalize(left) === path.normalize(right);
+}
+function pathInside(root, target, strictChild = false, platform = process.platform) {
+  if (typeof root !== "string" || typeof target !== "string" || !root || !target) return false;
+  const api = platform === "win32" ? path.win32 : path;
+  const rel = api.relative(root, target);
+  if (!rel) return !strictChild;
+  return rel !== ".." && !rel.startsWith(`..${api.sep}`) && !api.isAbsolute(rel);
+}
+async function withFsRetry(operation, { platform = process.platform, retries = 3, baseDelayMs = 25 } = {}) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (platform !== "win32" || !RETRY_CODES.has(error?.code) || attempt >= retries) throw error;
+      attempt += 1;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+    }
+  }
+}
+async function clearReadOnlyTree(target, { platform = process.platform } = {}) {
+  if (platform !== "win32") return;
+  const info = await fs.lstat(target).catch(() => null);
+  if (!info || info.isSymbolicLink()) return;
+  if (info.isDirectory()) {
+    await fs.chmod(target, 448).catch(() => {
+    });
+    const dir = await fs.opendir(target).catch(() => null);
+    if (!dir) return;
+    for await (const entry of dir) {
+      await clearReadOnlyTree(path.join(target, entry.name), { platform });
+    }
+    return;
+  }
+  if (info.isFile() && (info.mode & 128) === 0) {
+    await fs.chmod(target, 384).catch(() => {
+    });
+  }
+}
+async function removeDirectorySafe(root, { force = false, platform = process.platform } = {}) {
+  await clearReadOnlyTree(root, { platform });
+  await withFsRetry(() => fs.rm(root, { recursive: true, force }), { platform });
+}
+
+// backend/custom/sandbox.js
 var MAX_FILE_BYTES = 1024 * 1024;
 var MAX_FILES = 128;
 var MAX_TOTAL_BYTES = 8 * 1024 * 1024;
@@ -3452,14 +3508,14 @@ async function serialized(root, operation) {
   }
 }
 function hostDirectory(value) {
-  if (typeof value !== "string" || !value || /[\x00-\x1f\x7f]/.test(value) || !path.isAbsolute(value) || path.sep !== "\\" && value.includes("\\")) {
+  if (typeof value !== "string" || !value || /[\x00-\x1f\x7f]/.test(value) || !path2.isAbsolute(value) || path2.sep !== "\\" && value.includes("\\")) {
     fail("INVALID_ROOT", "The Host must provide an absolute sandbox data directory.");
   }
-  if (value.split(path.sep).some((part) => part === "." || part === "..")) fail("INVALID_ROOT", "The sandbox directory cannot contain traversal components.");
-  return path.resolve(value);
+  if (value.split(path2.sep).some((part) => part === "." || part === "..")) fail("INVALID_ROOT", "The sandbox directory cannot contain traversal components.");
+  return path2.resolve(value);
 }
 function relativePath(value) {
-  if (typeof value !== "string" || !value || value.length > MAX_PATH_LENGTH || /[\\:\x00-\x1f\x7f]/.test(value) || path.isAbsolute(value) || path.win32.isAbsolute(value)) {
+  if (typeof value !== "string" || !value || value.length > MAX_PATH_LENGTH || /[\\:\x00-\x1f\x7f]/.test(value) || path2.isAbsolute(value) || path2.win32.isAbsolute(value)) {
     fail("INVALID_PATH", "Use a sandbox-relative path without absolute, drive, backslash, or control characters.");
   }
   const parts = value.split("/");
@@ -3469,8 +3525,7 @@ function relativePath(value) {
   return parts.join("/");
 }
 function contained(root, target) {
-  const relative = path.relative(root, target);
-  return relative === "" || !path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`);
+  return pathInside(root, target);
 }
 function sameFile(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
@@ -3485,14 +3540,14 @@ function regularFile(stat2) {
 }
 async function lstatOrNull(target) {
   try {
-    return await fs.lstat(target);
+    return await fs2.lstat(target);
   } catch (error) {
     if (error?.code === "ENOENT") return null;
     throw error;
   }
 }
 async function verifyOptionalRunConfig(root, expectedRunId, check) {
-  const target = path.join(root, "config.json");
+  const target = path2.join(root, "config.json");
   check();
   const before = await lstatOrNull(target);
   if (!before) return;
@@ -3500,7 +3555,7 @@ async function verifyOptionalRunConfig(root, expectedRunId, check) {
   regularFile(before);
   let handle;
   try {
-    handle = await fs.open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    handle = await fs2.open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   } catch (error) {
     if (error?.code === "ENOENT" && !await lstatOrNull(target)) return;
     throw error;
@@ -3508,7 +3563,7 @@ async function verifyOptionalRunConfig(root, expectedRunId, check) {
   try {
     const opened = await handle.stat();
     regularFile(opened);
-    const current = await fs.lstat(target);
+    const current = await fs2.lstat(target);
     if (current.isSymbolicLink() || !sameFile(opened, before) || !sameFile(opened, current)) fail("FILE_CHANGED", "The run configuration changed while it was being opened.");
     const buffer = Buffer.alloc(opened.size);
     let offset = 0;
@@ -3535,29 +3590,29 @@ async function verifyOptionalRunConfig(root, expectedRunId, check) {
   }
 }
 async function hostDirectoryTree(absolute, create, check) {
-  const base = path.parse(absolute).root;
+  const base = path2.parse(absolute).root;
   let current = base;
-  for (const part of absolute.slice(base.length).split(path.sep).filter(Boolean)) {
+  for (const part of absolute.slice(base.length).split(path2.sep).filter(Boolean)) {
     check();
-    current = path.join(current, part);
+    current = path2.join(current, part);
     let stat3 = await lstatOrNull(current);
     if (!stat3 && create) {
       try {
-        await fs.mkdir(current, { mode: 448 });
+        await fs2.mkdir(current, { mode: 448 });
       } catch (error) {
         if (error?.code !== "EEXIST") throw error;
       }
-      stat3 = await fs.lstat(current);
+      stat3 = await fs2.lstat(current);
     }
     if (!stat3) fail("MISSING_DIRECTORY", "The sandbox directory does not exist.");
     if (stat3.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in sandbox directory ancestors.");
     if (!stat3.isDirectory()) fail("INVALID_DIRECTORY", "A sandbox directory component is not a directory.");
-    await fs.realpath(current);
+    await fs2.realpath(current);
     check();
   }
-  const stat2 = await fs.lstat(absolute);
+  const stat2 = await fs2.lstat(absolute);
   if (stat2.isSymbolicLink() || !stat2.isDirectory()) fail("INVALID_DIRECTORY", "The sandbox root is not a regular directory.");
-  return { root: await fs.realpath(absolute), stat: stat2 };
+  return { root: await fs2.realpath(absolute), stat: stat2 };
 }
 function argsObject(value, allowed = []) {
   if (value === void 0) value = {};
@@ -3584,7 +3639,7 @@ function writablePath(value) {
   return relative;
 }
 function formatOf(relative) {
-  const format = TEXT_FORMATS.get(path.posix.extname(relative).toLowerCase());
+  const format = TEXT_FORMATS.get(path2.posix.extname(relative).toLowerCase());
   if (!format) fail("UNSUPPORTED_FORMAT", "This version supports common UTF-8 text, HTML, SVG, data, and source files; the file extension is unsupported.");
   return format;
 }
@@ -3699,7 +3754,7 @@ async function makeSandbox(root, identity2, onFile, signal) {
   const rootCheck = async (extra) => {
     check(extra);
     const current = await hostDirectoryTree(root, false, () => check(extra));
-    if (current.root !== root || !sameFile(identity2, current.stat)) fail("ROOT_CHANGED", "The sandbox root changed after this run was opened.");
+    if (!samePath(current.root, root) || !sameFile(identity2, current.stat)) fail("ROOT_CHANGED", "The sandbox root changed after this run was opened.");
     return current;
   };
   const resolve = async (value, { createParents = false, allowMissing = false, writable = false } = {}, extra) => {
@@ -3709,26 +3764,26 @@ async function makeSandbox(root, identity2, onFile, signal) {
     let current = root;
     for (let index = 0; index < parts.length; index++) {
       check(extra);
-      current = path.join(current, parts[index]);
+      current = path2.join(current, parts[index]);
       if (!contained(root, current)) fail("OUTSIDE_SANDBOX", "The path is outside this run.");
       let stat2 = await lstatOrNull(current);
       const last = index === parts.length - 1;
       if (!stat2 && !last && createParents) {
         try {
-          await fs.mkdir(current, { mode: 448 });
+          await fs2.mkdir(current, { mode: 448 });
         } catch (error) {
           if (error?.code !== "EEXIST") throw error;
         }
-        stat2 = await fs.lstat(current);
+        stat2 = await fs2.lstat(current);
       }
       if (!stat2) {
         if (last && allowMissing) return { relative, absolute: current, stat: null };
         fail("FILE_NOT_FOUND", "The requested sandbox file or parent directory does not exist.");
       }
       if (stat2.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "Symbolic links are not allowed in the sandbox.");
-      const canonical = await fs.realpath(current);
+      const canonical = await fs2.realpath(current);
       if (!contained(root, canonical)) fail("OUTSIDE_SANDBOX", "The resolved path is outside this run.");
-      if (writable && protectedPath(path.relative(root, canonical).split(path.sep).join("/"))) fail("PROTECTED_FILE", "The resolved path belongs to a protected Host file or directory.");
+      if (writable && protectedPath(path2.relative(root, canonical).split(path2.sep).join("/"))) fail("PROTECTED_FILE", "The resolved path belongs to a protected Host file or directory.");
       if (!last && !stat2.isDirectory()) fail("INVALID_DIRECTORY", "A path component is not a directory.");
       if (last) return { relative, absolute: current, stat: stat2 };
     }
@@ -3741,7 +3796,7 @@ async function makeSandbox(root, identity2, onFile, signal) {
     let directories = 0;
     const visit = async (absolute, prefix, depth) => {
       if (depth > MAX_DEPTH) fail("DIRECTORY_LIMIT", "The sandbox directory depth limit was exceeded.");
-      const directory = await fs.opendir(absolute);
+      const directory = await fs2.opendir(absolute);
       for await (const entry of directory) {
         check(extra);
         const relative = relativePath(prefix ? `${prefix}/${entry.name}` : entry.name);
@@ -3763,7 +3818,7 @@ async function makeSandbox(root, identity2, onFile, signal) {
   const openFile = async (value, extra) => {
     const target = await resolve(value, {}, extra);
     regularFile(target.stat);
-    const handle = await fs.open(target.absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const handle = await fs2.open(target.absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     try {
       const current = await handle.stat();
       regularFile(current);
@@ -3803,7 +3858,7 @@ async function makeSandbox(root, identity2, onFile, signal) {
       if (error instanceof SandboxError) throw error;
       fail("INVALID_CONFIG", "The protected sandbox configuration is invalid.");
     }
-    if (!config || config.version !== 1 || config.runId !== path.basename(root) || !config.output || !FORMATS.has(config.output.format) || config.output.file !== null && typeof config.output.file !== "string") {
+    if (!config || config.version !== 1 || config.runId !== path2.basename(root) || !config.output || !FORMATS.has(config.output.format) || config.output.file !== null && typeof config.output.file !== "string") {
       fail("INVALID_CONFIG", "The protected sandbox configuration is invalid.");
     }
     if (config.preset !== null && (!config.preset || typeof config.preset.id !== "string" || typeof config.preset.name !== "string")) fail("INVALID_CONFIG", "The protected preset identity is invalid.");
@@ -3922,7 +3977,7 @@ async function makeSandbox(root, identity2, onFile, signal) {
     const target = await resolve(relative, { createParents: true, allowMissing: true, writable: !host }, extra);
     if (target.stat) regularFile(target.stat);
     check(extra);
-    const handle = await fs.open(target.absolute, constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0), 384);
+    const handle = await fs2.open(target.absolute, constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0), 384);
     try {
       const opened = await handle.stat();
       regularFile(opened);
@@ -4026,10 +4081,10 @@ async function createSandbox({ dataRoot, runId, prompt, preset: preset2 = null, 
     const config = jsonBuffer({ version: 1, runId, preset: savedPreset ? { id: savedPreset.id, name: savedPreset.name } : null, output: { format: totoro(savedPreset) ? "html" : "text", file: null } });
     if (rules.length > MAX_FILE_BYTES || input2.length + rules.length + config.length > MAX_TOTAL_BYTES) fail("QUOTA_EXCEEDED", "The initial sandbox snapshot exceeds file quotas.");
     const parent = await hostDirectoryTree(hostDirectory(dataRoot), true, () => checkSignals(signal));
-    const root = path.join(parent.root, runId);
+    const root = path2.join(parent.root, runId);
     checkSignals(signal);
     try {
-      await fs.mkdir(root, { mode: 448 });
+      await fs2.mkdir(root, { mode: 448 });
     } catch (error) {
       if (error?.code === "EEXIST") fail("RUN_EXISTS", "This run already has a sandbox; open it explicitly or create a new runId.");
       throw error;
@@ -4038,25 +4093,25 @@ async function createSandbox({ dataRoot, runId, prompt, preset: preset2 = null, 
     if (!contained(parent.root, created.root) || created.root === parent.root) fail("OUTSIDE_SANDBOX", "The run directory is outside the injected data root.");
     const verifyCreatedRoot = async () => {
       const current = await hostDirectoryTree(created.root, false, () => checkSignals(signal));
-      if (current.root !== created.root || !sameFile(current.stat, created.stat)) fail("ROOT_CHANGED", "The new sandbox root changed during creation.");
+      if (!samePath(current.root, created.root) || !sameFile(current.stat, created.stat)) fail("ROOT_CHANGED", "The new sandbox root changed during creation.");
     };
     for (const name2 of ["input", "output", "session"]) {
       await verifyCreatedRoot();
-      const directory = path.join(created.root, name2);
-      await fs.mkdir(directory, { mode: 448 });
+      const directory = path2.join(created.root, name2);
+      await fs2.mkdir(directory, { mode: 448 });
       const checked = await hostDirectoryTree(directory, false, () => checkSignals(signal));
       if (!contained(created.root, checked.root)) fail("OUTSIDE_SANDBOX", "The initial directory resolved outside this run.");
     }
     for (const [name2, buffer, mode] of [["RULES.md", rules, 256], ["config.json", config, 384], ["input/task.json", input2, 256]]) {
       await verifyCreatedRoot();
-      const absolute = path.join(created.root, name2);
-      const parentDirectory = await hostDirectoryTree(path.dirname(absolute), false, () => checkSignals(signal));
+      const absolute = path2.join(created.root, name2);
+      const parentDirectory = await hostDirectoryTree(path2.dirname(absolute), false, () => checkSignals(signal));
       if (!contained(created.root, parentDirectory.root)) fail("OUTSIDE_SANDBOX", "The initial file parent resolved outside this run.");
-      const handle = await fs.open(absolute, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), mode);
+      const handle = await fs2.open(absolute, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), mode);
       try {
         const opened = await handle.stat();
         regularFile(opened);
-        if (!sameFile(opened, await fs.lstat(absolute)) || !contained(created.root, await fs.realpath(absolute))) fail("FILE_CHANGED", "The initial file changed during creation.");
+        if (!sameFile(opened, await fs2.lstat(absolute)) || !contained(created.root, await fs2.realpath(absolute))) fail("FILE_CHANGED", "The initial file changed during creation.");
         checkSignals(signal);
         await handle.writeFile(buffer);
         await handle.sync();
@@ -4074,7 +4129,7 @@ async function openSandbox({ root, onFile, signal } = {}) {
     checkSignals(signal);
     if (onFile !== void 0 && typeof onFile !== "function") fail("INVALID_CALLBACK", "onFile must be a Host callback.");
     const absolute = hostDirectory(root);
-    if (!UUID.test(path.basename(absolute))) fail("INVALID_RUN_ID", "The sandbox root must identify a UUID-named run.");
+    if (!UUID.test(path2.basename(absolute))) fail("INVALID_RUN_ID", "The sandbox root must identify a UUID-named run.");
     const opened = await hostDirectoryTree(absolute, false, () => checkSignals(signal));
     return makeSandbox(opened.root, opened.stat, onFile, signal);
   });
@@ -4084,8 +4139,8 @@ async function removeSandbox({ root, expectedRunId, signal } = {}) {
     checkSignals(signal);
     if (typeof expectedRunId !== "string" || !UUID.test(expectedRunId)) fail("INVALID_RUN_ID", "The Host must provide the expected UUID runId.");
     const absolute = hostDirectory(root);
-    if (path.basename(absolute) !== expectedRunId) fail("INVALID_RUN_ID", "The sandbox basename must match the expected runId.");
-    const parent = await hostDirectoryTree(path.dirname(absolute), false, () => checkSignals(signal));
+    if (path2.basename(absolute) !== expectedRunId) fail("INVALID_RUN_ID", "The sandbox basename must match the expected runId.");
+    const parent = await hostDirectoryTree(path2.dirname(absolute), false, () => checkSignals(signal));
     const confirmParent = async () => {
       const current = await hostDirectoryTree(parent.root, false, () => checkSignals(signal));
       if (!sameFile(current.stat, parent.stat)) fail("ROOT_CHANGED", "The sandbox parent changed before removal.");
@@ -4107,7 +4162,7 @@ async function removeSandbox({ root, expectedRunId, signal } = {}) {
       }
       throw error;
     }
-    if (!contained(parent.root, opened.root) || opened.root === parent.root || path.dirname(opened.root) !== parent.root || path.basename(opened.root) !== expectedRunId) {
+    if (!contained(parent.root, opened.root) || samePath(opened.root, parent.root) || !samePath(path2.dirname(opened.root), parent.root) || path2.basename(opened.root) !== expectedRunId) {
       fail("UNSAFE_ROOT", "The sandbox must be a direct UUID-named child of its verified parent.");
     }
     return serialized(opened.root, async () => {
@@ -4118,11 +4173,11 @@ async function removeSandbox({ root, expectedRunId, signal } = {}) {
       if (!entry) return { removed: false, runId: expectedRunId };
       if (entry.isSymbolicLink()) fail("SYMLINK_FORBIDDEN", "The sandbox root cannot be a symbolic link.");
       const current = await hostDirectoryTree(opened.root, false, () => checkSignals(signal));
-      if (current.root !== opened.root || !sameFile(current.stat, opened.stat) || !sameFile(current.stat, entry) || path.dirname(current.root) !== currentParent.root || path.basename(current.root) !== expectedRunId || !contained(currentParent.root, current.root)) fail("ROOT_CHANGED", "The sandbox or its immediate parent changed before removal.");
+      if (!samePath(current.root, opened.root) || !sameFile(current.stat, opened.stat) || !sameFile(current.stat, entry) || !samePath(path2.dirname(current.root), currentParent.root) || path2.basename(current.root) !== expectedRunId || !contained(currentParent.root, current.root)) fail("ROOT_CHANGED", "The sandbox or its immediate parent changed before removal.");
       await verifyOptionalRunConfig(current.root, expectedRunId, () => checkSignals(signal));
       checkSignals(signal);
       try {
-        await fs.rm(current.root, { recursive: true, force: false });
+        await removeDirectorySafe(current.root, { force: false });
       } catch (error) {
         if (error?.code === "ENOENT" && !await lstatOrNull(current.root)) return { removed: false, runId: expectedRunId };
         throw error;
@@ -5312,8 +5367,8 @@ var CustomCoordinator = class {
       const settings = this.ctx.get("settings");
       if (!settings?.prepareDocument) throw err("sandbox-root-unavailable", "\u5F53\u524D\u8FD0\u884C\u65F6\u65E0\u6CD5\u5B9A\u4F4D\u6B64\u914D\u7F6E\u7684\u6C99\u7BB1\u76EE\u5F55");
       const document = await settings.prepareDocument();
-      if (typeof document !== "string" || !path2.isAbsolute(document)) throw err("sandbox-root-unavailable", "\u914D\u7F6E\u76EE\u5F55\u4E0D\u53EF\u7528");
-      return path2.join(path2.dirname(document), "model-intelligence-test", "sandboxes");
+      if (typeof document !== "string" || !path3.isAbsolute(document)) throw err("sandbox-root-unavailable", "\u914D\u7F6E\u76EE\u5F55\u4E0D\u53EF\u7528");
+      return path3.join(path3.dirname(document), "model-intelligence-test", "sandboxes");
     })();
     return this.rootPromise;
   }
@@ -5891,7 +5946,7 @@ var CustomCoordinator = class {
         opener = null;
       }
       if (!opener?.openWorkspacePath || !opener.canOpenWorkspacePath?.()) throw err("opener-unavailable", "\u5F53\u524D\u8FD0\u884C\u65F6\u4E0D\u662F\u684C\u9762\u7248\uFF0C\u65E0\u6CD5\u5728\u672C\u673A\u5E94\u7528\u4E2D\u6253\u5F00\u6587\u4EF6");
-      const filename = path2.join(sandbox.root, output.relativePath);
+      const filename = path3.join(sandbox.root, output.relativePath);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15e3);
       try {
@@ -5928,7 +5983,7 @@ var CustomCoordinator = class {
         const dataRoot = await this.dataRoot();
         for (const [id2, run] of runs) {
           const runId = run.id || id2;
-          await removeSandbox({ root: run.root || path2.join(dataRoot, runId), expectedRunId: runId });
+          await removeSandbox({ root: run.root || path3.join(dataRoot, runId), expectedRunId: runId });
         }
       }
       await domain.table("custom_runs").deleteMany(runs.map(([id2]) => id2));
