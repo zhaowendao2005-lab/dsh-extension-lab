@@ -2,8 +2,8 @@ import { useStore, useRef } from '../../runtime.js';
 import { visibleExplorerRows } from '../../service/explorer-selection.js';
 import { localPoint, workbenchRoot } from '../../service/geometry.js';
 import {
-  baseNameOf, canMoveToDir, createDragOverlayController, findChatDropTarget,
-  formatDropPathsForChat, insertTextIntoChatComposer, normalizeMoveTargets, parentDirOf,
+  baseNameOf, canMoveToDir, createDragOverlayController, formatDropPathsForChat,
+  insertTextIntoChatComposer, normalizeMoveTargets, parentDirOf, updateExternalChatDrop,
 } from '../../service/explorer-drag.js';
 import { zoneAt } from '../../service/split.js';
 import { Icon } from '../common/Icon.jsx';
@@ -168,27 +168,18 @@ function beginExplorerDrag(event, stores, path, entry) {
       return;
     }
 
-    // Outside workbench (or peeking outside FullView dialog): check Host chat / conversation area.
+    // Outside workbench (or peeking outside FullView dialog): any drag past the outer margin cites to chat.
     clearExpandTimer();
     setDropHighlight(null, null);
     stores.actions.setExplorerDrop(null);
 
-    const chatTarget = findChatDropTarget(x, y);
-    if (chatTarget) {
-      const hint = sources.length === 1 ? '@' + sources[0].path : '引用 ' + sources.length + ' 项';
-      overlay.setChatTarget(chatTarget, '松手添加到对话：' + hint);
-      dropState = { kind: 'chat', paths: sources.map((item) => item.path) };
-      overlay.updatePosition(x, y, '添加到对话：' + hint, 'chat');
-    } else {
-      overlay.setChatTarget(null, '');
-      dropState = null;
-      overlay.updatePosition(
-        x,
-        y,
-        peeking ? '拖到聊天输入区松手引用' : sourceSummary(),
-        'neutral',
-      );
-    }
+    dropState = updateExternalChatDrop(overlay, {
+      x,
+      y,
+      peeking,
+      paths: sources.map((item) => item.path),
+      summary: sourceSummary(),
+    });
   }
 
   function onMove(moveEvent) {

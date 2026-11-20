@@ -16,6 +16,7 @@ import { createPreferences } from './stores/preferences.stores.js';
 import { createShortcutEditor } from './stores/shortcut-editor.stores.js';
 import { IdeSettingsSection } from './views/settings/IdeSettingsSection.jsx';
 import { IdeSettingsIcon } from './views/settings/IdeSettingsIcon.jsx';
+import { buildSessionFileAddress } from './service/native-resource.js';
 
 const ID = 'dsh-workspace-ide';
 const KIND = WORKBENCH_PANEL_ID;
@@ -143,6 +144,26 @@ window.__ModuleLoader__.load({
           fullView,
           toggleFullView,
           closeFullView,
+          openInNativeRightbar: (targetSessionId, filePath) => {
+            const resolvedSession = targetSessionId || mountedSession();
+            if (!resolvedSession) return { ok: false, error: '当前未选择会话，无法打开原生右栏' };
+            const address = buildSessionFileAddress(resolvedSession, filePath);
+            if (!address) return { ok: false, error: '无法构造文件资源地址' };
+            try {
+              closeFullView();
+              if (typeof ctx.sidebarRight?.openResourceIn === 'function') {
+                ctx.sidebarRight.openResourceIn(resolvedSession, address);
+              } else if (typeof ctx.sidebarRight?.openResource === 'function') {
+                ctx.sidebarRight.openResource(address);
+              } else {
+                return { ok: false, error: '当前宿主不支持打开原生右栏预览' };
+              }
+              return { ok: true };
+            } catch (error) {
+              console.error('[workspace-ide] openInNativeRightbar failed', error);
+              return { ok: false, error: String(error?.message ?? error) };
+            }
+          },
           shortcutCatalog,
           shortcutStatus,
           isShortcutRecording: () => Boolean(shortcutEditor.store.getSnapshot().recording),

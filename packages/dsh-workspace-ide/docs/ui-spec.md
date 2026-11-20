@@ -169,7 +169,7 @@
 
 ## 7 内部标签行（每个编辑组一条）
 
-高 28px，底 `--dsw-alias-bg-layer-2`，下沿 1px `--dsw-alias-border-l1`；标签 `max-width: 180px`、`min-width: 72px`、`padding: 0 6px 0 8px`、12px、图标 12px。活动标签底 `--dsw-alias-bg-base`、上沿 2px `--dsw-alias-brand-primary`、上圆角 `--dsw-radius-sm`；非活动字 `--dsw-alias-label-secondary`，hover 底 `--dsw-alias-interactive-bg-hover`。脏点 6px、`--dsw-alias-label-primary`，hover 时隐藏并换成 16×16 关闭按钮；非活动标签的关闭按钮默认 `opacity: 0`，hover/活动时出现。溢出横向滚动（隐藏滚动条）不折行；行尾 24px「⋯」打开组级菜单。中键关闭走 `auxclick` 且 `button === 1`；右键菜单见 §18；拖拽分栏见 §18；切标签后活动标签 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`。
+高 28px，底 `--dsw-alias-bg-layer-2`，下沿 1px `--dsw-alias-border-l1`；标签 `max-width: 180px`、`min-width: 72px`、`padding: 0 6px 0 8px`、12px、图标 12px。活动标签底 `--dsw-alias-bg-base`、上沿 2px `--dsw-alias-brand-primary`、上圆角 `--dsw-radius-sm`；非活动字 `--dsw-alias-label-secondary`，hover 底 `--dsw-alias-interactive-bg-hover`。脏点 6px、`--dsw-alias-label-primary`，hover 时隐藏并换成 16×16 关闭按钮；非活动标签的关闭按钮默认 `opacity: 0`，hover/活动时出现。溢出横向滚动（隐藏滚动条）不折行；右侧动作区为当前文件标签提供「在 DSH 右栏打开」（调用宿主 `openResourceIn` 用 `dsh-resource://file/session/…` 在 DSH 原生右栏打开并保留工作台内部标签；若处于全视图则先退出全视图），可切换预览的文件类型另在左侧提供「切换为预览/源码」按钮，行尾 24px「⋯」打开组级菜单。标签右键：关闭当前 / 关闭其他 / 关闭所有 / 拆分四向 / 在 DSH 右栏打开（文件）/ 复制相对路径；文件树单选文件右键菜单同样提供「在 DSH 右栏打开」。中键关闭走 `auxclick` 且 `button === 1`；右键菜单见 §18；拖拽分栏见 §18；切标签后活动标签 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`。
 
 ## 8 diff 视图
 
@@ -294,8 +294,8 @@
 | 焦点环 | 只用 `:focus-visible`：`outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px`；鼠标点击不出环 |
 | 右键菜单 | `onContextMenu`（`preventDefault` + 记坐标）；`pointerdown` 捕获阶段关外部；`Esc` 关闭；↑/↓ 移动、`Enter` 执行、`Tab` 关闭；容器 `role="menu"`、项 `role="menuitem"`；渲染为根容器内 `position: absolute` 浮层 + `--dsw-shadow-lv3`（**不允许 fixed**，不能越出右栏） |
 | 分隔条 | `pointerdown` + 窗口级 move/up；拖动中同步 `document.body.style.cursor`；`pointerup` 解绑并写 storage；双击恢复默认；热区用负 margin 扩到 8px |
-| 标签拖拽 | pointer events（不用 HTML5 DnD）：移动 ≥4px 才进入拖拽；幽灵跟随指针；按组内容矩形 25% 边缘判定五区；`Esc`/窗口失焦取消；松手一次提交 |
-| 标签右键 | 关闭当前 / 关闭其他 / 关闭所有 / 拆分四向 / 复制相对路径；批量关闭有脏文件时一次确认 |
+| 标签拖拽 | pointer events（不用 HTML5 DnD）：移动 ≥4px 才进入拖拽；幽灵跟随指针；按组内容矩形 25% 边缘判定五区；`Esc`/窗口失焦取消；松手一次提交。从文件树或文件标签拖出工作台外（直接命中对话区或任意方向越界 ≥12px，全视图下触发 peeking）且页面存在可见聊天输入框时，自动高亮输入框并在松手后插入 `@path` 引用（拖回工作台内或 `Esc` 取消） |
+| 标签右键 | 关闭当前 / 关闭其他 / 关闭所有 / 拆分四向 / 在 DSH 右栏打开（文件标签） / 复制相对路径；批量关闭有脏文件时一次确认 |
 | `prefers-reduced-motion` | 关折叠过渡、标签脏点↔关闭的尺寸过渡；spinner 改 1.5s 淡入淡出；骨架屏静止 |
 | 触控 | 不做手势；热区 ≥8px 已满足最小可点尺寸 |
 
@@ -515,7 +515,7 @@ NS `workspace-ide`，`ctx.locale.register('workspace-ide', { zh, en })`，slot �
 
 - 同一 id 全工作区只存在一份；打开已存在的标签只聚焦，不复制。
 - 每组有 `active`；组获得焦点（pointerdown）时成为 `activeGroup`，新打开的标签落在活动组。
-- 标签行右侧「⋯」：关闭该组所有标签、关闭所有分栏。标签右键：关闭当前 / 关闭其他 / 关闭所有 / 拆分四向 / 复制相对路径。
+- 标签行右侧「⋯」：关闭该组所有标签、关闭所有分栏。标签右键：关闭当前 / 关闭其他 / 关闭所有 / 拆分四向 / 在 DSH 右栏打开（文件）/ 复制相对路径。
 - 关闭文件标签前若有未保存修改 → 面板内确认框；批量关闭只弹一次，列出前 5 个路径。
 
 ### 18.2 拖动分栏

@@ -13,6 +13,7 @@ import { LIMITS } from '../shared/contract.js';
 import { ideError } from '../shared/errors.js';
 import { gitOrThrow, runGit } from './git/exec.js';
 import { readPackageScripts, repositoryRoot, scanWorkspace } from './inventory.js';
+import { pathInside } from './platform.js';
 
 /** @returns {Promise<{root: string, name: string}>} */
 async function canonical(root) {
@@ -245,8 +246,7 @@ export function createWorkspace(ctx, store) {
           ancestor = parent;
         }
       }
-      const normalizedRoot = root.endsWith(path.sep) ? root : root + path.sep;
-      if (real !== root && !real.startsWith(normalizedRoot)) {
+      if (!pathInside(root, real)) {
         throw ideError('E_OUTSIDE_ROOT', '路径在工作区之外', { path: rel });
       }
       return { root, absolute: real, relative: path.relative(root, real).split(path.sep).join('/') };

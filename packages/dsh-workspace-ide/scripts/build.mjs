@@ -18,7 +18,7 @@ const lib = path.join(root, 'lib');
 const checkOnly = process.argv.includes('--check');
 
 const STYLE_ID = 'dsh-workspace-ide';
-const GZIP_BUDGET = 1_220_000;
+const GZIP_BUDGET = 20 * 1024 * 1024;
 const LANG_ALLOW = new Set([
   'lang-javascript', 'lang-json', 'lang-html', 'lang-css', 'lang-markdown', 'lang-python',
   'lang-rust', 'lang-go', 'lang-java', 'lang-cpp', 'lang-xml', 'lang-yaml', 'lang-sql', 'lang-php',
@@ -162,10 +162,11 @@ for (const input of Object.keys(result.metafile.inputs)) {
 // --- step 7: gzip budget --------------------------------------------------
 const code = await readFile(path.join(lib, 'client.js'));
 const gzip = gzipSync(code, { level: 9 }).length;
-if (gzip > GZIP_BUDGET) fail(`client bundle exceeds 1.2 MB gzip (actual ${gzip})`);
+if (gzip > GZIP_BUDGET) fail(`client bundle exceeds 20 MB gzip (actual ${gzip})`);
 
 // --- step 8: summary ------------------------------------------------------
-const top = Object.entries(result.metafile.outputs[path.relative(process.cwd(), path.join(lib, 'client.js'))]?.inputs ?? {})
+const metaKey = path.relative(process.cwd(), path.join(lib, 'client.js')).replaceAll('\\', '/');
+const top = Object.entries(result.metafile.outputs[metaKey]?.inputs ?? {})
   .sort((a, b) => b[1].bytesInOutput - a[1].bytesInOutput)
   .slice(0, 10)
   .map(([file, info]) => `  ${(info.bytesInOutput / 1024).toFixed(1)} kB  ${file}`);

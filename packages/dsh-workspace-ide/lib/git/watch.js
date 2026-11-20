@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ideError } from '../../shared/errors.js';
+import { toPosix } from '../platform.js';
 
 const DEBOUNCE_MS = 800;
 const MAX_EVENTS = 500;
@@ -49,9 +50,9 @@ export function createWatcher() {
         });
         handle.on('change', (kind, file) => {
           if (state.stopped) return;
-          const name = String(file ?? '');
+          const name = toPosix(file);
           if (!name || name.includes('node_modules/') || name.startsWith('.git/objects')) return;
-          append(state, { kind: 'worktree', path: name.replace(/\\/g, '/'), at: Date.now() });
+          append(state, { kind: 'worktree', path: name, at: Date.now() });
         });
       }
       return { token, debounceMs: DEBOUNCE_MS, reasons: ['worktree', 'index'] };

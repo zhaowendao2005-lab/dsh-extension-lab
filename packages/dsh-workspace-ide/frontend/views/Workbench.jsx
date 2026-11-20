@@ -82,19 +82,23 @@ export function Workbench({ stores, visible, surface = 'sidebar', scopeRef = nul
   let ghost = null;
   if (drag && rootRef.current) {
     const rect = rootRef.current.getBoundingClientRect();
-    const title = layout.tabs[drag.tabId] ? layout.tabs[drag.tabId].title || layout.tabs[drag.tabId].path : '标签';
-    ghost = (
-      <div
-        className="wid-dragghost"
-        style={{
-          left: (drag.x - rect.left) / workbenchScale(rootRef.current) + 12 + 'px',
-          top: (drag.y - rect.top) / workbenchScale(rootRef.current) + 10 + 'px',
-        }}
-        aria-hidden="true"
-      >
-        {title || '标签'}
-      </div>
-    );
+    const inside = drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom;
+    const draggedTab = layout.tabs[drag.tabId];
+    if (inside || draggedTab?.kind !== 'file') {
+      const title = draggedTab ? draggedTab.title || draggedTab.path : '标签';
+      ghost = (
+        <div
+          className="wid-dragghost"
+          style={{
+            left: (drag.x - rect.left) / workbenchScale(rootRef.current) + 12 + 'px',
+            top: (drag.y - rect.top) / workbenchScale(rootRef.current) + 10 + 'px',
+          }}
+          aria-hidden="true"
+        >
+          {title || '标签'}
+        </div>
+      );
+    }
   }
 
   return (

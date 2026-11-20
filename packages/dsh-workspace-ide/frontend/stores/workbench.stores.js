@@ -26,6 +26,7 @@ import { createExplorerSelectionDomain } from './explorer-selection.stores.js';
 import { createQuickAccessDomain } from './quick-access.stores.js';
 import { defaultPreviewForPath, isToggleablePreviewPath, previewKindForPath } from '../service/preview.js';
 import { baseNameOf, canMoveToDir, normalizeMoveTargets, parentDirOf } from '../service/explorer-drag.js';
+import { resolveNativeOpenPath } from '../service/native-resource.js';
 
 const EMPTY_LIMITS = LIMITS;
 
@@ -94,6 +95,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
     phase: 'idle',
     root: null,
     name: null,
+    source: null,
     git: { available: false, isRepo: false, branch: null, detached: false },
     recents: [],
     limits: EMPTY_LIMITS,
@@ -392,6 +394,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
         phase: 'ready',
         root: next?.root ?? null,
         name: next?.name ?? null,
+        source: next?.source ?? null,
         git: next?.git ?? { available: false, isRepo: false },
         recents: next?.recents ?? [],
         limits: next?.limits ?? EMPTY_LIMITS,
@@ -491,6 +494,7 @@ export function createStores({ client, sessionId, host, preferences = null }) {
         workspace.patch({
           root: next.root ?? state.root,
           name: next.name ?? state.name,
+          source: next.source ?? state.source,
           git: next.git ?? state.git,
         });
         await actions.listDir('');
@@ -523,7 +527,14 @@ export function createStores({ client, sessionId, host, preferences = null }) {
       try {
         const opened = await client.call('workspace.open', { root });
         resetRootScopedState();
-        workspace.patch({ root: opened.root, name: opened.name, git: opened.git, phase: 'ready', error: null });
+        workspace.patch({
+          root: opened.root,
+          name: opened.name,
+          source: opened.source ?? (sessionId ? 'override' : 'last'),
+          git: opened.git,
+          phase: 'ready',
+          error: null,
+        });
         diffDomain.close();
         conflictDomain.close();
         ui.patch({ menu: null, tabMenu: null });
@@ -952,6 +963,29 @@ export function createStores({ client, sessionId, host, preferences = null }) {
     togglePreview(path) {
       if (!isToggleablePreviewPath(path)) return;
       editorDomain.togglePreview(path);
+    },
+
+    openInNativeRightbar(path) {
+      if (!path) return false;
+      if (typeof host?.openInNativeRightbar !== 'function') {
+        notify('warn', '当前宿主不支持切换到原生右栏打开');
+        return false;
+      }
+      const targetPath = resolveNativeOpenPath(path, workspace.getSnapshot());
+      if (!targetPath) {
+        notify('warn', '无法解析目标文件路径');
+        return false;
+      }
+      const isDirty = editor.getSnapshot().tabs.some((tab) => tab.path === path && tab.dirty);
+      if (isDirty) {
+        notify('info', '该文件在工作台中有未保存修改，DSH 原生右栏显示的是磁盘内容');
+      }
+      const result = host.openInNativeRightbar(sessionId, targetPath);
+      if (!result?.ok) {
+        notify('warn', result?.error ?? '无法在 DSH 右栏打开该文件');
+        return false;
+      }
+      return true;
     },
 
     async openFileInGroup(path, groupId, zone = 'center') {

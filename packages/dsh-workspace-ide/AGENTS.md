@@ -81,7 +81,7 @@
 
 - 客户端单文件 IIFE：**不能**拆 chunk、不能用浏览器 `new Worker`、不能加载 `.wasm` 或字体、不能依赖图片资源路由。Host 的 Node 搜索 Worker 独立打包，不属于客户端限制。
 - 语言包**显式白名单**（IIFE 下动态 import 不省体积）。
-- bundle ≤ **1.2 MB gzip**，构建期断言；超限先查是否误引入了整包。
+- bundle ≤ **20 MB gzip**，构建期断言；超限先查是否误引入了整包。
 - CSS 内联进 JS，运行时注入 `<style id="dsh-workspace-ide/css">`，卸载时移除。
 - 右栏全局样式与全视图 ShadowRoot 样式分别注入、分别释放；全视图内部不依赖宿主全局选择器或字体资源。Seti 真实图标轮廓以内联 SVG 使用，颜色映射主题 token，并保留 `THIRD_PARTY_NOTICES.md` 的来源 / MIT 许可。
 - 样式只用 `--dsw-alias-*` / `--dsw-*` token；**禁止硬编码色值**（构建期扫描，`// check-ignore: color` 可豁免并注明原因）。

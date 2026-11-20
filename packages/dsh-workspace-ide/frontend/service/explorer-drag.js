@@ -62,6 +62,16 @@ const COMPOSER_INPUT_SELECTOR = '[data-composer-input]';
 const COMPOSER_CARD_SELECTOR = '[data-composer-card]';
 const CONVERSATION_SCROLL_SELECTOR = '[data-conversation-scroll]';
 
+export const EXTERNAL_CHAT_DROP_MARGIN = 12;
+
+export function isOutsideRect(rect, clientX, clientY, margin = EXTERNAL_CHAT_DROP_MARGIN) {
+  if (!rect) return false;
+  return clientX < rect.left - margin
+    || clientX > rect.right + margin
+    || clientY < rect.top - margin
+    || clientY > rect.bottom + margin;
+}
+
 function isNodeVisible(el) {
   if (!el || !el.isConnected) return false;
   const rect = el.getBoundingClientRect();
@@ -82,6 +92,14 @@ export function findChatComposerInput() {
   return fallback[0] ?? null;
 }
 
+/** Locate the best DOM node to highlight as the active chat drop target. */
+export function findChatHighlightElement() {
+  const input = findChatComposerInput();
+  if (!input) return null;
+  const card = input.closest?.(COMPOSER_CARD_SELECTOR);
+  return card && isNodeVisible(card) ? card : input;
+}
+
 /** Hit-test whether (clientX, clientY) is over the Host chat composer or conversation area. */
 export function findChatDropTarget(clientX, clientY) {
   if (typeof document === 'undefined' || typeof document.elementsFromPoint !== 'function') return null;
@@ -93,6 +111,46 @@ export function findChatDropTarget(clientX, clientY) {
     if (composer && isNodeVisible(composer)) return { kind: 'composer', element: composer };
     const scroll = el.closest(CONVERSATION_SCROLL_SELECTOR);
     if (scroll && isNodeVisible(scroll)) return { kind: 'conversation', element: scroll };
+  }
+  return null;
+}
+
+/**
+ * Resolve whether an external drag point (outside the workbench) should trigger a chat
+ * reference drop: true whenever directly over chat/composer OR dragged past any workbench
+ * edge by `EXTERNAL_CHAT_DROP_MARGIN` (or peeking out of FullView) while a composer exists.
+ */
+export function resolveExternalChatDrop({ x, y, boundsRect, peeking = false }) {
+  const direct = findChatDropTarget(x, y);
+  const crossed = peeking || isOutsideRect(boundsRect, x, y, EXTERNAL_CHAT_DROP_MARGIN);
+  if (!direct && !crossed) {
+    return { ready: false, reason: 'buffer', target: null };
+  }
+  const composerEl = findChatHighlightElement();
+  if (!composerEl) {
+    return { ready: false, reason: 'no-composer', target: null };
+  }
+  return {
+    ready: true,
+    reason: 'chat',
+    target: direct?.kind === 'composer' ? direct : { kind: 'composer', element: composerEl },
+  };
+}
+
+/** Shared drag-to-chat feedback updater for FileTree and TabStrip. */
+export function updateExternalChatDrop(overlay, { x, y, peeking, paths, summary }) {
+  const ext = resolveExternalChatDrop({ x, y, boundsRect: overlay.getBoundsRect(), peeking });
+  if (ext.ready) {
+    const hint = paths.length === 1 ? '@' + paths[0] : '引用 ' + paths.length + ' 项';
+    overlay.setChatTarget(ext.target, '松手引用到对话：' + hint);
+    overlay.updatePosition(x, y, '松手引用到对话：' + hint + '（Esc 取消）', 'chat');
+    return { kind: 'chat', paths };
+  }
+  overlay.setChatTarget(null, '');
+  if (ext.reason === 'no-composer') {
+    overlay.updatePosition(x, y, '未找到对话输入框', 'invalid');
+  } else {
+    overlay.updatePosition(x, y, summary, 'neutral');
   }
   return null;
 }
@@ -167,6 +225,8 @@ export function createDragOverlayController(sourceElement) {
   const fullViewBackdrop = isShadow ? shadowRoot.querySelector('.wid-fullview-backdrop') : null;
   const fullViewDialog = isShadow ? shadowRoot.querySelector('.wid-fullview') : null;
   const initialDialogRect = fullViewDialog ? fullViewDialog.getBoundingClientRect() : null;
+  const rootEl = sourceElement?.closest?.('.wid-root') ?? null;
+  const initialRootRect = initialDialogRect ?? (rootEl ? rootEl.getBoundingClientRect() : null);
 
   let ghostEl = null;
   let highlightedChatEl = null;
@@ -206,16 +266,25 @@ export function createDragOverlayController(sourceElement) {
   return {
     isFullView: Boolean(fullViewBackdrop && initialDialogRect),
     isPeeking: () => peeking,
+    getBoundsRect: () => initialDialogRect ?? rootEl?.getBoundingClientRect?.() ?? initialRootRect,
 
     updatePosition(clientX, clientY, label, tone = 'neutral') {
       const el = ensureGhost();
       if (!el) return;
       el.style.display = '';
-      const bodyRect = document.body.getBoundingClientRect();
-      el.style.left = (clientX - bodyRect.left + 14) + 'px';
-      el.style.top = (clientY - bodyRect.top + 12) + 'px';
       el.dataset.tone = tone;
       el.textContent = label;
+      const bodyRect = document.body.getBoundingClientRect();
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 0;
+      const vh = typeof window !== 'undefined' ? window.innerHeight : 0;
+      const width = el.offsetWidth || 0;
+      const height = el.offsetHeight || 0;
+      const rawX = clientX + 14;
+      const rawY = clientY + 12;
+      const clampedX = vw > 0 ? Math.max(8, Math.min(rawX, vw - width - 8)) : rawX;
+      const clampedY = vh > 0 ? Math.max(8, Math.min(rawY, vh - height - 8)) : rawY;
+      el.style.left = (clampedX - bodyRect.left) + 'px';
+      el.style.top = (clampedY - bodyRect.top) + 'px';
     },
 
     hideGhost() {

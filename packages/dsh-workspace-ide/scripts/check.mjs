@@ -20,7 +20,7 @@ async function walk(dir, out = []) {
   const full = path.join(root, dir);
   if (!existsSync(full)) return out;
   for (const entry of await readdir(full, { withFileTypes: true })) {
-    const rel = path.join(dir, entry.name);
+    const rel = path.posix.join(dir.replaceAll('\\', '/'), entry.name);
     if (entry.isDirectory()) await walk(rel, out);
     else if (TEXT_EXT.test(entry.name)) out.push(rel);
   }

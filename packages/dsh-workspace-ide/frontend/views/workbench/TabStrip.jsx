@@ -5,7 +5,7 @@ import { workbenchRoot, localPoint } from '../../service/geometry.js';
 import { tabIcon, tabTitle } from '../../service/tabs.js';
 import { isToggleablePreviewPath } from '../../service/preview.js';
 import {
-  createDragOverlayController, findChatDropTarget, formatDropPathsForChat, insertTextIntoChatComposer,
+  createDragOverlayController, formatDropPathsForChat, insertTextIntoChatComposer, updateExternalChatDrop,
 } from '../../service/explorer-drag.js';
 import { zoneAt } from '../../service/split.js';
 
@@ -135,14 +135,13 @@ export function TabStrip({ stores, groupId }) {
         const hit = !peeking && typeof scopeRoot?.elementFromPoint === 'function' ? scopeRoot.elementFromPoint(x, y) : null;
         const insideWorkbench = Boolean(hit && root && workbenchRoot(hit) === root);
         if (!insideWorkbench) {
-          chatDropTarget = findChatDropTarget(x, y);
-          if (chatDropTarget) {
-            overlay.setChatTarget(chatDropTarget, '松手添加到对话：@' + dragFilePath);
-            overlay.updatePosition(x, y, '添加到对话：@' + dragFilePath, 'chat');
-          } else {
-            overlay.setChatTarget(null, '');
-            overlay.updatePosition(x, y, peeking ? '拖到聊天输入区松手引用' : dragFilePath.split('/').pop(), 'neutral');
-          }
+          chatDropTarget = updateExternalChatDrop(overlay, {
+            x,
+            y,
+            peeking,
+            paths: [dragFilePath],
+            summary: dragFilePath.split('/').pop(),
+          });
         } else {
           chatDropTarget = null;
           overlay.setChatTarget(null, '');
@@ -275,20 +274,33 @@ export function TabStrip({ stores, groupId }) {
       </div>
       {(() => {
         const activeTab = activeId ? layout.tabs[activeId] : null;
-        const canToggle = activeTab?.kind === 'file' && isToggleablePreviewPath(activeTab.path);
-        if (!canToggle) return null;
+        if (activeTab?.kind !== 'file' || !activeTab.path) return null;
+        const canToggle = isToggleablePreviewPath(activeTab.path);
         const isPreview = Boolean((editor.previews ?? {})[activeTab.path]);
         return (
-          <button
-            type="button"
-            className="wid-tabs__action"
-            title={isPreview ? '切换为源码 (Raw)' : '切换为预览'}
-            aria-label={isPreview ? '切换为源码' : '切换为预览'}
-            aria-pressed={isPreview}
-            onClick={() => stores.actions.togglePreview(activeTab.path)}
-          >
-            <Icon name={isPreview ? 'script' : 'preview'} size={13} />
-          </button>
+          <>
+            {canToggle && (
+              <button
+                type="button"
+                className="wid-tabs__action"
+                title={isPreview ? '切换为源码 (Raw)' : '切换为预览'}
+                aria-label={isPreview ? '切换为源码' : '切换为预览'}
+                aria-pressed={isPreview}
+                onClick={() => stores.actions.togglePreview(activeTab.path)}
+              >
+                <Icon name={isPreview ? 'script' : 'preview'} size={13} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="wid-tabs__action"
+              title="在 DSH 右栏打开"
+              aria-label="在 DSH 右栏打开"
+              onClick={() => stores.actions.openInNativeRightbar(activeTab.path)}
+            >
+              <Icon name="openNative" size={13} />
+            </button>
+          </>
         );
       })()}
       <button type="button" className="wid-tabs__more" title="标签页操作" aria-label="标签页操作" onClick={openGroupMenu}>

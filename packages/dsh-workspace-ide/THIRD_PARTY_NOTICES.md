@@ -33,13 +33,15 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## react-markdown, remark-gfm, rehype-slug
+## react-markdown, remark-gfm, rehype-raw, rehype-sanitize, rehype-slug
 
 The Markdown preview (`frontend/editor/markdown.js`) parses and renders through these packages;
-all three are bundled into `lib/client.js`.
+all five are bundled into `lib/client.js`.
 
 - `react-markdown` 10.1.0 — https://github.com/remarkjs/react-markdown — Copyright (c) Espen Hovlandsdal
 - `remark-gfm` 4.0.1 — https://github.com/remarkjs/remark-gfm — Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- `rehype-raw` 7.0.0 — https://github.com/rehypejs/rehype-raw — Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- `rehype-sanitize` 6.0.0 — https://github.com/rehypejs/rehype-sanitize — Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
 - `rehype-slug` 6.0.0 — https://github.com/rehypejs/rehype-slug — Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
 
 MIT License (react-markdown)
@@ -66,7 +68,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-MIT License (remark-gfm and rehype-slug)
+MIT License (remark-gfm, rehype-raw, rehype-sanitize and rehype-slug)
 
 Copyright (c) Titus Wormer <tituswormer@gmail.com>
 

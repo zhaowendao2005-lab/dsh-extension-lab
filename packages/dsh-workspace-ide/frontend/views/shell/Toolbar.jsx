@@ -29,7 +29,7 @@ export function Toolbar({ stores }) {
   // The recent-folder list used to live in the in-panel settings page; it belongs with the
   // workspace switcher because it is per-session state, not a browser-global preference.
   const recentItems = (workspace.recents ?? []).slice(0, 5).map((root, index) => ({
-    label: '最近 ' + (index + 1) + '：' + (root.replace(/\/+$/, '').split('/').pop() || root),
+    label: '最近 ' + (index + 1) + '：' + (root.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || root),
     title: root,
     run: () => void stores.actions.openRoot(root),
   }));

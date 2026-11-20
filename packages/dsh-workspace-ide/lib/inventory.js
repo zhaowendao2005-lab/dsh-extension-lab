@@ -4,12 +4,13 @@ import { lstat, open, opendir, realpath } from 'node:fs/promises';
 import { ideError } from '../shared/errors.js';
 import { LIMITS } from '../shared/contract.js';
 import { runGit } from './git/exec.js';
+import { pathInside, samePath, toPosix } from './platform.js';
 
 const SKIP = new Set(['node_modules', '.git', '.hg', '.svn', '.yarn', '.pnpm', '.pnpm-store', 'bower_components', 'vendor', '.venv', 'venv', '__pycache__', '.cache', '.npm', '.turbo', '.next', '.nuxt', '.output', '.parcel-cache', '.svelte-kit', '.gradle', 'dist', 'coverage']);
 export const INVENTORY_LIMITS = Object.freeze({ directories: 10000, entries: 100000, depth: 40, results: 2000, durationMs: 8000 });
 const MANIFEST_BYTES = 1024 * 1024;
-const posix = (value) => value.split(path.sep).join('/');
-const within = (root, target) => target === root || target.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+const posix = toPosix;
+const within = pathInside;
 
 function relativePath(value, field) {
   if (typeof value !== 'string' || !value || value.includes('\0') || value.includes('\\') || path.isAbsolute(value) || /^[A-Za-z]:/.test(value) || value.split('/').includes('..')) {
@@ -39,7 +40,7 @@ export async function repositoryRoot(root, relative, timeoutMs = LIMITS.statusTi
   try { top = await realpath(result.stdout.replace(/\r?\n$/, '')); } catch {
     throw ideError('E_NOT_A_REPO', '无法解析 Git 工作树根目录', { path: relative });
   }
-  if (top !== real) throw ideError('E_NOT_A_REPO', '所选目录不是 Git 仓库根目录', { path: relative });
+  if (!samePath(top, real)) throw ideError('E_NOT_A_REPO', '所选目录不是 Git 仓库根目录', { path: relative });
   return real;
 }
 
@@ -157,7 +158,7 @@ export async function readPackageScripts(workspace, input) {
         if (error?.code !== 'ENOENT') throw ideError('E_PERMISSION', '无法读取包管理器锁文件', { syscall: error?.code ?? 'lstat' });
       }
     }
-    if (packageManager || directory === root) break;
+    if (packageManager || samePath(directory, root)) break;
     directory = path.dirname(directory);
   }
   packageManager ??= 'npm';

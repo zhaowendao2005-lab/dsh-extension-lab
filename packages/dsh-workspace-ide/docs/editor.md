@@ -380,21 +380,23 @@ P1 用 `@codemirror/legacy-modes 6.5.5` 兜底（**不在 P0 bundle**）：`shel
 
 ## 12. Markdown 预览
 
-依赖 `react-markdown@10.1.0` + `remark-gfm@4.0.1` + `rehype-slug@^6.0.0`。**不装** `rehype-raw`（禁 raw HTML）、`@shikijs/rehype`、`rehype-pretty-code`、`rehype-highlight`、`streamdown`。三个包都进 bundle（gzip +61 KB，见 `docs/build.md` §7）。
+依赖 `react-markdown@10.1.0` + `remark-gfm@4.0.1` + `rehype-raw@7.0.0` + `rehype-sanitize@6.0.0` + `rehype-slug@^6.0.0`。**不装** `@shikijs/rehype`、`rehype-pretty-code`、`rehype-highlight`、`streamdown`。
 
-解析与渲染**全部交给库**：`frontend/editor/markdown.js` 只做组件映射（链接 / 图片 / 表格外壳），不自实现任何语法。历史版本手写过标题 / 围栏 / 引用 / 列表的行扫描器，表格、图片、任务列表、嵌套列表、`_em_`、实体、硬换行全都不对，已删除。
+语法与结构对标 VS Code `markdown-language-features`：由 `react-markdown` + `remark-gfm` 解析 GFM，经 `rehype-raw` + 严格白名单 `rehype-sanitize` 支持表格内 `<br>` 与安全 HTML（HTML 表格 `colspan`/`rowspan`、`<details>`/`<summary>`、`<sub>`/`<sup>`/`<kbd>`/`<mark>` 等），`rehype-slug` 补 heading id；前置 YAML Frontmatter 经 `frontend/editor/markdown-frontmatter.js` 解析为元信息表；围栏代码块经 `frontend/editor/markdown-highlight.js` 复用已打包的 Lezer 语法树高亮并附带复制按钮。所有渲染结果均为 React 元素，严格禁止拼接 HTML 字符串或使用 `dangerouslySetInnerHTML`（`check.mjs` R16）。
 
 | 决策 | 值 | 理由 |
 | --- | --- | --- |
-| raw HTML | 不装 `rehype-raw`；渲染结果是 React 元素，从不拼 HTML 字符串 | 预览的是工作区任意 `.md`，可能恶意；`dangerouslySetInnerHTML` 由 `check.mjs` R16 禁止 |
-| heading id | `rehype-slug` | `[跳转](#deploy)` 需要锚点，与 VS Code `#addNamedHeaders` 同语义 |
-| 代码块高亮 | **不加 Shiki**：等宽字体 + 宿主 `--dsw-alias-markdown-code-block` 底色 | Shiki core+engine = 54 KB，oniguruma 还要内联 wasm。`highlightTree` + `editorHighlight` 是可选的后续项（13 个 lezer 语法已在包里，零新增字节），本轮不做 |
-| 表格 | 外层套 `.wid-md__table` 横向滚动 | 宽表格不撑开正文列 |
+| 安全 HTML | `rehype-raw` + `rehype-sanitize` 白名单；渲染为 React 元素 | 支持 `<br>`、HTML 表格、`<details>` 等常见文档语法，同时剥离 `script`/`iframe`/`on*` 与危险协议 |
+| YAML Frontmatter | `splitFrontmatter` + `parseFrontmatterYaml` | 与 VS Code `yamlPreamble.ts` 一致：渲染为元信息表（非法 YAML 展示错误卡），避免顶部 `---` 破坏正文标题 |
+| heading id | `rehype-slug`（位于 sanitize 之后） | `[跳转](#deploy)` 需要锚点，与 VS Code `#addNamedHeaders` 同语义 |
+| 代码块高亮与复制 | 复用 `@lezer/highlight` + `editor/languages.js`（零新增语法体积）+ 复制按钮 | 颜色复用 `--wid-syn-*`，明暗主题自适应；有语言标签时显示语言栏 + 复制按钮，无语言时悬停显示复制按钮 |
+| 表格 | 外层套 `.wid-md__table` 横向滚动，使用真实 `--dsw-alias-border-l1`/`-l2` 与 `--dsw-alias-bg-layer-2`，保留 `[align]` | 宽表格不撑开正文列，居中/右对齐不被默认表头样式覆盖 |
+| 提示块 | `blockquote` 识别 `[!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` | 渲染为语义色左边框提示块 |
 | 工作区图片 | `files.stat` + `files.readMedia` 分块读 → Blob URL，按路径缓存 | 预览读的是磁盘而不是 webview 资源；`mediaImageBytesMax` 封顶 |
-| 链接 | `#anchor` → 容器内滚动；工作区相对路径 → 在工作台打开；http/https/mailto → 新标签 + `rel="noreferrer noopener"`；其余（`javascript:` / `data:` / 解析不到）→ 只留文本 | 预览不导航宿主页面 |
+| 链接 | `#anchor` → 容器内滚动（兼容 `user-content-` 与 URL 编码）；工作区相对路径 → 在工作台打开；http/https/mailto → 新标签 + `rel="noreferrer noopener"`；其余 → 只留文本 | 预览不导航宿主页面 |
 | 滚动同步 | **不做** | 双向同步需行映射，投入产出比极低 |
 
-组件骨架（`frontend/editor/markdown.js`，容器类名 `wid-md`，无状态）：`renderMarkdown(text, options)` → `h(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeSlug], components })`；`options` 传 `{ basePath, openLink, loadImage }`。`EditorPane` 用 `useMemo` 包住这次调用，光标移动不会重新解析文档。
+组件骨架（`frontend/editor/markdown.js`，容器类名 `wid-md`）：`renderMarkdown(text, options)` → `Fragment([FrontmatterView, ReactMarkdown({ remarkPlugins: [remarkGfm], rehypePlugins: [rehypeRaw, [rehypeSanitize, SANITIZE_SCHEMA], rehypeSlug], components })])`；`options` 传 `{ basePath, openLink, loadImage }`。`EditorPane` 用 `useMemo` 包住这次调用，光标移动不会重新解析文档。
 
 **React 复用**：`react-markdown` 自己 `import 'react'` / `'react/jsx-runtime'`。`scripts/build.mjs` 的 `react-bridge` 插件把这两个 specifier 解析到 `frontend/react-bridge.js`，它再转出 `frontend/runtime.js` 里注入的那一份 — 不打包第二份 React，也不产生顶层裸 `require()`。
 
@@ -445,6 +447,6 @@ P1 用 `@codemirror/legacy-modes 6.5.5` 兜底（**不在 P0 bundle**）：`shel
 
 ## 实现补充（代码为准）
 
-- Markdown 预览由 `react-markdown` + `remark-gfm` 渲染（GFM：表格、任务列表、删除线、字面 URL 自动链接），`rehype-slug` 补 heading id；输出是 React 元素，`dangerouslySetInnerHTML` 由 R16 禁止，README 无法注入标记。
+- Markdown 预览由 `react-markdown` + `remark-gfm` + `rehype-raw` + `rehype-sanitize` + `rehype-slug` 渲染，并配合 `markdown-frontmatter.js` 与 `markdown-highlight.js` 补齐 YAML Frontmatter 元信息表、Lezer 代码块高亮与复制按钮、GitHub 提示块与表格对齐/安全 HTML；输出全为 React 元素，`dangerouslySetInnerHTML` 由 R16 禁止。
 - 预览是每个标签独立的开关（`editor.previews[path]`）。切换时 `EditorPane` 会销毁并按 store 里的文本重建 CM6 实例（effect 依赖含 `preview`），**内容不丢，但 undo 历史与滚动位置会丢**（待办：改成隐藏而非卸载）。
 - 大文件与软换行降级阈值不变；Markdown 预览同样受 `syntaxMaxBytes 4MB` 限制，超限只显示源码。

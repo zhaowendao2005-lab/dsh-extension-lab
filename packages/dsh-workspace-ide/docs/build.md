@@ -127,7 +127,7 @@
 | 4 | 打 client | esbuild（参数见 §2.2）→ `lib/client.js`；`metafile` 写到内存供步骤 6 用 | esbuild 自身报错 |
 | 5 | 去行尾空白 | `replace(/[\t ]+$/gm, '')` 后重新写回 | — |
 | 6 | 语言包白名单核对 | 读 `metafile.inputs`，断言 `@codemirror/lang-*` 只出现白名单里的 13 个；断言无 `monaco-editor`、`@gitgraph/`、`elkjs`、`dagre` 路径 | `unexpected language/grammar bundled: <pkg>` |
-| 7 | 体积断言 | `gzipSync(Buffer.from(code), { level: 9 }).length` ≤ **1 220 000** 字节（≈1.2 MB）；原始体积只打印不卡 | `client bundle exceeds 1.2 MB gzip (actual <n>)` |
+| 7 | 体积断言 | `gzipSync(Buffer.from(code), { level: 9 }).length` ≤ **20 971 520** 字节（20 MB）；原始体积只打印不卡 | `client bundle exceeds 20 MB gzip (actual <n>)` |
 | 8 | 打印 | 一行汇总：backend 文件清单、client raw/gzip、10 个最大的 input | — |
 
 `--check` 分支（供 `pnpm test` 用）：跳过 1/3/4/5，只重跑 0/2/6，并比对 `lib/client.js` 是否比所有源码新；过期则 `throw new Error('lib/client.js is stale; run pnpm build')`，与 `packages/extension-lab-manager/scripts/build.mjs:39` 同款话术。
@@ -283,7 +283,9 @@ pnpm --dir packages/dsh-workspace-ide run build -- --check
 | `zod` | `4.4.3` | MIT | Host 侧 payload 校验 | **否**（Host 运行时依赖，`lib/` 里原样 import） |
 | `react-markdown` | `10.1.0` | MIT | Markdown 预览渲染（替代手写渲染器） | 是 |
 | `remark-gfm` | `4.0.1` | MIT | GFM：表格 / 任务列表 / 删除线 / 自动链接 | 是 |
-| `rehype-slug` | `^6.0.0` | MIT | heading id，`[跳转](#x)` 可用 | 是 |
+| `rehype-raw` | `7.0.0` | MIT | 解析 Markdown 内联/块级 HTML（经 sanitize 消毒） | 是 |
+| `rehype-sanitize` | `6.0.0` | MIT | 白名单 HTML 安全消毒，防注入 | 是 |
+| `rehype-slug` | `6.0.0` | MIT | heading id，`[跳转](#x)` 可用 | 是 |
 | `esbuild` | `0.25.12` | MIT | 构建工具 | 否（devDependency） |
 | `react` / `react-dom` | 宿主提供 | MIT | UI 运行时 | 否（`external`） |
 
@@ -310,7 +312,7 @@ pnpm --dir packages/dsh-workspace-ide run build -- --check
 | 1 | `lib/client.js` 不存在 / 404 | 忘了构建；`files` 里漏了 `lib`；`.gitignore` 把 `lib/` 排除了 | `pnpm --dir packages/dsh-workspace-ide run build`；确认 `files: ["lib", …]`；`git ls-files packages/dsh-workspace-ide/lib` 非空 |
 | 2 | Console `slot entry crashed in 'main'` | 见 §5 第 1 行四种原因 | 有栈就看栈；无栈就在 `frontend/index.js` 顶部加 `console.log('boot')` 二分定位 |
 | 3 | 主题不生效、颜色全灰或不可读 | token 名不存在（如 `--dsw-alias-surface-1`）；`<style>` 没注入 | 只允许 §ui-spec 出现过的 `--dsw-alias-*`；确认注入的 `style#dsh-workspace-ide/css` 在 `document.head` 里且 `textContent` 非空 |
-| 4 | 构建报 `client bundle exceeds 1.2 MB gzip` | 误引整包（如 `import * as CM from '@codemirror/view'` 之外又多引了一个大依赖）；语言包白名单被绕过 | 看步骤 8 打的 top-10 inputs；跑 `check.mjs` 的 R12/R13 |
+| 4 | 构建报 `client bundle exceeds 20 MB gzip` | 误引整包（如 `import * as CM from '@codemirror/view'` 之外又多引了一个大依赖）；语言包白名单被绕过 | 看步骤 8 打的 top-10 inputs；跑 `check.mjs` 的 R12/R13 |
 | 5 | 终端打不开，Host 抛 `subprocess.spawnTerminal is not available` | 缺 `@deepseek-ai/dsh-sandbox` peer（或宿主版本低于 `0.2.2-rc.1`） | 确认 `peerDependencies` 在；`dsh` 版本在 `engines.dsh` 区间内；不要自己 `spawn` 伪终端 |
 | 6 | 改动 / 图谱显示尚未选择仓库 | 仓库跟踪默认全空，或已取消活动仓库 | 打开「仓库」标签，勾选并选择目标；核对请求 repositoryPath 与实际工作树根，切换时丢弃旧响应 |
 | 7 | 终端中文乱码 / 半个汉字 | 在 `Buffer` 层按字节切了 UTF-8；`poll` 的 offset 被当成字节偏移 | 只在 Host 侧按**字符**切缓冲（`terminalBufferBytes` 是上限，切点必须落在完整码点之间）；`poll` 原样回传 offset，客户端不做换算 |

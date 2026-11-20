@@ -58,6 +58,9 @@ export function ExplorerContextMenu({ stores }) {
       <button type="button" role="menuitem" className="wid-contextmenu__item" disabled={!openPaths.length}
         title={!openPaths.length ? '所选项中没有可打开的文件' : '打开所选文件'}
         onClick={() => run(() => stores.actions.openExplorerEntries(openPaths))}>打开所选文件{openPaths.length > 1 ? '（' + openPaths.length + '）' : ''}</button>
+      <button type="button" role="menuitem" className="wid-contextmenu__item" disabled={single?.type !== 'file'}
+        title={single?.type !== 'file' ? '请选择单个文件' : '使用 DSH 原生右栏预览此文件'}
+        onClick={() => run(() => Promise.resolve(stores.actions.openInNativeRightbar(single.path)))}>在 DSH 右栏打开</button>
       <button type="button" role="menuitem" className="wid-contextmenu__item" disabled={!paths.length}
         onClick={() => run(() => stores.actions.copyText(paths.join('\n')))}>复制相对路径</button>
       <div className="wid-contextmenu__separator" role="separator" />

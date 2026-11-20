@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { LIMITS } from '../shared/contract.js';
 import { ideError } from '../shared/errors.js';
+import { renameCaseSafe, samePath, withFsRetry } from './platform.js';
 import { createSearch } from './search.js';
 
 const ALWAYS_IGNORED = new Set(['.git', 'node_modules', '.DS_Store']);
@@ -325,7 +326,7 @@ export function createFiles(ctx, workspace) {
       const temp = `${absolute}.dsh-wid-${process.pid}-${Date.now()}.tmp`;
       try {
         await fs.writeFile(temp, text, 'utf8');
-        await fs.rename(temp, absolute);
+        await withFsRetry(() => fs.rename(temp, absolute));
       } catch (error) {
         await fs.unlink(temp).catch(() => {});
         throw ideError('E_PERMISSION', '写入失败', { syscall: error?.code ?? 'write' });
@@ -365,23 +366,11 @@ export function createFiles(ctx, workspace) {
     const { absolute: target } = await workspace.resolvePath(to);
     workspace.requireRoot();
     try {
-      await fs.access(target);
-      throw ideError('E_VERSION_CONFLICT', '目标已存在', { path: to });
+      await renameCaseSafe(source, target);
     } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
-    }
-    try {
-      await fs.rename(source, target);
-    } catch (error) {
-      if (error?.code === 'EPERM' && process.platform === 'darwin') {
-        const staging = `${source}.dsh-wid-case-${Date.now()}`;
-        await fs.rename(source, staging);
-        await fs.rename(staging, target);
-      } else if (error?.code === 'ENOENT') {
-        throw ideError('E_NOT_FOUND', '源文件不存在', { path: from });
-      } else {
-        throw ideError('E_PERMISSION', '重命名失败', { syscall: error?.code ?? 'rename' });
-      }
+      if (error?.code === 'EEXIST') throw ideError('E_VERSION_CONFLICT', '目标已存在', { path: to });
+      if (error?.code === 'ENOENT') throw ideError('E_NOT_FOUND', '源文件不存在', { path: from });
+      throw ideError('E_PERMISSION', '重命名失败', { syscall: error?.code ?? 'rename' });
     }
     dirCache.delete(path.dirname(source));
     dirCache.delete(path.dirname(target));
@@ -393,7 +382,7 @@ export function createFiles(ctx, workspace) {
   async function remove({ path: relative, recursive }) {
     const { absolute } = await workspace.resolvePath(relative);
     workspace.requireRoot();
-    if (absolute === workspace.root) throw ideError('E_INVALID_ARG', '不能删除工作区根目录', { field: 'path' });
+    if (samePath(absolute, workspace.root)) throw ideError('E_INVALID_ARG', '不能删除工作区根目录', { field: 'path' });
     let info;
     try {
       info = await fs.lstat(absolute);
@@ -408,7 +397,7 @@ export function createFiles(ctx, workspace) {
       }
     }
     try {
-      await fs.rm(absolute, { recursive: Boolean(recursive) && info.isDirectory(), force: false });
+      await withFsRetry(() => fs.rm(absolute, { recursive: Boolean(recursive) && info.isDirectory(), force: false }));
     } catch (error) {
       throw ideError('E_PERMISSION', '删除失败', { syscall: error?.code ?? 'rm' });
     }

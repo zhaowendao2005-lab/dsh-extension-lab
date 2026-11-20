@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { LIMITS } from '../shared/contract.js';
 import { ideError } from '../shared/errors.js';
+import { buildEnvOverrides, shellBasename } from './platform.js';
 
 const MAX_CHARS = LIMITS.terminalBufferBytes; // one char ≈ one byte-of-budget for ASCII-heavy output
 const GRACE_MS = 250;
@@ -18,7 +19,8 @@ const IDLE_CLOSE_MS = 30 * 60 * 1000;
 const ENV_KEEP = [
   'HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM', 'TMPDIR', 'TMP', 'TEMP',
   'LANG', 'LC_ALL', 'LC_CTYPE', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_RUNTIME_DIR',
-  'ComSpec', 'SystemRoot', 'WINDIR', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'HOMEDRIVE', 'HOMEPATH', 'PATHEXT',
+  'ComSpec', 'SystemRoot', 'SystemDrive', 'WINDIR', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+  'HOMEDRIVE', 'HOMEPATH', 'PATHEXT', 'ProgramFiles', 'ProgramFiles(x86)', 'CommonProgramFiles', 'PSModulePath', 'OS',
   'SSH_AUTH_SOCK', 'COLORTERM', 'ANDROID_HOME', 'JAVA_HOME', 'GOPATH', 'CARGO_HOME', 'RUSTUP_HOME',
 ];
 
@@ -27,22 +29,23 @@ const ENV_KEEP = [
  * needs. Without the tombstones the provider merge would restore the very
  * variables the scrub removed (`DSH_*`, `NODE_OPTIONS`, tokens, cookies).
  */
-function terminalEnv(cwd, source = {}) {
-  const overrides = {};
-  for (const key of new Set([...Object.keys(process.env), ...Object.keys(source)])) overrides[key] = undefined;
-  for (const key of ENV_KEEP) {
-    const value = source[key] ?? process.env[key];
-    if (value !== undefined) overrides[key] = value;
-  }
-  overrides.PWD = cwd;
-  overrides.TERM = 'xterm-256color';
-  overrides.LANG = source.LANG || process.env.LANG || 'en_US.UTF-8';
-  overrides.COLORTERM = 'truecolor';
-  return overrides;
+function terminalEnv(cwd, source = {}, platform = process.platform) {
+  return buildEnvOverrides({
+    ambientEnv: process.env,
+    sourceEnv: source,
+    keepKeys: ENV_KEEP,
+    forced: {
+      PWD: cwd,
+      TERM: 'xterm-256color',
+      LANG: source.LANG || process.env.LANG || 'en_US.UTF-8',
+      COLORTERM: 'truecolor',
+    },
+    platform,
+  });
 }
 
 function shellName(shell, platform) {
-  return (platform === 'windows' ? path.win32 : path).basename(shell).toLowerCase().replace(/\.exe$/, '');
+  return shellBasename(shell, platform).toLowerCase().replace(/\.exe$/, '');
 }
 
 export function shellArguments(shell, platform) {
@@ -162,7 +165,7 @@ export function createTerminals(ctx, workspace) {
     if (typeof shell !== 'string' || !shell || shell.includes('\0')) {
       throw ideError('E_UNSUPPORTED', '找不到可用的 shell', { reason: 'shell-unavailable' });
     }
-    const env = terminalEnv(cwd, environment.env);
+    const env = terminalEnv(cwd, environment.env, platform === 'windows' ? 'win32' : process.platform);
     if (typeof service.resolveExecutable === 'function') shell = await service.resolveExecutable(shell, env);
 
     const rows = input.rows ?? 24;
@@ -190,7 +193,7 @@ export function createTerminals(ctx, workspace) {
       stopping: false,
       error: null,
       state: { state: 'running', pid: handle.pid ?? null, exitCode: null, signal: null },
-      title: path.basename(shell),
+      title: shellBasename(shell, platform),
     };
 
     terminal.done = Promise.resolve(handle.done).then((outcome) => {

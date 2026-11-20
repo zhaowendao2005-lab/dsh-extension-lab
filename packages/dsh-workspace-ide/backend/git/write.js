@@ -15,6 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { LIMITS } from '../../shared/contract.js';
 import { ideError } from '../../shared/errors.js';
+import { pathInside } from '../platform.js';
 import { gitOrThrow, runGit } from './exec.js';
 
 /** Pathspec hardening: a literal `*` in a filename must never expand (docs/security.md §3). */
@@ -81,10 +82,11 @@ export async function discardFiles(cwd, paths, { untracked = [] } = {}) {
     }
   }
 
+  const resolvedCwd = path.resolve(cwd);
   const removed = [];
   for (const entry of untracked) {
-    const absolute = path.resolve(cwd, entry);
-    if (!absolute.startsWith(`${path.resolve(cwd)}${path.sep}`)) {
+    const absolute = path.resolve(resolvedCwd, entry);
+    if (!pathInside(resolvedCwd, absolute, true)) {
       throw ideError('E_OUTSIDE_ROOT', '路径不能越过工作区根目录', { path: entry });
     }
     const stat = await fs.lstat(absolute).catch(() => null);

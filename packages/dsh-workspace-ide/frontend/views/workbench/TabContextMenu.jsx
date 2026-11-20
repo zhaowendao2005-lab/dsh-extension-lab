@@ -87,6 +87,17 @@ export function TabContextMenu({ stores, menu }) {
                 className="wid-contextmenu__item"
                 onClick={() => {
                   stores.actions.closeTabMenu();
+                  stores.actions.openInNativeRightbar(tab.path);
+                }}
+              >
+                在 DSH 右栏打开
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="wid-contextmenu__item"
+                onClick={() => {
+                  stores.actions.closeTabMenu();
                   void navigator.clipboard?.writeText(tab.path);
                 }}
               >

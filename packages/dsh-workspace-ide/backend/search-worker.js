@@ -6,6 +6,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import ignore from 'ignore';
 import { LIMITS } from '../shared/contract.js';
 import { searchPathFilter } from './search-globs.js';
+import { pathInside } from './platform.js';
 import { ideError } from '../shared/errors.js';
 
 export async function runSearch({ root, mode, input }, progress = () => {}) {
@@ -42,8 +43,7 @@ export async function runSearch({ root, mode, input }, progress = () => {}) {
       progress(snapshot());
     }
   };
-  const rootPrefix = canonical.endsWith(path.sep) ? canonical : canonical + path.sep;
-  const inside = (absolute) => absolute === canonical || absolute.startsWith(rootPrefix);
+  const inside = (absolute) => pathInside(canonical, absolute);
   const note = (relative, error) => {
     if (error?.code === 'ENOENT') return;
     if (warnings.size < 20) warnings.add('无法读取 ' + (relative || '.') + ' (' + (error?.code ?? 'IO') + ')');
