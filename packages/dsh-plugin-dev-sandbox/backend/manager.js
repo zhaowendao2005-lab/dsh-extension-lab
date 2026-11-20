@@ -1,18 +1,27 @@
 import path from "node:path";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
+import {
+  buildIsolatedTerminalOverrides,
+  cleanIsolatedEnvironment,
+  pathInside,
+  prepareSpawnSpec,
+  samePath,
+  scriptCommandArguments,
+  terminalArguments,
+} from "./platform.js";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DEFAULT_LOG_BYTES = 64 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const FORBIDDEN_ENV = /(?:^DSH_|KEY|PASS(?:WORD|WD)?|SECRET|TOKEN|CREDENTIAL|AUTH|COOKIE|^NODE_(?:OPTIONS|PATH)$|^(?:BASH_ENV|ENV|NPM_CONFIG_USERCONFIG)$)/i;
+const FORCED_ENV_KEYS = ["DSH_HOME", "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "APPDATA", "LOCALAPPDATA", "PWD"];
 
 function inside(root, target) {
-  const relative = path.relative(root, target);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+  return pathInside(root, target);
 }
 
 async function inspect(target) {
@@ -94,19 +103,9 @@ function commandState() {
 }
 
 function cleanEnvironment(source, home) {
-  const env = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (!FORBIDDEN_ENV.test(key) && typeof value === "string") env[key] = value;
-  }
   // A separate DSH_HOME is profile isolation, NOT an OS security sandbox.
   // Do not inherit the user's home/config directories or credential pointers.
-  env.DSH_HOME = home;
-  env.HOME = path.join(home, "home");
-  env.USERPROFILE = env.HOME;
-  env.XDG_CONFIG_HOME = path.join(home, "config");
-  env.XDG_CACHE_HOME = path.join(home, "cache");
-  env.XDG_DATA_HOME = path.join(home, "data");
-  return env;
+  return cleanIsolatedEnvironment(source, home, FORBIDDEN_ENV);
 }
 
 function terminalId(value) {
@@ -126,32 +125,7 @@ function terminalOverrides(env) {
   // The subprocess service merges overrides onto its own ambient environment.
   // Tombstones prevent that merge from restoring anything our scrub omitted
   // (notably NODE_OPTIONS, AUTH/COOKIE names, and the parent's DSH_* facts).
-  // Apply the isolated environment last so our new DSH_HOME/HOME survive.
-  const overrides = { ...Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined])), ...env };
-  // Windows merges names case-insensitively. Put each isolated value after any
-  // differently-cased tombstone, otherwise a later `home: undefined` could erase
-  // HOME and let shell defaults point back to the user's profile.
-  for (const name of ["DSH_HOME", "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "PWD"]) {
-    delete overrides[name];
-    for (const key of Object.keys(overrides)) if (key.toUpperCase() === name) overrides[key] = undefined;
-    overrides[name] = env[name];
-  }
-  return overrides;
-}
-
-function terminalArguments(shell, platform) {
-  const name = (platform === "windows" ? path.win32 : path).basename(shell).toLowerCase().replace(/\.exe$/, "");
-  if (name === "bash") return [shell, "--noprofile", "--norc", "-i"];
-  if (name === "zsh") return [shell, "-f", "-i"];
-  if (name === "fish") return [shell, "--no-config", "-i"];
-  if (name === "pwsh" || name === "powershell") return [shell, "-NoLogo", "-NoProfile"];
-  if (name === "cmd") return [shell, "/d", "/q"];
-  return platform === "windows" ? [shell] : [shell, "-i"];
-}
-
-function commandArguments(shell, platform, command) {
-  if (platform === "windows") return [shell, "/d", "/s", "/c", command];
-  return [shell, "-c", command];
+  return buildIsolatedTerminalOverrides(process.env, env, FORCED_ENV_KEYS);
 }
 
 function exportedEntry(value) {
@@ -464,11 +438,22 @@ export function createSandboxManager(options = {}) {
 
   async function start(item, kind, spec, ctx) {
     const state = item[kind];
+    let prepared;
+    try {
+      prepared = await prepareSpawnSpec(spec, {
+        env: ctx.env,
+        resolveExecutable: options.subprocess?.resolveExecutable,
+      });
+    } catch (error) {
+      state.state = "error"; state.error = error.message; state.pid = null;
+      log(item, kind, "system", error.message); return;
+    }
     return new Promise((resolve) => {
       let child;
       try {
-        child = spawn(spec.command, spec.args, { cwd: kind === "runtime" ? ctx.workspaceRoot : ctx.pluginPath,
-          env: ctx.env, shell: false, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+        child = spawn(prepared.command, prepared.args, { cwd: kind === "runtime" ? ctx.workspaceRoot : ctx.pluginPath,
+          env: ctx.env, shell: false, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true, ...(prepared.verbatim ? { windowsVerbatimArguments: true } : {}) });
       } catch (error) {
         state.state = "error"; state.error = error.message; state.pid = null;
         log(item, kind, "system", error.message); resolve(); return;
@@ -541,13 +526,20 @@ export function createSandboxManager(options = {}) {
   async function terminate(proc) {
     if (!proc) return;
     proc.stopped = true;
-    signal(proc, "SIGTERM");
-    if (groupAlive(proc)) {
-      let timer;
-      await Promise.race([proc.done, new Promise((resolve) => { timer = setTimeout(resolve, stopTimeoutMs); })]);
-      clearTimeout(timer);
-      // The group can outlive its leader (including when close already fired).
-      if (groupAlive(proc)) signal(proc, "SIGKILL");
+    // On Windows, terminate the full descendant tree while the leader PID still exists;
+    // killing only the leader first orphans children (`pnpm run` / `dsh web` servers).
+    if (process.platform === "win32" && proc.groupPid) {
+      const killed = spawnSync("taskkill", ["/pid", String(proc.groupPid), "/T", "/F"], { windowsHide: true, stdio: "ignore", timeout: 3000 });
+      if (killed.error || (killed.status !== 0 && groupAlive(proc))) signal(proc, "SIGKILL");
+    } else {
+      signal(proc, "SIGTERM");
+      if (groupAlive(proc)) {
+        let timer;
+        await Promise.race([proc.done, new Promise((resolve) => { timer = setTimeout(resolve, stopTimeoutMs); })]);
+        clearTimeout(timer);
+        // The group can outlive its leader (including when close already fired).
+        if (groupAlive(proc)) signal(proc, "SIGKILL");
+      }
     }
     if (!proc.closed) {
       let timer;
@@ -576,7 +568,7 @@ export function createSandboxManager(options = {}) {
     if (typeof subprocess.resolveExecutable === "function") shell = await subprocess.resolveExecutable(shell, env);
     const argv = input.commandId === undefined
       ? terminalArguments(shell, platform)
-      : commandArguments(shell, platform, `pnpm run ${input.commandId}`);
+      : scriptCommandArguments(shell, platform, input.commandId);
     validateSpec({ command: argv[0], args: argv.slice(1) });
     return { argv, cwd: ctx.pluginPath, env, rows: input.rows, cols: input.cols,
       terminalType: "xterm-256color", graceMs: terminalGraceMs };
@@ -870,7 +862,7 @@ export function createSandboxManager(options = {}) {
         await stopItem(item);
         await checkPaths(loc);
         if (await regularFile(loc.bindingPath)) {
-          if (path.resolve(loc.bindingPath) !== path.join(loc.base, "binding.json") || !inside(loc.workspaceRoot, loc.bindingPath)) {
+          if (!samePath(path.resolve(loc.bindingPath), path.join(loc.base, "binding.json")) || !inside(loc.workspaceRoot, loc.bindingPath)) {
             throw new Error("Unsafe binding removal target");
           }
           await unlink(loc.bindingPath);
