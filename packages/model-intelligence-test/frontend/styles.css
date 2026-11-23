@@ -2186,3 +2186,31 @@
   .mit-workbench .mit-relay-heading { flex-direction:column; }
   .mit-workbench .mit-relay-detail { width:100%; max-width:100%; }
 }
+/* Record rename: sidebar icon button and the record title (double-click also opens the dialog). */
+.mit-workbench .mit-record-rename {
+  margin-right:2px;
+  color:var(--mit-muted);
+  transition:color .12s ease,box-shadow .12s ease
+}
+.mit-workbench .mit-record-list-row:hover .mit-record-rename {
+  color:var(--mit-text)
+}
+.mit-workbench .mit-record-rename:hover:not(:disabled) {
+  background:none;
+  color:var(--mit-brand);
+  box-shadow:inset 0 0 0 1px var(--mit-brand)
+}
+.mit-workbench .mit-record-title {
+  display:flex;
+  align-items:center;
+  gap:6px
+}
+.mit-workbench .mit-record-title .mit-record-rename {
+  opacity:.55;
+  transition:opacity .12s ease,color .12s ease
+}
+.mit-workbench .mit-record-title:hover .mit-record-rename,
+.mit-workbench .mit-record-title .mit-record-rename:focus-visible {
+  opacity:1;
+  color:var(--mit-text)
+}

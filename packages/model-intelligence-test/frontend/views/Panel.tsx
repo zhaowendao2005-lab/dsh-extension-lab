@@ -82,6 +82,9 @@ function RecordsSidebar({ store }: {
               {new Date(record.createdAt).toLocaleString('zh-CN',{ month: '2-digit',day: '2-digit',hour: '2-digit',minute: '2-digit' })}
             </small>
           </button>
+          <button type="button" className="mit-record-rename mit-icon-button" aria-label={`重命名测试 ${record.name}`} title="重命名测试" onClick={() => store.actions.renameRecord(record.id)}>
+            <Icon name="edit" size={14} />
+          </button>
           <button type="button" className="mit-record-delete mit-icon-button" aria-label={`删除测试 ${record.name}`} onClick={() => store.actions.deleteRecord(record.id)}>
             <Icon name="trash" size={14} />
           </button>

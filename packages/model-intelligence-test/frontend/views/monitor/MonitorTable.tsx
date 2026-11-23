@@ -4,6 +4,7 @@ import { COLUMN_LABELS } from '../../types';
 import { Empty,formatMetric,Icon,StageBadge } from '../../components/common';
 import { endedRunIds,isEndedStage,sortRunIds } from '../results/runOrder';
 import { useDismissablePopover } from '../../components/useDismissablePopover';
+import { ColumnResizer } from '../../components/ColumnResizer';
 import { modelLabel,providerLabel } from '../results/modelLabel';
 import {MarketPrice,MarketCache} from '../a6/MarketSnapshot';
 import {ResultTarget} from '../a6/ResultTarget';
@@ -133,22 +134,6 @@ function SortButton({ store,record,column,label,sort }: {
     <span className="mit-sort-icon" aria-hidden="true" />
   </button>;
 }
-function ResizeHandle({ store,column,width,label }: {
-  store: Workbench;
-  column: string;
-  width: number;
-  label: string;
-}) {
-  return <span role="separator" tabIndex={0} aria-label={`调整${label}列宽`} aria-orientation="vertical" aria-valuenow={width} aria-valuemin={88} aria-valuemax={560} className="mit-column-resizer" onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); }} onPointerMove={event => {
-    if(event.currentTarget.hasPointerCapture(event.pointerId))
-      store.actions.resizeColumn(column,Math.max(88,Math.min(560,width+event.movementX)));
-  }} onPointerUp={event => { event.currentTarget.releasePointerCapture(event.pointerId); }} onKeyDown={event => {
-    if(event.key==='ArrowLeft'||event.key==='ArrowRight') {
-      event.preventDefault();
-      store.actions.resizeColumn(column,Math.max(88,Math.min(560,width+(event.key==='ArrowRight'? 16:-16))));
-    }
-  }} />;
-}
 export function MonitorTable({ store,record,results=false }: {
   store: Workbench;
   record: Evaluation;
@@ -222,11 +207,11 @@ export function MonitorTable({ store,record,results=false }: {
             {selecting&&<th scope="col" className="mit-select-col"><span className="mit-custom-sr-only">选择</span></th>}
             <th scope="col" aria-sort={sort?.column==='model'? (sort.direction==='asc'? 'ascending':'descending'):undefined}>参测模型
               {sortable('model')&&<SortButton store={store} record={record} column="model" label="模型" sort={sort} />}
-              <ResizeHandle store={store} column="model" width={presentation.widths.model||224} label="模型" />
+              <ColumnResizer width={presentation.widths.model||224} label="模型" onResize={width => store.actions.resizeColumn('model',width)} />
             </th>
             {columns.map(id => <th scope="col" key={id} className={id==='match'? 'mit-sticky-match':''} aria-sort={sort?.column===id? (sort.direction==='asc'? 'ascending':'descending'):undefined}>
               {sortable(id)? <SortButton store={store} record={record} column={id} label={columnLabel(id)} sort={sort} />:columnLabel(id)}
-              <ResizeHandle store={store} column={id} width={presentation.widths[id]||defaultWidth(id)} label={columnLabel(id)} />
+              <ColumnResizer width={presentation.widths[id]||defaultWidth(id)} label={columnLabel(id)} onResize={width => store.actions.resizeColumn(id,width)} />
             </th>)}
             <th scope="col" className="mit-sticky-actions">操作
             </th>

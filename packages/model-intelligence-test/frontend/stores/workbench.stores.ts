@@ -341,6 +341,18 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     cancelRecord,
     setFingerprintConfig(id, options) { void evaluationsDomain.configure(id, options); },
     retryFailedSample(id, runId) { void evaluationsDomain.retry(id, runId).then(nextRunId => { if (nextRunId) navigate({ runId: nextRunId, artifact: false }); }); },
+    renameRecord(id) {
+      const item = evaluations.getState().records.find(record => record.id === id);
+      if (!item) return;
+      ask({ title: '重命名测试记录', message: '名称最多 120 个字；历史测试快照和运行中的轮次不受影响。', input: item.name, choices: [{ id: 'rename', label: '保存名称' }, { id: 'cancel', label: '取消' }] }, (choice, input) => {
+        const name = input.trim().slice(0, 120);
+        if (choice !== 'rename' || !name) return;
+        attempt('重命名失败', evaluationsDomain.rename(id, name).then(record => {
+          if (disposed) return;
+          workbench.setState(state => ({ tabs: state.tabs.map(tab => tab.recordId === id ? { ...tab, title: record.name } : tab) }));
+        }));
+      });
+    },
     deleteRecord(id) {
       const item = evaluations.getState().records.find(record => record.id === id);
       if (!item) return;

@@ -101,12 +101,13 @@ function CustomResults({ store,record,resultOnly }: {
   resultOnly: boolean;
 }) {
   const filter=useStore(store.presentation,state => state.filter);
+  const widths=useStore(store.presentation,state => state.widths);
   const rows=useStore(store.evaluations,state => record.runIds.flatMap(id => {
     const run=state.runs[id]; return run?.custom? [{id,model:run.model,summary:run.custom}]:[];
   }));
   // Selecting a row only records navigation; Panel renders the run as its own content sub-page.
   return <>
-    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} renderChannelActions={record.a6api ? model => model.a6api ? <ResultTarget store={store} record={record} model={model} /> : null : undefined} />
+    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} widths={widths} onResize={store.actions.resizeColumn} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} renderChannelActions={record.a6api ? model => model.a6api ? <ResultTarget store={store} record={record} model={model} /> : null : undefined} />
     <CustomOutputPreview store={store} />
   </>;
 }
@@ -124,8 +125,11 @@ export function RecordView({ store,id }: {
     <header className="mit-record-heading">
       <div className="mit-title-row">
         <div>
-          <h2>
+          <h2 className="mit-record-title" title="双击重命名" onDoubleClick={() => store.actions.renameRecord(record.id)}>
             {record.name}
+            <button type="button" className="mit-icon-button mit-record-rename" aria-label={`重命名测试 ${record.name}`} title="重命名测试" onClick={() => store.actions.renameRecord(record.id)}>
+              <Icon name="edit" size={14} />
+            </button>
           </h2>
           <p className="mit-muted">
             {record.kind==='fingerprint'? record.a6api? 'a6api 专项指纹测试':'指纹测试':record.a6api? 'a6api 混合自定义测试':'自定义 Agent 测试'} ·

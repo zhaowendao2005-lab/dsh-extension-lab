@@ -2,7 +2,7 @@ import { createStore } from 'zustand/vanilla';
 import type { AttemptSummary, AttemptViewResult, Evaluation, EvaluationsState, FingerprintOptions, FingerprintRecord, ModelIntelligenceTransport, Preset, RecordModelRef, Run, StoredRecord, TestKind } from '../types';
 import {
   applyFingerprintRun, cancelAttempt, clearRecords, configureAttempt, createFingerprintRun, createRecord,
-  deleteRecord, failFingerprintRun, listRecords, modelOfRef, readAttempt, rerunRecord, retryAttempt, terminal, applyCustomRun,
+  deleteRecord, failFingerprintRun, listRecords, modelOfRef, readAttempt, renameRecord, rerunRecord, retryAttempt, terminal, applyCustomRun,
 } from './evaluations.datasource';
 
 const ACTIVE_POLL_MS = 800;
@@ -231,6 +231,13 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
       stored = [{ ...record, attempts: record.attempts ?? [] }, ...stored.filter(item => item.id !== record.id)];
       rebuild();
       refreshSoon();
+    },
+    /** Rename a Host record; the list is refreshed from the returned record so every view updates. */
+    async rename(recordId: string, name: string): Promise<StoredRecord> {
+      const record = await renameRecord(transport, recordId, name);
+      stored = stored.map(item => item.id === record.id ? { ...item, ...record } : item);
+      rebuild();
+      return record;
     },
     async create(input: CreateRecordInput): Promise<string> {
       const { record, attemptId } = await createRecord(transport, {

@@ -2221,6 +2221,34 @@
   .mit-workbench .mit-relay-heading { flex-direction:column; }
   .mit-workbench .mit-relay-detail { width:100%; max-width:100%; }
 }
+/* Record rename: sidebar icon button and the record title (double-click also opens the dialog). */
+.mit-workbench .mit-record-rename {
+  margin-right:2px;
+  color:var(--mit-muted);
+  transition:color .12s ease,box-shadow .12s ease
+}
+.mit-workbench .mit-record-list-row:hover .mit-record-rename {
+  color:var(--mit-text)
+}
+.mit-workbench .mit-record-rename:hover:not(:disabled) {
+  background:none;
+  color:var(--mit-brand);
+  box-shadow:inset 0 0 0 1px var(--mit-brand)
+}
+.mit-workbench .mit-record-title {
+  display:flex;
+  align-items:center;
+  gap:6px
+}
+.mit-workbench .mit-record-title .mit-record-rename {
+  opacity:.55;
+  transition:opacity .12s ease,color .12s ease
+}
+.mit-workbench .mit-record-title:hover .mit-record-rename,
+.mit-workbench .mit-record-title .mit-record-rename:focus-visible {
+  opacity:1;
+  color:var(--mit-text)
+}
 
 /* a6api.css */
 .mit-workbench .mit-a6-slot-help { margin:0; padding:9px 11px; border-left:3px solid var(--mit-brand); background:color-mix(in srgb,var(--mit-brand) 6%,var(--mit-layer)); color:var(--mit-text); font-size:11px; line-height:1.55 }
@@ -5388,6 +5416,9 @@ button.mit-chat-tool-disclosure-leading {
 .mit-workbench .mit-custom-steps-event.is-error .mit-custom-steps-event-kind, .mit-workbench .mit-custom-steps-event.is-error .mit-custom-steps-event-text { color: var(--mit-error); }
 .mit-workbench .mit-custom-steps-event-more, .mit-workbench .mit-custom-steps-event-empty { margin: 4px 0 0; font-size: 10px; color: var(--mit-muted); }
 @media (max-width: 620px) { .mit-workbench .mit-custom-steps-total { margin-left: 0; } }
+/* Column handles sit inside the header cell, which clips overflow for ellipsis text. */
+.mit-workbench .mit-custom-table thead th { position: relative; }
+.mit-workbench .mit-custom-table thead th .mit-column-resizer { right: 0; width: 9px; }
 
 /* records.css */
 /* Records, attempts (请求), relay chips and model-picker source sidebar. Loaded after styles.css. */

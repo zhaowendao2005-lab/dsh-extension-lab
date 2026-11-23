@@ -190,3 +190,6 @@
 .mit-workbench .mit-custom-steps-event.is-error .mit-custom-steps-event-kind, .mit-workbench .mit-custom-steps-event.is-error .mit-custom-steps-event-text { color: var(--mit-error); }
 .mit-workbench .mit-custom-steps-event-more, .mit-workbench .mit-custom-steps-event-empty { margin: 4px 0 0; font-size: 10px; color: var(--mit-muted); }
 @media (max-width: 620px) { .mit-workbench .mit-custom-steps-total { margin-left: 0; } }
+/* Column handles sit inside the header cell, which clips overflow for ellipsis text. */
+.mit-workbench .mit-custom-table thead th { position: relative; }
+.mit-workbench .mit-custom-table thead th .mit-column-resizer { right: 0; width: 9px; }

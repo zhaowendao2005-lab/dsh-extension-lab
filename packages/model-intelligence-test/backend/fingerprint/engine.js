@@ -215,6 +215,45 @@ export class FingerprintEngine {
     } finally { this.starting -= 1; }
   }
 
+  // Persisted attempts outlive the process, so a finished attempt can be rebuilt on demand and
+  // retried. Only samples that had already ended are accepted; a half-written snapshot is refused.
+  async restore(view, executionContext = {}, a6api = null) {
+    if (this.disposed) throw new FingerprintError('disposed', '插件正在卸载，无法恢复重试');
+    if (!view || typeof view.id !== 'string' || !Array.isArray(view.runs) || !Array.isArray(view.challenges))
+      throw new FingerprintError('unrecoverable', '该测试轮次的快照不完整，无法恢复重试');
+    if (view.status === 'cancelled') throw new FingerprintError('cancelled', '该测试轮次已取消，无法恢复重试');
+    if (this.jobs.has(view.id)) return this.view(this.jobs.get(view.id));
+    const reference = await this.detector();
+    const runs = view.runs.map(run => ({
+      provider: run.provider, model: run.model, stage: run.stage, analysis: run.analysis ?? null, error: run.error ?? null,
+      a6api: run.relay ? { channelId: run.relay.channelId } : null,
+      callProvider: run.callProvider ?? null, slotTokenId: run.slotTokenId ?? null, routing: run.routing ?? null,
+      relay: run.relay ?? null,
+      samples: (run.samples ?? []).map(sample => {
+        if (!END_STATES.has(sample.state))
+          throw new FingerprintError('unrecoverable', '该测试轮次仍有未结束的样本，无法恢复重试');
+        return {
+          index: sample.index, state: sample.state, expectedCount: sample.expectedCount, text: sample.text ?? '', count: sample.count ?? 0,
+          firstByteMs: sample.firstByteMs ?? null, firstTextMs: sample.firstTextMs ?? null,
+          generationMs: sample.generationMs ?? null, durationMs: sample.durationMs ?? null,
+          inputTokens: sample.inputTokens ?? null, outputTokens: sample.outputTokens ?? null,
+          finish: sample.finish ?? null, error: sample.error ?? null, errorDetail: sample.errorDetail ?? null,
+          startedAt: 0, firstAt: 0, lastAt: 0, timeoutMs: view.timeoutMs, timer: undefined, timeout: undefined,
+        };
+      }),
+    }));
+    const job = {
+      id: view.id, revision: (Number(view.revision) || 0) + 1, status: 'done', createdAt: view.createdAt ?? Date.now(),
+      finishedAt: view.finishedAt ?? null, controller: new AbortController(), detector: reference.detector,
+      reference: view.reference ?? { builtAt: reference.builtAt, source: 'lmfpd-sdk', sdk: 'lmfpd-sdk@0.2.0' },
+      challenges: view.challenges.map(challenge => ({ ...challenge })), concurrency: view.concurrency,
+      timeoutMs: view.timeoutMs, a6api, executionContext,
+      runs, pending: [], active: new Map(), settled: 0, wake: undefined, loop: null,
+    };
+    this.prune();
+    this.jobs.set(job.id, job);
+    return this.view(job);
+  }
   status(jobId, revision) {
     const job = this.jobs.get(jobId);
     if (!job) throw new FingerprintError('not-found', '指纹任务不存在或已过期');

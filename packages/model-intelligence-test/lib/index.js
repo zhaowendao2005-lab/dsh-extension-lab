@@ -62,6 +62,7 @@ var schemas = {
     preset: z2.strictObject({ id: z2.string().max(128), name: z2.string().max(120), body: z2.string().max(2e5) }).nullable().optional()
   }),
   recordRerun: z2.strictObject({ recordId: id() }),
+  recordRename: z2.strictObject({ recordId: id(), name: z2.string().trim().min(1).max(120) }),
   recordDelete: z2.strictObject({ recordId: id() }),
   attemptView: z2.strictObject({ attemptId: id(), revision: z2.number().int().min(0).optional() }),
   attemptCancel: z2.strictObject({ attemptId: id() }),
@@ -87,6 +88,7 @@ var DESCRIPTIONS = {
   recordsList: "List persisted test records with attempt summaries; {unchanged:true} when the revision has not moved.",
   recordCreate: "Create a test record; records immediately start their first Host-owned attempt (real model requests).",
   recordRerun: "Re-request a test record with its fixed model set; queued behind a running attempt.",
+  recordRename: "Rename a saved test record; attempts and historical snapshots stay unchanged.",
   recordDelete: "Delete a record and its attempts, cancelling running requests.",
   recordsClear: "Delete every record and attempt.",
   attemptView: "Read one attempt: live engine view or persisted snapshot.",
@@ -600,6 +602,78 @@ var FingerprintEngine = class {
     } finally {
       this.starting -= 1;
     }
+  }
+  // Persisted attempts outlive the process, so a finished attempt can be rebuilt on demand and
+  // retried. Only samples that had already ended are accepted; a half-written snapshot is refused.
+  async restore(view, executionContext = {}, a6api = null) {
+    if (this.disposed) throw new FingerprintError("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D\uFF0C\u65E0\u6CD5\u6062\u590D\u91CD\u8BD5");
+    if (!view || typeof view.id !== "string" || !Array.isArray(view.runs) || !Array.isArray(view.challenges))
+      throw new FingerprintError("unrecoverable", "\u8BE5\u6D4B\u8BD5\u8F6E\u6B21\u7684\u5FEB\u7167\u4E0D\u5B8C\u6574\uFF0C\u65E0\u6CD5\u6062\u590D\u91CD\u8BD5");
+    if (view.status === "cancelled") throw new FingerprintError("cancelled", "\u8BE5\u6D4B\u8BD5\u8F6E\u6B21\u5DF2\u53D6\u6D88\uFF0C\u65E0\u6CD5\u6062\u590D\u91CD\u8BD5");
+    if (this.jobs.has(view.id)) return this.view(this.jobs.get(view.id));
+    const reference = await this.detector();
+    const runs = view.runs.map((run) => ({
+      provider: run.provider,
+      model: run.model,
+      stage: run.stage,
+      analysis: run.analysis ?? null,
+      error: run.error ?? null,
+      a6api: run.relay ? { channelId: run.relay.channelId } : null,
+      callProvider: run.callProvider ?? null,
+      slotTokenId: run.slotTokenId ?? null,
+      routing: run.routing ?? null,
+      relay: run.relay ?? null,
+      samples: (run.samples ?? []).map((sample) => {
+        if (!END_STATES.has(sample.state))
+          throw new FingerprintError("unrecoverable", "\u8BE5\u6D4B\u8BD5\u8F6E\u6B21\u4ECD\u6709\u672A\u7ED3\u675F\u7684\u6837\u672C\uFF0C\u65E0\u6CD5\u6062\u590D\u91CD\u8BD5");
+        return {
+          index: sample.index,
+          state: sample.state,
+          expectedCount: sample.expectedCount,
+          text: sample.text ?? "",
+          count: sample.count ?? 0,
+          firstByteMs: sample.firstByteMs ?? null,
+          firstTextMs: sample.firstTextMs ?? null,
+          generationMs: sample.generationMs ?? null,
+          durationMs: sample.durationMs ?? null,
+          inputTokens: sample.inputTokens ?? null,
+          outputTokens: sample.outputTokens ?? null,
+          finish: sample.finish ?? null,
+          error: sample.error ?? null,
+          errorDetail: sample.errorDetail ?? null,
+          startedAt: 0,
+          firstAt: 0,
+          lastAt: 0,
+          timeoutMs: view.timeoutMs,
+          timer: void 0,
+          timeout: void 0
+        };
+      })
+    }));
+    const job = {
+      id: view.id,
+      revision: (Number(view.revision) || 0) + 1,
+      status: "done",
+      createdAt: view.createdAt ?? Date.now(),
+      finishedAt: view.finishedAt ?? null,
+      controller: new AbortController(),
+      detector: reference.detector,
+      reference: view.reference ?? { builtAt: reference.builtAt, source: "lmfpd-sdk", sdk: "lmfpd-sdk@0.2.0" },
+      challenges: view.challenges.map((challenge) => ({ ...challenge })),
+      concurrency: view.concurrency,
+      timeoutMs: view.timeoutMs,
+      a6api,
+      executionContext,
+      runs,
+      pending: [],
+      active: /* @__PURE__ */ new Map(),
+      settled: 0,
+      wake: void 0,
+      loop: null
+    };
+    this.prune();
+    this.jobs.set(job.id, job);
+    return this.view(job);
   }
   status(jobId, revision) {
     const job = this.jobs.get(jobId);
@@ -1259,6 +1333,9 @@ var ModelIntelligenceService = class extends Service {
   recordRerun(request) {
     return this.guard(() => this.records.rerun(request.recordId));
   }
+  recordRename(request) {
+    return this.guard(() => this.records.rename(request.recordId, request.name));
+  }
   recordDelete(request) {
     return this.guard(() => this.a6.removeRecord(request.recordId));
   }
@@ -1372,6 +1449,7 @@ var REMOTE_METHODS = [
   "recordsList",
   "recordCreate",
   "recordRerun",
+  "recordRename",
   "recordDelete",
   "recordsClear",
   "attemptView",
@@ -1678,6 +1756,17 @@ var RecordsService = class {
     const attempt = await this.launch(record);
     return { attemptId: attempt.id };
   }
+  /** Rename a saved record without touching its attempts or historical snapshots. */
+  async rename(recordId, name2) {
+    const domain = await this.domain();
+    const record = domain.table("records").get(recordId);
+    if (!record) throw new FingerprintError("not-found", "\u6D4B\u8BD5\u8BB0\u5F55\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
+    const next = typeof name2 === "string" ? short(name2, 120) : "";
+    if (!next) throw new FingerprintError("invalid-name", "\u6D4B\u8BD5\u8BB0\u5F55\u540D\u79F0\u4E0D\u80FD\u4E3A\u7A7A");
+    await this.put(domain, "records", recordId, { ...record, name: next });
+    this.bump();
+    return domain.table("records").get(recordId);
+  }
   async serializeLaunch(recordId, action) {
     const previous = this.launchLocks.get(recordId) ?? Promise.resolve();
     const current = previous.catch(() => {
@@ -1832,7 +1921,16 @@ var RecordsService = class {
       const created = await this.launch({ ...record, models: selected });
       return this.attempt(created.id);
     }
-    if (!attempt.jobId || !this.runner(attempt.jobId)?.has(attempt.jobId)) throw new FingerprintError("expired", "\u8BE5\u8BF7\u6C42\u5DF2\u4E0D\u5728\u5185\u5B58\u4E2D\uFF08\u8FD0\u884C\u65F6\u91CD\u542F\u6216\u5DF2\u8FC7\u671F\uFF09\uFF0C\u8BF7\u4F7F\u7528\u300C\u518D\u6B21\u8BF7\u6C42\u300D");
+    let live = Boolean(attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId));
+    if (!live && attempt.jobId && attempt.view && ["done", "failed"].includes(attempt.status)) {
+      try {
+        await this.engine.restore(attempt.view, { recordId: attempt.recordId, attemptId }, record?.a6api ?? null);
+        this.byJob.set(attempt.jobId, attemptId);
+        live = true;
+      } catch {
+      }
+    }
+    if (!live) throw new FingerprintError("expired", "\u8BE5\u8BF7\u6C42\u5DF2\u4E0D\u5728\u5185\u5B58\u4E2D\uFF08\u8FD0\u884C\u65F6\u91CD\u542F\u6216\u5DF2\u8FC7\u671F\uFF09\uFF0C\u8BF7\u4F7F\u7528\u300C\u518D\u6B21\u8BF7\u6C42\u300D");
     this.engine.retry(attempt.jobId, model);
     const domain = await this.ready;
     await this.put(domain, "attempts", attemptId, { ...domain.table("attempts").get(attemptId), status: "running", finishedAt: null });

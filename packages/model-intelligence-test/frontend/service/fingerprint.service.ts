@@ -27,6 +27,9 @@ export async function createRecord(transport: ModelIntelligenceTransport, reques
 export async function rerunRecord(transport: ModelIntelligenceTransport, recordId: string): Promise<{attemptId: string}> {
   return transport.recordRerun({ recordId });
 }
+export async function renameRecord(transport: ModelIntelligenceTransport, recordId: string, name: string): Promise<StoredRecord> {
+  return (await transport.recordRename({ recordId, name })).record;
+}
 export async function deleteRecord(transport: ModelIntelligenceTransport, recordId: string): Promise<void> {
   await transport.recordDelete({ recordId });
 }

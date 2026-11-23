@@ -39,6 +39,7 @@ export class ModelIntelligenceService extends Service {
   recordsList(request) { return this.guard(() => this.records.list(request?.revision)); }
   recordCreate(request) { return this.guard(() => this.records.create(request)); }
   recordRerun(request) { return this.guard(() => this.records.rerun(request.recordId)); }
+  recordRename(request) { return this.guard(() => this.records.rename(request.recordId, request.name)); }
   recordDelete(request) { return this.guard(() => this.a6.removeRecord(request.recordId)); }
   recordsClear() { return this.guard(() => this.a6.clearRecords()); }
   attemptView(request) { return this.guard(() => this.records.attempt(request.attemptId, request.revision)); }
@@ -104,7 +105,7 @@ export class ModelIntelligenceService extends Service {
 
 export const REMOTE_METHODS = [
   'catalog',
-  'recordsList', 'recordCreate', 'recordRerun', 'recordDelete', 'recordsClear',
+  'recordsList', 'recordCreate', 'recordRerun', 'recordRename', 'recordDelete', 'recordsClear',
   'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen', 'customRunContinue', 'customRunCancel',
   'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6CustomFromRecord',
   'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView',

@@ -1,7 +1,7 @@
 // Routing boundary: records, attempts and all execution facts are supplied by Host services.
 export {
   applyFingerprintRun, createFingerprintRun, failFingerprintRun, fingerprintValuesEqual, modelOfRef,
-  listRecords, createRecord, rerunRecord, deleteRecord, clearRecords, readAttempt, cancelAttempt, configureAttempt, retryAttempt,
+  listRecords, createRecord, rerunRecord, renameRecord, deleteRecord, clearRecords, readAttempt, cancelAttempt, configureAttempt, retryAttempt,
 } from '../service/fingerprint.service';
 export { applyCustomRun } from '../service/custom.service';
 

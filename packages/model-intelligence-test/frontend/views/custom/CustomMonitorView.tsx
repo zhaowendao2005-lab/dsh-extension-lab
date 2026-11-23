@@ -2,6 +2,7 @@ import React from '../../runtime';
 import type { ReactNode } from 'react';
 import type { A6MarketSnapshot, CustomOutputOpenResult, Evaluation, Model, CustomRunSummary } from '../../types';
 import { Empty, Icon } from '../../components/common';
+import { ColumnResizer } from '../../components/ColumnResizer';
 import { modelLabel, providerLabel } from '../results/modelLabel';
 import { marketCacheCell, marketPriceCell, marketTitle } from '../a6/MarketSnapshot';
 import { count, decimal, millis, rate, cost, outputLabel, ended, CustomPhaseBadge, CUSTOM_BILLING_LABELS, observed } from './presentation';
@@ -18,9 +19,14 @@ export interface CustomMonitorViewProps {
   onRetry(runId: string): void;
   onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal'): Promise<CustomOutputOpenResult>;
   renderChannelActions?(model: Model): ReactNode;
+  widths?: Record<string, number>;
+  onResize?(column: string, width: number): void;
 }
 const marketOf = (model: Model, summary: CustomRunSummary): A6MarketSnapshot | undefined => summary.target.marketSnapshot ?? model.a6api?.market;
-export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput, renderChannelActions }: CustomMonitorViewProps) {
+// Defaults mirror `.mit-col-*` in styles/custom.css so a fresh table matches the previous layout.
+const CUSTOM_WIDTHS: Record<string, number> = { model: 185, 'channel-actions': 216, phase: 105, req: 48, tokens: 80, ttft: 95, 'model-tps': 95, e2e: 95, cache: 65, 'input-price': 92, 'output-price': 92, cache24h: 92, cost: 105, output: 75, actions: 100 };
+const columnWidth = (widths: Record<string, number> | undefined, column: string): number => widths?.[`custom:${column}`] ?? CUSTOM_WIDTHS[column];
+export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput, renderChannelActions, widths, onResize }: CustomMonitorViewProps) {
   const needle = filter.trim().toLowerCase();
   const visible = rows.filter(row => (!resultOnly || ended(row.summary.phase)) && (!needle || `${modelLabel(row.model)} ${providerLabel(row.model)} ${row.summary.target.displayName} ${row.summary.target.channelId ?? ''}`.toLowerCase().includes(needle)));
   const active = rows.filter(row => !ended(row.summary.phase)).length;
@@ -29,6 +35,10 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
   const requestCount = knownRequests.reduce((sum, row) => sum + (row.summary.usage.requestCount ?? 0), 0);
   // a6api channels carry the page's own price/cache snapshot; native DSH targets do not.
   const withMarket = rows.some(row => Boolean(marketOf(row.model, row.summary)));
+  const columns = ['model', ...(renderChannelActions ? ['channel-actions'] : []), 'phase', 'req', 'tokens', 'ttft', 'model-tps', 'e2e', 'cache', ...(withMarket ? ['input-price', 'output-price', 'cache24h'] : []), 'cost', 'output', 'actions'];
+  const totalWidth = columns.reduce((sum, column) => sum + columnWidth(widths, column), 0);
+  const minWidth = renderChannelActions ? (withMarket ? 1796 : 1526) : (withMarket ? 1580 : 1310);
+  const resizer = (column: string, label: string) => onResize ? <ColumnResizer width={columnWidth(widths, column)} label={label} min={40} onResize={width => onResize(`custom:${column}`, width)} /> : null;
   return <section className="mit-custom-monitor" aria-label="自定义测试实时监控">
     <div className="mit-custom-monitor-tools">
       <label className="mit-search mit-table-search"><Icon name="search" /><input aria-label="筛选自定义测试模型" placeholder="筛选模型、提供商或渠道…" value={filter} onChange={event => onFilter(event.currentTarget.value)} /></label>
@@ -36,24 +46,27 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
     </div>
     {resultOnly && <div className="mit-custom-result-note" role="status">已结束 {rows.filter(row => ended(row.summary.phase)).length} 个模型{active ? ` · ${active} 个仍在运行` : ''}</div>}
     <div className="mit-custom-table-scroll">
-      <table className={`mit-custom-table${withMarket ? ' has-market' : ''}${renderChannelActions ? ' has-channel-actions' : ''}`}>
+      <table className={`mit-custom-table${withMarket ? ' has-market' : ''}${renderChannelActions ? ' has-channel-actions' : ''}`} style={{ width: Math.max(totalWidth, minWidth) }}>
+        <colgroup>
+          {columns.map(column => <col key={column} style={{ width: columnWidth(widths, column) }} />)}
+        </colgroup>
         <caption className="mit-custom-sr-only">{record.name} · 真实自定义测试。未知数据以破折号显示，费用依 Host 账单回填。</caption>
         <thead><tr>
-          <th scope="col" className="mit-col-model">参测模型</th>
-          {renderChannelActions && <th scope="col" className="mit-col-channel-actions">渠道操作</th>}
-          <th scope="col" className="mit-col-phase">状态</th>
-          <th scope="col" className="mit-col-req">请求</th>
-          <th scope="col" className="mit-col-tokens">输入 / 输出</th>
-          <th scope="col" className="mit-col-metric" title="首 Token 时延">TTFT</th>
-          <th scope="col" className="mit-col-metric" title="输出 Token ÷ 模型生成耗时">模型 tok/s</th>
-          <th scope="col" className="mit-col-metric" title="输出 Token ÷ 端到端执行耗时，含工具及等待">端到端 tok/s</th>
-          <th scope="col" className="mit-col-cache" title="本轮请求的缓存读取 Token ÷ 总输入 Token">实测缓存率</th>
-          {withMarket && <th scope="col" className="mit-col-price" title="渠道网页报价快照 · 人民币/百万 Token，不等于实际消费">输入价</th>}
-          {withMarket && <th scope="col" className="mit-col-price" title="渠道网页报价快照 · 人民币/百万 Token，不等于实际消费">输出价</th>}
-          {withMarket && <th scope="col" className="mit-col-price" title="渠道近 24 小时缓存率，站点统计口径，非本轮测试命中率">渠道 24h 缓存</th>}
-          <th scope="col" className="mit-col-cost">费用</th>
-          <th scope="col" className="mit-col-output">成果</th>
-          <th scope="col" className="mit-col-actions">操作</th>
+          <th scope="col" className="mit-col-model">参测模型{resizer('model', '参测模型')}</th>
+          {renderChannelActions && <th scope="col" className="mit-col-channel-actions">渠道操作{resizer('channel-actions', '渠道操作')}</th>}
+          <th scope="col" className="mit-col-phase">状态{resizer('phase', '状态')}</th>
+          <th scope="col" className="mit-col-req">请求{resizer('req', '请求')}</th>
+          <th scope="col" className="mit-col-tokens">输入 / 输出{resizer('tokens', '输入 / 输出')}</th>
+          <th scope="col" className="mit-col-metric" title="首 Token 时延">TTFT{resizer('ttft', 'TTFT')}</th>
+          <th scope="col" className="mit-col-metric" title="输出 Token ÷ 模型生成耗时">模型 tok/s{resizer('model-tps', '模型 tok/s')}</th>
+          <th scope="col" className="mit-col-metric" title="输出 Token ÷ 端到端执行耗时，含工具及等待">端到端 tok/s{resizer('e2e', '端到端 tok/s')}</th>
+          <th scope="col" className="mit-col-cache" title="本轮请求的缓存读取 Token ÷ 总输入 Token">实测缓存率{resizer('cache', '实测缓存率')}</th>
+          {withMarket && <th scope="col" className="mit-col-price" title="渠道网页报价快照 · 人民币/百万 Token，不等于实际消费">输入价{resizer('input-price', '输入价')}</th>}
+          {withMarket && <th scope="col" className="mit-col-price" title="渠道网页报价快照 · 人民币/百万 Token，不等于实际消费">输出价{resizer('output-price', '输出价')}</th>}
+          {withMarket && <th scope="col" className="mit-col-price" title="渠道近 24 小时缓存率，站点统计口径，非本轮测试命中率">渠道 24h 缓存{resizer('cache24h', '渠道 24h 缓存')}</th>}
+          <th scope="col" className="mit-col-cost">费用{resizer('cost', '费用')}</th>
+          <th scope="col" className="mit-col-output">成果{resizer('output', '成果')}</th>
+          <th scope="col" className="mit-col-actions">操作{resizer('actions', '操作')}</th>
         </tr></thead>
         <tbody>{visible.map(({ id, model, summary }) => {
           const market = marketOf(model, summary);

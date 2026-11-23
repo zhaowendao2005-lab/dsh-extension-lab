@@ -201,6 +201,18 @@ export class RecordsService {
     return { attemptId: attempt.id };
   }
 
+  /** Rename a saved record without touching its attempts or historical snapshots. */
+  async rename(recordId, name) {
+    const domain = await this.domain();
+    const record = domain.table('records').get(recordId);
+    if (!record) throw new FingerprintError('not-found', '测试记录不存在或已删除');
+    const next = typeof name === 'string' ? short(name, 120) : '';
+    if (!next) throw new FingerprintError('invalid-name', '测试记录名称不能为空');
+    await this.put(domain, 'records', recordId, { ...record, name: next });
+    this.bump();
+    return domain.table('records').get(recordId);
+  }
+
   async serializeLaunch(recordId, action) {
     const previous = this.launchLocks.get(recordId) ?? Promise.resolve();
     const current = previous.catch(() => {}).then(action);
@@ -344,7 +356,17 @@ export class RecordsService {
       const created = await this.launch({...record, models:selected});
       return this.attempt(created.id);
     }
-    if (!attempt.jobId || !this.runner(attempt.jobId)?.has(attempt.jobId)) throw new FingerprintError('expired', '该请求已不在内存中（运行时重启或已过期），请使用「再次请求」');
+    // A finished attempt keeps its view on disk after a runtime restart; rebuild that job on demand
+    // so retry keeps its meaning (re-sample only the failed challenges of one model).
+    let live = Boolean(attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId));
+    if (!live && attempt.jobId && attempt.view && ['done', 'failed'].includes(attempt.status)) {
+      try {
+        await this.engine.restore(attempt.view, { recordId: attempt.recordId, attemptId }, record?.a6api ?? null);
+        this.byJob.set(attempt.jobId, attemptId);
+        live = true;
+      } catch { /* fall through to the expired error below */ }
+    }
+    if (!live) throw new FingerprintError('expired', '该请求已不在内存中（运行时重启或已过期），请使用「再次请求」');
     this.engine.retry(attempt.jobId, model);
     const domain = await this.ready;
     await this.put(domain, 'attempts', attemptId, { ...domain.table('attempts').get(attemptId), status: 'running', finishedAt: null });
