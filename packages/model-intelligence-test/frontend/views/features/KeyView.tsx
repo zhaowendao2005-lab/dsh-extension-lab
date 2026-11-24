@@ -183,8 +183,8 @@ export function KeyView({ store }: { store: Workbench }) {
                       const open = keyView.expanded.includes(key);
                       const tests = channelTests[key];
                       return <React.Fragment key={key}>
-                        <tr className={open ? 'is-open' : ''}>
-                          <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
+                        <tr className={`mit-key-row${open ? ' is-open' : ''}`} onClick={() => expandRow(channel)}>
+                          <td className="mit-key-check" onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
                           <td className="mit-key-channel mit-tabular">#{channel.channelId}</td>
                           <td className="mit-key-bindings"><div className="mit-key-bindings-list">
                             {channel.pinned && <Badge tone="brand">固定</Badge>}
@@ -193,7 +193,7 @@ export function KeyView({ store }: { store: Workbench }) {
                             {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
                           </div></td>
                           <td className="mit-key-status" title={channel.status || undefined}>{channel.status || '—'}</td>
-                          <td className="mit-key-open"><button type="button" className="mit-text-button" onClick={() => expandRow(channel)} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button></td>
+                          <td className="mit-key-open"><button type="button" className="mit-text-button" onClick={event => {event.stopPropagation(); expandRow(channel);}} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button></td>
                         </tr>
                         {open && <tr className="mit-key-expand"><td colSpan={5}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
                       </React.Fragment>;
