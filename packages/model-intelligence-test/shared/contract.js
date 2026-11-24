@@ -56,6 +56,8 @@ const schemas = {
   a6OperationRefresh: z.strictObject({ kind: z.enum(['pins', 'routes', 'all']) }),
   a6ResultAction: z.strictObject({ recordId: id(), model: id(256), channelId: z.number().int().positive(), tokenId: z.number().int().positive(), operation: z.enum(['pin', 'route', 'restore']) }),
   a6LedgerView: z.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z.boolean().optional() }).refine(value => value.attemptId || value.recordId, '缺少测试记录或轮次 ID'),
+  a6KeyChannels: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
+  channelTests: z.strictObject({ model: id(256), channelId: z.number().int().positive(), limit: z.number().int().min(1).max(100).optional() }),
 };
 
 const DESCRIPTIONS = {
@@ -87,6 +89,8 @@ const DESCRIPTIONS = {
   a6OperationRefresh: 'Explicitly refresh selected-key pins, routes, or both from the site.',
   a6ResultAction: 'Set a recorded channel pin or add it to routing under the global operation key; read back state. Restore handles legacy leases only.',
   a6LedgerView: 'Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference.',
+  a6KeyChannels: 'Read the pins and routing channels bound to one a6api key; read-only, never changes the operation key.',
+  channelTests: 'List historical fingerprint and custom test runs for one model channel, newest first.',
 };
 
 const json = (symbol) => ({ mode: 'strict', typeSymbol: `model-intelligence-test#${symbol}`, create: () => z.json() });

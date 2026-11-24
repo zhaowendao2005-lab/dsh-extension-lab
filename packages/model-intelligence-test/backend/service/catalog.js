@@ -61,6 +61,8 @@ export class ModelIntelligenceService extends Service {
   a6Create(request) { return this.guard(() => this.a6.create(request)); }
   a6CustomFromRecord(request) { return this.guard(() => this.a6.customFromRecord(request)); }
   a6OperationState(request) { return this.guard(() => this.a6.operationState(request ?? {})); }
+  a6KeyChannels(request) { return this.guard(() => this.a6.keyChannels(request)); }
+  channelTests(request) { return this.guard(() => this.records.channelTests(request)); }
   a6OperationSelect(request) { return this.guard(() => this.a6.operationSelect(request)); }
   a6OperationRefresh(request) { return this.guard(() => this.a6.operationRefresh(request)); }
   a6ResultAction(request) { return this.guard(() => this.a6.resultAction(request)); }
@@ -108,7 +110,7 @@ export const REMOTE_METHODS = [
   'recordsList', 'recordCreate', 'recordRerun', 'recordRename', 'recordDelete', 'recordsClear',
   'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen', 'customRunContinue', 'customRunCancel',
   'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6CustomFromRecord',
-  'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView',
+  'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView', 'a6KeyChannels', 'channelTests',
 ];
 const remoteInitializers = [];
 for (const name of REMOTE_METHODS) {

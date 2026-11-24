@@ -8,6 +8,7 @@ import { RecordView } from './results/RecordView';
 import { RunDetailPage } from './results/RunDetailPage';
 import { CustomRunPage } from './custom/CustomRunPage';
 import { FeatureHub } from './features/FeatureHub';
+import { KeyView } from './features/KeyView';
 import { A6SelectionView } from './creation/A6SelectionView';
 function TabBar({ store }: {
   store: Workbench;
@@ -136,7 +137,7 @@ export function Panel({ store }: {
   if(active?.type==='record'&&active.recordId)
     content=navigation?.runId&&activeRecord?.kind==='custom'? <CustomRunPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:navigation?.runId? <RunDetailPage key={`${active.recordId}:${navigation.runId}`} store={store} recordId={active.recordId} runId={navigation.runId} />:<RecordView key={active.recordId} store={store} id={active.recordId} />;
   else if(active?.type==='feature')
-    content=<FeatureHub store={store} />;
+    content=active.feature==='keys'? <KeyView store={store} /> : <FeatureHub store={store} />;
   else if(active?.type==='a6'&&active.selectionId)
     content=<A6SelectionView key={active.selectionId} store={store} selectionId={active.selectionId} />;
   const fullscreen=useStore(store.workbench,state => state.fullscreen);

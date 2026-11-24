@@ -32,7 +32,15 @@ export interface A6Execution { id?: string; model?: string; intendedChannelId?: 
 export interface A6LedgerView { executions: A6Execution[]; summary: A6LedgerSummary }
 export interface A6LedgerEntry { view?: A6LedgerView; loading: boolean; error?: string }
 export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'restore'; message?: string; error?: string }
-export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'> }
+export interface A6KeyChannel { model: string; channelId: number; supplierId: number; pinned: boolean; routed: boolean; routeEffective: boolean; poolSize: number; status: string }
+export interface A6KeyChannelsView { tokenId: number; channels: A6KeyChannel[]; generatedAt: number; cached?: boolean }
+export interface ChannelTestEntry {
+  recordId: string; recordName: string; recordKind: TestKind; attemptId: string; attemptNumber: number; status: AttemptStatus; at: number | null; model: string; channelId: number; runId: string | null;
+  fingerprint: {stage: string | null; decision: string | null; probability: number | null; predictionName: string | null; usedOutputs: number | null; samples: {total: number; ended: number}} | null;
+  custom: {phase: string | null; outputState: string | null; outputPath: string | null; inputTokens: number | null; outputTokens: number | null; cost: number | null; ttftMs: number | null; modelTokensPerSecond: number | null; error: string | null} | null;
+}
+export interface ChannelTestsView { model: string; channelId: number; total: number; entries: ChannelTestEntry[] }
+export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'>; keyChannels: {tokenId: number | null; view: A6KeyChannelsView | null; loading: boolean; error?: string}; channelTests: Record<string,{view: ChannelTestsView | null; loading: boolean; error?: string}>; keyView: {tokenId: number | null; query: string; expanded: string[]; selected: string[]} }
 export interface A6Token { id: number; name: string }
 export interface A6Slot { tokenId: number; name?: string }
 export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; kind?: TestKind; models: A6Channel[]; tokens: A6Token[] }
@@ -216,6 +224,8 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  a6OperationRefresh(request: {kind: A6RelationKind}): Promise<A6OperationView>;
  a6ResultAction(request: A6ResultActionInput): Promise<A6ResultActionOutcome>;
  a6LedgerView(request: {attemptId?: string; recordId?: string; refresh?: boolean}): Promise<A6LedgerView>;
+ a6KeyChannels(request: {tokenId: number; refresh?: boolean}): Promise<A6KeyChannelsView>;
+ channelTests(request: {model: string; channelId: number; limit?: number}): Promise<ChannelTestsView>;
 }
 export interface Preset { id: string; name: string; body: string }
 export interface Metrics { input?: number; output?: number; cache?: number; ttft?: number; e2e?: number; generation?: number; cost?: number; elapsed?: number }
@@ -227,7 +237,7 @@ export interface Evaluation { id: string; name: string; kind: TestKind; createdA
  /** Host-persisted attempts (请求) of this record, oldest first; `attemptId` is the attempt currently shown. */
  attempts: AttemptSummary[]; attemptId?: string; models: RecordModelRef[]; options: FingerprintOptions; a6api?: A6Record; custom?: {busy?: 'configure' | 'retry'; error?: string} }
 export interface FingerprintRecord { jobId?: string; status: 'starting' | 'running' | 'done' | 'cancelled' | 'failed'; reference?: {builtAt: string; sdk: string}; challenges: FingerprintChallenge[]; concurrency?: number; timeoutMs?: number; slots?: number; limits?: FingerprintLimits; busy?: 'configure' | 'retry'; error?: string }
-export interface Tab { id: string; title: string; type: 'draft' | 'record' | 'feature' | 'a6'; recordId?: string; feature?: 'hub'; selectionId?: string }
+export interface Tab { id: string; title: string; type: 'draft' | 'record' | 'feature' | 'a6'; recordId?: string; feature?: 'hub' | 'keys'; selectionId?: string }
 export interface Navigation { mode: 'progress' | 'results'; runId?: string; artifact?: boolean }
 export interface WorkbenchState { tabs: Tab[]; activeTab: string; sidebarCollapsed: boolean; navigation: Record<string, Navigation>; /** Rendered inside the dedicated full-screen window. */ fullscreen: boolean }
 export interface DraftState { name: string; kind: TestKind; selected: string[]; body: string; presetId?: string; dirty: boolean; pickerOpen: boolean; query: string; error?: string }
@@ -244,7 +254,7 @@ export interface Workbench {
  workbench: Store<WorkbenchState>; draft: Store<DraftState>; models: Store<ModelsState>; presets: Store<PresetsState>; evaluations: Store<EvaluationsState>; presentation: Store<PresentationState>; a6: Store<A6State>; notice: Store<Notice | null>;
  a6Insights: Store<A6InsightsState>; custom: Store<CustomState>;
  actions: {
-  openDraft(): void; openRecord(id: string): void; openFeature(feature: 'hub'): void; activateTab(id: string): void; closeTab(id: string): void; toggleSidebar(): void; navigate(value: Partial<Navigation>): void; openFullscreen(): void; closeFullscreen(): void;
+  openDraft(): void; openRecord(id: string): void; openFeature(feature: 'hub' | 'keys'): void; openChannelTest(entry: ChannelTestEntry): void; activateTab(id: string): void; closeTab(id: string): void; toggleSidebar(): void; navigate(value: Partial<Navigation>): void; openFullscreen(): void; closeFullscreen(): void;
   patchDraft(value: Partial<Pick<DraftState, 'name' | 'kind' | 'body' | 'pickerOpen' | 'query'>>): void; toggleModel(key: string): void; refreshModels(): void; submit(): void;
   selectPreset(id: string): void; addPreset(): void; renamePreset(id: string): void; deletePreset(id: string): void; savePreset(): void; togglePresets(): void;
   cancelRecord(id: string): void; renameRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
@@ -255,7 +265,7 @@ export interface Workbench {
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;
   loadA6Config(): void; patchA6Form(value: Partial<{accessToken: string; userId: string}>): void; saveA6Config(): void; rotateA6Intake(): void; copyA6Intake(): void;
-  loadA6Operations(): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
+  loadA6Operations(): void; loadKeyChannels(tokenId: number, refresh?: boolean): void; loadChannelTests(model: string, channelId: number, limit?: number): void; patchKeyView(value: Partial<{tokenId: number | null; query: string; expanded: string[]; selected: string[]}>): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
   a6ResultAction(input: A6ResultActionInput): void;
   setA6LedgerScope(recordId: string, scope: 'attempt'|'record'): void; refreshA6Ledger(recordId: string): void;
   setFingerprintConfig(id: string, options: FingerprintOptions): void;

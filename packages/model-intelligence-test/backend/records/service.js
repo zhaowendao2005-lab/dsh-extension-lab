@@ -167,6 +167,65 @@ export class RecordsService {
     return { ...this.attemptSummary(attempt), view: isCustom ? null : view, custom, ...(custom ? {billingPending:custom.billingPending} : {}), revision: customAttempt ? this.revision : live?.revision ?? attempt.custom?.revision ?? view?.revision ?? 0 };
   }
 
+  /**
+   * Historical runs of one model channel across every record and attempt.
+   * Read-only: persisted snapshots only, so results survive restarts.
+   */
+  async channelTests({ model, channelId, limit = 20 } = {}) {
+    const domain = await this.domain();
+    const cap = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(100, Math.floor(Number(limit)))) : 20;
+    const records = new Map([...domain.table('records').entries()]);
+    const entries = [];
+    const at = attempt => attempt.finishedAt ?? attempt.startedAt ?? attempt.createdAt ?? null;
+    const base = (record, attempt) => ({
+      recordId: record.id, recordName: record.name, recordKind: record.kind,
+      attemptId: attempt.id, attemptNumber: attempt.number, status: attempt.status, at: at(attempt),
+      model, channelId,
+    });
+    for (const attempt of domain.table('attempts').entries().map(([, value]) => value)) {
+      const record = records.get(attempt.recordId);
+      if (!record) continue;
+      for (const run of attempt.view?.runs ?? []) {
+        if (run.model !== model) continue;
+        if (Number(run.relay?.channelId) !== channelId) continue;
+        const samples = Array.isArray(run.samples) ? run.samples : [];
+        entries.push({
+          ...base(record, attempt), runId: null,
+          fingerprint: {
+            stage: run.stage ?? null,
+            decision: run.analysis?.decision ?? null,
+            probability: Number.isFinite(run.analysis?.probability) ? run.analysis.probability : null,
+            predictionName: run.analysis?.predictionName ?? null,
+            usedOutputs: run.analysis?.usedOutputs ?? null,
+            samples: { total: samples.length, ended: samples.filter(sample => END_SAMPLE.has(sample.state)).length },
+          },
+          custom: null,
+        });
+      }
+      for (const run of attempt.custom?.runs ?? []) {
+        if (Number(run.target?.channelId) !== channelId) continue;
+        if (run.target?.modelId !== model) continue;
+        entries.push({
+          ...base(record, attempt), runId: run.id ?? null,
+          fingerprint: null,
+          custom: {
+            phase: run.phase ?? null,
+            outputState: run.output?.state ?? null,
+            outputPath: run.output?.relativePath ?? null,
+            inputTokens: run.usage?.inputTokens ?? null,
+            outputTokens: run.usage?.outputTokens ?? null,
+            cost: run.usage?.cost ?? null,
+            ttftMs: run.metrics?.ttftMs ?? null,
+            modelTokensPerSecond: run.metrics?.modelTokensPerSecond ?? null,
+            error: run.error?.message ?? null,
+          },
+        });
+      }
+    }
+    entries.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+    return { model, channelId, total: entries.length, entries: entries.slice(0, cap) };
+  }
+
   // ---- mutations ------------------------------------------------------------------------------
   async create(input) {
     const domain = await this.domain();

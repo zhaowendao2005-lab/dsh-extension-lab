@@ -31,6 +31,7 @@ export class A6Operations {
     this.epoch = 0;
     this.revision = 1;
     this.writeTail = Promise.resolve();
+    this.channelCache = new Map();
     this.disposed = false;
   }
 
@@ -39,6 +40,7 @@ export class A6Operations {
     this.account = null;
     this.loading = null;
     this.revision += 1;
+    this.channelCache.clear();
   }
 
   valid(account, epoch = this.epoch) {
@@ -242,6 +244,65 @@ export class A6Operations {
     this.assert(account);
     if (selectionVersion !== account.selectionVersion) throw new A6Error('token-superseded', '操作令牌选择已更新');
     return this.state();
+  }
+
+  /**
+   * Read-only binding view for one key: pins (fixed) plus routing pools (subscriptions).
+   * Both site calls are account-wide, so one round trip serves every key; nothing is persisted.
+   */
+  async channels({ tokenId, refresh = false } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error('invalid-token', 'Key ID 无效');
+    this.service.assertAvailable();
+    await this.service.config();
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error('auth-missing', '请先配置 a6api 访问令牌');
+    const identity = `${this.service.accountIdentity()}:${tokenId}`;
+    const cached = this.channelCache.get(identity);
+    if (!refresh && cached && cached.until > Date.now()) return { ...cached.value, cached: true };
+    const [pins, subscriptions] = await Promise.all([this.service.site.pins(), this.service.site.subscriptions()]);
+    this.service.assertAvailable();
+    const rows = new Map();
+    const row = (model, channelId) => {
+      const key = `${model}|${channelId}`;
+      let item = rows.get(key);
+      if (!item) {
+        item = { model, channelId, supplierId: 0, pinned: false, routed: false, routeEffective: false, poolSize: 0, status: '' };
+        rows.set(key, item);
+      }
+      return item;
+    };
+    for (const pin of pins) {
+      if (Number(pin.tokenId) !== tokenId) continue;
+      const model = typeof pin.model === 'string' ? pin.model : '';
+      const channelId = Number(pin.channelId);
+      if (!model || !Number.isSafeInteger(channelId) || channelId <= 0) continue;
+      const item = row(model, channelId);
+      item.pinned = true;
+      item.supplierId = Number(pin.supplierId) || item.supplierId;
+      item.routeEffective = item.routeEffective || pin.routeEffective === true;
+      if (typeof pin.status === 'string') item.status = pin.status;
+    }
+    for (const subscription of subscriptions) {
+      if (Number(subscription?.token_id) !== tokenId) continue;
+      const model = typeof (subscription.model_name ?? subscription.model) === 'string' ? (subscription.model_name ?? subscription.model) : '';
+      const channels = (Array.isArray(subscription.channels) ? subscription.channels : [])
+        .map(item => Number(typeof item === 'number' ? item : item?.channel_id ?? item?.id))
+        .filter(channelId => Number.isSafeInteger(channelId) && channelId > 0);
+      if (!model || !channels.length) continue;
+      for (const channelId of channels) {
+        const item = row(model, channelId);
+        item.routed = true;
+        item.poolSize = Math.max(item.poolSize, channels.length);
+      }
+    }
+    const value = {
+      tokenId,
+      channels: [...rows.values()].sort((a, b) => a.model.localeCompare(b.model, 'zh-CN') || a.channelId - b.channelId),
+      generatedAt: Date.now(),
+    };
+    this.channelCache.set(identity, { value, until: Date.now() + 30_000 });
+    if (this.channelCache.size > 200) for (const [key, item] of this.channelCache) if (item.until <= Date.now()) this.channelCache.delete(key);
+    return value;
   }
 
   async refresh({ kind = 'all' } = {}) {

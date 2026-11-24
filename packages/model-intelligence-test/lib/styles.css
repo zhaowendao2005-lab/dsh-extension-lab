@@ -5466,6 +5466,67 @@ button.mit-chat-tool-disclosure-leading {
 .mit-workbench .mit-custom-table thead th .mit-column-resizer { right: 0; width: 9px; }
 .mit-workbench .mit-custom-preview-head { display: flex; align-items: center; gap: 8px; }
 
+/* keys.css */
+/* ---- 按 Key 查看（KeyView） --------------------------------------------------------------- */
+.mit-workbench .mit-key-view { display:flex; flex-direction:column; gap:14px; padding:20px 28px 28px; }
+.mit-workbench .mit-key-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:2px; }
+.mit-workbench .mit-key-head > div:first-child { min-width:0; }
+.mit-workbench .mit-key-head h2 { margin:2px 0 3px; }
+.mit-workbench .mit-key-head .mit-feature-actions { flex:none; }
+.mit-workbench .mit-key-head .mit-ghost-button { display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 10px; border:1px solid var(--mit-border); border-radius:var(--mit-radius); background:var(--mit-layer); color:var(--mit-text-secondary); font-size:11.5px; cursor:pointer; }
+.mit-workbench .mit-key-head .mit-ghost-button:hover:not(:disabled) { border-color:var(--mit-border-hover); color:var(--mit-text); }
+.mit-workbench .mit-key-head .mit-ghost-button:disabled { opacity:.55; cursor:default; }
+.mit-workbench .mit-key-layout { display:grid; grid-template-columns:264px minmax(0,1fr); gap:16px; align-items:start; }
+.mit-workbench .mit-key-list { border:1px solid var(--mit-border); border-radius:var(--mit-radius-lg); background:var(--mit-layer); overflow:hidden; }
+.mit-workbench .mit-key-search { display:flex; align-items:center; gap:6px; padding:8px 10px; border-bottom:1px solid var(--mit-border); color:var(--mit-text-muted); }
+.mit-workbench .mit-key-search input { flex:1; min-width:0; border:0; background:transparent; color:var(--mit-text); font-size:12px; outline:none; }
+.mit-workbench .mit-key-list ul { list-style:none; margin:0; padding:4px; max-height:520px; overflow:auto; }
+.mit-workbench .mit-key-item { display:flex; flex-direction:column; gap:2px; width:100%; padding:8px 10px; border:1px solid transparent; border-radius:var(--mit-radius); background:transparent; text-align:left; color:var(--mit-text); cursor:pointer; }
+.mit-workbench .mit-key-item:hover { background:var(--mit-hover); }
+.mit-workbench .mit-key-item.is-active { background:var(--mit-accent-soft); border-color:var(--mit-brand); }
+.mit-workbench .mit-key-item small { color:var(--mit-text-secondary); font-size:10.5px; }
+.mit-workbench .mit-key-name { font-weight:600; font-size:12.5px; }
+.mit-workbench .mit-key-main { min-width:0; display:flex; flex-direction:column; gap:10px; }
+.mit-workbench .mit-key-summary { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:9px 12px; border:1px solid var(--mit-border); border-radius:var(--mit-radius-lg); background:var(--mit-layer-2); }
+.mit-workbench .mit-key-summary strong { font-size:13px; }
+.mit-workbench .mit-key-count, .mit-workbench .mit-key-selected { margin-left:auto; font-size:11px; color:var(--mit-text-secondary); }
+.mit-workbench .mit-key-selected { color:var(--mit-brand); font-weight:600; }
+.mit-workbench .mit-key-table, .mit-workbench .mit-key-test-table { width:100%; border-collapse:collapse; table-layout:fixed; background:var(--mit-layer); border:1px solid var(--mit-border); border-radius:var(--mit-radius-lg); overflow:hidden; }
+.mit-workbench .mit-key-table th, .mit-workbench .mit-key-test-table th { padding:7px 10px; text-align:left; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--mit-text-muted); background:var(--mit-layer-2); border-bottom:1px solid var(--mit-border); white-space:nowrap; }
+.mit-workbench .mit-key-table td, .mit-workbench .mit-key-test-table td { padding:7px 10px; font-size:12px; border-bottom:1px solid var(--mit-border); vertical-align:middle; }
+.mit-workbench .mit-key-table tr:last-child td, .mit-workbench .mit-key-test-table tr:last-child td { border-bottom:0; }
+.mit-workbench .mit-key-table tbody tr:hover td { background:var(--mit-hover); }
+.mit-workbench .mit-key-table .mit-key-check { width:34px; text-align:center; }
+.mit-workbench .mit-key-check input { accent-color:var(--mit-brand); }
+.mit-workbench .mit-key-model { font-weight:600; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mit-workbench .mit-key-channel { color:var(--mit-text-secondary); width:92px; }
+.mit-workbench .mit-key-bindings { display:flex; gap:4px; flex-wrap:wrap; }
+.mit-workbench .mit-key-status { color:var(--mit-text-secondary); width:150px; }
+.mit-workbench .mit-key-open { width:104px; text-align:right; }
+.mit-workbench .mit-key-open .mit-link-button { display:inline-flex; align-items:center; gap:2px; }
+.mit-workbench .mit-key-expand > td { padding:0; background:var(--mit-layer-2); }
+.mit-workbench .mit-key-tests { padding:8px 10px 10px; }
+.mit-workbench .mit-key-test-table { background:var(--mit-layer); }
+.mit-workbench .mit-key-test-table .mit-key-time { width:132px; color:var(--mit-text-secondary); }
+.mit-workbench .mit-key-test-table .mit-key-record { min-width:0; }
+.mit-workbench .mit-key-test-table .mit-key-record small { display:block; color:var(--mit-text-muted); font-size:10px; }
+.mit-workbench .mit-key-test-table .mit-key-result { color:var(--mit-text); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mit-workbench .mit-key-test-table .mit-key-actions { width:132px; white-space:nowrap; }
+.mit-workbench .mit-key-link { border:0; background:transparent; padding:0; color:var(--mit-brand); font-size:12px; font-weight:600; cursor:pointer; text-align:left; }
+.mit-workbench .mit-key-link:hover { text-decoration:underline; }
+.mit-workbench .mit-key-badge { display:inline-block; padding:0 5px; border:1px solid currentColor; border-radius:3px; font-size:9.5px; line-height:15px; white-space:nowrap; color:var(--mit-text-secondary); }
+.mit-workbench .mit-key-badge.is-brand { color:var(--mit-brand); }
+.mit-workbench .mit-key-badge.is-ok { color:var(--mit-success); }
+.mit-workbench .mit-key-badge.is-warn { color:var(--mit-warn); }
+.mit-workbench .mit-key-badge.is-fail { color:var(--mit-error); }
+.mit-workbench .mit-key-badge.is-muted { color:var(--mit-text-secondary); }
+.mit-workbench .mit-key-empty { margin:0; padding:14px 12px; color:var(--mit-text-secondary); font-size:12px; }
+.mit-workbench .mit-key-error { margin:0; padding:10px 12px; border:1px solid var(--mit-error); border-radius:var(--mit-radius); color:var(--mit-error); font-size:11.5px; background:var(--mit-layer); }
+@media (max-width: 900px) {
+  .mit-workbench .mit-key-layout { grid-template-columns:1fr; }
+  .mit-workbench .mit-key-list ul { max-height:220px; }
+}
+
 /* records.css */
 /* Records, attempts (请求), relay chips and model-picker source sidebar. Loaded after styles.css. */
 .mit-workbench {

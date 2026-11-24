@@ -16,6 +16,7 @@ export function FeatureHub({ store }: { store: Workbench }) {
     <div className="mit-feature-actions"><button type="button" className="mit-button" onClick={fullscreen ? store.actions.closeFullscreen : store.actions.openFullscreen}><Icon name={fullscreen ? 'collapse' : 'expand'} size={14} />{fullscreen ? '退出全屏' : '打开全屏面板'}</button></div>
     <div className="mit-feature-grid">
       <button type="button" className="mit-feature-card" onClick={store.actions.openDraft}><span className="mit-feature-index">01</span><strong>模型智能测试</strong><span className="mit-muted">lm-detector 真实数字指纹，或自定义 Agent 任务评测。全局 {records.length} 条记录。</span><span className="mit-feature-action">打开工作台 <Icon name="chevron" size={12} /></span></button>
+      <button type="button" className="mit-feature-card mit-key-card" onClick={() => store.actions.openFeature('keys')}><span className="mit-feature-index">03</span><strong>按 Key 查看</strong><span className="mit-muted">选一个 a6api Key，查看它固定的模型与路由池，并展开每个渠道过去的指纹/自定义测试结果。</span><span className="mit-feature-action">打开绑定视图 <Icon name="chevron" size={12} /></span></button>
       <section className="mit-feature-card mit-a6-credentials" aria-label="a6api 接入">
         <span className="mit-feature-index">02</span><strong>a6api 接入</strong>
         <p className="mit-muted">填一次账户访问令牌：之后固定渠道、加入路由及换取采样令牌密钥均由 DSH 直接完成，网页只负责把渠道清单发过来。</p>

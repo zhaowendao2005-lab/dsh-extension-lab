@@ -1,5 +1,5 @@
 import { createStore } from 'zustand/vanilla';
-import type { ModelIntelligenceTransport, Model, Navigation, Notice, Preset, RecordModelRef, Workbench, WorkbenchState } from '../types';
+import type { ChannelTestEntry, ModelIntelligenceTransport, Model, Navigation, Notice, Preset, RecordModelRef, Workbench, WorkbenchState } from '../types';
 import { FIXED_FOOTER_VERSION } from '../types';
 import { createDraftStore, emptyDraft } from './draft.stores';
 import { createModelsDomain } from './models.stores';
@@ -143,9 +143,14 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     customDomain.watch(record.kind === 'custom' ? record.attemptId : undefined, record.kind === 'custom' ? nextNavigation.runId : undefined);
   }
   function refreshModels(): void { modelsDomain.refresh(); }
-  function openFeature(feature: 'hub'): void {
+  function openFeature(feature: 'hub' | 'keys'): void {
     const id = `feature:${feature}`;
-    workbench.setState(state => ({ tabs: state.tabs.some(tab => tab.id === id) ? state.tabs : [...state.tabs, { id, title: '功能中心', type: 'feature' as const, feature }], activeTab: id }));
+    const title = feature === 'keys' ? '按 Key 查看' : '功能中心';
+    workbench.setState(state => ({ tabs: state.tabs.some(tab => tab.id === id) ? state.tabs : [...state.tabs, { id, title, type: 'feature' as const, feature }], activeTab: id }));
+  }
+  function openChannelTest(entry: ChannelTestEntry): void {
+    if (entry.recordKind !== 'custom' || !entry.runId) { openRecord(entry.recordId); return; }
+    attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'browser').then(() => {}));
   }
   function promptName(title: string, initial: string, run: (name: string) => void): void {
     ask({ title, message: '名称最多 40 个字。', input: initial, choices: [{ id: 'ok', label: '保存' }, { id: 'cancel', label: '取消' }] }, (choice, input) => {
@@ -295,6 +300,10 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     rotateA6Intake() { void a6Domain.rotateIntake(); },
     copyA6Intake() { void a6Domain.copyIntake(); },
     loadA6Operations: insightsDomain.load,
+    loadKeyChannels: insightsDomain.loadKeyChannels,
+    loadChannelTests: insightsDomain.loadChannelTests,
+    patchKeyView: insightsDomain.patchKeyView,
+    openChannelTest,
     setA6OperationQuery: insightsDomain.setQuery,
     selectA6OperationToken: insightsDomain.select,
     refreshA6OperationTokens: insightsDomain.refreshTokens,

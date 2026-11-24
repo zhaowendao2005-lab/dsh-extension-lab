@@ -1,9 +1,10 @@
 import { createStore } from 'zustand/vanilla';
 import type { A6InsightsState, A6OperationToken, A6OperationView, A6RelationKind, A6ResultActionInput, A6ResultFeedback, Evaluation, ModelIntelligenceTransport } from '../types';
-import { readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
+import { channelTests as fetchChannelTests, keyChannels as fetchKeyChannels, readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
 
 export const ledgerKey = (recordId: string, attemptId?: string): string => JSON.stringify([recordId, attemptId ?? '*']);
 export const operationRowKey = (recordId: string, model: string, channelId: number): string => JSON.stringify([recordId, model, channelId]);
+export const channelTestKey = (model: string, channelId: number): string => JSON.stringify([model, channelId]);
 export function operationTokenIssue(token?: A6OperationToken): string {
   if (!token) return '已选 Key 不在当前账号列表中，请重新选择';
   if (typeof token.expiredTime === 'number' && token.expiredTime > 0 && token.expiredTime * 1000 <= Date.now()) return 'Key 已过期';
@@ -14,7 +15,7 @@ const message = (error: unknown): string => error instanceof Error ? error.messa
 
 /** Operation IO is explicit and single-flight. Only the local ledger mirror is polled. */
 export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
-  const store = createStore<A6InsightsState>(() => ({ operations: null, loading: false, busy: 0, query: '', results: {}, ledgers: {}, scopes: {} }));
+  const store = createStore<A6InsightsState>(() => ({ operations: null, loading: false, busy: 0, query: '', results: {}, ledgers: {}, scopes: {}, keyChannels: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []} }));
   let disposed = false;
   let generation = 0;
   let accountId = '';
@@ -81,6 +82,36 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
     for (const record of records) void loadLedger(record);
     timer = setTimeout(tick, 4_000);
   }
+  function readKeyChannels(tokenId: number, refresh = false): void {
+    if (disposed || !Number.isSafeInteger(tokenId) || tokenId <= 0) return;
+    const current = store.getState().keyChannels;
+    if (current.loading && current.tokenId === tokenId) return;
+    const epoch = generation;
+    store.setState(state => ({keyChannels: {...state.keyChannels, tokenId, loading: true, error: undefined}}));
+    void fetchKeyChannels(transport, tokenId, refresh).then(view => {
+      if (disposed || epoch !== generation) return;
+      store.setState(state => state.keyChannels.tokenId === tokenId ? {keyChannels: {tokenId, view, loading: false}} : state);
+    }).catch(error => {
+      if (disposed || epoch !== generation) return;
+      store.setState(state => state.keyChannels.tokenId === tokenId ? {keyChannels: {...state.keyChannels, loading: false, error: message(error)}} : state);
+    });
+  }
+  function readChannelTests(model: string, channelId: number, limit = 20): void {
+    if (disposed) return;
+    const key = channelTestKey(model, channelId);
+    const entry = store.getState().channelTests[key];
+    if (entry?.loading) return;
+    const epoch = generation;
+    store.setState(state => ({channelTests: {...state.channelTests, [key]: {view: entry?.view ?? null, loading: true, error: undefined}}}));
+    void fetchChannelTests(transport, model, channelId, limit).then(view => {
+      if (disposed || epoch !== generation) return;
+      store.setState(state => ({channelTests: {...state.channelTests, [key]: {view, loading: false}}}));
+    }).catch(error => {
+      if (disposed || epoch !== generation) return;
+      store.setState(state => ({channelTests: {...state.channelTests, [key]: {...(state.channelTests[key] ?? {view: null}), loading: false, error: message(error)}}}));
+    });
+  }
+
   return {
     store,
     start(): void { tick(); },
@@ -92,7 +123,7 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
         generation++;
         accountId = account;
         operationsRequested = false;
-        store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0});
+        store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0, keyChannels: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []}});
       }
       const previous = new Set(records.map(record => ledgerKey(record.id, record.attemptId)));
       records = next.filter(record => Boolean(record.a6api));
@@ -176,6 +207,17 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
       if (record) void loadLedger(record);
     },
     refreshLedger(recordId: string): void { const record = records.find(item => item.id === recordId); if (record) void loadLedger(record, true); },
+    loadKeyChannels(tokenId: number, refresh = false): void { readKeyChannels(tokenId, refresh); },
+    loadChannelTests(model: string, channelId: number, limit = 20): void { readChannelTests(model, channelId, limit); },
+    patchKeyView(value: Partial<A6InsightsState['keyView']>): void {
+      if (disposed) return;
+      const previous = store.getState().keyView;
+      const next = {...previous, ...value};
+      if (value.tokenId !== undefined && value.tokenId !== previous.tokenId) { next.expanded = []; next.selected = []; }
+      store.setState({keyView: next});
+      if (next.tokenId !== null && next.tokenId !== previous.tokenId) readKeyChannels(next.tokenId);
+      if (value.tokenId === null) store.setState({keyChannels: {tokenId: null, view: null, loading: false}});
+    },
     dispose(): void { disposed = true; generation++; if (timer) clearTimeout(timer); },
   };
 }

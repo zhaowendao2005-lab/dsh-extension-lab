@@ -81,7 +81,9 @@ var schemas = {
   a6OperationSelect: z2.strictObject({ tokenId: z2.number().int().positive().nullable() }),
   a6OperationRefresh: z2.strictObject({ kind: z2.enum(["pins", "routes", "all"]) }),
   a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), operation: z2.enum(["pin", "route", "restore"]) }),
-  a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID")
+  a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID"),
+  a6KeyChannels: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
+  channelTests: z2.strictObject({ model: id(256), channelId: z2.number().int().positive(), limit: z2.number().int().min(1).max(100).optional() })
 };
 var DESCRIPTIONS = {
   catalog: "Read configured provider/model metadata; does not invoke inference or endpoint discovery.",
@@ -111,7 +113,9 @@ var DESCRIPTIONS = {
   a6OperationSelect: "Persist the account-wide operation key and read its pin and route state. No key plaintext is read.",
   a6OperationRefresh: "Explicitly refresh selected-key pins, routes, or both from the site.",
   a6ResultAction: "Set a recorded channel pin or add it to routing under the global operation key; read back state. Restore handles legacy leases only.",
-  a6LedgerView: "Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference."
+  a6LedgerView: "Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference.",
+  a6KeyChannels: "Read the pins and routing channels bound to one a6api key; read-only, never changes the operation key.",
+  channelTests: "List historical fingerprint and custom test runs for one model channel, newest first."
 };
 var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z2.json() });
 var input = (symbol, schema) => {
@@ -1394,6 +1398,12 @@ var ModelIntelligenceService = class extends Service {
   a6OperationState(request) {
     return this.guard(() => this.a6.operationState(request ?? {}));
   }
+  a6KeyChannels(request) {
+    return this.guard(() => this.a6.keyChannels(request));
+  }
+  channelTests(request) {
+    return this.guard(() => this.records.channelTests(request));
+  }
   a6OperationSelect(request) {
     return this.guard(() => this.a6.operationSelect(request));
   }
@@ -1472,7 +1482,9 @@ var REMOTE_METHODS = [
   "a6OperationSelect",
   "a6OperationRefresh",
   "a6ResultAction",
-  "a6LedgerView"
+  "a6LedgerView",
+  "a6KeyChannels",
+  "channelTests"
 ];
 var remoteInitializers = [];
 for (const name2 of REMOTE_METHODS) {
@@ -1715,6 +1727,72 @@ var RecordsService = class {
     let custom = isCustom ? live ? { runs: live.runs, revision: live.revision } : attempt.custom : null;
     if (custom && this.custom?.projectAttempt) custom = { ...custom, ...await this.custom.projectAttempt(attempt.id, custom.runs) };
     return { ...this.attemptSummary(attempt), view: isCustom ? null : view, custom, ...custom ? { billingPending: custom.billingPending } : {}, revision: customAttempt ? this.revision : live?.revision ?? attempt.custom?.revision ?? view?.revision ?? 0 };
+  }
+  /**
+   * Historical runs of one model channel across every record and attempt.
+   * Read-only: persisted snapshots only, so results survive restarts.
+   */
+  async channelTests({ model, channelId, limit = 20 } = {}) {
+    const domain = await this.domain();
+    const cap = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(100, Math.floor(Number(limit)))) : 20;
+    const records = new Map([...domain.table("records").entries()]);
+    const entries = [];
+    const at = (attempt) => attempt.finishedAt ?? attempt.startedAt ?? attempt.createdAt ?? null;
+    const base = (record, attempt) => ({
+      recordId: record.id,
+      recordName: record.name,
+      recordKind: record.kind,
+      attemptId: attempt.id,
+      attemptNumber: attempt.number,
+      status: attempt.status,
+      at: at(attempt),
+      model,
+      channelId
+    });
+    for (const attempt of domain.table("attempts").entries().map(([, value]) => value)) {
+      const record = records.get(attempt.recordId);
+      if (!record) continue;
+      for (const run of attempt.view?.runs ?? []) {
+        if (run.model !== model) continue;
+        if (Number(run.relay?.channelId) !== channelId) continue;
+        const samples = Array.isArray(run.samples) ? run.samples : [];
+        entries.push({
+          ...base(record, attempt),
+          runId: null,
+          fingerprint: {
+            stage: run.stage ?? null,
+            decision: run.analysis?.decision ?? null,
+            probability: Number.isFinite(run.analysis?.probability) ? run.analysis.probability : null,
+            predictionName: run.analysis?.predictionName ?? null,
+            usedOutputs: run.analysis?.usedOutputs ?? null,
+            samples: { total: samples.length, ended: samples.filter((sample) => END_SAMPLE.has(sample.state)).length }
+          },
+          custom: null
+        });
+      }
+      for (const run of attempt.custom?.runs ?? []) {
+        if (Number(run.target?.channelId) !== channelId) continue;
+        if (run.target?.modelId !== model) continue;
+        entries.push({
+          ...base(record, attempt),
+          runId: run.id ?? null,
+          fingerprint: null,
+          custom: {
+            phase: run.phase ?? null,
+            outputState: run.output?.state ?? null,
+            outputPath: run.output?.relativePath ?? null,
+            inputTokens: run.usage?.inputTokens ?? null,
+            outputTokens: run.usage?.outputTokens ?? null,
+            cost: run.usage?.cost ?? null,
+            ttftMs: run.metrics?.ttftMs ?? null,
+            modelTokensPerSecond: run.metrics?.modelTokensPerSecond ?? null,
+            error: run.error?.message ?? null
+          }
+        });
+      }
+    }
+    entries.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+    return { model, channelId, total: entries.length, entries: entries.slice(0, cap) };
   }
   // ---- mutations ------------------------------------------------------------------------------
   async create(input2) {
@@ -2445,6 +2523,7 @@ var A6Operations = class {
     this.epoch = 0;
     this.revision = 1;
     this.writeTail = Promise.resolve();
+    this.channelCache = /* @__PURE__ */ new Map();
     this.disposed = false;
   }
   invalidate() {
@@ -2452,6 +2531,7 @@ var A6Operations = class {
     this.account = null;
     this.loading = null;
     this.revision += 1;
+    this.channelCache.clear();
   }
   valid(account, epoch = this.epoch) {
     return !this.disposed && !this.service.disposed && !this.service.configSaving && this.epoch === epoch && this.account === account && account.identity === this.service.accountIdentity();
@@ -2666,6 +2746,64 @@ var A6Operations = class {
     if (selectionVersion !== account.selectionVersion) throw new A6Error("token-superseded", "\u64CD\u4F5C\u4EE4\u724C\u9009\u62E9\u5DF2\u66F4\u65B0");
     return this.state();
   }
+  /**
+   * Read-only binding view for one key: pins (fixed) plus routing pools (subscriptions).
+   * Both site calls are account-wide, so one round trip serves every key; nothing is persisted.
+   */
+  async channels({ tokenId, refresh = false } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error("invalid-token", "Key ID \u65E0\u6548");
+    this.service.assertAvailable();
+    await this.service.config();
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
+    const identity2 = `${this.service.accountIdentity()}:${tokenId}`;
+    const cached = this.channelCache.get(identity2);
+    if (!refresh && cached && cached.until > Date.now()) return { ...cached.value, cached: true };
+    const [pins, subscriptions] = await Promise.all([this.service.site.pins(), this.service.site.subscriptions()]);
+    this.service.assertAvailable();
+    const rows = /* @__PURE__ */ new Map();
+    const row = (model, channelId) => {
+      const key = `${model}|${channelId}`;
+      let item = rows.get(key);
+      if (!item) {
+        item = { model, channelId, supplierId: 0, pinned: false, routed: false, routeEffective: false, poolSize: 0, status: "" };
+        rows.set(key, item);
+      }
+      return item;
+    };
+    for (const pin of pins) {
+      if (Number(pin.tokenId) !== tokenId) continue;
+      const model = typeof pin.model === "string" ? pin.model : "";
+      const channelId = Number(pin.channelId);
+      if (!model || !Number.isSafeInteger(channelId) || channelId <= 0) continue;
+      const item = row(model, channelId);
+      item.pinned = true;
+      item.supplierId = Number(pin.supplierId) || item.supplierId;
+      item.routeEffective = item.routeEffective || pin.routeEffective === true;
+      if (typeof pin.status === "string") item.status = pin.status;
+    }
+    for (const subscription of subscriptions) {
+      if (Number(subscription?.token_id) !== tokenId) continue;
+      const model = typeof (subscription.model_name ?? subscription.model) === "string" ? subscription.model_name ?? subscription.model : "";
+      const channels = (Array.isArray(subscription.channels) ? subscription.channels : []).map((item) => Number(typeof item === "number" ? item : item?.channel_id ?? item?.id)).filter((channelId) => Number.isSafeInteger(channelId) && channelId > 0);
+      if (!model || !channels.length) continue;
+      for (const channelId of channels) {
+        const item = row(model, channelId);
+        item.routed = true;
+        item.poolSize = Math.max(item.poolSize, channels.length);
+      }
+    }
+    const value = {
+      tokenId,
+      channels: [...rows.values()].sort((a, b) => a.model.localeCompare(b.model, "zh-CN") || a.channelId - b.channelId),
+      generatedAt: Date.now()
+    };
+    this.channelCache.set(identity2, { value, until: Date.now() + 3e4 });
+    if (this.channelCache.size > 200) {
+      for (const [key, item] of this.channelCache) if (item.until <= Date.now()) this.channelCache.delete(key);
+    }
+    return value;
+  }
   async refresh({ kind = "all" } = {}) {
     if (!["pins", "routes", "all"].includes(kind)) throw new A6Error("invalid-refresh", "\u5237\u65B0\u7C7B\u578B\u65E0\u6548");
     const account = await this.ensure();
@@ -2833,6 +2971,9 @@ var A6Service = class {
   }
   operationState(input2) {
     return this.operations.state(input2);
+  }
+  keyChannels(input2) {
+    return this.operations.channels(input2);
   }
   operationSelect(input2) {
     return this.operations.select(input2);

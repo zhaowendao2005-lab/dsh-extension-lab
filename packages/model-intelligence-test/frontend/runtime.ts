@@ -8,9 +8,10 @@ export let useEffect: typeof ReactTypes.useEffect;
 export let useLayoutEffect: typeof ReactTypes.useLayoutEffect;
 export let useMemo: typeof ReactTypes.useMemo;
 export let useRef: typeof ReactTypes.useRef;
+export let useState: typeof ReactTypes.useState;
 export function setReact(value: typeof ReactTypes) {
   Object.assign(React, value);
-  ({ createElement, useEffect, useLayoutEffect, useMemo, useRef } = value);
+  ({ createElement, useEffect, useLayoutEffect, useMemo, useRef, useState } = value);
 }
 export function useStore<T, U>(store: Store<T>, selector: (state: T) => U): U {
   const getSnapshot = React.useMemo(() => {
