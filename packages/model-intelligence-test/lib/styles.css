@@ -6283,6 +6283,22 @@ button.mit-chat-tool-disclosure-leading {
   padding: 10px 0 6px;
 }
 
+/* 成果与操作两列吸附在右侧（成果列的 right 偏移由行内 style 跟随操作列宽）。 */
+.mit-workbench .mit-custom-table .mit-sticky-output,
+.mit-workbench .mit-custom-table .mit-sticky-actions {
+  position: sticky;
+  z-index: 2;
+  background: var(--mit-layer);
+}
+.mit-workbench .mit-custom-table thead .mit-sticky-output,
+.mit-workbench .mit-custom-table thead .mit-sticky-actions {
+  z-index: 4;
+  background: var(--mit-layer-2);
+}
+.mit-workbench .mit-custom-table .mit-sticky-actions { right: 0; }
+.mit-workbench .mit-custom-table .mit-sticky-output { box-shadow: -1px 0 var(--mit-border); }
+.mit-workbench .mit-custom-output-button { white-space: nowrap; padding-inline: 6px; }
+
 /* --- Toolbars, cards, popovers, dialogs --------------------------------- */
 .mit-workbench .mit-monitor-tools {
   gap: 8px;

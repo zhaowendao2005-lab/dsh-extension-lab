@@ -24,7 +24,7 @@ export interface CustomMonitorViewProps {
 }
 const marketOf = (model: Model, summary: CustomRunSummary): A6MarketSnapshot | undefined => summary.target.marketSnapshot ?? model.a6api?.market;
 // Defaults mirror `.mit-col-*` in styles/custom.css so a fresh table matches the previous layout.
-const CUSTOM_WIDTHS: Record<string, number> = { model: 185, 'channel-actions': 216, phase: 105, req: 48, tokens: 80, ttft: 95, 'model-tps': 95, e2e: 95, cache: 65, 'input-price': 92, 'output-price': 92, cache24h: 92, cost: 105, output: 75, actions: 100 };
+const CUSTOM_WIDTHS: Record<string, number> = { model: 185, 'channel-actions': 216, phase: 105, req: 48, tokens: 80, ttft: 95, 'model-tps': 95, e2e: 95, cache: 65, 'input-price': 92, 'output-price': 92, cache24h: 92, cost: 105, output: 92, actions: 100 };
 const columnWidth = (widths: Record<string, number> | undefined, column: string): number => widths?.[`custom:${column}`] ?? CUSTOM_WIDTHS[column];
 export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput, renderChannelActions, widths, onResize }: CustomMonitorViewProps) {
   const needle = filter.trim().toLowerCase();
@@ -37,6 +37,8 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
   const withMarket = rows.some(row => Boolean(marketOf(row.model, row.summary)));
   const columns = ['model', ...(renderChannelActions ? ['channel-actions'] : []), 'phase', 'req', 'tokens', 'ttft', 'model-tps', 'e2e', 'cache', ...(withMarket ? ['input-price', 'output-price', 'cache24h'] : []), 'cost', 'output', 'actions'];
   const totalWidth = columns.reduce((sum, column) => sum + columnWidth(widths, column), 0);
+  // 成果/操作两列吸附在右侧；成果列的偏移跟随可调整的操作列宽。
+  const actionsWidth = columnWidth(widths, 'actions');
   const minWidth = renderChannelActions ? (withMarket ? 1796 : 1526) : (withMarket ? 1580 : 1310);
   const resizer = (column: string, label: string) => onResize ? <ColumnResizer width={columnWidth(widths, column)} label={label} min={40} onResize={width => onResize(`custom:${column}`, width)} /> : null;
   return <section className="mit-custom-monitor" aria-label="自定义测试实时监控">
@@ -65,8 +67,8 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
           {withMarket && <th scope="col" className="mit-col-price" title="渠道网页报价快照 · 人民币/百万 Token，不等于实际消费">输出价{resizer('output-price', '输出价')}</th>}
           {withMarket && <th scope="col" className="mit-col-price" title="渠道近 24 小时缓存率，站点统计口径，非本轮测试命中率">渠道 24h 缓存{resizer('cache24h', '渠道 24h 缓存')}</th>}
           <th scope="col" className="mit-col-cost">费用{resizer('cost', '费用')}</th>
-          <th scope="col" className="mit-col-output">成果{resizer('output', '成果')}</th>
-          <th scope="col" className="mit-col-actions">操作{resizer('actions', '操作')}</th>
+          <th scope="col" className="mit-col-output mit-sticky-output" style={{ right: actionsWidth }}>成果{resizer('output', '成果')}</th>
+          <th scope="col" className="mit-col-actions mit-sticky-actions">操作{resizer('actions', '操作')}</th>
         </tr></thead>
         <tbody>{visible.map(({ id, model, summary }) => {
           const market = marketOf(model, summary);
@@ -82,8 +84,8 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
           {withMarket && <td className="mit-col-price" title={marketTitle(market, '输出价')}>{marketPriceCell(market, 'output')}</td>}
           {withMarket && <td className="mit-col-price" title={marketTitle(market, '渠道近 24h 缓存率')}>{marketCacheCell(market)}</td>}
           <td className="mit-col-cost"><span>{cost(summary.usage.cost, summary.usage.currency)}</span><span className="mit-custom-cell-sub">{CUSTOM_BILLING_LABELS[summary.usage.billingState]}</span></td>
-          <td className="mit-col-output">{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ? `在浏览器中打开 ${summary.output.relativePath}` : '在浏览器中打开成果'} onClick={() => { onOpenOutput(id, 'browser').catch(() => {}); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
-          <td className="mit-col-actions"><div className="mit-custom-row-actions"><button type="button" className="mit-text-button" onClick={() => onSelectRun(id)}>详情<Icon name="chevron" size={12} /></button>{['failed', 'cancelled', 'interrupted'].includes(summary.phase) && <button type="button" className="mit-text-button" onClick={() => onRetry(id)}>重试</button>}</div></td>
+          <td className="mit-col-output mit-sticky-output" style={{ right: actionsWidth }}>{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ? `在浏览器中打开 ${summary.output.relativePath}` : '在浏览器中打开成果'} onClick={() => { onOpenOutput(id, 'browser').catch(() => {}); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
+          <td className="mit-col-actions mit-sticky-actions"><div className="mit-custom-row-actions"><button type="button" className="mit-text-button" onClick={() => onSelectRun(id)}>详情<Icon name="chevron" size={12} /></button>{['failed', 'cancelled', 'interrupted'].includes(summary.phase) && <button type="button" className="mit-text-button" onClick={() => onRetry(id)}>重试</button>}</div></td>
         </tr>;})}</tbody>
       </table>
       {!visible.length && <Empty title={filter ? '没有匹配的模型' : resultOnly ? '还没有已结束的运行' : '等待运行摘要'}>{filter ? '调整筛选条件后查看。' : resultOnly ? '运行结束后会出现在这里。' : '摘要由 Host 返回，连接恢复后会继续更新。'}</Empty>}
