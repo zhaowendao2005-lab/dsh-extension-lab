@@ -59,7 +59,7 @@ export async function createCustomTask(transport: ModelIntelligenceTransport, in
 }
 export const readCustomRunDetail = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; revision?: number}) => transport.customRunDetail(request);
 export const readCustomFile = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; path: string}) => transport.customFileRead(request);
-export const openCustomOutput = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal'; application?: string}) => transport.customOutputOpen(request);
+export const openCustomOutput = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal' | 'browser'; application?: string}) => transport.customOutputOpen(request);
 export const continueCustomRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => transport.customRunContinue(request);
 export const cancelCustomRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => transport.customRunCancel(request);
 export const customPrompt = (body: string): string => body + FIXED_FOOTER;

@@ -575,6 +575,21 @@ export class CustomCoordinator {
         throw err('opener-failed', `桌面打开失败：${String(error?.message ?? error).slice(0, 300)}`);
       } finally { clearTimeout(timer); }
     }
+    if (mode === 'browser') {
+      let opener; try { opener = this.ctx.get('sessionController'); } catch { opener = null; }
+      if (!opener?.openWorkspacePath || !opener.canOpenWorkspacePath?.()) throw err('opener-unavailable', '当前运行时不是桌面版，无法在本机浏览器中打开文件');
+      const filename = path.join(sandbox.root, output.relativePath);
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const apps = (await opener.workspacePathApplications({ path: filename }, controller.signal)).map(item => ({ id: String(item.id), name: String(item.name ?? item.id) }));
+        const browser = apps.find(item => /chrome|safari|firefox|edge|arc|brave|chromium|opera|vivaldi/i.test(item.name));
+        const opened = await opener.openWorkspacePath({ path: filename, ...(browser ? { application: browser.id } : {}) }, controller.signal);
+        return { ...opened, path: output.relativePath, application: browser ?? null, applications: apps };
+      } catch (error) {
+        if (controller.signal.aborted) throw err('opener-timeout', '桌面应用 15 秒内没有响应');
+        throw err('opener-failed', `桌面打开失败：${String(error?.message ?? error).slice(0, 300)}`);
+      } finally { clearTimeout(timer); }
+    }
     const preview = await sandbox.preview();
     if (!preview) throw err('preview-unavailable', '此输出类型不支持 HTML 预览，请在文件中查看');
     return preview;

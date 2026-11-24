@@ -9,7 +9,7 @@ const FILE_MANAGER_LABEL = /Mac|iPhone|iPad|iPod/i.test(PLATFORM_HINT)
     ? '资源管理器'
     : '文件管理器';
 
-export function CustomOutputActions({ ready, path, onOpenOutput }: { ready: boolean; path: string | null; onOpenOutput(mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult> }) {
+export function CustomOutputActions({ ready, path, onOpenOutput }: { ready: boolean; path: string | null; onOpenOutput(mode: 'preview' | 'vscode' | 'reveal' | 'browser', application?: string): Promise<CustomOutputOpenResult> }) {
   const modal = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const status = useRef<HTMLParagraphElement>(null);
@@ -58,10 +58,11 @@ export function CustomOutputActions({ ready, path, onOpenOutput }: { ready: bool
   return <div className="mit-custom-output-actions">
     <button type="button" className="mit-button mit-button-primary" disabled={!ready} onClick={() => { void preview(); }}>预览成果</button>
     <button type="button" className="mit-button" disabled={!ready} onClick={() => { void openEditor(); }}>在 VS Code 打开</button>
+    <button type="button" className="mit-button" disabled={!ready} onClick={() => { if (feedback.current) feedback.current.textContent = '正在请求浏览器打开成果…'; void onOpenOutput('browser').then(result => { if (!feedback.current?.isConnected) return; feedback.current.textContent = result.opened ? `已在${result.application?.name ?? '默认浏览器'}中打开 ${result.path ?? ''}。` : '未能在浏览器中打开成果。'; }, error => { if (feedback.current?.isConnected) feedback.current.textContent = error instanceof Error ? error.message : '浏览器打开成果失败。'; }); }}>在浏览器中打开</button>
     <button type="button" className="mit-button" disabled={!ready} onClick={() => { void onOpenOutput('reveal').then(result => { if (feedback.current?.isConnected) feedback.current.textContent = result.opened ? `已在${FILE_MANAGER_LABEL}中显示。` : '未能显示文件。'; }, error => { if (feedback.current?.isConnected) feedback.current.textContent = error instanceof Error ? error.message : '显示文件失败。'; }); }}>{`在${FILE_MANAGER_LABEL}中显示`}</button>
     <p className="mit-custom-action-feedback" aria-live="polite" ref={feedback} />
     <dialog className="mit-custom-preview" ref={modal} onClose={clear} onCancel={clear} aria-label="成果隔离预览">
-      <header><div><strong>成果预览</strong><code ref={resultPath}>{path || 'output.html'}</code></div><button type="button" className="mit-icon-button" aria-label="关闭成果预览" onClick={() => modal.current?.close()}><Icon name="close" /></button></header>
+      <header><div><strong>成果预览</strong><code ref={resultPath}>{path || 'output.html'}</code></div><span className="mit-custom-preview-head"><button type="button" className="mit-text-button" onClick={() => { if (!feedback.current) return; void onOpenOutput('browser').then(result => { if (feedback.current?.isConnected) feedback.current.textContent = result.opened ? `已在${result.application?.name ?? '默认浏览器'}中打开。` : '未能在浏览器中打开成果。'; }, error => { if (feedback.current?.isConnected) feedback.current.textContent = error instanceof Error ? error.message : '浏览器打开成果失败。'; }); }}>在浏览器中打开</button><button type="button" className="mit-icon-button" aria-label="关闭成果预览" onClick={() => modal.current?.close()}><Icon name="close" /></button></span></header>
       <p className="mit-custom-preview-notice">隔离执行 · 禁止访问 Host、网络与父页面</p>
       <p className="mit-custom-preview-status" role="status" ref={status} />
       <iframe ref={frame} title="自定义测试 HTML 成果" sandbox="allow-scripts" referrerPolicy="no-referrer" hidden />

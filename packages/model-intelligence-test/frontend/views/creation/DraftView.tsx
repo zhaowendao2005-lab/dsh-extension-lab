@@ -123,11 +123,12 @@ export function DraftView({ store }: {
       {draft.kind==='custom'&&<>
         {custom.a6Models.length>0&&<section className="mit-a6-section" aria-label="a6api 自定义目标">
           <div className="mit-label-row"><h3>a6api 参测渠道</h3><span className="mit-muted">{custom.a6Models.length} 项</span>
-            <label className="mit-a6-protocol-batch">接口格式（批量）<select value="" disabled={custom.creating} onChange={event => { if (event.currentTarget.value) store.actions.setCustomProtocol(null, event.currentTarget.value as A6Protocol); }}><option value="">统一设置为…</option>{A6_PROTOCOLS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <label className="mit-a6-protocol-batch">批量设置接口格式<select value="" disabled={custom.creating} onChange={event => { if (event.currentTarget.value) store.actions.setCustomProtocol(null, event.currentTarget.value as A6Protocol); }}><option value="">全部设为…</option>{A6_PROTOCOLS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
           </div>
+          <p className="mit-a6-protocol-hint mit-muted">每个渠道可选择请求的接口格式（Chat Completions / Responses / Anthropic / Gemini），默认按渠道推断；选错渠道不支持的格式时请求会失败。</p>
           <div className="mit-a6-channel-list">{custom.a6Models.map(model => <div className="mit-a6-channel-row" key={`${model.channelId}:${model.model}`}>
             <div><strong>{model.model}</strong><span className="mit-muted">{model.supplierName||`供应商 #${model.supplierId}`} · {model.channelName||`渠道 #${model.channelId}`}</span></div>
-            <select className="mit-a6-protocol" aria-label={`${model.model} 接口格式`} disabled={custom.creating} value={custom.protocols[`${model.channelId}:${model.model}`]??defaultProtocol(model)} onChange={event => store.actions.setCustomProtocol(`${model.channelId}:${model.model}`, event.currentTarget.value as A6Protocol)}>{A6_PROTOCOLS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+            <label className="mit-a6-protocol-field"><span>接口格式</span><select className="mit-a6-protocol" aria-label={`${model.model} 接口格式`} disabled={custom.creating} value={custom.protocols[`${model.channelId}:${model.model}`]??defaultProtocol(model)} onChange={event => store.actions.setCustomProtocol(`${model.channelId}:${model.model}`, event.currentTarget.value as A6Protocol)}>{A6_PROTOCOLS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <button type="button" className="mit-icon-button" disabled={custom.creating} aria-label={`移除 ${model.model}`} onClick={() => store.actions.removeCustomA6Model(`${model.channelId}:${model.model}`)}><Icon name="close" size={14} /></button>
           </div>)}</div>
           <strong className="mit-a6-slots-heading">执行令牌</strong>

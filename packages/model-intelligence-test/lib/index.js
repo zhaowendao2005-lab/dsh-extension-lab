@@ -70,7 +70,7 @@ var schemas = {
   attemptRetry: z2.strictObject({ attemptId: id(), model: modelRef }),
   customRunDetail: z2.strictObject({ ...customRun, revision: z2.number().int().nonnegative().optional() }),
   customFileRead: z2.strictObject({ ...customRun, path: z2.string().min(1).max(512) }),
-  customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode", "reveal"]).optional(), application: z2.string().min(1).max(512).optional() }),
+  customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode", "reveal", "browser"]).optional(), application: z2.string().min(1).max(512).optional() }),
   customRunContinue: z2.strictObject({ ...customRun }),
   customRunCancel: z2.strictObject({ ...customRun }),
   a6ConfigSave: z2.strictObject({ accessToken: z2.string().max(512).optional(), userId: z2.string().max(40).optional() }),
@@ -97,7 +97,7 @@ var DESCRIPTIONS = {
   attemptRetry: "Re-run the failed samples of one model; completed samples are kept.",
   customRunDetail: "Read bounded events, requests and sandbox metadata for a custom run belonging to an attempt.",
   customFileRead: "Read a bounded relative file inside a verified custom-run sandbox.",
-  customOutputOpen: "Preview a validated output or open that exact file with the discovered VS Code application.",
+  customOutputOpen: "Preview a validated output, or open that exact file with the discovered VS Code application, a browser, or the desktop file manager.",
   customRunContinue: "Queue a failed, cancelled or interrupted custom run to resume its original DSH session and send a continue message (real inference).",
   customRunCancel: "Cancel only the specified queued or running custom model; leave the other runs in its attempt alone.",
   a6CustomFromRecord: "Create custom sessions from channels of an existing fingerprint record; uses its account and dedicated test slots.",
@@ -6057,6 +6057,29 @@ var CustomCoordinator = class {
         if (!app) return { opened: false, path: output.relativePath, application: null, applications: apps };
         const opened = await opener.openWorkspacePath({ path: filename, application: app.id }, controller.signal);
         return { ...opened, path: output.relativePath, application: app, applications: apps };
+      } catch (error) {
+        if (controller.signal.aborted) throw err("opener-timeout", "\u684C\u9762\u5E94\u7528 15 \u79D2\u5185\u6CA1\u6709\u54CD\u5E94");
+        throw err("opener-failed", `\u684C\u9762\u6253\u5F00\u5931\u8D25\uFF1A${String(error?.message ?? error).slice(0, 300)}`);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    if (mode === "browser") {
+      let opener;
+      try {
+        opener = this.ctx.get("sessionController");
+      } catch {
+        opener = null;
+      }
+      if (!opener?.openWorkspacePath || !opener.canOpenWorkspacePath?.()) throw err("opener-unavailable", "\u5F53\u524D\u8FD0\u884C\u65F6\u4E0D\u662F\u684C\u9762\u7248\uFF0C\u65E0\u6CD5\u5728\u672C\u673A\u6D4F\u89C8\u5668\u4E2D\u6253\u5F00\u6587\u4EF6");
+      const filename = path3.join(sandbox.root, output.relativePath);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15e3);
+      try {
+        const apps = (await opener.workspacePathApplications({ path: filename }, controller.signal)).map((item) => ({ id: String(item.id), name: String(item.name ?? item.id) }));
+        const browser = apps.find((item) => /chrome|safari|firefox|edge|arc|brave|chromium|opera|vivaldi/i.test(item.name));
+        const opened = await opener.openWorkspacePath({ path: filename, ...browser ? { application: browser.id } : {} }, controller.signal);
+        return { ...opened, path: output.relativePath, application: browser ?? null, applications: apps };
       } catch (error) {
         if (controller.signal.aborted) throw err("opener-timeout", "\u684C\u9762\u5E94\u7528 15 \u79D2\u5185\u6CA1\u6709\u54CD\u5E94");
         throw err("opener-failed", `\u684C\u9762\u6253\u5F00\u5931\u8D25\uFF1A${String(error?.message ?? error).slice(0, 300)}`);

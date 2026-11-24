@@ -193,3 +193,4 @@
 /* Column handles sit inside the header cell, which clips overflow for ellipsis text. */
 .mit-workbench .mit-custom-table thead th { position: relative; }
 .mit-workbench .mit-custom-table thead th .mit-column-resizer { right: 0; width: 9px; }
+.mit-workbench .mit-custom-preview-head { display: flex; align-items: center; gap: 8px; }

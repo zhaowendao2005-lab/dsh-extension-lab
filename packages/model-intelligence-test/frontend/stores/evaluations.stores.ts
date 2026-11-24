@@ -235,6 +235,7 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
     /** Rename a Host record; the list is refreshed from the returned record so every view updates. */
     async rename(recordId: string, name: string): Promise<StoredRecord> {
       const record = await renameRecord(transport, recordId, name);
+      if (!record?.id) throw new Error('Host 未返回更新后的记录');
       stored = stored.map(item => item.id === record.id ? { ...item, ...record } : item);
       rebuild();
       return record;

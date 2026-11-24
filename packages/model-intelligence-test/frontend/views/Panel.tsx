@@ -74,8 +74,8 @@ function RecordsSidebar({ store }: {
               {record.name}
             </strong>
             <span>
-              {record.a6api? 'a6api 专项':record.kind==='fingerprint'? '指纹测试':'自定义 Agent'} ·
-              {(record.models?.length||record.runIds.length)} 模型
+              <em className={`mit-record-kind is-${record.kind}`}>{record.kind==='fingerprint'? '指纹测试':'自定义测试'}</em>
+              {record.a6api? ' · a6api 专项':''} · {(record.models?.length||record.runIds.length)} 模型
               {(record.attempts?.length??0)>1? ` · ${record.attempts.length} 次请求`:''}
             </span>
             <small>

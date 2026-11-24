@@ -105,7 +105,7 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
       try { const file = await readFile(transport, { attemptId, runId, path }); if (!disposed && requests.get(`${id}:file`) === request) setEntry(id, { file, fileLoading: false }); }
       catch (error) { if (!disposed && requests.get(`${id}:file`) === request) setEntry(id, { fileLoading: false, error: error instanceof Error ? error.message : '读取文件失败' }); }
     },
-    async openOutput(attemptId: string, runId: string, mode: 'preview' | 'vscode' | 'reveal', application?: string) {
+    async openOutput(attemptId: string, runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser', application?: string) {
       const id = keyOf(attemptId, runId);
       setEntry(id, { previewLoading: true, error: undefined });
       if (mode === 'preview') store.setState({ preview: { open: true, loading: true, html: null, path: null, label: runId } });

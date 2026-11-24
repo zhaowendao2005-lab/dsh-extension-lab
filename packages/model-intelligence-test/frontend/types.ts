@@ -192,7 +192,7 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  recordsList(request: {revision?: number}): Promise<RecordsListView>;
  recordCreate(request: {kind: TestKind; name: string; models: RecordModelRef[]; options?: FingerprintOptions; prompt?: string; footerVersion?: string; preset?: Preset | null}): Promise<{record: StoredRecord; attemptId: string | null}>;
  recordRerun(request: {recordId: string}): Promise<{attemptId: string}>;
- recordRename(request: {recordId: string; name: string}): Promise<{record: StoredRecord}>;
+ recordRename(request: {recordId: string; name: string}): Promise<StoredRecord>;
  recordDelete(request: {recordId: string}): Promise<{ok: true}>;
  recordsClear(): Promise<{ok: true}>;
  attemptView(request: {attemptId: string; revision?: number}): Promise<AttemptViewResult>;
@@ -201,7 +201,7 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  attemptRetry(request: {attemptId: string; model: {provider: string; id: string}}): Promise<AttemptViewResult>;
  customRunDetail(request: {attemptId: string; runId: string; revision?: number}): Promise<CustomRunDetailResult>;
  customFileRead(request: {attemptId: string; runId: string; path: string}): Promise<CustomFileReadResult>;
- customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal'; application?: string}): Promise<CustomOutputOpenResult>;
+ customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal' | 'browser'; application?: string}): Promise<CustomOutputOpenResult>;
  customRunContinue(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  customRunCancel(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  a6CustomFromRecord(request: {recordId: string; name: string; models: CustomA6ModelRef[]; slots?: A6Slot[]; dshModels?: RecordModelRef[]; prompt: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; timeoutMs?: number}): Promise<{record: StoredRecord; attemptId: string}>;
@@ -250,7 +250,7 @@ export interface Workbench {
   cancelRecord(id: string): void; renameRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
   beginCustomFromFingerprint(recordId: string, runId?: string | string[]): void; startCustomSelection(recordId: string): void; toggleCustomRunSelection(recordId: string, runId: string): void; cancelCustomSelection(): void; createCustomFromSelection(recordId: string): void;
   patchCustom(value: Partial<Pick<CustomDraftState, 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; setCustomProtocol(key: string | null, api: A6Protocol): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
-  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void; cancelCustomRun(runId: string): void;
+  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser', application?: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void; cancelCustomRun(runId: string): void;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;

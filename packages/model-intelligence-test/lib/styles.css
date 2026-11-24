@@ -366,6 +366,22 @@
   font-size:10px;
   color:var(--mit-muted)
 }
+.mit-workbench .mit-record-kind {
+  display:inline-block;
+  padding:0 3px;
+  border:1px solid currentColor;
+  border-radius:3px;
+  font-style:normal;
+  font-size:9px;
+  line-height:13px;
+  vertical-align:1px
+}
+.mit-workbench .mit-record-kind.is-fingerprint {
+  color:var(--mit-brand)
+}
+.mit-workbench .mit-record-kind.is-custom {
+  color:var(--mit-text)
+}
 .mit-workbench .mit-record-delete {
   margin-right:2px;
   color:var(--mit-muted);
@@ -2319,6 +2335,9 @@
 
 /* Per-channel / batch wire protocol (DSH-native protocol ids). */
 .mit-workbench .mit-a6-protocol-batch { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mit-muted); }
+.mit-workbench .mit-a6-protocol-hint { margin: 0; font-size: 11px; }
+.mit-workbench .mit-a6-protocol-field { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: var(--mit-muted); }
+.mit-workbench .mit-a6-protocol-field .mit-a6-protocol { min-width: 150px; }
 .mit-workbench .mit-a6-protocol-batch select,
 .mit-workbench .mit-a6-protocol { height: 26px; padding: 0 6px; font-size: 11px; border: 1px solid var(--mit-border); border-radius: 6px; background: var(--mit-bg); color: var(--mit-text); }
 .mit-workbench .mit-a6-channel-row .mit-a6-protocol { margin-left: auto; margin-right: 6px; }
@@ -5419,6 +5438,7 @@ button.mit-chat-tool-disclosure-leading {
 /* Column handles sit inside the header cell, which clips overflow for ellipsis text. */
 .mit-workbench .mit-custom-table thead th { position: relative; }
 .mit-workbench .mit-custom-table thead th .mit-column-resizer { right: 0; width: 9px; }
+.mit-workbench .mit-custom-preview-head { display: flex; align-items: center; gap: 8px; }
 
 /* records.css */
 /* Records, attempts (请求), relay chips and model-picker source sidebar. Loaded after styles.css. */
