@@ -103,6 +103,12 @@ export function KeyView({ store }: { store: Workbench }) {
     store.actions.patchKeyView({expanded: next});
     if (next.includes(key) && !channelTests[key]?.view && !channelTests[key]?.loading) store.actions.loadChannelTests(channel.model, channel.channelId);
   };
+  const selectedRouted = channels.filter(channel => keyView.selected.includes(rowKey(channel)) && channel.routed);
+  const removeRoutes = (): void => {
+    if (!selectedRouted.length) return;
+    store.actions.removeKeyRoutes(selectedRouted.map(channel => ({model: channel.model, channelId: channel.channelId})));
+    store.actions.patchKeyView({selected: []});
+  };
   const toggleSelected = (key: string): void => {
     store.actions.patchKeyView({selected: keyView.selected.includes(key) ? keyView.selected.filter(item => item !== key) : [...keyView.selected, key]});
   };
@@ -138,6 +144,7 @@ export function KeyView({ store }: { store: Workbench }) {
             {token && <span className="mit-muted">{token.name || '未命名'}{token.maskedKey ? ` · ${token.maskedKey}` : ''}</span>}
             <span className="mit-key-count">{channels.length} 个渠道</span>
             {keyView.selected.length > 0 && <span className="mit-key-selected">已选 {keyView.selected.length} 个渠道</span>}
+            {selectedRouted.length > 0 && <button type="button" className="mit-key-route-remove" disabled={keyChannels.loading} onClick={removeRoutes} title="把选中的渠道从模型路由池里移除">取消路由 · {selectedRouted.length}</button>}
           </div>
           {keyChannels.loading && !keyChannels.view && <p className="mit-key-empty">正在读取绑定的渠道…</p>}
           {keyChannels.error && <p className="mit-key-error">{keyChannels.error}</p>}

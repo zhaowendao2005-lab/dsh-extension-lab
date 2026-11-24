@@ -308,6 +308,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     loadA6Operations: insightsDomain.load,
     loadKeyChannels: insightsDomain.loadKeyChannels,
     loadChannelTests: insightsDomain.loadChannelTests,
+    removeKeyRoutes: insightsDomain.removeKeyRoutes,
     patchKeyView: insightsDomain.patchKeyView,
     openChannelTest,
     setA6OperationQuery: insightsDomain.setQuery,

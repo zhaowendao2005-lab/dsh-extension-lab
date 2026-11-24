@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
 import type { A6InsightsState, A6OperationToken, A6OperationView, A6RelationKind, A6ResultActionInput, A6ResultFeedback, Evaluation, ModelIntelligenceTransport } from '../types';
-import { channelTests as fetchChannelTests, keyChannels as fetchKeyChannels, readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
+import { channelTests as fetchChannelTests, keyChannels as fetchKeyChannels, removeRoute as removeKeyRoute, readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
 
 export const ledgerKey = (recordId: string, attemptId?: string): string => JSON.stringify([recordId, attemptId ?? '*']);
 export const operationRowKey = (recordId: string, model: string, channelId: number): string => JSON.stringify([recordId, model, channelId]);
@@ -208,6 +208,23 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
     },
     refreshLedger(recordId: string): void { const record = records.find(item => item.id === recordId); if (record) void loadLedger(record, true); },
     loadKeyChannels(tokenId: number, refresh = false): void { readKeyChannels(tokenId, refresh); },
+    removeKeyRoutes(items: Array<{model: string; channelId: number}>): void {
+      if (disposed || !items.length) return;
+      const tokenId = store.getState().keyChannels.tokenId;
+      if (!tokenId) return;
+      const epoch = generation;
+      store.setState(state => ({keyChannels: {...state.keyChannels, loading: true, error: undefined}}));
+      void (async () => {
+        for (const item of items) await removeKeyRoute(transport, {tokenId, model: item.model, channelId: item.channelId});
+        if (disposed || epoch !== generation) return;
+        store.setState(state => ({keyChannels: {...state.keyChannels, loading: false}}));
+        readKeyChannels(tokenId, true);
+      })().catch(error => {
+        if (disposed || epoch !== generation) return;
+        store.setState(state => ({keyChannels: {...state.keyChannels, loading: false, error: message(error)}}));
+        readKeyChannels(tokenId, true);
+      });
+    },
     loadChannelTests(model: string, channelId: number, limit = 20): void { readChannelTests(model, channelId, limit); },
     patchKeyView(value: Partial<A6InsightsState['keyView']>): void {
       if (disposed) return;

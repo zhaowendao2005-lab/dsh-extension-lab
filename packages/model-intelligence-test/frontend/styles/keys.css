@@ -73,3 +73,14 @@
   .mit-workbench .mit-key-layout { grid-template-columns:1fr; }
   .mit-workbench .mit-key-list ul { max-height:220px; }
 }
+
+.mit-workbench .mit-key-route-remove {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--mit-error) 42%, var(--mit-border));
+  border-radius: 999px; background: color-mix(in srgb, var(--mit-error) 8%, transparent);
+  color: var(--mit-error); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; cursor: pointer;
+}
+.mit-workbench .mit-key-route-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--mit-error) 14%, transparent); border-color: var(--mit-error);
+}
+.mit-workbench .mit-key-route-remove:disabled { opacity: .5; cursor: default; }

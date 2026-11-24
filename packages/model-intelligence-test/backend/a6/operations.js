@@ -322,6 +322,15 @@ export class A6Operations {
     assertUsableToken(account.tokens.find(token => token.id === tokenId));
   }
 
+  async removeRoute({ tokenId, model, channelId } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error('invalid-token', 'Key ID 无效');
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error('auth-missing', '请先配置 a6api 访问令牌');
+    const result = await this.service.site.removeRoute({ tokenId, model, channelId });
+    this.channelCache.clear();
+    return result;
+  }
+
   invalidateRelation(account, kind) {
     account.writeVersion[kind] += 1;
     account[kind] = [];

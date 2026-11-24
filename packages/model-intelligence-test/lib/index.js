@@ -83,6 +83,7 @@ var schemas = {
   a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), operation: z2.enum(["pin", "route", "restore"]) }),
   a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID"),
   a6KeyChannels: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
+  a6RemoveRoute: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
   channelTests: z2.strictObject({ model: id(256), channelId: z2.number().int().positive(), limit: z2.number().int().min(1).max(100).optional() })
 };
 var DESCRIPTIONS = {
@@ -115,6 +116,7 @@ var DESCRIPTIONS = {
   a6ResultAction: "Set a recorded channel pin or add it to routing under the global operation key; read back state. Restore handles legacy leases only.",
   a6LedgerView: "Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference.",
   a6KeyChannels: "Read the pins and routing channels bound to one a6api key; read-only, never changes the operation key.",
+  a6RemoveRoute: "Remove one channel from a model routing pool on the a6api site and verify the result by reading it back.",
   channelTests: "List historical fingerprint and custom test runs for one model channel, newest first."
 };
 var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z2.json() });
@@ -1401,6 +1403,9 @@ var ModelIntelligenceService = class extends Service {
   a6KeyChannels(request) {
     return this.guard(() => this.a6.keyChannels(request));
   }
+  a6RemoveRoute(request) {
+    return this.guard(() => this.a6.removeRoute(request));
+  }
   channelTests(request) {
     return this.guard(() => this.records.channelTests(request));
   }
@@ -1484,6 +1489,7 @@ var REMOTE_METHODS = [
   "a6ResultAction",
   "a6LedgerView",
   "a6KeyChannels",
+  "a6RemoveRoute",
   "channelTests"
 ];
 var remoteInitializers = [];
@@ -2245,6 +2251,18 @@ var A6Site = class {
     if (!has(observed)) throw new A6Error("route-unverified", "\u672A\u80FD\u8BFB\u56DE\u52A0\u5165\u8DEF\u7531\u7ED3\u679C\uFF0C\u8BF7\u68C0\u67E5\u7AD9\u70B9\u72B6\u6001");
     return { verified: true, tokenId: Number(tokenId), model, channelId: Number(channelId), subscriptionId: observed.id, subscriptions };
   }
+  async removeRoute({ tokenId, model, channelId }) {
+    const channel = Number(channelId);
+    const read = async () => (await this.subscriptions()).find((row) => Number(row.token_id) === Number(tokenId) && (row.model_name ?? row.model) === model);
+    const members = (row) => (Array.isArray(row?.channels) ? row.channels : []).map((item) => Number(typeof item === "number" ? item : item?.channel_id ?? item?.id));
+    const existing = await read();
+    if (!existing?.id) throw new A6Error("route-missing", "\u6CA1\u6709\u627E\u5230\u8BE5\u6A21\u578B\u7684\u8DEF\u7531\u6C60");
+    if (members(existing).includes(channel)) await this.request(`/api/subscriptions/${existing.id}/channels/${channel}`, { method: "DELETE" });
+    const subscriptions = await this.subscriptions();
+    const observed = subscriptions.find((row) => Number(row.token_id) === Number(tokenId) && (row.model_name ?? row.model) === model);
+    if (members(observed).includes(channel)) throw new A6Error("route-unverified", "\u672A\u80FD\u8BFB\u56DE\u53D6\u6D88\u8DEF\u7531\u7ED3\u679C\uFF0C\u8BF7\u68C0\u67E5\u7AD9\u70B9\u72B6\u6001");
+    return { verified: true, tokenId: Number(tokenId), model, channelId: channel, subscriptions };
+  }
   dispose() {
     this.controller.abort();
   }
@@ -2821,6 +2839,14 @@ var A6Operations = class {
     if (account.tokenId !== tokenId || account.selectionVersion !== selectionVersion) throw new A6Error("token-changed", "\u64CD\u4F5C\u4EE4\u724C\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u8BD5");
     assertUsableToken(account.tokens.find((token) => token.id === tokenId));
   }
+  async removeRoute({ tokenId, model, channelId } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error("invalid-token", "Key ID \u65E0\u6548");
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
+    const result = await this.service.site.removeRoute({ tokenId, model, channelId });
+    this.channelCache.clear();
+    return result;
+  }
   invalidateRelation(account, kind) {
     account.writeVersion[kind] += 1;
     account[kind] = [];
@@ -2976,6 +3002,9 @@ var A6Service = class {
   }
   keyChannels(input2) {
     return this.operations.channels(input2);
+  }
+  removeRoute(input2) {
+    return this.operations.removeRoute(input2);
   }
   operationSelect(input2) {
     return this.operations.select(input2);

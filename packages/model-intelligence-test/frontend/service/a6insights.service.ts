@@ -6,4 +6,5 @@ export const refreshOperationRelations = (transport: ModelIntelligenceTransport,
 export const resultAction = (transport: ModelIntelligenceTransport, input: A6ResultActionInput) => transport.a6ResultAction(input);
 export const readLedger = (transport: ModelIntelligenceTransport, recordId: string, attemptId?: string, refresh = false) => transport.a6LedgerView({recordId, ...(attemptId ? {attemptId} : {}), ...(refresh ? {refresh} : {})});
 export const keyChannels = (transport: ModelIntelligenceTransport, tokenId: number, refresh = false) => transport.a6KeyChannels({tokenId, ...(refresh ? {refresh} : {})});
+export const removeRoute = (transport: ModelIntelligenceTransport, input: {tokenId: number; model: string; channelId: number}) => transport.a6RemoveRoute(input);
 export const channelTests = (transport: ModelIntelligenceTransport, model: string, channelId: number, limit = 20) => transport.channelTests({model, channelId, limit});

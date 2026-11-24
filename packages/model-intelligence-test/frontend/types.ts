@@ -225,6 +225,7 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  a6ResultAction(request: A6ResultActionInput): Promise<A6ResultActionOutcome>;
  a6LedgerView(request: {attemptId?: string; recordId?: string; refresh?: boolean}): Promise<A6LedgerView>;
  a6KeyChannels(request: {tokenId: number; refresh?: boolean}): Promise<A6KeyChannelsView>;
+ a6RemoveRoute(request: {tokenId: number; model: string; channelId: number}): Promise<{verified: boolean; channelId: number}>;
  channelTests(request: {model: string; channelId: number; limit?: number}): Promise<ChannelTestsView>;
 }
 export interface Preset { id: string; name: string; body: string }
@@ -267,7 +268,7 @@ export interface Workbench {
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;
   loadA6Config(): void; patchA6Form(value: Partial<{accessToken: string; userId: string}>): void; saveA6Config(): void; rotateA6Intake(): void; copyA6Intake(): void;
-  loadA6Operations(): void; loadKeyChannels(tokenId: number, refresh?: boolean): void; loadChannelTests(model: string, channelId: number, limit?: number): void; patchKeyView(value: Partial<{tokenId: number | null; query: string; expanded: string[]; selected: string[]}>): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
+  loadA6Operations(): void; loadKeyChannels(tokenId: number, refresh?: boolean): void; removeKeyRoutes(items: Array<{model: string; channelId: number}>): void; loadChannelTests(model: string, channelId: number, limit?: number): void; patchKeyView(value: Partial<{tokenId: number | null; query: string; expanded: string[]; selected: string[]}>): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
   a6ResultAction(input: A6ResultActionInput): void;
   setA6LedgerScope(recordId: string, scope: 'attempt'|'record'): void; refreshA6Ledger(recordId: string): void;
   setFingerprintConfig(id: string, options: FingerprintOptions): void;

@@ -169,5 +169,17 @@ export class A6Site {
     if (!has(observed)) throw new A6Error('route-unverified', '未能读回加入路由结果，请检查站点状态');
     return { verified: true, tokenId: Number(tokenId), model, channelId: Number(channelId), subscriptionId: observed.id, subscriptions };
   }
+  async removeRoute({ tokenId, model, channelId }) {
+    const channel = Number(channelId);
+    const read = async () => (await this.subscriptions()).find(row => Number(row.token_id) === Number(tokenId) && (row.model_name ?? row.model) === model);
+    const members = row => (Array.isArray(row?.channels) ? row.channels : []).map(item => Number(typeof item === 'number' ? item : item?.channel_id ?? item?.id));
+    const existing = await read();
+    if (!existing?.id) throw new A6Error('route-missing', '没有找到该模型的路由池');
+    if (members(existing).includes(channel)) await this.request(`/api/subscriptions/${existing.id}/channels/${channel}`, { method: 'DELETE' });
+    const subscriptions = await this.subscriptions();
+    const observed = subscriptions.find(row => Number(row.token_id) === Number(tokenId) && (row.model_name ?? row.model) === model);
+    if (members(observed).includes(channel)) throw new A6Error('route-unverified', '未能读回取消路由结果，请检查站点状态');
+    return { verified: true, tokenId: Number(tokenId), model, channelId: channel, subscriptions };
+  }
   dispose() { this.controller.abort(); }
 }

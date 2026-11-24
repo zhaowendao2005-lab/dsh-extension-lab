@@ -128,6 +128,7 @@ export class A6Service {
 
   operationState(input) { return this.operations.state(input); }
   keyChannels(input) { return this.operations.channels(input); }
+  removeRoute(input) { return this.operations.removeRoute(input); }
   operationSelect(input) { return this.operations.select(input); }
   operationRefresh(input) { return this.operations.refresh(input); }
   invalidateOperations() { this.operations.invalidate(); }
