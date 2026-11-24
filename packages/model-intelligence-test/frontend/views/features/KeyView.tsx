@@ -43,16 +43,23 @@ function TestRows({ store, entries, loading, error }: { store: Workbench; entrie
   if (!entries.length) return <p className="mit-key-empty">这个渠道还没有关联的测试记录。</p>;
   return <div className="mit-key-tests">
     <table className="mit-key-test-table">
-      <thead><tr><th>时间</th><th>类型</th><th>测试记录</th><th>结果</th><th>操作</th></tr></thead>
+      <colgroup>
+        <col style={{ width: 132 }} />
+        <col style={{ width: 92 }} />
+        <col />
+        <col style={{ width: 220 }} />
+        <col style={{ width: 132 }} />
+      </colgroup>
+      <thead><tr><th scope="col">时间</th><th scope="col">类型</th><th scope="col">测试记录</th><th scope="col">结果</th><th scope="col" className="mit-key-test-actions-head">操作</th></tr></thead>
       <tbody>{entries.map(entry => <tr key={`${entry.attemptId}:${entry.runId ?? 'fp'}`}>
         <td className="mit-key-time mit-tabular">{formatTime(entry.at)}</td>
         <td><Badge tone={entry.recordKind === 'fingerprint' ? 'brand' : 'muted'}>{entry.recordKind === 'fingerprint' ? '指纹测试' : '自定义测试'}</Badge></td>
         <td className="mit-key-record"><button type="button" className="mit-key-link" onClick={() => store.actions.openRecord(entry.recordId)}>{entry.recordName}</button><small>#{entry.attemptNumber} · {STATUS_LABEL[entry.status] ?? entry.status}</small></td>
         <td className="mit-key-result" title={resultOf(entry)}>{resultOf(entry)}</td>
-        <td className="mit-key-actions">
+        <td className="mit-key-actions-cell"><div className="mit-key-test-actions">
           <button type="button" className="mit-text-button" onClick={() => store.actions.openRecord(entry.recordId)}>详情</button>
           {entry.recordKind === 'custom' && entry.runId && <button type="button" className="mit-text-button" onClick={() => store.actions.openChannelTest(entry)}>查看结果</button>}
-        </td>
+        </div></td>
       </tr>)}</tbody>
     </table>
   </div>;

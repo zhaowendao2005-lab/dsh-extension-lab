@@ -127,9 +127,30 @@ function FullscreenShell({ active,children,onExit }: {
     {children}
   </dialog>;
 }
+function WebViewWindow({ store, target }: { store: Workbench; target: NonNullable<Workbench['webview']> }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const preview = useStore(store.custom, state => state.preview);
+  useEffect(() => {
+    document.title = target.title;
+    const el = ref.current;
+    if (el && !el.open) el.showModal();
+  }, [target.title]);
+  useEffect(() => {
+    void store.actions.fetchCustomPreview(target.attemptId, target.runId).catch(() => {});
+  }, [store, target.attemptId, target.runId]);
+  return <dialog ref={ref} className="mit-webview-dialog" aria-label={target.title} onCancel={e => e.preventDefault()}>
+    {preview.html ? <iframe title={target.title} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={preview.html} /> : (
+      <div className="mit-webview-state">
+        <span>{preview.loading ? '正在加载成果…' : preview.error || '此输出类型不支持 HTML 预览'}</span>
+        {!preview.loading && <button type="button" className="mit-text-button" onClick={() => void store.actions.openChannelInBrowser(target.attemptId, target.runId)}>在系统浏览器中打开</button>}
+      </div>
+    )}
+  </dialog>;
+}
 export function Panel({ store }: {
   store: Workbench;
 }) {
+  if (store.webview) return <WebViewWindow store={store} target={store.webview} />;
   const active=useStore(store.workbench,state => state.tabs.find(tab => tab.id===state.activeTab));
   const navigation=useStore(store.workbench,state => state.navigation[state.activeTab]);
   const activeRecord=useStore(store.evaluations,state => state.records.find(record => record.id===active?.recordId));

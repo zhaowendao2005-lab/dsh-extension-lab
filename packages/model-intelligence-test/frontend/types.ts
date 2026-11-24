@@ -249,8 +249,10 @@ export interface ColumnSort { column: string; direction: SortDirection }
 export interface PresentationState { columns: string[]; widths: Record<string, number>; expanded: Record<string, boolean>; followLatest: boolean; columnsOpen: boolean; viewOpen: boolean; configOpen: boolean; filter: string; /** Per-record column sort chosen by the user; missing = default match order. */ sorts: Record<string, ColumnSort> }
 export interface Notice { title: string; message: string; choices: {id: string; label: string; danger?: boolean}[]; input?: string }
 export interface Store<T> { getState(): T; subscribe(listener: () => void): () => void }
+export interface WebViewTarget { attemptId: string; runId: string; title: string }
 export interface Workbench {
  sessionId: string;
+ webview?: WebViewTarget | null;
  workbench: Store<WorkbenchState>; draft: Store<DraftState>; models: Store<ModelsState>; presets: Store<PresetsState>; evaluations: Store<EvaluationsState>; presentation: Store<PresentationState>; a6: Store<A6State>; notice: Store<Notice | null>;
  a6Insights: Store<A6InsightsState>; custom: Store<CustomState>;
  actions: {
@@ -260,7 +262,7 @@ export interface Workbench {
   cancelRecord(id: string): void; renameRecord(id: string): void; deleteRecord(id: string): void; resetRecords(): void; rerunRecord(id: string): void; selectAttempt(recordId: string, attemptId: string): void;
   beginCustomFromFingerprint(recordId: string, runId?: string | string[]): void; startCustomSelection(recordId: string): void; toggleCustomRunSelection(recordId: string, runId: string): void; cancelCustomSelection(): void; createCustomFromSelection(recordId: string): void;
   patchCustom(value: Partial<Pick<CustomDraftState, 'timeoutMs' | 'step'>>): void; removeCustomA6Model(key: string): void; setCustomProtocol(key: string | null, api: A6Protocol): void; toggleCustomToken(id: number): void; resetCustomSource(): void;
-  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser', application?: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void; cancelCustomRun(runId: string): void;
+  setCustomDetailTab(runId: string, tab: CustomDetailTab): void; readCustomFile(runId: string, path: string): void; openCustomOutput(runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser', application?: string): Promise<CustomOutputOpenResult>; fetchCustomPreview(attemptId: string, runId: string): Promise<CustomOutputOpenResult>; openChannelInBrowser(attemptId: string, runId: string): Promise<CustomOutputOpenResult>; dismissPreview(): void; continueCustomRun(runId: string): void; cancelCustomRun(runId: string): void;
   openA6(selectionId: string): void; patchA6(selectionId: string, value: Partial<Pick<A6Draft, 'name' | 'timeoutMs'>>): void;
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;

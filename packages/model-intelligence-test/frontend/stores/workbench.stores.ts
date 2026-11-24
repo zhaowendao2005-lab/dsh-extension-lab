@@ -1,5 +1,5 @@
 import { createStore } from 'zustand/vanilla';
-import type { ChannelTestEntry, ModelIntelligenceTransport, Model, Navigation, Notice, Preset, RecordModelRef, Workbench, WorkbenchState } from '../types';
+import type { ChannelTestEntry, ModelIntelligenceTransport, Model, Navigation, Notice, Preset, RecordModelRef, WebViewTarget, Workbench, WorkbenchState } from '../types';
 import { FIXED_FOOTER_VERSION } from '../types';
 import { createDraftStore, emptyDraft } from './draft.stores';
 import { createModelsDomain } from './models.stores';
@@ -21,8 +21,8 @@ const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, char => 
  * The single global workbench: records are Host-persisted and shared by every session, so one
  * instance serves all mounted panels. The plugin lifecycle owns dispose.
  */
-export interface WorkbenchWindow { fullscreen: boolean; open(): void; close(): void }
-const singletonWindow: WorkbenchWindow = { fullscreen: false, open() {}, close() {} };
+export interface WorkbenchWindow { fullscreen: boolean; webview?: WebViewTarget | null; open(): void; close(): void; openWebView?(target: WebViewTarget): void }
+const singletonWindow: WorkbenchWindow = { fullscreen: false, webview: null, open() {}, close() {} };
 export function createWorkbench(sessionId: string, transport: ModelIntelligenceTransport, openPane: (selectionId: string) => void = () => {}, window: WorkbenchWindow = singletonWindow): Workbench {
   const draft = createDraftStore();
   const modelsDomain = createModelsDomain(transport, keys => draft.setState(state => ({ selected: state.selected.filter(key => keys.has(key)) })));
@@ -152,41 +152,11 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   function openChannelTest(entry: ChannelTestEntry): void {
     if (entry.recordKind !== 'custom' || !entry.runId) { openRecord(entry.recordId); return; }
     const title = `${entry.provider?.trim() || 'a6api'}-${entry.model}`;
-    const popup = typeof globalThis.window?.open === 'function'
-      ? globalThis.window.open('', '_blank', 'width=1200,height=820,menubar=no,toolbar=no,location=no,status=no')
-      : null;
-    if (!popup) {
-      attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'preview').then(() => {}));
+    if (window.openWebView) {
+      window.openWebView({ attemptId: entry.attemptId, runId: entry.runId, title });
       return;
     }
-    try {
-      popup.document.open();
-      popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:0;overflow:hidden;background:#fff;font-family:system-ui,-apple-system,sans-serif}.mit-wv-msg{display:flex;align-items:center;justify-content:center;height:100%;padding:24px;box-sizing:border-box;color:#666;font-size:13px;text-align:center}</style></head><body><div class="mit-wv-msg">正在加载成果…</div></body></html>`);
-      popup.document.close();
-    } catch {
-      try { popup.close(); } catch { /* ignore */ }
-      attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'preview').then(() => {}));
-      return;
-    }
-    attempt('打开成果失败', customDomain.fetchPreview(entry.attemptId, entry.runId).then(result => {
-      if (popup.closed) return;
-      if (!result.html) {
-        popup.close();
-        return customDomain.openOutput(entry.attemptId, entry.runId!, 'browser').then(() => {});
-      }
-      popup.document.title = title;
-      popup.document.body.innerHTML = '';
-      const frame = popup.document.createElement('iframe');
-      frame.setAttribute('sandbox', 'allow-scripts');
-      frame.setAttribute('referrerpolicy', 'no-referrer');
-      frame.title = title;
-      frame.srcdoc = result.html;
-      popup.document.body.appendChild(frame);
-      popup.focus?.();
-    }).catch(error => {
-      try { if (!popup.closed) popup.close(); } catch { /* ignore */ }
-      throw error;
-    }));
+    attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'preview').then(() => {}));
   }
   function promptName(title: string, initial: string, run: (name: string) => void): void {
     ask({ title, message: '名称最多 40 个字。', input: initial, choices: [{ id: 'ok', label: '保存' }, { id: 'cancel', label: '取消' }] }, (choice, input) => {
@@ -297,6 +267,8 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     setCustomDetailTab(runId, tab) { const context = customContext(runId); if (context) customDomain.setTab(context.attemptId, runId, tab); },
     readCustomFile(runId, path) { const context = customContext(runId); if (context) void customDomain.readFile(context.attemptId, runId, path); },
     openCustomOutput(runId, mode, application) { const context = customContext(runId); return context ? customDomain.openOutput(context.attemptId, runId, mode, application) : Promise.reject(new Error('自定义运行已不可用')); },
+    fetchCustomPreview(attemptId, runId) { return customDomain.openOutput(attemptId, runId, 'preview'); },
+    openChannelInBrowser(attemptId, runId) { return customDomain.openOutput(attemptId, runId, 'browser'); },
     continueCustomRun(runId) { const context = customContext(runId); if (context) customDomain.runAction(context.attemptId, runId, 'continue', () => evaluationsDomain.refreshAttempt(context.attemptId)); },
     cancelCustomRun(runId) { const context = customContext(runId); if (context) customDomain.runAction(context.attemptId, runId, 'cancel', () => evaluationsDomain.refreshAttempt(context.attemptId)); },
     dismissPreview() { customDomain.dismissPreview(); },
@@ -456,5 +428,5 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     const ids = new Set(state.records.map(record => record.id));
     for (const tab of workbench.getState().tabs) if (tab.recordId && !ids.has(tab.recordId)) removeTab(tab.id);
   });
-  return { sessionId, ...stores, actions: guardedActions, dispose() { if (disposed) return; disposed = true; unwatch(); unwatchInsights(); unevalInsights(); unaccountInsights(); unprune(); insightsDomain.dispose(); customDomain.dispose(); modelsDomain.dispose(); evaluationsDomain.dispose(); a6Domain.dispose(); noticeAnswer = undefined; notice.setState(null, true); } };
+  return { sessionId, webview: window.webview ?? null, ...stores, actions: guardedActions, dispose() { if (disposed) return; disposed = true; unwatch(); unwatchInsights(); unevalInsights(); unaccountInsights(); unprune(); insightsDomain.dispose(); customDomain.dispose(); modelsDomain.dispose(); evaluationsDomain.dispose(); a6Domain.dispose(); noticeAnswer = undefined; notice.setState(null, true); } };
 }

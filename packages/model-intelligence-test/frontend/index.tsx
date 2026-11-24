@@ -34,15 +34,17 @@ function transportOf(remote: Record<string, (request?: unknown) => Promise<unkno
  return Object.fromEntries(entries) as unknown as ModelIntelligenceTransport;
 }
 // The pane is narrow; a dedicated window renders the same panel full-viewport on the same GUI origin and port.
-const fullscreen = (() => {
-  try {
-    return new URLSearchParams(window.location.search).get('mit') === 'fullscreen';
-  } catch {
-    return false;
-  }
+const urlParams = (() => {
+  try { return new URLSearchParams(window.location.search); }
+  catch { return new URLSearchParams(); }
 })();
+const fullscreen = urlParams.get('mit') === 'fullscreen';
+const webview = urlParams.get('mit') === 'webview' && urlParams.get('mitAttemptId') && urlParams.get('mitRunId')
+  ? { attemptId: urlParams.get('mitAttemptId')!, runId: urlParams.get('mitRunId')!, title: urlParams.get('mitTitle') || '查看结果' }
+  : null;
 const paneWindow = {
  fullscreen,
+ webview,
  open() {
   const url = new URL(window.location.href);
   url.searchParams.set('mit', 'fullscreen');
@@ -52,6 +54,14 @@ const paneWindow = {
   const url = new URL(window.location.href);
   url.searchParams.delete('mit');
   window.location.replace(url.toString());
+ },
+ openWebView(target: { attemptId: string; runId: string; title: string }) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('mit', 'webview');
+  url.searchParams.set('mitAttemptId', target.attemptId);
+  url.searchParams.set('mitRunId', target.runId);
+  url.searchParams.set('mitTitle', target.title);
+  window.open(url.toString(), '_blank', 'noopener');
  },
 };
 window.__ModuleLoader__.load({id: ID, factory(require) {
@@ -77,6 +87,10 @@ window.__ModuleLoader__.load({id: ID, factory(require) {
     name: 'sidebar.right.pane.tab', key: ID, inject: () => ({store: shared()}),
    }, Panel)), `${ID}.body`);
     shared();
+    if (webview) {
+     document.title = webview.title;
+     remoteCtx.sidebarRight.openTab(ID);
+    }
   });
  }};
 }});
