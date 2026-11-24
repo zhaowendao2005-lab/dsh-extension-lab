@@ -159,12 +159,12 @@ export function KeyView({ store }: { store: Workbench }) {
                       <tr className={open ? 'is-open' : ''}>
                         <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
                         <td className="mit-key-channel mit-tabular">#{channel.channelId}</td>
-                        <td className="mit-key-bindings">
+                        <td className="mit-key-bindings"><div className="mit-key-bindings-list">
                           {channel.pinned && <Badge tone="brand">固定</Badge>}
                           {channel.routed && <Badge tone="muted">路由{channel.poolSize > 1 ? `（池 ${channel.poolSize}）` : ''}</Badge>}
                           {channel.routeEffective && <Badge tone="ok">路由生效</Badge>}
                           {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
-                        </td>
+                        </div></td>
                         <td className="mit-key-status">{channel.status || '—'}</td>
                         <td className="mit-key-open"><button type="button" className="mit-text-button" onClick={() => expandRow(channel)} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button></td>
                       </tr>
