@@ -22,6 +22,17 @@
 .mit-workbench .mit-key-summary strong { font-size:13px; }
 .mit-workbench .mit-key-count, .mit-workbench .mit-key-selected { margin-left:auto; font-size:11px; color:var(--mit-text-secondary); }
 .mit-workbench .mit-key-selected { color:var(--mit-brand); font-weight:600; }
+.mit-workbench .mit-key-groups { display:flex; flex-direction:column; gap:10px; }
+.mit-workbench .mit-key-group { border:1px solid var(--mit-border); border-radius:var(--mit-radius-lg); background:var(--mit-layer); }
+.mit-workbench .mit-key-group-head { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--mit-layer-2); border-bottom:1px solid var(--mit-border); }
+.mit-workbench .mit-key-group-head input { accent-color:var(--mit-brand); }
+.mit-workbench .mit-key-group-model { font-size:12.5px; font-weight:650; color:var(--mit-text); }
+.mit-workbench .mit-key-group-count { font-size:11px; color:var(--mit-text-secondary); }
+.mit-workbench .mit-key-group .mit-key-table { border:0; border-radius:0; }
+.mit-workbench .mit-key-table th:nth-child(1), .mit-workbench .mit-key-table td:nth-child(1) { width:36px; }
+.mit-workbench .mit-key-table th:nth-child(2) { width:120px; }
+.mit-workbench .mit-key-table th:nth-child(4) { width:150px; }
+.mit-workbench .mit-key-table th:nth-child(5) { width:120px; }
 .mit-workbench .mit-key-table, .mit-workbench .mit-key-test-table { width:100%; border-collapse:collapse; table-layout:fixed; background:var(--mit-layer); border:1px solid var(--mit-border); border-radius:var(--mit-radius-lg); overflow:hidden; }
 .mit-workbench .mit-key-table th, .mit-workbench .mit-key-test-table th { padding:7px 10px; text-align:left; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--mit-text-muted); background:var(--mit-layer-2); border-bottom:1px solid var(--mit-border); white-space:nowrap; }
 .mit-workbench .mit-key-table td, .mit-workbench .mit-key-test-table td { padding:7px 10px; font-size:12px; border-bottom:1px solid var(--mit-border); vertical-align:middle; }
@@ -38,7 +49,11 @@
 .mit-workbench .mit-key-expand > td { padding:0; background:var(--mit-layer-2); }
 .mit-workbench .mit-key-tests { padding:8px 10px 10px; }
 .mit-workbench .mit-key-test-table { background:var(--mit-layer); }
-.mit-workbench .mit-key-test-table .mit-key-time { width:132px; color:var(--mit-text-secondary); }
+.mit-workbench .mit-key-test-table th:nth-child(1), .mit-workbench .mit-key-test-table .mit-key-time { width:132px; color:var(--mit-text-secondary); }
+.mit-workbench .mit-key-test-table th:nth-child(2) { width:96px; }
+.mit-workbench .mit-key-test-table th:nth-child(4) { width:250px; }
+.mit-workbench .mit-key-test-table th:nth-child(5), .mit-workbench .mit-key-test-table .mit-key-actions { width:132px; }
+.mit-workbench .mit-key-test-table .mit-key-time { white-space:nowrap; }
 .mit-workbench .mit-key-test-table .mit-key-record { min-width:0; }
 .mit-workbench .mit-key-test-table .mit-key-record small { display:block; color:var(--mit-text-muted); font-size:10px; }
 .mit-workbench .mit-key-test-table .mit-key-result { color:var(--mit-text); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

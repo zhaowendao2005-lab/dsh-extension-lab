@@ -81,6 +81,15 @@ export function KeyView({ store }: { store: Workbench }) {
   }, [keyChannels.view, tokenId, keyView.query]);
   const token = tokens.find(item => item.id === tokenId) ?? null;
   const selectedSet = new Set(keyView.selected);
+  const channelsByModel = useMemo(() => {
+    const groups = new Map<string, A6KeyChannel[]>();
+    for (const channel of channels) {
+      const list = groups.get(channel.model);
+      if (list) list.push(channel);
+      else groups.set(channel.model, [channel]);
+    }
+    return [...groups.entries()];
+  }, [channels]);
   const expandRow = (channel: A6KeyChannel): void => {
     const key = rowKey(channel);
     const next = keyView.expanded.includes(key) ? keyView.expanded.filter(item => item !== key) : [...keyView.expanded, key];
@@ -126,33 +135,46 @@ export function KeyView({ store }: { store: Workbench }) {
           {keyChannels.loading && !keyChannels.view && <p className="mit-key-empty">正在读取绑定的渠道…</p>}
           {keyChannels.error && <p className="mit-key-error">{keyChannels.error}</p>}
           {!keyChannels.loading && !keyChannels.error && channels.length === 0 && <p className="mit-key-empty">这个 Key 目前没有固定的模型或路由池。</p>}
-          {channels.length > 0 && <table className="mit-key-table">
-            <thead><tr>
-              <th className="mit-key-check"><input type="checkbox" aria-label="全选渠道" checked={channels.every(channel => selectedSet.has(rowKey(channel)))} onChange={event => store.actions.patchKeyView({selected: event.target.checked ? channels.map(rowKey) : []})}/></th>
-              <th>模型</th><th>渠道</th><th>绑定</th><th>状态</th><th>测试记录</th>
-            </tr></thead>
-            <tbody>{channels.map(channel => {
-              const key = rowKey(channel);
-              const open = keyView.expanded.includes(key);
-              const tests = channelTests[key];
-              return <React.Fragment key={key}>
-                <tr className={open ? 'is-open' : ''}>
-                  <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
-                  <td className="mit-key-model">{channel.model}</td>
-                  <td className="mit-key-channel mit-tabular">#{channel.channelId}</td>
-                  <td className="mit-key-bindings">
-                    {channel.pinned && <Badge tone="brand">固定</Badge>}
-                    {channel.routed && <Badge tone="muted">路由{channel.poolSize > 1 ? `（池 ${channel.poolSize}）` : ''}</Badge>}
-                    {channel.routeEffective && <Badge tone="ok">路由生效</Badge>}
-                    {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
-                  </td>
-                  <td className="mit-key-status">{channel.status || '—'}</td>
-                  <td className="mit-key-open"><button type="button" className="mit-text-button" onClick={() => expandRow(channel)} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button></td>
-                </tr>
-                {open && <tr className="mit-key-expand"><td colSpan={6}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
-              </React.Fragment>;
-            })}</tbody>
-          </table>}
+          {channels.length > 0 && <div className="mit-key-groups">
+            {channelsByModel.map(([model, list], groupIndex) => {
+              const keys = list.map(rowKey);
+              const allSelected = keys.every(key => selectedSet.has(key));
+              const pinned = list.filter(channel => channel.pinned).length;
+              const effective = list.filter(channel => channel.routeEffective).length;
+              return <section className="mit-key-group" key={model}>
+                <header className="mit-key-group-head">
+                  <input type="checkbox" aria-label={`选择 ${model} 的全部渠道`} checked={allSelected} onChange={event => store.actions.patchKeyView({selected: event.target.checked ? [...new Set([...keyView.selected, ...keys])] : keyView.selected.filter(key => !keys.includes(key))})}/>
+                  <strong className="mit-key-group-model">{model}</strong>
+                  <span className="mit-key-group-count">{list.length} 个渠道</span>
+                  {pinned > 0 && <Badge tone="brand">{pinned} 个固定</Badge>}
+                  {effective > 0 && <Badge tone="ok">{effective} 个路由生效</Badge>}
+                </header>
+                <table className="mit-key-table">
+                  {groupIndex === 0 && <thead><tr><th className="mit-key-check"></th><th>渠道</th><th>绑定</th><th>状态</th><th>测试记录</th></tr></thead>}
+                  <tbody>{list.map(channel => {
+                    const key = rowKey(channel);
+                    const open = keyView.expanded.includes(key);
+                    const tests = channelTests[key];
+                    return <React.Fragment key={key}>
+                      <tr className={open ? 'is-open' : ''}>
+                        <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
+                        <td className="mit-key-channel mit-tabular">#{channel.channelId}</td>
+                        <td className="mit-key-bindings">
+                          {channel.pinned && <Badge tone="brand">固定</Badge>}
+                          {channel.routed && <Badge tone="muted">路由{channel.poolSize > 1 ? `（池 ${channel.poolSize}）` : ''}</Badge>}
+                          {channel.routeEffective && <Badge tone="ok">路由生效</Badge>}
+                          {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
+                        </td>
+                        <td className="mit-key-status">{channel.status || '—'}</td>
+                        <td className="mit-key-open"><button type="button" className="mit-text-button" onClick={() => expandRow(channel)} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button></td>
+                      </tr>
+                      {open && <tr className="mit-key-expand"><td colSpan={5}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
+                    </React.Fragment>;
+                  })}</tbody>
+                </table>
+              </section>;
+            })}
+          </div>}
         </>}
       </section>
     </div>
