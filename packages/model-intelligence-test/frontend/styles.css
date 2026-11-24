@@ -5,21 +5,47 @@
 .mit-workbench {
   container-type:inline-size;
   container-name:mit-panel;
+  /* SwissBench skin, 北欧冷雾 (nordic-slate) light + 深空石墨 (obsidian-desk) dark.
+     Every colour resolves through light-dark() against the host's color-scheme, so DSH's
+     own light/dark switch keeps working without a plugin-level theme toggle. */
   --mit-bg:var(--dsw-alias-bg-base,Canvas);
+  --mit-bg:light-dark(#f1f5f9,#111214);
+  --mit-rail:light-dark(#ebf0f6,#151619);
   --mit-layer:var(--dsw-alias-bg-layer-1,Canvas);
+  --mit-layer:light-dark(#ffffff,#1a1b1f);
   --mit-layer-2:var(--dsw-alias-bg-layer-2,ButtonFace);
-  --mit-overlay:var(--dsw-alias-bg-overlay,Canvas);
+  --mit-layer-2:light-dark(#f8fafc,#1f2026);
+  --mit-overlay:light-dark(#ffffff,#1a1b1f);
+  --mit-hover:light-dark(#f3f7fb,#24262d);
+  --mit-track:light-dark(#e2e8f0,#2c2e36);
   --mit-border:var(--dsw-alias-border-l1,GrayText);
+  --mit-border:light-dark(#dce3ec,#2a2c33);
   --mit-border-strong:var(--dsw-alias-border-l2,GrayText);
+  --mit-border-strong:light-dark(#cbd5e1,#343740);
+  --mit-border-hover:light-dark(#94a3b8,#525664);
   --mit-text:var(--dsw-alias-label-primary,CanvasText);
+  --mit-text:light-dark(#0f172a,#ededec);
+  --mit-text-secondary:light-dark(#475569,#a6a8b1);
   --mit-muted:var(--dsw-alias-label-secondary,GrayText);
+  --mit-muted:light-dark(#64748b,#7c7f8a);
+  --mit-faint:light-dark(#94a3b8,#525560);
   --mit-brand:var(--dsw-alias-brand-primary,Highlight);
+  --mit-brand:light-dark(#1d4ed8,#ededec);
+  --mit-brand-hover:light-dark(#1e40af,#d4d4d2);
+  --mit-accent-soft:light-dark(#eff6ff,#262830);
   --mit-error:var(--dsw-alias-state-error-primary,Mark);
+  --mit-error:light-dark(#dc2626,#f87171);
   --mit-success:var(--dsw-alias-state-success-primary,Highlight);
+  --mit-success:light-dark(#15803d,#4ade80);
   --mit-warn:var(--dsw-alias-state-warn-primary,Mark);
+  --mit-warn:light-dark(#b45309,#fbbf24);
+  --mit-radius:4px;
+  --mit-radius-lg:6px;
+  --mit-font-ui:"Plus Jakarta Sans","Noto Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --mit-font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   color:var(--mit-text);
   background:var(--mit-bg);
-  font:inherit;
+  font-family:var(--mit-font-ui);
   font-size:12px;
   line-height:1.5;
   width:100%;
