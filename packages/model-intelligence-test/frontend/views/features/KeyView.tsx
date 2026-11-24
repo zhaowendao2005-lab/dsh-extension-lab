@@ -135,59 +135,66 @@ export function KeyView({ store }: { store: Workbench }) {
           {keyChannels.loading && !keyChannels.view && <p className="mit-key-empty">正在读取绑定的渠道…</p>}
           {keyChannels.error && <p className="mit-key-error">{keyChannels.error}</p>}
           {!keyChannels.loading && !keyChannels.error && channels.length === 0 && <p className="mit-key-empty">这个 Key 目前没有固定的模型或路由池。</p>}
-          {channels.length > 0 && <div className="mit-kv-board">
-            <div className="mit-kv-cols" aria-hidden="true">
-              <span className="mit-kv-col-check"></span>
-              <span>渠道</span>
-              <span>绑定</span>
-              <span>状态</span>
-              <span className="mit-kv-col-right">测试记录</span>
-            </div>
-            <div className="mit-kv-groups">
-              {channelsByModel.map(([model, list]) => {
-                const keys = list.map(rowKey);
-                const allSelected = keys.every(key => selectedSet.has(key));
-                const pinned = list.filter(channel => channel.pinned).length;
-                const effective = list.filter(channel => channel.routeEffective).length;
-                return <section className="mit-kv-group" key={model}>
-                  <header className="mit-kv-group-head">
-                    <span className="mit-kv-col-check">
-                      <input type="checkbox" aria-label={`选择 ${model} 的全部渠道`} checked={allSelected} onChange={event => store.actions.patchKeyView({selected: event.target.checked ? [...new Set([...keyView.selected, ...keys])] : keyView.selected.filter(key => !keys.includes(key))})}/>
-                    </span>
-                    <strong className="mit-kv-group-model">{model}</strong>
-                    <span className="mit-kv-group-count">{list.length} 个渠道</span>
-                    {pinned > 0 && <Badge tone="brand">{pinned} 个固定</Badge>}
-                    {effective > 0 && <Badge tone="ok">{effective} 个路由生效</Badge>}
-                  </header>
-                  <div className="mit-kv-rows">
+          {channels.length > 0 && <div className="mit-key-table-scroll">
+            <table className="mit-key-table">
+              <colgroup>
+                <col style={{ width: 38 }} />
+                <col style={{ width: 110 }} />
+                <col />
+                <col style={{ width: 160 }} />
+                <col style={{ width: 104 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col" className="mit-key-check"><span className="mit-custom-sr-only">选择</span></th>
+                  <th scope="col">渠道</th>
+                  <th scope="col">绑定</th>
+                  <th scope="col">状态</th>
+                  <th scope="col" className="mit-key-open-head">测试记录</th>
+                </tr>
+              </thead>
+              <tbody>
+                {channelsByModel.map(([model, list]) => {
+                  const keys = list.map(rowKey);
+                  const allSelected = keys.every(key => selectedSet.has(key));
+                  const pinned = list.filter(channel => channel.pinned).length;
+                  const effective = list.filter(channel => channel.routeEffective).length;
+                  return <React.Fragment key={model}>
+                    <tr className="mit-key-group-row">
+                      <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${model} 的全部渠道`} checked={allSelected} onChange={event => store.actions.patchKeyView({selected: event.target.checked ? [...new Set([...keyView.selected, ...keys])] : keyView.selected.filter(key => !keys.includes(key))})}/></td>
+                      <td colSpan={4}>
+                        <div className="mit-key-group-head">
+                          <strong className="mit-key-group-model">{model}</strong>
+                          <span className="mit-key-group-count">{list.length} 个渠道</span>
+                          {pinned > 0 && <Badge tone="brand">{pinned} 个固定</Badge>}
+                          {effective > 0 && <Badge tone="ok">{effective} 个路由生效</Badge>}
+                        </div>
+                      </td>
+                    </tr>
                     {list.map(channel => {
                       const key = rowKey(channel);
                       const open = keyView.expanded.includes(key);
                       const tests = channelTests[key];
-                      return <div className={`mit-kv-item${open ? ' is-open' : ''}`} key={key}>
-                        <div className="mit-kv-row">
-                          <span className="mit-kv-col-check">
-                            <input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/>
-                          </span>
-                          <span className="mit-kv-channel mit-tabular">#{channel.channelId}</span>
-                          <div className="mit-kv-bindings">
+                      return <React.Fragment key={key}>
+                        <tr className={open ? 'is-open' : ''}>
+                          <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
+                          <td className="mit-key-channel mit-tabular">#{channel.channelId}</td>
+                          <td className="mit-key-bindings"><div className="mit-key-bindings-list">
                             {channel.pinned && <Badge tone="brand">固定</Badge>}
                             {channel.routed && <Badge tone="muted">路由{channel.poolSize > 1 ? `（池 ${channel.poolSize}）` : ''}</Badge>}
                             {channel.routeEffective && <Badge tone="ok">路由生效</Badge>}
                             {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
-                          </div>
-                          <span className="mit-kv-status" title={channel.status || undefined}>{channel.status || '—'}</span>
-                          <span className="mit-kv-col-right">
-                            <button type="button" className="mit-kv-toggle" onClick={() => expandRow(channel)} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button>
-                          </span>
-                        </div>
-                        {open && <div className="mit-kv-expand"><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></div>}
-                      </div>;
+                          </div></td>
+                          <td className="mit-key-status" title={channel.status || undefined}>{channel.status || '—'}</td>
+                          <td className="mit-key-open"><button type="button" className="mit-text-button" onClick={() => expandRow(channel)} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button></td>
+                        </tr>
+                        {open && <tr className="mit-key-expand"><td colSpan={5}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
+                      </React.Fragment>;
                     })}
-                  </div>
-                </section>;
-              })}
-            </div>
+                  </React.Fragment>;
+                })}
+              </tbody>
+            </table>
           </div>}
         </>}
       </section>
