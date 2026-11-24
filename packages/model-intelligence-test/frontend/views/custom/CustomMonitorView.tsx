@@ -17,7 +17,7 @@ export interface CustomMonitorViewProps {
   onFilter(value: string): void;
   onSelectRun(runId: string): void;
   onRetry(runId: string): void;
-  onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal'): Promise<CustomOutputOpenResult>;
+  onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser'): Promise<CustomOutputOpenResult>;
   renderChannelActions?(model: Model): ReactNode;
   widths?: Record<string, number>;
   onResize?(column: string, width: number): void;
@@ -82,7 +82,7 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
           {withMarket && <td className="mit-col-price" title={marketTitle(market, '输出价')}>{marketPriceCell(market, 'output')}</td>}
           {withMarket && <td className="mit-col-price" title={marketTitle(market, '渠道近 24h 缓存率')}>{marketCacheCell(market)}</td>}
           <td className="mit-col-cost"><span>{cost(summary.usage.cost, summary.usage.currency)}</span><span className="mit-custom-cell-sub">{CUSTOM_BILLING_LABELS[summary.usage.billingState]}</span></td>
-          <td className="mit-col-output">{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ?? '查看成果'} onClick={() => { void onOpenOutput(id, 'preview'); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
+          <td className="mit-col-output">{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ? `在浏览器中打开 ${summary.output.relativePath}` : '在浏览器中打开成果'} onClick={() => { onOpenOutput(id, 'browser').catch(() => {}); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
           <td className="mit-col-actions"><div className="mit-custom-row-actions"><button type="button" className="mit-text-button" onClick={() => onSelectRun(id)}>详情<Icon name="chevron" size={12} /></button>{['failed', 'cancelled', 'interrupted'].includes(summary.phase) && <button type="button" className="mit-text-button" onClick={() => onRetry(id)}>重试</button>}</div></td>
         </tr>;})}</tbody>
       </table>

@@ -3,8 +3,8 @@ import type { Workbench } from '../../types';
 import { Icon } from '../../components/common';
 
 /**
- * Record-level成果预览。列表行的「可查看」直接把 Host 返回的 HTML 交给这个对话框，
- * 因此不必先进入执行详情；iframe 与 Files 页保持同一隔离约定（无 same-origin）。
+ * 成果隔离预览对话框。列表行的「可查看」现在直接交给系统浏览器打开，
+ * 这里留给执行详情页的「预览成果」入口；iframe 与 Files 页保持同一隔离约定（无 same-origin）。
  */
 export function CustomOutputPreview({ store }: { store: Workbench }) {
   const preview = useStore(store.custom, state => state.preview);
