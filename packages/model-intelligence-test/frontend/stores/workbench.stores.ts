@@ -152,11 +152,9 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   function openChannelTest(entry: ChannelTestEntry): void {
     if (entry.recordKind !== 'custom' || !entry.runId) { openRecord(entry.recordId); return; }
     const title = `${entry.provider?.trim() || 'a6api'}-${entry.model}`;
-    if (window.openWebView) {
-      window.openWebView({ attemptId: entry.attemptId, runId: entry.runId, title });
-      return;
-    }
-    attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'preview').then(() => {}));
+    attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'webview', undefined, title).then(result => {
+      if (!result.opened && window.openWebView) window.openWebView({ attemptId: entry.attemptId, runId: entry.runId!, title });
+    }));
   }
   function promptName(title: string, initial: string, run: (name: string) => void): void {
     ask({ title, message: '名称最多 40 个字。', input: initial, choices: [{ id: 'ok', label: '保存' }, { id: 'cancel', label: '取消' }] }, (choice, input) => {

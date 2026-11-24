@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { FingerprintError } from '../fingerprint/engine.js';
 import { tokenIdentity } from '../a6/slots.js';
 import { createSandbox, openSandbox, removeSandbox } from './sandbox.js';
@@ -23,6 +28,77 @@ const publicRun = data => copy(data.summary);
 const summaryError = (code, message, phase, detail = null) => ({ code, message, phase, detail });
 /** One bounded line: the steps view must never receive embedded newlines from a trigger preview. */
 const clipLine = (value, limit = TRIGGER_CAP) => { const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''; return text.length > limit ? `${text.slice(0, limit - 1)}…` : text; };
+const escapeHtml = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] ?? ch));
+function spawnDetached(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: false });
+    child.once('error', reject);
+    child.once('spawn', () => { child.unref(); resolve(); });
+  });
+}
+async function launchWebViewWindow({ html, title }) {
+  const safeTitle = String(title || '查看结果').slice(0, 200);
+  const filePath = path.join(os.tmpdir(), `mit-webview-${randomUUID()}.html`);
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(safeTitle)}</title><style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:0;overflow:hidden;background:#fff}</style></head><body><iframe sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="${escapeHtml(html)}"></iframe></body></html>`;
+  await fs.writeFile(filePath, doc, { encoding: 'utf8', mode: 0o600 });
+  const fileUrl = pathToFileURL(filePath).href;
+  if (process.platform === 'darwin') {
+    const jxa = `
+ObjC.import('Cocoa');
+ObjC.import('WebKit');
+var app = $.NSApplication.sharedApplication;
+app.setActivationPolicy($.NSApplicationActivationPolicyRegular);
+ObjC.registerSubclass({
+  name: 'MitWebViewDelegate',
+  methods: {
+    'applicationShouldTerminateAfterLastWindowClosed:': { types: ['bool', ['id']], implementation: function() { return true; } }
+  }
+});
+var delegate = $.MitWebViewDelegate.alloc.init;
+app.setDelegate(delegate);
+var style = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskMiniaturizable | $.NSWindowStyleMaskResizable;
+var rect = $.NSMakeRect(0, 0, 1200, 820);
+var win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect, style, $.NSBackingStoreBuffered, false);
+win.setTitle(${JSON.stringify(safeTitle)});
+win.center;
+var webview = $.WKWebView.alloc.initWithFrame(rect);
+var url = $.NSURL.URLWithString(${JSON.stringify(fileUrl)});
+webview.loadFileURLAllowingReadAccessToURL(url, url.URLByDeletingLastPathComponent);
+win.setContentView(webview);
+win.makeKeyAndOrderFront(null);
+app.activateIgnoringOtherApps(true);
+app.run;
+`;
+    await spawnDetached('osascript', ['-l', 'JavaScript', '-e', jxa]);
+    return { opened: true, filePath };
+  }
+  if (process.platform === 'win32') {
+    const candidates = [
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      'msedge.exe',
+      'chrome.exe',
+    ].filter(Boolean);
+    const exe = candidates.find(item => !item.includes('\\') || existsSync(item));
+    if (exe) {
+      try {
+        await spawnDetached(exe, [`--app=${fileUrl}`, '--window-size=1200,820']);
+        return { opened: true, filePath };
+      } catch { /* fall through */ }
+    }
+    return { opened: false, filePath };
+  }
+  for (const bin of ['google-chrome', 'chromium', 'microsoft-edge']) {
+    try {
+      await spawnDetached(bin, [`--app=${fileUrl}`, '--window-size=1200,820']);
+      return { opened: true, filePath };
+    } catch { /* try next */ }
+  }
+  return { opened: false, filePath };
+}
 /** Latest integer turn/step pair the Host recorded for the run; both stay null until one is observed. */
 const latestTurnStep = events => {
   for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -553,11 +629,23 @@ export class CustomCoordinator {
     const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');
     return (await openSandbox({ root: data.root })).read(file);
   }
-  async open({ attemptId, runId, mode = 'preview', application }) {
+  async open({ attemptId, runId, mode = 'preview', application, title }) {
     const data = await this.load(attemptId, runId); if (!data.root) throw err('sandbox-unavailable', '沙箱尚未就绪');
     const sandbox = await openSandbox({ root: data.root });
     const output = await sandbox.output();
     if (output.state !== 'ready') throw err('output-invalid', '输出文件不存在或未通过验证');
+    if (mode === 'webview') {
+      const preview = await sandbox.preview();
+      if (!preview) throw err('preview-unavailable', '此输出类型不支持 WebView 预览，请在文件中查看');
+      const launched = await launchWebViewWindow({ html: preview.html, title });
+      if (launched.opened) return { opened: true, path: output.relativePath };
+      let opener; try { opener = this.ctx.get('sessionController'); } catch { opener = null; }
+      if (opener?.openWorkspacePath && opener.canOpenWorkspacePath?.()) {
+        const opened = await opener.openWorkspacePath({ path: launched.filePath });
+        return { ...opened, path: output.relativePath };
+      }
+      return { opened: false, path: output.relativePath };
+    }
     if (mode === 'vscode' || mode === 'reveal') {
       let opener; try { opener = this.ctx.get('sessionController'); } catch { opener = null; }
       if (!opener?.openWorkspacePath || !opener.canOpenWorkspacePath?.()) throw err('opener-unavailable', '当前运行时不是桌面版，无法在本机应用中打开文件');

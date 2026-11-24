@@ -44,7 +44,7 @@ const schemas = {
   attemptRetry: z.strictObject({ attemptId: id(), model: modelRef }),
   customRunDetail: z.strictObject({ ...customRun, revision: z.number().int().nonnegative().optional() }),
   customFileRead: z.strictObject({ ...customRun, path: z.string().min(1).max(512) }),
-  customOutputOpen: z.strictObject({ ...customRun, mode: z.enum(['preview', 'vscode', 'reveal', 'browser']).optional(), application: z.string().min(1).max(512).optional() }),
+  customOutputOpen: z.strictObject({ ...customRun, mode: z.enum(['preview', 'vscode', 'reveal', 'browser', 'webview']).optional(), application: z.string().min(1).max(512).optional(), title: z.string().min(1).max(256).optional() }),
   customRunContinue: z.strictObject({ ...customRun }),
   customRunCancel: z.strictObject({ ...customRun }),
   a6ConfigSave: z.strictObject({ accessToken: z.string().max(512).optional(), userId: z.string().max(40).optional() }),

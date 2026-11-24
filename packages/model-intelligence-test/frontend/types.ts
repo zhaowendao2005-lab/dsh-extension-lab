@@ -209,7 +209,7 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  attemptRetry(request: {attemptId: string; model: {provider: string; id: string}}): Promise<AttemptViewResult>;
  customRunDetail(request: {attemptId: string; runId: string; revision?: number}): Promise<CustomRunDetailResult>;
  customFileRead(request: {attemptId: string; runId: string; path: string}): Promise<CustomFileReadResult>;
- customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal' | 'browser'; application?: string}): Promise<CustomOutputOpenResult>;
+ customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal' | 'browser' | 'webview'; application?: string; title?: string}): Promise<CustomOutputOpenResult>;
  customRunContinue(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  customRunCancel(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  a6CustomFromRecord(request: {recordId: string; name: string; models: CustomA6ModelRef[]; slots?: A6Slot[]; dshModels?: RecordModelRef[]; prompt: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; timeoutMs?: number}): Promise<{record: StoredRecord; attemptId: string}>;

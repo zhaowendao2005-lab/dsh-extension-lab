@@ -70,7 +70,7 @@ var schemas = {
   attemptRetry: z2.strictObject({ attemptId: id(), model: modelRef }),
   customRunDetail: z2.strictObject({ ...customRun, revision: z2.number().int().nonnegative().optional() }),
   customFileRead: z2.strictObject({ ...customRun, path: z2.string().min(1).max(512) }),
-  customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode", "reveal", "browser"]).optional(), application: z2.string().min(1).max(512).optional() }),
+  customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode", "reveal", "browser", "webview"]).optional(), application: z2.string().min(1).max(512).optional(), title: z2.string().min(1).max(256).optional() }),
   customRunContinue: z2.strictObject({ ...customRun }),
   customRunCancel: z2.strictObject({ ...customRun }),
   a6ConfigSave: z2.strictObject({ accessToken: z2.string().max(512).optional(), userId: z2.string().max(40).optional() }),
@@ -3601,7 +3601,12 @@ var A6Ledger = class {
 
 // backend/custom/coordinator.js
 import { randomUUID as randomUUID5 } from "node:crypto";
+import { spawn } from "node:child_process";
+import fs3 from "node:fs/promises";
+import { existsSync } from "node:fs";
+import os from "node:os";
 import path3 from "node:path";
+import { pathToFileURL } from "node:url";
 
 // backend/custom/sandbox.js
 import * as fs2 from "node:fs/promises";
@@ -5549,6 +5554,82 @@ var clipLine = (value, limit = TRIGGER_CAP) => {
   const text4 = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   return text4.length > limit ? `${text4.slice(0, limit - 1)}\u2026` : text4;
 };
+var escapeHtml = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+function spawnDetached(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: false });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+async function launchWebViewWindow({ html, title }) {
+  const safeTitle = String(title || "\u67E5\u770B\u7ED3\u679C").slice(0, 200);
+  const filePath = path3.join(os.tmpdir(), `mit-webview-${randomUUID5()}.html`);
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(safeTitle)}</title><style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:0;overflow:hidden;background:#fff}</style></head><body><iframe sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="${escapeHtml(html)}"></iframe></body></html>`;
+  await fs3.writeFile(filePath, doc, { encoding: "utf8", mode: 384 });
+  const fileUrl = pathToFileURL(filePath).href;
+  if (process.platform === "darwin") {
+    const jxa = `
+ObjC.import('Cocoa');
+ObjC.import('WebKit');
+var app = $.NSApplication.sharedApplication;
+app.setActivationPolicy($.NSApplicationActivationPolicyRegular);
+ObjC.registerSubclass({
+  name: 'MitWebViewDelegate',
+  methods: {
+    'applicationShouldTerminateAfterLastWindowClosed:': { types: ['bool', ['id']], implementation: function() { return true; } }
+  }
+});
+var delegate = $.MitWebViewDelegate.alloc.init;
+app.setDelegate(delegate);
+var style = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskMiniaturizable | $.NSWindowStyleMaskResizable;
+var rect = $.NSMakeRect(0, 0, 1200, 820);
+var win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(rect, style, $.NSBackingStoreBuffered, false);
+win.setTitle(${JSON.stringify(safeTitle)});
+win.center;
+var webview = $.WKWebView.alloc.initWithFrame(rect);
+var url = $.NSURL.URLWithString(${JSON.stringify(fileUrl)});
+webview.loadFileURLAllowingReadAccessToURL(url, url.URLByDeletingLastPathComponent);
+win.setContentView(webview);
+win.makeKeyAndOrderFront(null);
+app.activateIgnoringOtherApps(true);
+app.run;
+`;
+    await spawnDetached("osascript", ["-l", "JavaScript", "-e", jxa]);
+    return { opened: true, filePath };
+  }
+  if (process.platform === "win32") {
+    const candidates = [
+      path3.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Microsoft", "Edge", "Application", "msedge.exe"),
+      path3.join(process.env.ProgramFiles || "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe"),
+      path3.join(process.env.LOCALAPPDATA || "", "Microsoft", "Edge", "Application", "msedge.exe"),
+      path3.join(process.env.ProgramFiles || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+      path3.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+      "msedge.exe",
+      "chrome.exe"
+    ].filter(Boolean);
+    const exe = candidates.find((item) => !item.includes("\\") || existsSync(item));
+    if (exe) {
+      try {
+        await spawnDetached(exe, [`--app=${fileUrl}`, "--window-size=1200,820"]);
+        return { opened: true, filePath };
+      } catch {
+      }
+    }
+    return { opened: false, filePath };
+  }
+  for (const bin of ["google-chrome", "chromium", "microsoft-edge"]) {
+    try {
+      await spawnDetached(bin, [`--app=${fileUrl}`, "--window-size=1200,820"]);
+      return { opened: true, filePath };
+    } catch {
+    }
+  }
+  return { opened: false, filePath };
+}
 var latestTurnStep = (events) => {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -6173,12 +6254,29 @@ var CustomCoordinator = class {
     if (!data.root) throw err("sandbox-unavailable", "\u6C99\u7BB1\u5C1A\u672A\u5C31\u7EEA");
     return (await openSandbox({ root: data.root })).read(file);
   }
-  async open({ attemptId, runId, mode = "preview", application }) {
+  async open({ attemptId, runId, mode = "preview", application, title }) {
     const data = await this.load(attemptId, runId);
     if (!data.root) throw err("sandbox-unavailable", "\u6C99\u7BB1\u5C1A\u672A\u5C31\u7EEA");
     const sandbox = await openSandbox({ root: data.root });
     const output = await sandbox.output();
     if (output.state !== "ready") throw err("output-invalid", "\u8F93\u51FA\u6587\u4EF6\u4E0D\u5B58\u5728\u6216\u672A\u901A\u8FC7\u9A8C\u8BC1");
+    if (mode === "webview") {
+      const preview2 = await sandbox.preview();
+      if (!preview2) throw err("preview-unavailable", "\u6B64\u8F93\u51FA\u7C7B\u578B\u4E0D\u652F\u6301 WebView \u9884\u89C8\uFF0C\u8BF7\u5728\u6587\u4EF6\u4E2D\u67E5\u770B");
+      const launched = await launchWebViewWindow({ html: preview2.html, title });
+      if (launched.opened) return { opened: true, path: output.relativePath };
+      let opener;
+      try {
+        opener = this.ctx.get("sessionController");
+      } catch {
+        opener = null;
+      }
+      if (opener?.openWorkspacePath && opener.canOpenWorkspacePath?.()) {
+        const opened = await opener.openWorkspacePath({ path: launched.filePath });
+        return { ...opened, path: output.relativePath };
+      }
+      return { opened: false, path: output.relativePath };
+    }
     if (mode === "vscode" || mode === "reveal") {
       let opener;
       try {

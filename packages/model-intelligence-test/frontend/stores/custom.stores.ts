@@ -105,12 +105,12 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
       try { const file = await readFile(transport, { attemptId, runId, path }); if (!disposed && requests.get(`${id}:file`) === request) setEntry(id, { file, fileLoading: false }); }
       catch (error) { if (!disposed && requests.get(`${id}:file`) === request) setEntry(id, { fileLoading: false, error: error instanceof Error ? error.message : '读取文件失败' }); }
     },
-    async openOutput(attemptId: string, runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser', application?: string) {
+    async openOutput(attemptId: string, runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser' | 'webview', application?: string, title?: string) {
       const id = keyOf(attemptId, runId);
       setEntry(id, { previewLoading: true, error: undefined });
       if (mode === 'preview') store.setState({ preview: { open: true, loading: true, html: null, path: null, label: runId } });
       try {
-        const result = await openOutput(transport, { attemptId, runId, mode, ...(application ? { application } : {}) });
+        const result = await openOutput(transport, { attemptId, runId, mode, ...(application ? { application } : {}), ...(title ? { title } : {}) });
         setEntry(id, { previewLoading: false, previewPath: result.path });
         if (mode === 'preview' && !disposed) store.setState({ preview: { open: true, loading: false, html: result.html ?? null, path: result.path ?? null, label: runId } });
         return result;
