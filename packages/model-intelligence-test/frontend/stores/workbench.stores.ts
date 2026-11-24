@@ -15,6 +15,7 @@ let sequence = 0;
 const uniqueId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}-${(++sequence).toString(36)}`;
 
 const message = (error: unknown, fallback: string): string => error instanceof Error && error.message ? error.message : fallback;
+const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] ?? char));
 
 /**
  * The single global workbench: records are Host-persisted and shared by every session, so one
@@ -150,7 +151,42 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   }
   function openChannelTest(entry: ChannelTestEntry): void {
     if (entry.recordKind !== 'custom' || !entry.runId) { openRecord(entry.recordId); return; }
-    attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'browser').then(() => {}));
+    const title = `${entry.provider?.trim() || 'a6api'}-${entry.model}`;
+    const popup = typeof globalThis.window?.open === 'function'
+      ? globalThis.window.open('', '_blank', 'width=1200,height=820,menubar=no,toolbar=no,location=no,status=no')
+      : null;
+    if (!popup) {
+      attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'preview').then(() => {}));
+      return;
+    }
+    try {
+      popup.document.open();
+      popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:0;overflow:hidden;background:#fff;font-family:system-ui,-apple-system,sans-serif}.mit-wv-msg{display:flex;align-items:center;justify-content:center;height:100%;padding:24px;box-sizing:border-box;color:#666;font-size:13px;text-align:center}</style></head><body><div class="mit-wv-msg">正在加载成果…</div></body></html>`);
+      popup.document.close();
+    } catch {
+      try { popup.close(); } catch { /* ignore */ }
+      attempt('打开成果失败', customDomain.openOutput(entry.attemptId, entry.runId, 'preview').then(() => {}));
+      return;
+    }
+    attempt('打开成果失败', customDomain.fetchPreview(entry.attemptId, entry.runId).then(result => {
+      if (popup.closed) return;
+      if (!result.html) {
+        popup.close();
+        return customDomain.openOutput(entry.attemptId, entry.runId!, 'browser').then(() => {});
+      }
+      popup.document.title = title;
+      popup.document.body.innerHTML = '';
+      const frame = popup.document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+      frame.title = title;
+      frame.srcdoc = result.html;
+      popup.document.body.appendChild(frame);
+      popup.focus?.();
+    }).catch(error => {
+      try { if (!popup.closed) popup.close(); } catch { /* ignore */ }
+      throw error;
+    }));
   }
   function promptName(title: string, initial: string, run: (name: string) => void): void {
     ask({ title, message: '名称最多 40 个字。', input: initial, choices: [{ id: 'ok', label: '保存' }, { id: 'cancel', label: '取消' }] }, (choice, input) => {

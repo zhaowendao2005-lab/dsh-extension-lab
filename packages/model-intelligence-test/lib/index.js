@@ -1759,6 +1759,7 @@ var RecordsService = class {
         entries.push({
           ...base(record, attempt),
           runId: null,
+          provider: run.provider ?? (record.a6api ? "a6api" : null),
           fingerprint: {
             stage: run.stage ?? null,
             decision: run.analysis?.decision ?? null,
@@ -1776,6 +1777,7 @@ var RecordsService = class {
         entries.push({
           ...base(record, attempt),
           runId: run.id ?? null,
+          provider: run.target?.providerId ?? (run.target?.kind === "a6api" ? "a6api" : null) ?? (record.a6api ? "a6api" : null),
           fingerprint: null,
           custom: {
             phase: run.phase ?? null,

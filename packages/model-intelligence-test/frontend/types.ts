@@ -35,7 +35,7 @@ export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'restore'; messa
 export interface A6KeyChannel { model: string; channelId: number; supplierId: number; pinned: boolean; routed: boolean; routeEffective: boolean; poolSize: number; status: string }
 export interface A6KeyChannelsView { tokenId: number; channels: A6KeyChannel[]; generatedAt: number; cached?: boolean }
 export interface ChannelTestEntry {
-  recordId: string; recordName: string; recordKind: TestKind; attemptId: string; attemptNumber: number; status: AttemptStatus; at: number | null; model: string; channelId: number; runId: string | null;
+  recordId: string; recordName: string; recordKind: TestKind; attemptId: string; attemptNumber: number; status: AttemptStatus; at: number | null; model: string; channelId: number; runId: string | null; provider?: string | null;
   fingerprint: {stage: string | null; decision: string | null; probability: number | null; predictionName: string | null; usedOutputs: number | null; samples: {total: number; ended: number}} | null;
   custom: {phase: string | null; outputState: string | null; outputPath: string | null; inputTokens: number | null; outputTokens: number | null; cost: number | null; ttftMs: number | null; modelTokensPerSecond: number | null; error: string | null} | null;
 }
