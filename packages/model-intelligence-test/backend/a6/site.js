@@ -136,6 +136,9 @@ export class A6Site {
       currency: text(row.pricing_currency, 8), unit: text(row.pricing_unit, 32),
       input: number(row.input_price_micros), output: number(row.output_price_micros),
       cacheRead: number(row.cache_read_price_micros), cacheWrite: number(row.cache_write_price_micros), perRequest: number(row.per_request_price_micros),
+      // Site performance stats: basis-point 24h cache rate gated by its state, p50 first-token latency, token throughput.
+      cacheHitRate24h: number(row.cache_hit_rate_24h), cacheHitState: text(row.cache_hit_state, 40) || undefined,
+      ttftMs: number(row.p50_ttft_ms), throughputTps: number(row.throughput_tps),
     }));
   }
   async billingSettings() {

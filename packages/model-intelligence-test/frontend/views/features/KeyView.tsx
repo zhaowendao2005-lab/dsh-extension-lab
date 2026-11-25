@@ -51,6 +51,24 @@ function priceText(price: A6ChannelPrice | undefined, field: 'input' | 'output' 
   return `¥${String(Number((value / 1_000_000 * cny).toFixed(4)))}`;
 }
 
+/** Site market stats for the picked listing: 24h cache rate (basis points, state-gated), throughput, p50 first-token latency. */
+const PERF_FIELDS: {label: string; title: string; text: (price: A6ChannelPrice | undefined) => string}[] = [
+  {label: '24h 缓存率', title: '渠道近 24 小时缓存命中率，站点统计口径，非本次测试命中率', text: price => {
+    if (price?.cacheHitState === 'no_data') return '暂无';
+    const rate = price?.cacheHitRate24h;
+    return typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 10_000 ? `${(rate / 100).toFixed(1)}%` : '—';
+  }},
+  {label: '吞吐', title: '站点统计的渠道吞吐，Token/秒', text: price => {
+    const tps = price?.throughputTps;
+    return typeof tps === 'number' && Number.isFinite(tps) && tps > 0 ? `${String(Number(tps.toFixed(1)))} t/s` : '—';
+  }},
+  {label: '首字', title: '站点统计的渠道首字延迟（p50 TTFT）', text: price => {
+    const ms = price?.ttftMs;
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return '—';
+    return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
+  }},
+];
+
 function Badge({ children, tone }: { children: React.ReactNode; tone?: 'brand' | 'ok' | 'warn' | 'fail' | 'muted' }) {
   return <span className={`mit-key-badge${tone ? ` is-${tone}` : ''}`}>{children}</span>;
 }
@@ -193,6 +211,7 @@ export function KeyView({ store }: { store: Workbench }) {
                 <col />
                 <col style={{ width: 150 }} />
                 <col style={{ width: 240 }} />
+                <col style={{ width: 200 }} />
                 <col style={{ width: 300 }} />
               </colgroup>
               <thead>
@@ -204,6 +223,10 @@ export function KeyView({ store }: { store: Workbench }) {
                   <th scope="col" className="mit-key-price-head" title={pricesNote}>
                     <span className="mit-key-price-title">渠道价格</span>
                     <span className="mit-key-price-labels">{PRICE_FIELDS.map(item => <span key={item.field}>{item.label}</span>)}</span>
+                  </th>
+                  <th scope="col" className="mit-key-price-head" title={pricesNote}>
+                    <span className="mit-key-price-title">渠道表现</span>
+                    <span className="mit-key-price-labels is-perf">{PERF_FIELDS.map(item => <span key={item.label} title={item.title}>{item.label}</span>)}</span>
                   </th>
                   <th scope="col">测试记录</th>
                 </tr>
@@ -218,7 +241,7 @@ export function KeyView({ store }: { store: Workbench }) {
                   return <React.Fragment key={model}>
                     <tr className="mit-key-group-row">
                       <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${model} 的全部渠道`} checked={allSelected} onChange={event => store.actions.patchKeyView({selected: event.target.checked ? [...new Set([...keyView.selected, ...keys])] : keyView.selected.filter(key => !keys.includes(key))})}/></td>
-                      <td colSpan={5}>
+                      <td colSpan={6}>
                         <div className="mit-key-group-head">
                           <strong className="mit-key-group-model">{model}</strong>
                           <span className="mit-key-group-count">{list.length} 个渠道</span>
@@ -250,6 +273,9 @@ export function KeyView({ store }: { store: Workbench }) {
                           <td className="mit-key-price" title={pricesNote}><div className="mit-key-price-grid">
                             {PRICE_FIELDS.map(item => <span key={item.field} className="mit-tabular">{priceText(prices[key], item.field, exchangeRate)}</span>)}
                           </div></td>
+                          <td className="mit-key-price"><div className="mit-key-price-grid is-perf">
+                            {PERF_FIELDS.map(item => <span key={item.label} className="mit-tabular" title={item.title}>{item.text(prices[key])}</span>)}
+                          </div></td>
                           <td className="mit-key-open">
                             <div className="mit-key-tests-cell">
                               <div className="mit-key-latest">
@@ -263,7 +289,7 @@ export function KeyView({ store }: { store: Workbench }) {
                             </div>
                           </td>
                         </tr>
-                        {open && <tr className="mit-key-expand"><td colSpan={6}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
+                        {open && <tr className="mit-key-expand"><td colSpan={7}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
                       </React.Fragment>;
                     })}
                   </React.Fragment>;

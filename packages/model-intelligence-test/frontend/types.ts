@@ -34,7 +34,7 @@ export interface A6LedgerEntry { view?: A6LedgerView; loading: boolean; error?: 
 export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'unpin' | 'unroute' | 'restore'; message?: string; error?: string }
 export interface A6KeyChannel { model: string; channelId: number; supplierId: number; pinned: boolean; routed: boolean; routeEffective: boolean; poolSize: number; status: string }
 export interface ChannelTestSummary { total: number; latest: ChannelTestEntry | null }
-export interface A6ChannelPrice { currency: string | null; unit: string | null; chargeType: string | null; input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; perRequest: number | null }
+export interface A6ChannelPrice { currency: string | null; unit: string | null; chargeType: string | null; input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; perRequest: number | null; cacheHitRate24h?: number | null; cacheHitState?: string | null; ttftMs?: number | null; throughputTps?: number | null }
 export interface A6KeyChannelPricesView { tokenId: number; prices: Record<string, A6ChannelPrice>; exchangeRate: number | null; generatedAt: number; error?: string | null }
 export interface A6KeyChannelsView { tokenId: number; channels: A6KeyChannel[]; generatedAt: number; cached?: boolean; tests?: Record<string, ChannelTestSummary>; testsGeneratedAt?: number | null; testsError?: string | null }
 export interface ChannelTestEntry {

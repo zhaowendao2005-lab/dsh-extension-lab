@@ -366,7 +366,8 @@ export class A6Operations {
         const pool = available.length ? available : rows;
         const pick = pool.reduce((best, row) => best === null || (row.input ?? Infinity) < (best.input ?? Infinity) ? row : best, null);
         prices[priceKey(channel.model, channel.channelId)] = { currency: pick.currency ?? null, unit: pick.unit ?? null, chargeType: pick.chargeType ?? null,
-          input: pick.input ?? null, output: pick.output ?? null, cacheRead: pick.cacheRead ?? null, cacheWrite: pick.cacheWrite ?? null, perRequest: pick.perRequest ?? null };
+          input: pick.input ?? null, output: pick.output ?? null, cacheRead: pick.cacheRead ?? null, cacheWrite: pick.cacheWrite ?? null, perRequest: pick.perRequest ?? null,
+          cacheHitRate24h: pick.cacheHitRate24h ?? null, cacheHitState: pick.cacheHitState ?? null, ttftMs: pick.ttftMs ?? null, throughputTps: pick.throughputTps ?? null };
       } catch { failures += 1; }
     }));
     let exchangeRate = null;

@@ -2287,7 +2287,12 @@ var A6Site = class {
       output: number(row.output_price_micros),
       cacheRead: number(row.cache_read_price_micros),
       cacheWrite: number(row.cache_write_price_micros),
-      perRequest: number(row.per_request_price_micros)
+      perRequest: number(row.per_request_price_micros),
+      // Site performance stats: basis-point 24h cache rate gated by its state, p50 first-token latency, token throughput.
+      cacheHitRate24h: number(row.cache_hit_rate_24h),
+      cacheHitState: text(row.cache_hit_state, 40) || void 0,
+      ttftMs: number(row.p50_ttft_ms),
+      throughputTps: number(row.throughput_tps)
     }));
   }
   async billingSettings() {
@@ -2969,7 +2974,11 @@ var A6Operations = class {
           output: pick.output ?? null,
           cacheRead: pick.cacheRead ?? null,
           cacheWrite: pick.cacheWrite ?? null,
-          perRequest: pick.perRequest ?? null
+          perRequest: pick.perRequest ?? null,
+          cacheHitRate24h: pick.cacheHitRate24h ?? null,
+          cacheHitState: pick.cacheHitState ?? null,
+          ttftMs: pick.ttftMs ?? null,
+          throughputTps: pick.throughputTps ?? null
         };
       } catch {
         failures += 1;
