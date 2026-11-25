@@ -125,6 +125,11 @@ export function KeyView({ store }: { store: Workbench }) {
     store.actions.patchKeyView({expanded: next});
     if (next.includes(key) && !channelTests[key]?.view && !channelTests[key]?.loading) store.actions.loadChannelTests(channel.model, channel.channelId);
   };
+  useEffect(() => {
+    if (keyView.testTokenId !== null) return;
+    const candidate = tokens.find(item => item.id !== tokenId) ?? tokens[0];
+    if (candidate) store.actions.patchKeyView({testTokenId: candidate.id});
+  }, [tokens, tokenId, keyView.testTokenId, store]);
   const selectedRouted = channels.filter(channel => keyView.selected.includes(rowKey(channel)) && channel.routed);
   const removeRoutes = (): void => {
     if (!selectedRouted.length) return;
@@ -165,14 +170,37 @@ export function KeyView({ store }: { store: Workbench }) {
             <strong>Key #{tokenId}</strong>
             {token && <span className="mit-muted">{token.name || '未命名'}{token.maskedKey ? ` · ${token.maskedKey}` : ''}</span>}
             <span className="mit-key-count">{channels.length} 个渠道</span>
-            {keyView.selected.length > 0 && <span className="mit-key-selected">已选 {keyView.selected.length} 个渠道</span>}
-            {selectedRouted.length > 0 && <button type="button" className="mit-key-route-remove" disabled={keyChannels.loading} onClick={removeRoutes} title="把选中的渠道从模型路由池里移除">取消路由 · {selectedRouted.length}</button>}
-            {channels.length > 0 && <span className="mit-key-hint">「固定」「路由」标记可直接点击取消</span>}
+            {channels.length > 0 && <span className="mit-key-hint">「固定」「路由」标记可直接点击取消；悬停绑定列可把渠道固定到该模型</span>}
             {keyChannels.view?.testsError && <span className="mit-key-tests-error">测试记录统计不可用：{keyChannels.view.testsError}</span>}
           </div>
           {keyChannels.loading && !keyChannels.view && <p className="mit-key-empty">正在读取绑定的渠道…</p>}
           {keyChannels.error && <p className="mit-key-error">{keyChannels.error}</p>}
           {!keyChannels.loading && !keyChannels.error && channels.length === 0 && <p className="mit-key-empty">这个 Key 目前没有固定的模型或路由池。</p>}
+          {channels.length > 0 && <div className="mit-key-ops" aria-label="批量操作">
+            <div className="mit-key-ops-row">
+              <span className="mit-key-ops-count">{keyView.selected.length > 0 ? `已选 ${keyView.selected.length} 个渠道` : '勾选左侧复选框后可批量操作'}</span>
+              <button type="button" className="mit-key-route-remove" disabled={!selectedRouted.length || keyChannels.loading} onClick={removeRoutes} title="把选中的渠道从模型路由池里移除"><Icon name="trash" size={12}/>取消路由{selectedRouted.length ? ` · ${selectedRouted.length}` : ''}</button>
+            </div>
+            <div className="mit-key-ops-row">
+              <span className="mit-key-ops-label">批量测试</span>
+              <div className="mit-key-seg" role="group" aria-label="测试类型">
+                <button type="button" className={keyView.testKind === 'fingerprint' ? 'is-active' : ''} onClick={() => store.actions.patchKeyView({testKind: 'fingerprint'})}>指纹</button>
+                <button type="button" className={keyView.testKind === 'custom' ? 'is-active' : ''} onClick={() => store.actions.patchKeyView({testKind: 'custom'})}>自定义</button>
+              </div>
+              <label className="mit-key-slot">测试令牌
+                <select value={keyView.testTokenId ?? ''} onChange={event => store.actions.patchKeyView({testTokenId: event.target.value ? Number(event.target.value) : null})}>
+                  <option value="">选择令牌…</option>
+                  {tokens.map(item => <option key={item.id} value={item.id}>#{item.id} {item.name || '未命名'}{item.maskedKey ? ` · ${item.maskedKey}` : ''}</option>)}
+                </select>
+              </label>
+              {keyView.testKind === 'custom' && <label className="mit-key-prompt">提示词
+                <input value={keyView.testPrompt} onChange={event => store.actions.patchKeyView({testPrompt: event.target.value})} placeholder="这条自定义测试要发送的提示词"/>
+              </label>}
+              <button type="button" className="mit-key-start" disabled={!keyView.selected.length || keyView.testing || keyChannels.loading} onClick={() => store.actions.runKeyTest()}><Icon name="play" size={12}/>{keyView.testing ? '正在创建…' : `开始测试${keyView.selected.length ? ` · ${keyView.selected.length} 项` : ''}`}</button>
+            </div>
+            {keyView.testError && <p className="mit-key-error">{keyView.testError}</p>}
+            <p className="mit-key-ops-hint">测试令牌不能已有站点固定（否则会被站点拒绝），建议用专用测试 Key；测试结束后固定会自动恢复。</p>
+          </div>}
           {channels.length > 0 && <div className="mit-key-table-scroll">
             <table className="mit-key-table">
               <colgroup>
@@ -230,6 +258,7 @@ export function KeyView({ store }: { store: Workbench }) {
                           <td className="mit-key-bindings"><div className="mit-key-bindings-list">
                             {channel.pinned && <button type="button" className="mit-key-badge is-brand is-action" disabled={keyChannels.loading} title="点击取消固定" onClick={event => {event.stopPropagation(); store.actions.unpinKeyChannel({model: channel.model, channelId: channel.channelId});}}>固定</button>}
                             {channel.routed && <button type="button" className="mit-key-badge is-muted is-action" disabled={keyChannels.loading} title="点击取消路由" onClick={event => {event.stopPropagation(); store.actions.removeKeyRoutes([{model: channel.model, channelId: channel.channelId}]);}}>路由{channel.poolSize > 1 ? `（池 ${channel.poolSize}）` : ''}</button>}
+                            {!channel.pinned && <button type="button" className="mit-key-badge is-action mit-key-bind-cta" disabled={keyChannels.loading} title="把这个渠道固定到该 Key 的这个模型" onClick={event => {event.stopPropagation(); store.actions.pinKeyChannel({model: channel.model, channelId: channel.channelId});}}>绑定</button>}
                             {channel.routeEffective && <Badge tone="ok">路由生效</Badge>}
                             {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
                           </div></td>

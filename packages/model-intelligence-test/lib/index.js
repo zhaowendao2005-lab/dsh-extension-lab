@@ -84,6 +84,15 @@ var schemas = {
   a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID"),
   a6KeyChannels: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
   a6Unpin: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
+  a6KeyPin: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
+  a6KeyTest: z2.strictObject({
+    kind: z2.enum(["fingerprint", "custom"]),
+    slots: a6Slots,
+    models: z2.array(a6Channel).min(1).max(64),
+    name: z2.string().max(120).optional(),
+    prompt: z2.string().max(2e5).optional(),
+    timeoutMs: timeoutMs.optional()
+  }),
   a6KeyChannelPrices: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
   a6RemoveRoute: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
   channelTests: z2.strictObject({ model: id(256), channelId: z2.number().int().positive(), limit: z2.number().int().min(1).max(100).optional() })
@@ -121,6 +130,8 @@ var DESCRIPTIONS = {
   a6RemoveRoute: "Remove one channel from a model routing pool on the a6api site and verify the result by reading it back.",
   a6Unpin: "Remove the a6api pin between one key and one channel for one model, verifying the pin is gone.",
   a6KeyChannelPrices: "Read the public market listing price of every channel bound to one a6api key; unknown prices stay absent.",
+  a6KeyPin: "Pin one channel to one a6api key for one model from the key overview; verifies the pin by reading it back.",
+  a6KeyTest: "Create a fingerprint or custom attempt for channels picked in the key overview, using dedicated test slots (real inference).",
   channelTests: "List historical fingerprint and custom test runs for one model channel, newest first."
 };
 var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z2.json() });
@@ -1413,6 +1424,12 @@ var ModelIntelligenceService = class extends Service {
   a6Unpin(request) {
     return this.guard(() => this.a6.unpin(request));
   }
+  a6KeyPin(request) {
+    return this.guard(() => this.a6.pin(request));
+  }
+  a6KeyTest(request) {
+    return this.guard(() => this.a6.keyTest(request));
+  }
   a6KeyChannelPrices(request) {
     return this.guard(() => this.a6.channelPrices(request));
   }
@@ -1501,6 +1518,8 @@ var REMOTE_METHODS = [
   "a6KeyChannels",
   "a6RemoveRoute",
   "a6Unpin",
+  "a6KeyPin",
+  "a6KeyTest",
   "a6KeyChannelPrices",
   "channelTests"
 ];
@@ -2969,6 +2988,22 @@ var A6Operations = class {
     this.service.assertAvailable();
     return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failures ? `\u6709 ${failures} \u4E2A\u6E20\u9053\u7684\u5E02\u573A\u62A5\u4EF7\u672A\u80FD\u8BFB\u53D6` : null };
   }
+  /** Bind one channel to one key for one model, then verify the site reports it as the route. */
+  async pin({ tokenId, model, channelId } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error("invalid-token", "Key ID \u65E0\u6548");
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
+    const identity2 = `${this.service.accountIdentity()}:${tokenId}`;
+    if (this.service.engine.tokenSlots.busy.has(identity2)) throw new A6Error("slot-busy", "\u8BE5 Key \u6B63\u5728\u6267\u884C\u6D4B\u8BD5\uFF0C\u7ED3\u675F\u540E\u518D\u7ED1\u5B9A");
+    await this.service.loadLeases();
+    if (this.service.manualLeases.has(`${identity2}:${model}`)) throw new A6Error("lease-held", "\u6B64\u6A21\u578B\u8FD8\u6709\u5F85\u6062\u590D\u7684\u65E7\u56FA\u5B9A\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D");
+    const outcome = await this.service.site.pin({ tokenId, model, channelId, fallback: false });
+    const pins = await this.service.site.pins();
+    const current = pins.find((item) => item.tokenId === tokenId && item.model === model && item.channelId === channelId);
+    if (!current) throw new A6Error("pin-unverified", "\u672A\u80FD\u8BFB\u56DE\u56FA\u5B9A\u7ED3\u679C\uFF0C\u8BF7\u5237\u65B0\u540E\u68C0\u67E5");
+    this.channelCache.clear();
+    return { verified: true, tokenId, model, channelId, supplierId: current.supplierId ?? outcome.supplierId ?? 0, routeEffective: current.routeEffective === true };
+  }
   async unpin({ tokenId, model, channelId } = {}) {
     if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error("invalid-token", "Key ID \u65E0\u6548");
     this.service.assertAvailable();
@@ -3152,6 +3187,9 @@ var A6Service = class {
   removeRoute(input2) {
     return this.operations.removeRoute(input2);
   }
+  pin(input2) {
+    return this.operations.pin(input2);
+  }
   unpin(input2) {
     return this.operations.unpin(input2);
   }
@@ -3250,12 +3288,15 @@ var A6Service = class {
     });
   }
   async create(input2) {
+    return this.createFromSelection(this.selection(input2.selectionId), input2);
+  }
+  /** Shared record-creation body: the web intake and the key-view batch both land here. */
+  async createFromSelection(selection, input2) {
     this.assertRecordActive();
     this.assertAvailable();
     await this.config();
     this.assertRecordActive();
     this.assertAvailable();
-    const selection = this.selection(input2.selectionId);
     this.assertAccount(selection);
     this.creating += 1;
     try {
@@ -3290,6 +3331,43 @@ var A6Service = class {
     } finally {
       this.creating -= 1;
     }
+  }
+  /**
+   * Batch test straight from the key overview: the user picks channels from a key it already lists,
+   * and one dedicated slot token. The selection is built here instead of arriving from the web page.
+   */
+  async keyTest(input2) {
+    this.assertRecordActive();
+    this.assertAvailable();
+    await this.config();
+    this.assertAvailable();
+    if (!this.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
+    const slots = Array.isArray(input2?.slots) ? input2.slots : [];
+    if (!slots.length || slots.length > 6) throw new A6Error("invalid-slots", "\u8BF7\u9009\u62E9 1\u20136 \u4E2A\u6D4B\u8BD5\u4EE4\u724C");
+    const tokens2 = await this.site.tokens();
+    const chosen = slots.map((slot) => {
+      const token = tokens2.find((item) => item.id === Number(slot.tokenId));
+      if (!token) throw new A6Error("invalid-slots", "\u6D4B\u8BD5\u4EE4\u724C\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D\u8D26\u53F7");
+      return { id: token.id, name: token.name };
+    });
+    if (new Set(chosen.map((token) => token.id)).size !== chosen.length) throw new A6Error("invalid-slots", "\u6D4B\u8BD5\u4EE4\u724C\u91CD\u590D");
+    const models = (Array.isArray(input2.models) ? input2.models : []).map(channelOf);
+    if (!models.length) throw new A6Error("invalid-selection", "\u8BF7\u5148\u52FE\u9009\u8981\u6D4B\u8BD5\u7684\u6E20\u9053");
+    if (models.length > 64) throw new A6Error("invalid-selection", "\u4E00\u6B21\u6700\u591A\u6D4B\u8BD5 64 \u4E2A\u6E20\u9053");
+    if (new Set(models.map(channelKey)).size !== models.length) throw new A6Error("invalid-selection", "\u5F85\u6D4B\u6E05\u5355\u91CD\u590D");
+    const kind = input2.kind === "custom" ? "custom" : "fingerprint";
+    if (kind === "custom" && !String(input2.prompt ?? "").trim()) throw new A6Error("invalid-prompt", "\u81EA\u5B9A\u4E49\u6D4B\u8BD5\u9700\u8981\u586B\u5199\u63D0\u793A\u8BCD");
+    const selection = {
+      kind,
+      id: `key:${this.site.userId}:${Date.now()}`,
+      siteOrigin: SITE_ORIGIN,
+      accountId: String(this.site.userId),
+      pageId: "",
+      createdAt: Date.now(),
+      models,
+      tokens: chosen
+    };
+    return this.createFromSelection(selection, { ...input2, kind, slots, models });
   }
   async customFromRecord(input2) {
     this.assertRecordActive(input2.recordId);

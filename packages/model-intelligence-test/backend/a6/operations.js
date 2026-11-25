@@ -377,6 +377,23 @@ export class A6Operations {
     return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failures ? `有 ${failures} 个渠道的市场报价未能读取` : null };
   }
 
+  /** Bind one channel to one key for one model, then verify the site reports it as the route. */
+  async pin({ tokenId, model, channelId } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error('invalid-token', 'Key ID 无效');
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error('auth-missing', '请先配置 a6api 访问令牌');
+    const identity = `${this.service.accountIdentity()}:${tokenId}`;
+    if (this.service.engine.tokenSlots.busy.has(identity)) throw new A6Error('slot-busy', '该 Key 正在执行测试，结束后再绑定');
+    await this.service.loadLeases();
+    if (this.service.manualLeases.has(`${identity}:${model}`)) throw new A6Error('lease-held', '此模型还有待恢复的旧固定租约，请先恢复');
+    const outcome = await this.service.site.pin({ tokenId, model, channelId, fallback: false });
+    const pins = await this.service.site.pins();
+    const current = pins.find(item => item.tokenId === tokenId && item.model === model && item.channelId === channelId);
+    if (!current) throw new A6Error('pin-unverified', '未能读回固定结果，请刷新后检查');
+    this.channelCache.clear();
+    return { verified: true, tokenId, model, channelId, supplierId: current.supplierId ?? outcome.supplierId ?? 0, routeEffective: current.routeEffective === true };
+  }
+
   async unpin({ tokenId, model, channelId } = {}) {
     if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error('invalid-token', 'Key ID 无效');
     this.service.assertAvailable();

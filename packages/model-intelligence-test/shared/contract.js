@@ -58,6 +58,15 @@ const schemas = {
   a6LedgerView: z.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z.boolean().optional() }).refine(value => value.attemptId || value.recordId, '缺少测试记录或轮次 ID'),
   a6KeyChannels: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
   a6Unpin: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
+  a6KeyPin: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
+  a6KeyTest: z.strictObject({
+    kind: z.enum(['fingerprint', 'custom']),
+    slots: a6Slots,
+    models: z.array(a6Channel).min(1).max(64),
+    name: z.string().max(120).optional(),
+    prompt: z.string().max(200_000).optional(),
+    timeoutMs: timeoutMs.optional(),
+  }),
   a6KeyChannelPrices: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
   a6RemoveRoute: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
   channelTests: z.strictObject({ model: id(256), channelId: z.number().int().positive(), limit: z.number().int().min(1).max(100).optional() }),
@@ -96,6 +105,8 @@ const DESCRIPTIONS = {
   a6RemoveRoute: 'Remove one channel from a model routing pool on the a6api site and verify the result by reading it back.',
   a6Unpin: 'Remove the a6api pin between one key and one channel for one model, verifying the pin is gone.',
   a6KeyChannelPrices: 'Read the public market listing price of every channel bound to one a6api key; unknown prices stay absent.',
+  a6KeyPin: 'Pin one channel to one a6api key for one model from the key overview; verifies the pin by reading it back.',
+  a6KeyTest: 'Create a fingerprint or custom attempt for channels picked in the key overview, using dedicated test slots (real inference).',
   channelTests: 'List historical fingerprint and custom test runs for one model channel, newest first.',
 };
 

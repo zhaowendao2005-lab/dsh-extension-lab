@@ -142,6 +142,7 @@ export class A6Service {
     }
   }
   removeRoute(input) { return this.operations.removeRoute(input); }
+  pin(input) { return this.operations.pin(input); }
   unpin(input) { return this.operations.unpin(input); }
   channelPrices(input) { return this.operations.channelPrices(input); }
   operationSelect(input) { return this.operations.select(input); }
@@ -239,12 +240,16 @@ export class A6Service {
   }
 
   async create(input) {
+    return this.createFromSelection(this.selection(input.selectionId), input);
+  }
+
+  /** Shared record-creation body: the web intake and the key-view batch both land here. */
+  async createFromSelection(selection, input) {
     this.assertRecordActive();
     this.assertAvailable();
     await this.config();
     this.assertRecordActive();
     this.assertAvailable();
-    const selection = this.selection(input.selectionId);
     this.assertAccount(selection);
     this.creating += 1;
     try {
@@ -272,6 +277,39 @@ export class A6Service {
         })), ...((input.kind ?? selection.kind) === 'custom' ? input.dshModels ?? [] : [])],
       });
     } finally { this.creating -= 1; }
+  }
+
+  /**
+   * Batch test straight from the key overview: the user picks channels from a key it already lists,
+   * and one dedicated slot token. The selection is built here instead of arriving from the web page.
+   */
+  async keyTest(input) {
+    this.assertRecordActive();
+    this.assertAvailable();
+    await this.config();
+    this.assertAvailable();
+    if (!this.site.configured) throw new A6Error('auth-missing', '请先配置 a6api 访问令牌');
+    const slots = Array.isArray(input?.slots) ? input.slots : [];
+    if (!slots.length || slots.length > 6) throw new A6Error('invalid-slots', '请选择 1–6 个测试令牌');
+    const tokens = await this.site.tokens();
+    const chosen = slots.map(slot => {
+      const token = tokens.find(item => item.id === Number(slot.tokenId));
+      if (!token) throw new A6Error('invalid-slots', '测试令牌不存在或不属于当前账号');
+      return { id: token.id, name: token.name };
+    });
+    if (new Set(chosen.map(token => token.id)).size !== chosen.length) throw new A6Error('invalid-slots', '测试令牌重复');
+    const models = (Array.isArray(input.models) ? input.models : []).map(channelOf);
+    if (!models.length) throw new A6Error('invalid-selection', '请先勾选要测试的渠道');
+    if (models.length > 64) throw new A6Error('invalid-selection', '一次最多测试 64 个渠道');
+    if (new Set(models.map(channelKey)).size !== models.length) throw new A6Error('invalid-selection', '待测清单重复');
+    const kind = input.kind === 'custom' ? 'custom' : 'fingerprint';
+    if (kind === 'custom' && !String(input.prompt ?? '').trim()) throw new A6Error('invalid-prompt', '自定义测试需要填写提示词');
+    const selection = {
+      kind, id: `key:${this.site.userId}:${Date.now()}`, siteOrigin: SITE_ORIGIN,
+      accountId: String(this.site.userId), pageId: '', createdAt: Date.now(),
+      models, tokens: chosen,
+    };
+    return this.createFromSelection(selection, { ...input, kind, slots, models });
   }
 
   async customFromRecord(input) {

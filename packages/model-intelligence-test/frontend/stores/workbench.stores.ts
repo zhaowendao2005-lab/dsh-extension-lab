@@ -30,7 +30,9 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   const evaluationsDomain = createEvaluationsDomain(transport);
   const customDomain = createCustomDomain(transport);
   const presentationDomain = createPresentationDomain();
-  const insightsDomain = createA6InsightsDomain(transport);
+  const insightsDomain = createA6InsightsDomain(transport, {
+    created(record, attemptId) { evaluationsDomain.acceptCreated(record, attemptId ?? ''); openRecord(record.id); },
+  });
   const a6Domain = createA6Domain(transport, {
     open(selectionId) {
       const selection = a6Domain.store.getState().selections.find(item => item.id === selectionId);
@@ -309,6 +311,8 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     loadKeyChannels: insightsDomain.loadKeyChannels,
     loadKeyChannelPrices: insightsDomain.loadKeyChannelPrices,
     unpinKeyChannel: insightsDomain.unpinKeyChannel,
+    pinKeyChannel: insightsDomain.pinKeyChannel,
+    runKeyTest: insightsDomain.runKeyTest,
     loadChannelTests: insightsDomain.loadChannelTests,
     removeKeyRoutes: insightsDomain.removeKeyRoutes,
     patchKeyView: insightsDomain.patchKeyView,

@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
-import type { A6InsightsState, A6OperationToken, A6OperationView, A6RelationKind, A6ResultActionInput, A6ResultFeedback, Evaluation, ModelIntelligenceTransport } from '../types';
-import { channelTests as fetchChannelTests, keyChannels as fetchKeyChannels, keyChannelPrices as fetchKeyChannelPrices, removeRoute as removeKeyRoute, unpinChannel as unpinKeyChannelRemote, readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
+import type { A6InsightsState, A6OperationToken, A6OperationView, A6RelationKind, A6ResultActionInput, A6ResultFeedback, Evaluation, ModelIntelligenceTransport, StoredRecord } from '../types';
+import { channelTests as fetchChannelTests, keyChannels as fetchKeyChannels, keyChannelPrices as fetchKeyChannelPrices, removeRoute as removeKeyRoute, unpinChannel as unpinKeyChannelRemote, pinChannel as pinKeyChannelRemote, keyTest as runKeyTestRemote, readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
 
 export const ledgerKey = (recordId: string, attemptId?: string): string => JSON.stringify([recordId, attemptId ?? '*']);
 export const operationRowKey = (recordId: string, model: string, channelId: number): string => JSON.stringify([recordId, model, channelId]);
@@ -14,8 +14,8 @@ export function operationTokenIssue(token?: A6OperationToken): string {
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 /** Operation IO is explicit and single-flight. Only the local ledger mirror is polled. */
-export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
-  const store = createStore<A6InsightsState>(() => ({ operations: null, loading: false, busy: 0, query: '', results: {}, ledgers: {}, scopes: {}, keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []} }));
+export function createA6InsightsDomain(transport: ModelIntelligenceTransport, callbacks: {created?(record: StoredRecord, attemptId: string | null): void} = {}) {
+  const store = createStore<A6InsightsState>(() => ({ operations: null, loading: false, busy: 0, query: '', results: {}, ledgers: {}, scopes: {}, keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: [], testKind: 'fingerprint', testTokenId: null, testPrompt: '', testing: false} }));
   let disposed = false;
   let generation = 0;
   let accountId = '';
@@ -145,7 +145,7 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
         generation++;
         accountId = account;
         operationsRequested = false;
-        store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0, keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []}});
+        store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0, keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: [], testKind: 'fingerprint', testTokenId: null, testPrompt: '', testing: false}});
         testsSignature = '';
       }
       const previous = new Set(records.map(record => ledgerKey(record.id, record.attemptId)));
@@ -259,6 +259,25 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
         readKeyChannels(tokenId, true);
       });
     },
+    pinKeyChannel(item: {model: string; channelId: number}): void {
+      if (disposed) return;
+      const tokenId = store.getState().keyChannels.tokenId;
+      if (!tokenId) return;
+      const epoch = generation;
+      store.setState(state => ({keyChannels: {...state.keyChannels, loading: true, error: undefined}}));
+      void pinKeyChannelRemote(transport, {tokenId, model: item.model, channelId: item.channelId}).then(outcome => {
+        if (disposed || epoch !== generation) return;
+        store.setState(state => ({keyChannels: {...state.keyChannels, loading: false}}));
+        readKeyChannels(tokenId, true);
+        if (!outcome.routeEffective) {
+          store.setState(state => ({keyChannels: {...state.keyChannels, error: '已固定，但站点还没把路由切到这条渠道；刷新确认它是否生效。'}}));
+        }
+      }).catch(error => {
+        if (disposed || epoch !== generation) return;
+        store.setState(state => ({keyChannels: {...state.keyChannels, loading: false, error: message(error)}}));
+        readKeyChannels(tokenId, true);
+      });
+    },
     removeKeyRoutes(items: Array<{model: string; channelId: number}>): void {
       if (disposed || !items.length) return;
       const tokenId = store.getState().keyChannels.tokenId;
@@ -276,12 +295,41 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
         readKeyChannels(tokenId, true);
       });
     },
+    runKeyTest(): void {
+      if (disposed) return;
+      const state = store.getState();
+      const tokenId = state.keyChannels.tokenId;
+      const view = state.keyChannels.view;
+      if (!tokenId || !view || view.tokenId !== tokenId) return;
+      const picked = view.channels.filter(channel => state.keyView.selected.includes(channelTestKey(channel.model, channel.channelId)));
+      const fail = (testError: string): void => { store.setState({keyView: {...store.getState().keyView, testError}}); };
+      if (!picked.length) { fail('请先勾选要测试的渠道'); return; }
+      if (!state.keyView.testTokenId) { fail('请选择一个测试令牌作为槽位'); return; }
+      const prompt = state.keyView.testPrompt.trim();
+      if (state.keyView.testKind === 'custom' && !prompt) { fail('自定义测试需要填写提示词'); return; }
+      const epoch = generation;
+      store.setState({keyView: {...state.keyView, testing: true, testError: undefined}});
+      void runKeyTestRemote(transport, {
+        kind: state.keyView.testKind,
+        slots: [{tokenId: state.keyView.testTokenId}],
+        models: picked.map(channel => ({listingId: 0, channelId: channel.channelId, supplierId: channel.supplierId ?? 0, model: channel.model})),
+        name: `a6api 专项 · Key #${tokenId} · ${picked.length} 项`,
+        ...(state.keyView.testKind === 'custom' ? {prompt} : {}),
+      }).then(({record, attemptId}) => {
+        if (disposed || epoch !== generation) return;
+        store.setState({keyView: {...store.getState().keyView, testing: false, selected: []}});
+        callbacks.created?.(record, attemptId);
+      }).catch(error => {
+        if (disposed || epoch !== generation) return;
+        store.setState({keyView: {...store.getState().keyView, testing: false, testError: message(error)}});
+      });
+    },
     loadChannelTests(model: string, channelId: number, limit = 20): void { readChannelTests(model, channelId, limit); },
     patchKeyView(value: Partial<A6InsightsState['keyView']>): void {
       if (disposed) return;
       const previous = store.getState().keyView;
       const next = {...previous, ...value};
-      if (value.tokenId !== undefined && value.tokenId !== previous.tokenId) { next.expanded = []; next.selected = []; }
+      if (value.tokenId !== undefined && value.tokenId !== previous.tokenId) { next.expanded = []; next.selected = []; next.testTokenId = null; next.testError = undefined; }
       store.setState({keyView: next});
       if (next.tokenId !== null && next.tokenId !== previous.tokenId) { readKeyChannels(next.tokenId); readKeyPrices(next.tokenId); }
       if (value.tokenId === null) store.setState({keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}});

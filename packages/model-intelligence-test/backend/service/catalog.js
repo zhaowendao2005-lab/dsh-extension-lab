@@ -64,6 +64,8 @@ export class ModelIntelligenceService extends Service {
   a6KeyChannels(request) { return this.guard(() => this.a6.keyChannels(request)); }
   a6RemoveRoute(request) { return this.guard(() => this.a6.removeRoute(request)); }
   a6Unpin(request) { return this.guard(() => this.a6.unpin(request)); }
+  a6KeyPin(request) { return this.guard(() => this.a6.pin(request)); }
+  a6KeyTest(request) { return this.guard(() => this.a6.keyTest(request)); }
   a6KeyChannelPrices(request) { return this.guard(() => this.a6.channelPrices(request)); }
   channelTests(request) { return this.guard(() => this.records.channelTests(request)); }
   a6OperationSelect(request) { return this.guard(() => this.a6.operationSelect(request)); }
@@ -113,7 +115,7 @@ export const REMOTE_METHODS = [
   'recordsList', 'recordCreate', 'recordRerun', 'recordRename', 'recordDelete', 'recordsClear',
   'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen', 'customRunContinue', 'customRunCancel',
   'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6CustomFromRecord',
-  'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView', 'a6KeyChannels', 'a6RemoveRoute', 'a6Unpin', 'a6KeyChannelPrices', 'channelTests',
+  'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView', 'a6KeyChannels', 'a6RemoveRoute', 'a6Unpin', 'a6KeyPin', 'a6KeyTest', 'a6KeyChannelPrices', 'channelTests',
 ];
 const remoteInitializers = [];
 for (const name of REMOTE_METHODS) {
