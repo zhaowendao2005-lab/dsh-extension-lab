@@ -1,1 +1,1 @@
-export { readOperationState, selectOperationToken, refreshOperationRelations, resultAction, readLedger, keyChannels, channelTests, removeRoute } from '../service/a6insights.service';
+export { readOperationState, selectOperationToken, refreshOperationRelations, resultAction, readLedger, keyChannels, channelTests, removeRoute, unpinChannel, keyChannelPrices } from '../service/a6insights.service';

@@ -127,6 +127,17 @@ export class A6Site {
     await this.request('/api/marketplace/unpin', { method: 'POST', body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId) } });
     return { ok: true };
   }
+  /** Public market listing for one channel: every model it offers, with the site's shown prices. */
+  async marketChannels({ channelId } = {}) {
+    const payload = await this.request('/api/marketplace/public/channels/search', { query: { channel_id: Number(channelId), page: 1, page_size: 50 } });
+    return rowsOf(payload).map(row => ({
+      channelId: Number(row.channel_id), model: text(row.model_name, 256), supplierId: Number(row.supplier_id ?? 0),
+      availability: number(row.listing_availability), chargeType: text(row.charge_type, 32),
+      currency: text(row.pricing_currency, 8), unit: text(row.pricing_unit, 32),
+      input: number(row.input_price_micros), output: number(row.output_price_micros),
+      cacheRead: number(row.cache_read_price_micros), cacheWrite: number(row.cache_write_price_micros), perRequest: number(row.per_request_price_micros),
+    }));
+  }
   async billingSettings() {
     const payload = await this.request('/api/status');
     const data = payload?.data ?? payload;

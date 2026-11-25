@@ -142,6 +142,8 @@ export class A6Service {
     }
   }
   removeRoute(input) { return this.operations.removeRoute(input); }
+  unpin(input) { return this.operations.unpin(input); }
+  channelPrices(input) { return this.operations.channelPrices(input); }
   operationSelect(input) { return this.operations.select(input); }
   operationRefresh(input) { return this.operations.refresh(input); }
   invalidateOperations() { this.operations.invalidate(); }

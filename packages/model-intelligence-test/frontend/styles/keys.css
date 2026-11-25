@@ -72,6 +72,16 @@
 .mit-workbench .mit-key-badge.is-warn { color:var(--mit-warn); }
 .mit-workbench .mit-key-badge.is-fail { color:var(--mit-error); }
 .mit-workbench .mit-key-badge.is-muted { color:var(--mit-text-secondary); }
+.mit-workbench button.mit-key-badge { font:inherit; background:transparent; cursor:pointer; }
+.mit-workbench button.mit-key-badge:hover:not(:disabled) { background:color-mix(in srgb, currentColor 10%, transparent); text-decoration:line-through; }
+.mit-workbench button.mit-key-badge:disabled { cursor:default; opacity:.55; }
+.mit-workbench .mit-key-hint { color:var(--mit-text-muted); font-size:10.5px; }
+.mit-workbench .mit-key-price-head { white-space:normal; }
+.mit-workbench .mit-key-price-title { display:block; line-height:1.2; }
+.mit-workbench .mit-key-price-labels, .mit-workbench .mit-key-price-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:2px 6px; }
+.mit-workbench .mit-key-price-labels span { font-size:8.5px; font-weight:500; letter-spacing:0; text-transform:none; color:var(--mit-text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mit-workbench .mit-key-price-grid { font-size:10.5px; }
+.mit-workbench .mit-key-price-grid span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mit-workbench .mit-key-empty { margin:0; padding:14px 12px; color:var(--mit-text-secondary); font-size:12px; }
 .mit-workbench .mit-key-error { margin:0; padding:10px 12px; border:1px solid var(--mit-error); border-radius:var(--mit-radius); color:var(--mit-error); font-size:11.5px; background:var(--mit-layer); }
 @media (max-width: 900px) {

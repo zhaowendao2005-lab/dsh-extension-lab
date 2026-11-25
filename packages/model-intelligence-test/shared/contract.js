@@ -57,6 +57,8 @@ const schemas = {
   a6ResultAction: z.strictObject({ recordId: id(), model: id(256), channelId: z.number().int().positive(), tokenId: z.number().int().positive(), operation: z.enum(['pin', 'route', 'restore']) }),
   a6LedgerView: z.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z.boolean().optional() }).refine(value => value.attemptId || value.recordId, '缺少测试记录或轮次 ID'),
   a6KeyChannels: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
+  a6Unpin: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
+  a6KeyChannelPrices: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
   a6RemoveRoute: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
   channelTests: z.strictObject({ model: id(256), channelId: z.number().int().positive(), limit: z.number().int().min(1).max(100).optional() }),
 };
@@ -92,6 +94,8 @@ const DESCRIPTIONS = {
   a6LedgerView: 'Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference.',
   a6KeyChannels: 'Read the pins and routing channels bound to one a6api key; read-only, never changes the operation key.',
   a6RemoveRoute: 'Remove one channel from a model routing pool on the a6api site and verify the result by reading it back.',
+  a6Unpin: 'Remove the a6api pin between one key and one channel for one model, verifying the pin is gone.',
+  a6KeyChannelPrices: 'Read the public market listing price of every channel bound to one a6api key; unknown prices stay absent.',
   channelTests: 'List historical fingerprint and custom test runs for one model channel, newest first.',
 };
 

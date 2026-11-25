@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useStore } from '../../runtime';
-import type { A6KeyChannel, ChannelTestEntry, Workbench } from '../../types';
+import type { A6ChannelPrice, A6KeyChannel, ChannelTestEntry, Workbench } from '../../types';
 import { Icon } from '../../components/common';
 import { channelTestKey } from '../../stores/a6insights.stores';
 
@@ -33,6 +33,23 @@ function resultOf(entry: ChannelTestEntry): string {
 
 const STATUS_LABEL: Record<string, string> = { queued: '排队中', running: '进行中', done: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断' };
 const STATUS_TONE: Record<string, 'ok' | 'fail' | 'warn' | 'muted'> = { done: 'ok', failed: 'fail', cancelled: 'warn', interrupted: 'warn', running: 'warn', queued: 'muted' };
+
+const PRICE_FIELDS: {label: string; field: 'input' | 'output' | 'cacheRead' | 'cacheWrite'}[] = [
+  {label: '输入', field: 'input'}, {label: '输出', field: 'output'}, {label: '缓存命中', field: 'cacheRead'}, {label: '缓存写入', field: 'cacheWrite'},
+];
+
+/** Micros are the site's own scale for one million tokens; the panel shows CNY with the same exchange rate it shows elsewhere. */
+function priceText(price: A6ChannelPrice | undefined, field: 'input' | 'output' | 'cacheRead' | 'cacheWrite', rate: number | null): string {
+  if (!price) return '—';
+  const cny = price.currency === 'CNY' ? 1 : rate;
+  if (price.chargeType === 'per_request') {
+    if (field !== 'input' || typeof price.perRequest !== 'number' || !Number.isFinite(price.perRequest) || price.perRequest < 0 || cny === null || cny <= 0) return '—';
+    return `¥${String(Number((price.perRequest / 1_000_000 * cny).toFixed(4)))}/次`;
+  }
+  const value = price[field];
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || cny === null || cny <= 0) return '—';
+  return `¥${String(Number((value / 1_000_000 * cny).toFixed(4)))}`;
+}
 
 function Badge({ children, tone }: { children: React.ReactNode; tone?: 'brand' | 'ok' | 'warn' | 'fail' | 'muted' }) {
   return <span className={`mit-key-badge${tone ? ` is-${tone}` : ''}`}>{children}</span>;
@@ -71,6 +88,7 @@ export function KeyView({ store }: { store: Workbench }) {
   const keyChannels = useStore(store.a6Insights, state => state.keyChannels);
   const channelTests = useStore(store.a6Insights, state => state.channelTests);
   const keyView = useStore(store.a6Insights, state => state.keyView);
+  const keyPrices = useStore(store.a6Insights, state => state.keyPrices);
 
   useEffect(() => { if (!operations) store.actions.loadA6Operations(); }, [operations, store]);
   useEffect(() => {
@@ -88,6 +106,9 @@ export function KeyView({ store }: { store: Workbench }) {
     return needle ? list.filter(channel => channel.model.toLowerCase().includes(needle) || String(channel.channelId).includes(needle)) : list;
   }, [keyChannels.view, tokenId, keyView.query]);
   const token = tokens.find(item => item.id === tokenId) ?? null;
+  const prices = keyPrices.tokenId === tokenId ? keyPrices.view?.prices ?? {} : {};
+  const exchangeRate = keyPrices.tokenId === tokenId ? keyPrices.view?.exchangeRate ?? null : null;
+  const pricesNote = keyPrices.tokenId !== tokenId ? undefined : keyPrices.loading ? '正在读取站点市场报价…' : keyPrices.view?.error ?? (keyPrices.view ? `站点市场挂牌价 · ${new Date(keyPrices.view.generatedAt).toLocaleString('zh-CN')}${keyPrices.view.exchangeRate ? ` · USD/CNY ${keyPrices.view.exchangeRate}` : ''} · 人民币/百万 Token，不等于实际扣费` : undefined);
   const selectedSet = new Set(keyView.selected);
   const channelsByModel = useMemo(() => {
     const groups = new Map<string, A6KeyChannel[]>();
@@ -146,6 +167,7 @@ export function KeyView({ store }: { store: Workbench }) {
             <span className="mit-key-count">{channels.length} 个渠道</span>
             {keyView.selected.length > 0 && <span className="mit-key-selected">已选 {keyView.selected.length} 个渠道</span>}
             {selectedRouted.length > 0 && <button type="button" className="mit-key-route-remove" disabled={keyChannels.loading} onClick={removeRoutes} title="把选中的渠道从模型路由池里移除">取消路由 · {selectedRouted.length}</button>}
+            {channels.length > 0 && <span className="mit-key-hint">「固定」「路由」标记可直接点击取消</span>}
             {keyChannels.view?.testsError && <span className="mit-key-tests-error">测试记录统计不可用：{keyChannels.view.testsError}</span>}
           </div>
           {keyChannels.loading && !keyChannels.view && <p className="mit-key-empty">正在读取绑定的渠道…</p>}
@@ -158,7 +180,8 @@ export function KeyView({ store }: { store: Workbench }) {
                 <col style={{ width: 110 }} />
                 <col />
                 <col style={{ width: 150 }} />
-                <col style={{ width: 320 }} />
+                <col style={{ width: 240 }} />
+                <col style={{ width: 300 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -166,6 +189,10 @@ export function KeyView({ store }: { store: Workbench }) {
                   <th scope="col">渠道</th>
                   <th scope="col">绑定</th>
                   <th scope="col">状态</th>
+                  <th scope="col" className="mit-key-price-head" title={pricesNote}>
+                    <span className="mit-key-price-title">渠道价格</span>
+                    <span className="mit-key-price-labels">{PRICE_FIELDS.map(item => <span key={item.field}>{item.label}</span>)}</span>
+                  </th>
                   <th scope="col">测试记录</th>
                 </tr>
               </thead>
@@ -179,7 +206,7 @@ export function KeyView({ store }: { store: Workbench }) {
                   return <React.Fragment key={model}>
                     <tr className="mit-key-group-row">
                       <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${model} 的全部渠道`} checked={allSelected} onChange={event => store.actions.patchKeyView({selected: event.target.checked ? [...new Set([...keyView.selected, ...keys])] : keyView.selected.filter(key => !keys.includes(key))})}/></td>
-                      <td colSpan={4}>
+                      <td colSpan={5}>
                         <div className="mit-key-group-head">
                           <strong className="mit-key-group-model">{model}</strong>
                           <span className="mit-key-group-count">{list.length} 个渠道</span>
@@ -201,12 +228,15 @@ export function KeyView({ store }: { store: Workbench }) {
                           <td className="mit-key-check" onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
                           <td className="mit-key-channel mit-tabular">#{channel.channelId}</td>
                           <td className="mit-key-bindings"><div className="mit-key-bindings-list">
-                            {channel.pinned && <Badge tone="brand">固定</Badge>}
-                            {channel.routed && <Badge tone="muted">路由{channel.poolSize > 1 ? `（池 ${channel.poolSize}）` : ''}</Badge>}
+                            {channel.pinned && <button type="button" className="mit-key-badge is-brand is-action" disabled={keyChannels.loading} title="点击取消固定" onClick={event => {event.stopPropagation(); store.actions.unpinKeyChannel({model: channel.model, channelId: channel.channelId});}}>固定</button>}
+                            {channel.routed && <button type="button" className="mit-key-badge is-muted is-action" disabled={keyChannels.loading} title="点击取消路由" onClick={event => {event.stopPropagation(); store.actions.removeKeyRoutes([{model: channel.model, channelId: channel.channelId}]);}}>路由{channel.poolSize > 1 ? `（池 ${channel.poolSize}）` : ''}</button>}
                             {channel.routeEffective && <Badge tone="ok">路由生效</Badge>}
                             {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
                           </div></td>
                           <td className="mit-key-status" title={channel.status || undefined}>{channel.status || '—'}</td>
+                          <td className="mit-key-price" title={pricesNote}><div className="mit-key-price-grid">
+                            {PRICE_FIELDS.map(item => <span key={item.field} className="mit-tabular">{priceText(prices[key], item.field, exchangeRate)}</span>)}
+                          </div></td>
                           <td className="mit-key-open">
                             <div className="mit-key-tests-cell">
                               <div className="mit-key-latest">
@@ -220,7 +250,7 @@ export function KeyView({ store }: { store: Workbench }) {
                             </div>
                           </td>
                         </tr>
-                        {open && <tr className="mit-key-expand"><td colSpan={5}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
+                        {open && <tr className="mit-key-expand"><td colSpan={6}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
                       </React.Fragment>;
                     })}
                   </React.Fragment>;

@@ -34,6 +34,8 @@ export interface A6LedgerEntry { view?: A6LedgerView; loading: boolean; error?: 
 export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'restore'; message?: string; error?: string }
 export interface A6KeyChannel { model: string; channelId: number; supplierId: number; pinned: boolean; routed: boolean; routeEffective: boolean; poolSize: number; status: string }
 export interface ChannelTestSummary { total: number; latest: ChannelTestEntry | null }
+export interface A6ChannelPrice { currency: string | null; unit: string | null; chargeType: string | null; input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; perRequest: number | null }
+export interface A6KeyChannelPricesView { tokenId: number; prices: Record<string, A6ChannelPrice>; exchangeRate: number | null; generatedAt: number; error?: string | null }
 export interface A6KeyChannelsView { tokenId: number; channels: A6KeyChannel[]; generatedAt: number; cached?: boolean; tests?: Record<string, ChannelTestSummary>; testsGeneratedAt?: number | null; testsError?: string | null }
 export interface ChannelTestEntry {
   recordId: string; recordName: string; recordKind: TestKind; attemptId: string; attemptNumber: number; status: AttemptStatus; at: number | null; model: string; channelId: number; runId: string | null; provider?: string | null;
@@ -41,7 +43,7 @@ export interface ChannelTestEntry {
   custom: {phase: string | null; outputState: string | null; outputPath: string | null; inputTokens: number | null; outputTokens: number | null; cost: number | null; ttftMs: number | null; modelTokensPerSecond: number | null; error: string | null} | null;
 }
 export interface ChannelTestsView { model: string; channelId: number; total: number; entries: ChannelTestEntry[] }
-export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'>; keyChannels: {tokenId: number | null; view: A6KeyChannelsView | null; loading: boolean; error?: string}; channelTests: Record<string,{view: ChannelTestsView | null; loading: boolean; error?: string}>; keyView: {tokenId: number | null; query: string; expanded: string[]; selected: string[]} }
+export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'>; keyChannels: {tokenId: number | null; view: A6KeyChannelsView | null; loading: boolean; error?: string}; keyPrices: {tokenId: number | null; view: A6KeyChannelPricesView | null; loading: boolean; error?: string}; channelTests: Record<string,{view: ChannelTestsView | null; loading: boolean; error?: string}>; keyView: {tokenId: number | null; query: string; expanded: string[]; selected: string[]} }
 export interface A6Token { id: number; name: string }
 export interface A6Slot { tokenId: number; name?: string }
 export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; kind?: TestKind; models: A6Channel[]; tokens: A6Token[] }
@@ -226,6 +228,8 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  a6ResultAction(request: A6ResultActionInput): Promise<A6ResultActionOutcome>;
  a6LedgerView(request: {attemptId?: string; recordId?: string; refresh?: boolean}): Promise<A6LedgerView>;
  a6KeyChannels(request: {tokenId: number; refresh?: boolean}): Promise<A6KeyChannelsView>;
+ a6KeyChannelPrices(request: {tokenId: number; refresh?: boolean}): Promise<A6KeyChannelPricesView>;
+ a6Unpin(request: {tokenId: number; model: string; channelId: number}): Promise<{verified: boolean; channelId: number}>;
  a6RemoveRoute(request: {tokenId: number; model: string; channelId: number}): Promise<{verified: boolean; channelId: number}>;
  channelTests(request: {model: string; channelId: number; limit?: number}): Promise<ChannelTestsView>;
 }
@@ -269,7 +273,7 @@ export interface Workbench {
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;
   loadA6Config(): void; patchA6Form(value: Partial<{accessToken: string; userId: string}>): void; saveA6Config(): void; rotateA6Intake(): void; copyA6Intake(): void;
-  loadA6Operations(): void; loadKeyChannels(tokenId: number, refresh?: boolean): void; removeKeyRoutes(items: Array<{model: string; channelId: number}>): void; loadChannelTests(model: string, channelId: number, limit?: number): void; patchKeyView(value: Partial<{tokenId: number | null; query: string; expanded: string[]; selected: string[]}>): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
+  loadA6Operations(): void; loadKeyChannels(tokenId: number, refresh?: boolean): void; loadKeyChannelPrices(tokenId: number, refresh?: boolean): void; removeKeyRoutes(items: Array<{model: string; channelId: number}>): void; unpinKeyChannel(item: {model: string; channelId: number}): void; loadChannelTests(model: string, channelId: number, limit?: number): void; patchKeyView(value: Partial<{tokenId: number | null; query: string; expanded: string[]; selected: string[]}>): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
   a6ResultAction(input: A6ResultActionInput): void;
   setA6LedgerScope(recordId: string, scope: 'attempt'|'record'): void; refreshA6Ledger(recordId: string): void;
   setFingerprintConfig(id: string, options: FingerprintOptions): void;

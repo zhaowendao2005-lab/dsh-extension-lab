@@ -307,6 +307,8 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     copyA6Intake() { void a6Domain.copyIntake(); },
     loadA6Operations: insightsDomain.load,
     loadKeyChannels: insightsDomain.loadKeyChannels,
+    loadKeyChannelPrices: insightsDomain.loadKeyChannelPrices,
+    unpinKeyChannel: insightsDomain.unpinKeyChannel,
     loadChannelTests: insightsDomain.loadChannelTests,
     removeKeyRoutes: insightsDomain.removeKeyRoutes,
     patchKeyView: insightsDomain.patchKeyView,

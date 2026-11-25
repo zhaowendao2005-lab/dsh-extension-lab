@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
 import type { A6InsightsState, A6OperationToken, A6OperationView, A6RelationKind, A6ResultActionInput, A6ResultFeedback, Evaluation, ModelIntelligenceTransport } from '../types';
-import { channelTests as fetchChannelTests, keyChannels as fetchKeyChannels, removeRoute as removeKeyRoute, readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
+import { channelTests as fetchChannelTests, keyChannels as fetchKeyChannels, keyChannelPrices as fetchKeyChannelPrices, removeRoute as removeKeyRoute, unpinChannel as unpinKeyChannelRemote, readLedger, readOperationState, refreshOperationRelations, resultAction, selectOperationToken } from './a6insights.datasource';
 
 export const ledgerKey = (recordId: string, attemptId?: string): string => JSON.stringify([recordId, attemptId ?? '*']);
 export const operationRowKey = (recordId: string, model: string, channelId: number): string => JSON.stringify([recordId, model, channelId]);
@@ -15,7 +15,7 @@ const message = (error: unknown): string => error instanceof Error ? error.messa
 
 /** Operation IO is explicit and single-flight. Only the local ledger mirror is polled. */
 export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
-  const store = createStore<A6InsightsState>(() => ({ operations: null, loading: false, busy: 0, query: '', results: {}, ledgers: {}, scopes: {}, keyChannels: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []} }));
+  const store = createStore<A6InsightsState>(() => ({ operations: null, loading: false, busy: 0, query: '', results: {}, ledgers: {}, scopes: {}, keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []} }));
   let disposed = false;
   let generation = 0;
   let accountId = '';
@@ -97,6 +97,20 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
       store.setState(state => state.keyChannels.tokenId === tokenId ? {keyChannels: {...state.keyChannels, loading: false, error: message(error)}} : state);
     });
   }
+  function readKeyPrices(tokenId: number, refresh = false): void {
+    if (disposed || !Number.isSafeInteger(tokenId) || tokenId <= 0) return;
+    const current = store.getState().keyPrices;
+    if (current.loading && current.tokenId === tokenId) return;
+    const epoch = generation;
+    store.setState(state => ({keyPrices: {...state.keyPrices, tokenId, loading: true, error: undefined}}));
+    void fetchKeyChannelPrices(transport, tokenId, refresh).then(view => {
+      if (disposed || epoch !== generation) return;
+      store.setState(state => state.keyPrices.tokenId === tokenId ? {keyPrices: {tokenId, view, loading: false}} : state);
+    }).catch(error => {
+      if (disposed || epoch !== generation) return;
+      store.setState(state => state.keyPrices.tokenId === tokenId ? {keyPrices: {...state.keyPrices, loading: false, error: message(error)}} : state);
+    });
+  }
   function readChannelTests(model: string, channelId: number, limit = 20): void {
     if (disposed) return;
     const key = channelTestKey(model, channelId);
@@ -131,7 +145,7 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
         generation++;
         accountId = account;
         operationsRequested = false;
-        store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0, keyChannels: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []}});
+        store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0, keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []}});
         testsSignature = '';
       }
       const previous = new Set(records.map(record => ledgerKey(record.id, record.attemptId)));
@@ -223,7 +237,28 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
       if (record) void loadLedger(record);
     },
     refreshLedger(recordId: string): void { const record = records.find(item => item.id === recordId); if (record) void loadLedger(record, true); },
-    loadKeyChannels(tokenId: number, refresh = false): void { readKeyChannels(tokenId, refresh); },
+    loadKeyChannels(tokenId: number, refresh = false): void {
+      readKeyChannels(tokenId, refresh);
+      if (refresh) readKeyPrices(tokenId, true);
+      else if (!store.getState().keyPrices.view || store.getState().keyPrices.tokenId !== tokenId) readKeyPrices(tokenId);
+    },
+    loadKeyChannelPrices(tokenId: number, refresh = false): void { readKeyPrices(tokenId, refresh); },
+    unpinKeyChannel(item: {model: string; channelId: number}): void {
+      if (disposed) return;
+      const tokenId = store.getState().keyChannels.tokenId;
+      if (!tokenId) return;
+      const epoch = generation;
+      store.setState(state => ({keyChannels: {...state.keyChannels, loading: true, error: undefined}}));
+      void unpinKeyChannelRemote(transport, {tokenId, model: item.model, channelId: item.channelId}).then(() => {
+        if (disposed || epoch !== generation) return;
+        store.setState(state => ({keyChannels: {...state.keyChannels, loading: false}}));
+        readKeyChannels(tokenId, true);
+      }).catch(error => {
+        if (disposed || epoch !== generation) return;
+        store.setState(state => ({keyChannels: {...state.keyChannels, loading: false, error: message(error)}}));
+        readKeyChannels(tokenId, true);
+      });
+    },
     removeKeyRoutes(items: Array<{model: string; channelId: number}>): void {
       if (disposed || !items.length) return;
       const tokenId = store.getState().keyChannels.tokenId;
@@ -248,8 +283,8 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
       const next = {...previous, ...value};
       if (value.tokenId !== undefined && value.tokenId !== previous.tokenId) { next.expanded = []; next.selected = []; }
       store.setState({keyView: next});
-      if (next.tokenId !== null && next.tokenId !== previous.tokenId) readKeyChannels(next.tokenId);
-      if (value.tokenId === null) store.setState({keyChannels: {tokenId: null, view: null, loading: false}});
+      if (next.tokenId !== null && next.tokenId !== previous.tokenId) { readKeyChannels(next.tokenId); readKeyPrices(next.tokenId); }
+      if (value.tokenId === null) store.setState({keyChannels: {tokenId: null, view: null, loading: false}, keyPrices: {tokenId: null, view: null, loading: false}});
     },
     dispose(): void { disposed = true; generation++; if (timer) clearTimeout(timer); },
   };

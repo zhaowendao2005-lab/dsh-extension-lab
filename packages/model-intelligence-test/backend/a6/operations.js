@@ -22,6 +22,8 @@ const idOf = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ?
 const messageOf = (error, fallback) => error instanceof A6Error ? error.message : fallback;
 // Per-record storage keys must match /^[a-zA-Z0-9_-]+$/; raw origins contain ':' and '/'.
 const storageKey = identity => `a6-operations-${Buffer.from(identity, 'utf8').toString('base64url')}`;
+/** Must match the client's channelTestKey: JSON pair keeps model names with '|' unambiguous. */
+const priceKey = (model, channelId) => JSON.stringify([model, channelId]);
 
 export class A6Operations {
   constructor(service) {
@@ -32,6 +34,8 @@ export class A6Operations {
     this.revision = 1;
     this.writeTail = Promise.resolve();
     this.channelCache = new Map();
+    this.marketCache = new Map();
+    this.billingCache = null;
     this.disposed = false;
   }
 
@@ -329,6 +333,63 @@ export class A6Operations {
     const result = await this.service.site.removeRoute({ tokenId, model, channelId });
     this.channelCache.clear();
     return result;
+  }
+
+  /** Public market rows for one channel, cached far longer than the pin/route view (prices move slowly). */
+  async marketRows(channelId, refresh = false) {
+    const cached = this.marketCache.get(channelId);
+    if (!refresh && cached && cached.until > Date.now()) return cached.rows;
+    const rows = await this.service.site.marketChannels({ channelId });
+    this.marketCache.set(channelId, { rows, until: Date.now() + 10 * 60_000 });
+    if (this.marketCache.size > 500) for (const [key, item] of this.marketCache) if (item.until <= Date.now()) this.marketCache.delete(key);
+    return rows;
+  }
+
+  async billing() {
+    if (this.billingCache && this.billingCache.until > Date.now()) return this.billingCache;
+    const value = await this.service.site.billingSettings();
+    this.billingCache = { ...value, until: Date.now() + 10 * 60_000 };
+    return this.billingCache;
+  }
+
+  /** The site's own listed price for every channel of this key; unknown stays absent, never zero. */
+  async channelPrices({ tokenId, refresh = false } = {}) {
+    const view = await this.channels({ tokenId });
+    const channels = [...new Map(view.channels.map(channel => [channel.channelId, channel])).values()];
+    const prices = {};
+    let failures = 0;
+    await Promise.all(channels.map(async channel => {
+      try {
+        const rows = (await this.marketRows(channel.channelId, refresh)).filter(row => row.model === channel.model);
+        if (!rows.length) return;
+        const available = rows.filter(row => row.availability === undefined || row.availability === 1);
+        const pool = available.length ? available : rows;
+        const pick = pool.reduce((best, row) => best === null || (row.input ?? Infinity) < (best.input ?? Infinity) ? row : best, null);
+        prices[priceKey(channel.model, channel.channelId)] = { currency: pick.currency ?? null, unit: pick.unit ?? null, chargeType: pick.chargeType ?? null,
+          input: pick.input ?? null, output: pick.output ?? null, cacheRead: pick.cacheRead ?? null, cacheWrite: pick.cacheWrite ?? null, perRequest: pick.perRequest ?? null };
+      } catch { failures += 1; }
+    }));
+    let exchangeRate = null;
+    if (Object.values(prices).some(price => price.currency === 'USD')) {
+      try { exchangeRate = (await this.billing()).usdExchangeRate ?? null; } catch { exchangeRate = null; }
+    }
+    this.service.assertAvailable();
+    return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failures ? `有 ${failures} 个渠道的市场报价未能读取` : null };
+  }
+
+  async unpin({ tokenId, model, channelId } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error('invalid-token', 'Key ID 无效');
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error('auth-missing', '请先配置 a6api 访问令牌');
+    const identity = `${this.service.accountIdentity()}:${tokenId}`;
+    if (this.service.engine.tokenSlots.busy.has(identity)) throw new A6Error('slot-busy', '该 Key 正在执行测试，结束后再取消固定');
+    await this.service.loadLeases();
+    if (this.service.manualLeases.has(`${identity}:${model}`)) throw new A6Error('lease-held', '此模型还有待恢复的旧固定租约，请先恢复');
+    await this.service.site.unpin({ tokenId, model, channelId });
+    const pins = await this.service.site.pins();
+    if (pins.some(pin => pin.tokenId === tokenId && pin.model === model && pin.channelId === channelId)) throw new A6Error('unpin-unverified', '未能读回取消固定结果，请刷新后检查');
+    this.channelCache.clear();
+    return { verified: true, tokenId, model, channelId };
   }
 
   invalidateRelation(account, kind) {

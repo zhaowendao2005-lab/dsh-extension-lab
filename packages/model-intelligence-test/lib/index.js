@@ -83,6 +83,8 @@ var schemas = {
   a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), operation: z2.enum(["pin", "route", "restore"]) }),
   a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID"),
   a6KeyChannels: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
+  a6Unpin: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
+  a6KeyChannelPrices: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
   a6RemoveRoute: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
   channelTests: z2.strictObject({ model: id(256), channelId: z2.number().int().positive(), limit: z2.number().int().min(1).max(100).optional() })
 };
@@ -117,6 +119,8 @@ var DESCRIPTIONS = {
   a6LedgerView: "Read durable executions and known billing totals for a record or attempt; refresh schedules reconciliation, never inference.",
   a6KeyChannels: "Read the pins and routing channels bound to one a6api key; read-only, never changes the operation key.",
   a6RemoveRoute: "Remove one channel from a model routing pool on the a6api site and verify the result by reading it back.",
+  a6Unpin: "Remove the a6api pin between one key and one channel for one model, verifying the pin is gone.",
+  a6KeyChannelPrices: "Read the public market listing price of every channel bound to one a6api key; unknown prices stay absent.",
   channelTests: "List historical fingerprint and custom test runs for one model channel, newest first."
 };
 var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z2.json() });
@@ -1406,6 +1410,12 @@ var ModelIntelligenceService = class extends Service {
   a6RemoveRoute(request) {
     return this.guard(() => this.a6.removeRoute(request));
   }
+  a6Unpin(request) {
+    return this.guard(() => this.a6.unpin(request));
+  }
+  a6KeyChannelPrices(request) {
+    return this.guard(() => this.a6.channelPrices(request));
+  }
   channelTests(request) {
     return this.guard(() => this.records.channelTests(request));
   }
@@ -1490,6 +1500,8 @@ var REMOTE_METHODS = [
   "a6LedgerView",
   "a6KeyChannels",
   "a6RemoveRoute",
+  "a6Unpin",
+  "a6KeyChannelPrices",
   "channelTests"
 ];
 var remoteInitializers = [];
@@ -2244,6 +2256,24 @@ var A6Site = class {
     await this.request("/api/marketplace/unpin", { method: "POST", body: { token_id: Number(tokenId), model_name: model, channel_id: Number(channelId) } });
     return { ok: true };
   }
+  /** Public market listing for one channel: every model it offers, with the site's shown prices. */
+  async marketChannels({ channelId } = {}) {
+    const payload = await this.request("/api/marketplace/public/channels/search", { query: { channel_id: Number(channelId), page: 1, page_size: 50 } });
+    return rowsOf(payload).map((row) => ({
+      channelId: Number(row.channel_id),
+      model: text(row.model_name, 256),
+      supplierId: Number(row.supplier_id ?? 0),
+      availability: number(row.listing_availability),
+      chargeType: text(row.charge_type, 32),
+      currency: text(row.pricing_currency, 8),
+      unit: text(row.pricing_unit, 32),
+      input: number(row.input_price_micros),
+      output: number(row.output_price_micros),
+      cacheRead: number(row.cache_read_price_micros),
+      cacheWrite: number(row.cache_write_price_micros),
+      perRequest: number(row.per_request_price_micros)
+    }));
+  }
   async billingSettings() {
     const payload = await this.request("/api/status");
     const data = payload?.data ?? payload;
@@ -2569,6 +2599,7 @@ function assertUsableToken(token) {
 var idOf = (value) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 var messageOf = (error, fallback) => error instanceof A6Error ? error.message : fallback;
 var storageKey = (identity2) => `a6-operations-${Buffer.from(identity2, "utf8").toString("base64url")}`;
+var priceKey = (model, channelId) => JSON.stringify([model, channelId]);
 var A6Operations = class {
   constructor(service) {
     this.service = service;
@@ -2578,6 +2609,8 @@ var A6Operations = class {
     this.revision = 1;
     this.writeTail = Promise.resolve();
     this.channelCache = /* @__PURE__ */ new Map();
+    this.marketCache = /* @__PURE__ */ new Map();
+    this.billingCache = null;
     this.disposed = false;
   }
   invalidate() {
@@ -2881,6 +2914,75 @@ var A6Operations = class {
     this.channelCache.clear();
     return result;
   }
+  /** Public market rows for one channel, cached far longer than the pin/route view (prices move slowly). */
+  async marketRows(channelId, refresh = false) {
+    const cached = this.marketCache.get(channelId);
+    if (!refresh && cached && cached.until > Date.now()) return cached.rows;
+    const rows = await this.service.site.marketChannels({ channelId });
+    this.marketCache.set(channelId, { rows, until: Date.now() + 10 * 6e4 });
+    if (this.marketCache.size > 500) {
+      for (const [key, item] of this.marketCache) if (item.until <= Date.now()) this.marketCache.delete(key);
+    }
+    return rows;
+  }
+  async billing() {
+    if (this.billingCache && this.billingCache.until > Date.now()) return this.billingCache;
+    const value = await this.service.site.billingSettings();
+    this.billingCache = { ...value, until: Date.now() + 10 * 6e4 };
+    return this.billingCache;
+  }
+  /** The site's own listed price for every channel of this key; unknown stays absent, never zero. */
+  async channelPrices({ tokenId, refresh = false } = {}) {
+    const view = await this.channels({ tokenId });
+    const channels = [...new Map(view.channels.map((channel) => [channel.channelId, channel])).values()];
+    const prices = {};
+    let failures = 0;
+    await Promise.all(channels.map(async (channel) => {
+      try {
+        const rows = (await this.marketRows(channel.channelId, refresh)).filter((row) => row.model === channel.model);
+        if (!rows.length) return;
+        const available = rows.filter((row) => row.availability === void 0 || row.availability === 1);
+        const pool = available.length ? available : rows;
+        const pick = pool.reduce((best, row) => best === null || (row.input ?? Infinity) < (best.input ?? Infinity) ? row : best, null);
+        prices[priceKey(channel.model, channel.channelId)] = {
+          currency: pick.currency ?? null,
+          unit: pick.unit ?? null,
+          chargeType: pick.chargeType ?? null,
+          input: pick.input ?? null,
+          output: pick.output ?? null,
+          cacheRead: pick.cacheRead ?? null,
+          cacheWrite: pick.cacheWrite ?? null,
+          perRequest: pick.perRequest ?? null
+        };
+      } catch {
+        failures += 1;
+      }
+    }));
+    let exchangeRate = null;
+    if (Object.values(prices).some((price) => price.currency === "USD")) {
+      try {
+        exchangeRate = (await this.billing()).usdExchangeRate ?? null;
+      } catch {
+        exchangeRate = null;
+      }
+    }
+    this.service.assertAvailable();
+    return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failures ? `\u6709 ${failures} \u4E2A\u6E20\u9053\u7684\u5E02\u573A\u62A5\u4EF7\u672A\u80FD\u8BFB\u53D6` : null };
+  }
+  async unpin({ tokenId, model, channelId } = {}) {
+    if (!Number.isSafeInteger(tokenId) || tokenId <= 0) throw new A6Error("invalid-token", "Key ID \u65E0\u6548");
+    this.service.assertAvailable();
+    if (!this.service.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
+    const identity2 = `${this.service.accountIdentity()}:${tokenId}`;
+    if (this.service.engine.tokenSlots.busy.has(identity2)) throw new A6Error("slot-busy", "\u8BE5 Key \u6B63\u5728\u6267\u884C\u6D4B\u8BD5\uFF0C\u7ED3\u675F\u540E\u518D\u53D6\u6D88\u56FA\u5B9A");
+    await this.service.loadLeases();
+    if (this.service.manualLeases.has(`${identity2}:${model}`)) throw new A6Error("lease-held", "\u6B64\u6A21\u578B\u8FD8\u6709\u5F85\u6062\u590D\u7684\u65E7\u56FA\u5B9A\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D");
+    await this.service.site.unpin({ tokenId, model, channelId });
+    const pins = await this.service.site.pins();
+    if (pins.some((pin) => pin.tokenId === tokenId && pin.model === model && pin.channelId === channelId)) throw new A6Error("unpin-unverified", "\u672A\u80FD\u8BFB\u56DE\u53D6\u6D88\u56FA\u5B9A\u7ED3\u679C\uFF0C\u8BF7\u5237\u65B0\u540E\u68C0\u67E5");
+    this.channelCache.clear();
+    return { verified: true, tokenId, model, channelId };
+  }
   invalidateRelation(account, kind) {
     account.writeVersion[kind] += 1;
     account[kind] = [];
@@ -3049,6 +3151,12 @@ var A6Service = class {
   }
   removeRoute(input2) {
     return this.operations.removeRoute(input2);
+  }
+  unpin(input2) {
+    return this.operations.unpin(input2);
+  }
+  channelPrices(input2) {
+    return this.operations.channelPrices(input2);
   }
   operationSelect(input2) {
     return this.operations.select(input2);
