@@ -24,6 +24,7 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
   let operationsRequested = false;
   let queue = Promise.resolve();
   let records: Evaluation[] = [];
+  let testsSignature = '';
   const ledgerRequests = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -105,7 +106,14 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
     store.setState(state => ({channelTests: {...state.channelTests, [key]: {view: entry?.view ?? null, loading: true, error: undefined}}}));
     void fetchChannelTests(transport, model, channelId, limit).then(view => {
       if (disposed || epoch !== generation) return;
-      store.setState(state => ({channelTests: {...state.channelTests, [key]: {view, loading: false}}}));
+      store.setState(state => {
+        // Keep the key overview's inline summary on the same facts as the expanded history.
+        const current = state.keyChannels.view;
+        const channelTests = {...state.channelTests, [key]: {view, loading: false}};
+        if (!current) return {channelTests};
+        const tests = {...(current.tests ?? {}), [key]: {total: view.total, latest: view.entries[0] ?? null}};
+        return {channelTests, keyChannels: {...state.keyChannels, view: {...current, tests}}};
+      });
     }).catch(error => {
       if (disposed || epoch !== generation) return;
       store.setState(state => ({channelTests: {...state.channelTests, [key]: {...(state.channelTests[key] ?? {view: null}), loading: false, error: message(error)}}}));
@@ -124,9 +132,17 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
         accountId = account;
         operationsRequested = false;
         store.setState({operations: null, query: '', results: {}, ledgers: {}, error: undefined, feedback: undefined, loading: false, busy: 0, keyChannels: {tokenId: null, view: null, loading: false}, channelTests: {}, keyView: {tokenId: null, query: '', expanded: [], selected: []}});
+        testsSignature = '';
       }
       const previous = new Set(records.map(record => ledgerKey(record.id, record.attemptId)));
       records = next.filter(record => Boolean(record.a6api));
+      // Any attempt transition can add/refresh a channel's latest record: re-read the cached
+      // overview so counts and latest results never wait for a click (site data is cache-backed).
+      const signature = records.map(record => `${record.id}:${(record.attempts ?? []).map(attempt => `${attempt.id}:${attempt.status}:${attempt.finishedAt ?? 0}`).join(',')}`).join('|');
+      const testsChanged = signature !== testsSignature;
+      testsSignature = signature;
+      const overviewTokenId = store.getState().keyChannels.tokenId;
+      if (testsChanged && overviewTokenId !== null) readKeyChannels(overviewTokenId);
       const ids = new Set(records.map(record => record.id));
       store.setState(state => {
         const entries = Object.entries(state.ledgers);

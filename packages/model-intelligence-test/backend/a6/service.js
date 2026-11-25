@@ -127,7 +127,20 @@ export class A6Service {
   }
 
   operationState(input) { return this.operations.state(input); }
-  keyChannels(input) { return this.operations.channels(input); }
+
+  /**
+   * Binding view for one key plus one batched test-record summary per channel, so the overview
+   * does not need a per-channel request before it can show whether any record exists.
+   */
+  async keyChannels(input) {
+    const view = await this.operations.channels(input);
+    try {
+      const summary = await this.records.channelTestSummaries(view.channels);
+      return { ...view, tests: summary.tests, testsGeneratedAt: summary.generatedAt, testsError: null };
+    } catch (error) {
+      return { ...view, tests: {}, testsGeneratedAt: null, testsError: error instanceof Error ? error.message : String(error) };
+    }
+  }
   removeRoute(input) { return this.operations.removeRoute(input); }
   operationSelect(input) { return this.operations.select(input); }
   operationRefresh(input) { return this.operations.refresh(input); }

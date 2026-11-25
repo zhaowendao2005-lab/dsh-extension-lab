@@ -32,6 +32,7 @@ function resultOf(entry: ChannelTestEntry): string {
 }
 
 const STATUS_LABEL: Record<string, string> = { queued: '排队中', running: '进行中', done: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断' };
+const STATUS_TONE: Record<string, 'ok' | 'fail' | 'warn' | 'muted'> = { done: 'ok', failed: 'fail', cancelled: 'warn', interrupted: 'warn', running: 'warn', queued: 'muted' };
 
 function Badge({ children, tone }: { children: React.ReactNode; tone?: 'brand' | 'ok' | 'warn' | 'fail' | 'muted' }) {
   return <span className={`mit-key-badge${tone ? ` is-${tone}` : ''}`}>{children}</span>;
@@ -145,6 +146,7 @@ export function KeyView({ store }: { store: Workbench }) {
             <span className="mit-key-count">{channels.length} 个渠道</span>
             {keyView.selected.length > 0 && <span className="mit-key-selected">已选 {keyView.selected.length} 个渠道</span>}
             {selectedRouted.length > 0 && <button type="button" className="mit-key-route-remove" disabled={keyChannels.loading} onClick={removeRoutes} title="把选中的渠道从模型路由池里移除">取消路由 · {selectedRouted.length}</button>}
+            {keyChannels.view?.testsError && <span className="mit-key-tests-error">测试记录统计不可用：{keyChannels.view.testsError}</span>}
           </div>
           {keyChannels.loading && !keyChannels.view && <p className="mit-key-empty">正在读取绑定的渠道…</p>}
           {keyChannels.error && <p className="mit-key-error">{keyChannels.error}</p>}
@@ -155,8 +157,8 @@ export function KeyView({ store }: { store: Workbench }) {
                 <col style={{ width: 38 }} />
                 <col style={{ width: 110 }} />
                 <col />
-                <col style={{ width: 160 }} />
-                <col style={{ width: 104 }} />
+                <col style={{ width: 150 }} />
+                <col style={{ width: 320 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -164,7 +166,7 @@ export function KeyView({ store }: { store: Workbench }) {
                   <th scope="col">渠道</th>
                   <th scope="col">绑定</th>
                   <th scope="col">状态</th>
-                  <th scope="col" className="mit-key-open-head">测试记录</th>
+                  <th scope="col">测试记录</th>
                 </tr>
               </thead>
               <tbody>
@@ -173,6 +175,7 @@ export function KeyView({ store }: { store: Workbench }) {
                   const allSelected = keys.every(key => selectedSet.has(key));
                   const pinned = list.filter(channel => channel.pinned).length;
                   const effective = list.filter(channel => channel.routeEffective).length;
+                  const recorded = list.reduce((total, channel) => total + (keyChannels.view?.tests?.[rowKey(channel)]?.total ?? 0), 0);
                   return <React.Fragment key={model}>
                     <tr className="mit-key-group-row">
                       <td className="mit-key-check"><input type="checkbox" aria-label={`选择 ${model} 的全部渠道`} checked={allSelected} onChange={event => store.actions.patchKeyView({selected: event.target.checked ? [...new Set([...keyView.selected, ...keys])] : keyView.selected.filter(key => !keys.includes(key))})}/></td>
@@ -182,6 +185,7 @@ export function KeyView({ store }: { store: Workbench }) {
                           <span className="mit-key-group-count">{list.length} 个渠道</span>
                           {pinned > 0 && <Badge tone="brand">{pinned} 个固定</Badge>}
                           {effective > 0 && <Badge tone="ok">{effective} 个路由生效</Badge>}
+                          {recorded > 0 && <Badge tone="muted">{recorded} 条测试记录</Badge>}
                         </div>
                       </td>
                     </tr>
@@ -189,6 +193,9 @@ export function KeyView({ store }: { store: Workbench }) {
                       const key = rowKey(channel);
                       const open = keyView.expanded.includes(key);
                       const tests = channelTests[key];
+                      const summary = keyChannels.view?.tests?.[key];
+                      const total = tests?.view?.total ?? summary?.total ?? null;
+                      const latest = tests?.view?.entries[0] ?? summary?.latest ?? null;
                       return <React.Fragment key={key}>
                         <tr className={`mit-key-row${open ? ' is-open' : ''}`} onClick={() => expandRow(channel)}>
                           <td className="mit-key-check" onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`选择 ${channel.model} 渠道 ${channel.channelId}`} checked={selectedSet.has(key)} onChange={() => toggleSelected(key)}/></td>
@@ -200,7 +207,18 @@ export function KeyView({ store }: { store: Workbench }) {
                             {!channel.pinned && !channel.routed && <span className="mit-muted">—</span>}
                           </div></td>
                           <td className="mit-key-status" title={channel.status || undefined}>{channel.status || '—'}</td>
-                          <td className="mit-key-open"><button type="button" className="mit-text-button" onClick={event => {event.stopPropagation(); expandRow(channel);}} aria-expanded={open}>{open ? '收起' : tests?.view ? `查看 ${tests.view.total} 条` : '查看'}<Icon name="chevron" size={12}/></button></td>
+                          <td className="mit-key-open">
+                            <div className="mit-key-tests-cell">
+                              <div className="mit-key-latest">
+                                {latest ? <>
+                                  <Badge tone={STATUS_TONE[latest.status] ?? 'muted'}>{STATUS_LABEL[latest.status] ?? latest.status}</Badge>
+                                  <span className="mit-key-latest-result" title={resultOf(latest)}>{resultOf(latest)}</span>
+                                  <span className="mit-key-latest-time mit-tabular">{formatTime(latest.at)}</span>
+                                </> : <span className="mit-muted">{total === null ? '尚未载入' : '暂无记录'}</span>}
+                              </div>
+                              <button type="button" className="mit-text-button" onClick={event => {event.stopPropagation(); expandRow(channel);}} aria-expanded={open}>{open ? '收起' : total === null ? '查看' : total ? `查看 ${total} 条` : '无记录'}<Icon name="chevron" size={12}/></button>
+                            </div>
+                          </td>
                         </tr>
                         {open && <tr className="mit-key-expand"><td colSpan={5}><TestRows store={store} entries={tests?.view?.entries ?? []} loading={Boolean(tests?.loading)} error={tests?.error}/></td></tr>}
                       </React.Fragment>;

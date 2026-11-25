@@ -168,16 +168,21 @@ export class RecordsService {
   }
 
   /**
-   * Historical runs of one model channel across every record and attempt.
-   * Read-only: persisted snapshots only, so results survive restarts.
+   * Every persisted fingerprint / custom run bucketed by its `model|channelId` channel.
+   * Read-only: persisted snapshots only, so results survive restarts. Shared by the per-channel
+   * history and the key overview summary so both views always read the same facts.
    */
-  async channelTests({ model, channelId, limit = 20 } = {}) {
+  async channelEntryMap() {
     const domain = await this.domain();
-    const cap = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(100, Math.floor(Number(limit)))) : 20;
     const records = new Map([...domain.table('records').entries()]);
-    const entries = [];
+    const buckets = new Map();
     const at = attempt => attempt.finishedAt ?? attempt.startedAt ?? attempt.createdAt ?? null;
-    const base = (record, attempt) => ({
+    const push = (model, channelId, entry) => {
+      const key = `${model}|${channelId}`;
+      const list = buckets.get(key);
+      if (list) list.push(entry); else buckets.set(key, [entry]);
+    };
+    const base = (record, attempt, model, channelId) => ({
       recordId: record.id, recordName: record.name, recordKind: record.kind,
       attemptId: attempt.id, attemptNumber: attempt.number, status: attempt.status, at: at(attempt),
       model, channelId,
@@ -186,11 +191,11 @@ export class RecordsService {
       const record = records.get(attempt.recordId);
       if (!record) continue;
       for (const run of attempt.view?.runs ?? []) {
-        if (run.model !== model) continue;
-        if (Number(run.relay?.channelId) !== channelId) continue;
+        const channelId = Number(run.relay?.channelId);
+        if (typeof run.model !== 'string' || !Number.isSafeInteger(channelId) || channelId <= 0) continue;
         const samples = Array.isArray(run.samples) ? run.samples : [];
-        entries.push({
-          ...base(record, attempt), runId: null,
+        push(run.model, channelId, {
+          ...base(record, attempt, run.model, channelId), runId: null,
           provider: run.provider ?? (record.a6api ? 'a6api' : null),
           fingerprint: {
             stage: run.stage ?? null,
@@ -204,10 +209,11 @@ export class RecordsService {
         });
       }
       for (const run of attempt.custom?.runs ?? []) {
-        if (Number(run.target?.channelId) !== channelId) continue;
-        if (run.target?.modelId !== model) continue;
-        entries.push({
-          ...base(record, attempt), runId: run.id ?? null,
+        const channelId = Number(run.target?.channelId);
+        const model = run.target?.modelId;
+        if (typeof model !== 'string' || !model || !Number.isSafeInteger(channelId) || channelId <= 0) continue;
+        push(model, channelId, {
+          ...base(record, attempt, model, channelId), runId: run.id ?? null,
           provider: run.target?.providerId ?? (run.target?.kind === 'a6api' ? 'a6api' : null) ?? (record.a6api ? 'a6api' : null),
           fingerprint: null,
           custom: {
@@ -224,8 +230,40 @@ export class RecordsService {
         });
       }
     }
-    entries.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+    for (const list of buckets.values()) list.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+    return buckets;
+  }
+
+  /**
+   * Historical runs of one model channel across every record and attempt.
+   * Read-only: persisted snapshots only, so results survive restarts.
+   */
+  async channelTests({ model, channelId, limit = 20 } = {}) {
+    const cap = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(100, Math.floor(Number(limit)))) : 20;
+    const buckets = await this.channelEntryMap();
+    const entries = buckets.get(`${model}|${channelId}`) ?? [];
     return { model, channelId, total: entries.length, entries: entries.slice(0, cap) };
+  }
+
+  /**
+   * One batch summary per requested channel so the key overview can show record counts and the
+   * latest result without opening every channel. Keys are `model|channelId`; missing channels get
+   * `{total: 0, latest: null}` rather than being omitted.
+   */
+  async channelTestSummaries(channels = []) {
+    const wanted = channels
+      .filter(channel => typeof channel?.model === 'string' && channel.model && Number.isSafeInteger(Number(channel?.channelId)) && Number(channel.channelId) > 0)
+      .map(channel => ({ model: channel.model, channelId: Number(channel.channelId) }));
+    const buckets = wanted.length ? await this.channelEntryMap() : new Map();
+    const tests = {};
+    for (const { model, channelId } of wanted) {
+      // Same key the client uses for one channel (`channelTestKey` = JSON [model, channelId]).
+      const key = JSON.stringify([model, channelId]);
+      if (key in tests) continue;
+      const entries = buckets.get(`${model}|${channelId}`) ?? [];
+      tests[key] = { total: entries.length, latest: entries[0] ?? null };
+    }
+    return { tests, generatedAt: Date.now() };
   }
 
   // ---- mutations ------------------------------------------------------------------------------

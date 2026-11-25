@@ -33,7 +33,8 @@ export interface A6LedgerView { executions: A6Execution[]; summary: A6LedgerSumm
 export interface A6LedgerEntry { view?: A6LedgerView; loading: boolean; error?: string }
 export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'restore'; message?: string; error?: string }
 export interface A6KeyChannel { model: string; channelId: number; supplierId: number; pinned: boolean; routed: boolean; routeEffective: boolean; poolSize: number; status: string }
-export interface A6KeyChannelsView { tokenId: number; channels: A6KeyChannel[]; generatedAt: number; cached?: boolean }
+export interface ChannelTestSummary { total: number; latest: ChannelTestEntry | null }
+export interface A6KeyChannelsView { tokenId: number; channels: A6KeyChannel[]; generatedAt: number; cached?: boolean; tests?: Record<string, ChannelTestSummary>; testsGeneratedAt?: number | null; testsError?: string | null }
 export interface ChannelTestEntry {
   recordId: string; recordName: string; recordKind: TestKind; attemptId: string; attemptNumber: number; status: AttemptStatus; at: number | null; model: string; channelId: number; runId: string | null; provider?: string | null;
   fingerprint: {stage: string | null; decision: string | null; probability: number | null; predictionName: string | null; usedOutputs: number | null; samples: {total: number; ended: number}} | null;

@@ -40,8 +40,13 @@
 .mit-workbench .mit-key-channel { color:var(--mit-text-secondary); white-space:nowrap; }
 .mit-workbench .mit-key-bindings-list { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
 .mit-workbench .mit-key-status { color:var(--mit-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mit-workbench .mit-key-open { text-align:right; white-space:nowrap; }
-.mit-workbench .mit-key-open .mit-text-button { display:inline-flex; align-items:center; gap:2px; }
+.mit-workbench .mit-key-open { white-space:nowrap; }
+.mit-workbench .mit-key-open .mit-text-button { display:inline-flex; align-items:center; gap:2px; flex:none; }
+.mit-workbench .mit-key-tests-cell { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; }
+.mit-workbench .mit-key-latest { display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden; }
+.mit-workbench .mit-key-latest-result { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--mit-text-secondary); font-size:11px; }
+.mit-workbench .mit-key-latest-time { flex:none; color:var(--mit-text-muted); font-size:10.5px; font-variant-numeric:tabular-nums; }
+.mit-workbench .mit-key-tests-error { margin-left:auto; color:var(--mit-error); font-size:10.5px; white-space:normal; }
 .mit-workbench .mit-key-expand > td { padding:0; background:var(--mit-layer-2); }
 .mit-workbench .mit-key-tests { padding:8px 10px 10px; }
 .mit-workbench .mit-key-test-table { width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed; background:var(--mit-layer); border:1px solid var(--mit-border); border-radius:var(--mit-radius-lg); overflow:hidden; }
