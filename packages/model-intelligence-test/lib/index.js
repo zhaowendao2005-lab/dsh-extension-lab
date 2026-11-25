@@ -80,7 +80,7 @@ var schemas = {
   a6OperationState: z2.strictObject({ refreshTokens: z2.boolean().optional(), refreshRelations: z2.boolean().optional() }),
   a6OperationSelect: z2.strictObject({ tokenId: z2.number().int().positive().nullable() }),
   a6OperationRefresh: z2.strictObject({ kind: z2.enum(["pins", "routes", "all"]) }),
-  a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), operation: z2.enum(["pin", "route", "restore"]) }),
+  a6ResultAction: z2.strictObject({ recordId: id(), model: id(256), channelId: z2.number().int().positive(), tokenId: z2.number().int().positive(), operation: z2.enum(["pin", "route", "unpin", "unroute", "restore"]) }),
   a6LedgerView: z2.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z2.boolean().optional() }).refine((value) => value.attemptId || value.recordId, "\u7F3A\u5C11\u6D4B\u8BD5\u8BB0\u5F55\u6216\u8F6E\u6B21 ID"),
   a6KeyChannels: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
   a6Unpin: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
@@ -3429,7 +3429,7 @@ var A6Service = class {
     return this.performAction(input2, record.a6api, async () => this.recordTarget(input2));
   }
   async performAction(input2, meta, validate) {
-    if (!["pin", "route", "restore"].includes(input2.operation)) throw new A6Error("invalid-operation", "\u53EA\u652F\u6301\u56FA\u5B9A\u3001\u52A0\u5165\u8DEF\u7531\u4E0E\u65E7\u79DF\u7EA6\u6062\u590D");
+    if (!["pin", "route", "unpin", "unroute", "restore"].includes(input2.operation)) throw new A6Error("invalid-operation", "\u53EA\u652F\u6301\u56FA\u5B9A\u3001\u89E3\u9664\u56FA\u5B9A\u3001\u52A0\u5165\u8DEF\u7531\u3001\u79FB\u51FA\u8DEF\u7531\u4E0E\u65E7\u79DF\u7EA6\u6062\u590D");
     this.assertAvailable();
     this.assertRecordActive(input2.recordId);
     this.assertAccount(meta);
@@ -3448,7 +3448,7 @@ var A6Service = class {
       if (generation !== this.generation) throw new A6Error("account-changed", "\u8D26\u53F7\u5DF2\u5207\u6362\uFF0C\u8BF7\u5237\u65B0");
       if (input2.operation !== "restore") this.operations.assertSelected(account, input2.tokenId, selectionVersion);
     };
-    const relationKind = input2.operation === "route" ? "routes" : "pins";
+    const relationKind = input2.operation === "route" || input2.operation === "unroute" ? "routes" : "pins";
     let written = false;
     try {
       await this.loadLeases();
@@ -3472,11 +3472,26 @@ var A6Service = class {
       selectionVersion = account.selectionVersion;
       assertCurrent();
       if (input2.operation === "pin" && lease) throw new A6Error("lease-held", "\u6B64\u6A21\u578B\u4ECD\u6709\u65E7\u56FA\u5B9A\u6062\u590D\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D\u65E7\u79DF\u7EA6\u540E\u518D\u8BBE\u7F6E\u56FA\u5B9A");
+      if (input2.operation === "unpin" && lease) throw new A6Error("lease-held", "\u6B64\u6A21\u578B\u8FD8\u6709\u5F85\u6062\u590D\u7684\u65E7\u56FA\u5B9A\u79DF\u7EA6\uFF0C\u8BF7\u5148\u6062\u590D\u65E7\u79DF\u7EA6\u540E\u518D\u89E3\u9664\u56FA\u5B9A");
       this.operations.beginWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion });
       assertCurrent();
       written = true;
-      const outcome = input2.operation === "pin" ? await this.site.pin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, fallback: false }) : await this.site.addRoute({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
-      await this.operations.afterWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion }, input2.operation === "pin" ? outcome.pins : outcome.subscriptions);
+      let outcome;
+      let snapshot;
+      if (input2.operation === "pin") {
+        outcome = await this.site.pin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, fallback: false });
+        snapshot = outcome.pins;
+      } else if (input2.operation === "route") {
+        outcome = await this.site.addRoute({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
+        snapshot = outcome.subscriptions;
+      } else if (input2.operation === "unpin") {
+        await this.site.unpin({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
+        snapshot = await this.site.pins();
+      } else {
+        outcome = await this.site.removeRoute({ tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId });
+        snapshot = outcome.subscriptions;
+      }
+      await this.operations.afterWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion }, snapshot);
       written = false;
       if (account.selectionVersion !== selectionVersion) throw new A6Error("token-changed", "\u64CD\u4F5C\u671F\u95F4\u4EE4\u724C\u9009\u62E9\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u68C0\u67E5\u5F53\u524D\u4EE4\u724C\u7684\u6700\u65B0\u5173\u7CFB");
       if (input2.operation === "pin") {
@@ -3484,10 +3499,18 @@ var A6Service = class {
         if (!outcome?.routeEffective || account.tokenId !== input2.tokenId || account.errors.pins || pins.length !== 1 || pins[0].channelId !== input2.channelId || pins[0].routeEffective !== true) {
           throw new A6Error("pin-unverified", "\u7AD9\u70B9\u56FA\u5B9A\u8BFB\u56DE\u672A\u786E\u8BA4\uFF0C\u8BF7\u5237\u65B0\u56FA\u5B9A\u5173\u7CFB\u68C0\u67E5\u5B9E\u9645\u72B6\u6001");
         }
-      } else if (outcome?.verified !== true || account.tokenId !== input2.tokenId || account.errors.routes || !account.routes.some((route) => route.model === input2.model && route.channelIds.includes(input2.channelId))) {
-        throw new A6Error("route-unverified", "\u7AD9\u70B9\u8DEF\u7531\u8BFB\u56DE\u672A\u786E\u8BA4\uFF0C\u8BF7\u5237\u65B0\u8DEF\u7531\u5173\u7CFB\u68C0\u67E5\u5B9E\u9645\u72B6\u6001");
+      } else if (input2.operation === "route") {
+        if (outcome?.verified !== true || account.tokenId !== input2.tokenId || account.errors.routes || !account.routes.some((route) => route.model === input2.model && route.channelIds.includes(input2.channelId))) {
+          throw new A6Error("route-unverified", "\u7AD9\u70B9\u8DEF\u7531\u8BFB\u56DE\u672A\u786E\u8BA4\uFF0C\u8BF7\u5237\u65B0\u8DEF\u7531\u5173\u7CFB\u68C0\u67E5\u5B9E\u9645\u72B6\u6001");
+        }
+      } else if (input2.operation === "unpin") {
+        if (account.tokenId !== input2.tokenId || account.errors.pins || account.pins.some((pin) => pin.model === input2.model && pin.channelId === input2.channelId)) {
+          throw new A6Error("unpin-unverified", "\u672A\u80FD\u8BFB\u56DE\u89E3\u9664\u56FA\u5B9A\u7ED3\u679C\uFF0C\u8BF7\u5237\u65B0\u540E\u68C0\u67E5");
+        }
+      } else if (account.tokenId !== input2.tokenId || account.errors.routes || account.routes.some((route) => route.model === input2.model && route.channelIds.includes(input2.channelId))) {
+        throw new A6Error("route-unverified", "\u672A\u80FD\u8BFB\u56DE\u79FB\u51FA\u8DEF\u7531\u7ED3\u679C\uFF0C\u8BF7\u5237\u65B0\u540E\u68C0\u67E5");
       }
-      return { ok: true, result: { verified: true, operation: input2.operation, tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, ...input2.operation === "pin" ? { supplierId: outcome.supplierId } : { subscriptionId: outcome.subscriptionId } }, state: this.operations.snapshot(account) };
+      return { ok: true, result: { verified: true, operation: input2.operation, tokenId: input2.tokenId, model: input2.model, channelId: input2.channelId, ...input2.operation === "pin" ? { supplierId: outcome.supplierId } : input2.operation === "route" ? { subscriptionId: outcome.subscriptionId } : {} }, state: this.operations.snapshot(account) };
     } finally {
       try {
         if (written && account) await this.operations.afterWrite(account, relationKind, { tokenId: input2.tokenId, selectionVersion });

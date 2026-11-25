@@ -25,13 +25,13 @@ export interface CustomA6ModelRef { channelId: number; model: string; api?: A6Pr
 export interface A6OperationToken { id: number; name: string; maskedKey?: string; status?: number | string; expiredTime?: number }
 export type A6RelationKind = 'pins' | 'routes' | 'all';
 export interface A6OperationView { accountId: string; revision: number; tokenId: number | null; tokens: A6OperationToken[]; tokensAt: number | null; pins: {model: string; channelId: number; routeEffective: boolean; status: string}[]; routes: {model: string; channelIds: number[]}[]; pinsAt: number | null; routesAt: number | null; loading: {tokens: boolean; pins: boolean; routes: boolean}; errors: {tokens?: string; pins?: string; routes?: string}; legacyLeases: {recordId: string | null; tokenId: number; model: string; channelId: number; stage: string}[] }
-export interface A6ResultActionInput { recordId: string; model: string; channelId: number; tokenId: number; operation: 'pin' | 'route' | 'restore' }
+export interface A6ResultActionInput { recordId: string; model: string; channelId: number; tokenId: number; operation: 'pin' | 'route' | 'unpin' | 'unroute' | 'restore' }
 export interface A6ResultActionOutcome { ok: true; result?: {operation?: string; tokenId?: number; model?: string; channelId?: number; verified?: boolean; skipped?: boolean}; state: A6OperationView }
 export interface A6LedgerSummary { requestCount: number | null; knownCostCny: number | null; billedCount: number; pendingCount: number; inputTokens?: number | null; outputTokens?: number | null; coverage: {requestIdCount: number; billingCompleteCount: number; usageCount: number; unattributedCount: number; inputCount?: number; outputCount?: number; ambiguousCount?: number; legacy?: boolean} }
 export interface A6Execution { id?: string; model?: string; intendedChannelId?: number; channelId?: number; requestId?: string; state: string; usageState?: string; billingState?: string; quota?: number; costCny?: number | null; inputTokens?: number | null; outputTokens?: number | null; channelMismatch?: boolean; accountState?: 'current'|'historical' }
 export interface A6LedgerView { executions: A6Execution[]; summary: A6LedgerSummary }
 export interface A6LedgerEntry { view?: A6LedgerView; loading: boolean; error?: string }
-export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'restore'; message?: string; error?: string }
+export interface A6ResultFeedback { pending?: 'pin' | 'route' | 'unpin' | 'unroute' | 'restore'; message?: string; error?: string }
 export interface A6KeyChannel { model: string; channelId: number; supplierId: number; pinned: boolean; routed: boolean; routeEffective: boolean; poolSize: number; status: string }
 export interface ChannelTestSummary { total: number; latest: ChannelTestEntry | null }
 export interface A6ChannelPrice { currency: string | null; unit: string | null; chargeType: string | null; input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; perRequest: number | null }

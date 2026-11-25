@@ -210,10 +210,19 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
           }
           const state = outcome.state;
           const modelPins = state.pins.filter(pin => pin.model === captured.model);
-          const verified = state.tokenId === captured.tokenId && (captured.operation === 'pin'
-            ? state.pinsAt !== null && !state.loading.pins && !state.errors.pins && modelPins.length === 1 && modelPins[0].channelId === captured.channelId && modelPins[0].routeEffective === true
-            : state.routesAt !== null && !state.loading.routes && !state.errors.routes && state.routes.some(route => route.model === captured.model && route.channelIds.includes(captured.channelId)));
-          feedback(key, verified ? {message: `${captured.operation === 'pin' ? '固定已读回确认' : '路由已读回确认'} · Key #${captured.tokenId}`} : {error: '操作后尚未读回确认，请刷新对应关系；按钮保持未确认状态。'});
+          const modelRoutes = state.routes.filter(route => route.model === captured.model);
+          const sameKey = state.tokenId === captured.tokenId;
+          const pinsFresh = sameKey && state.pinsAt !== null && !state.loading.pins && !state.errors.pins;
+          const routesFresh = sameKey && state.routesAt !== null && !state.loading.routes && !state.errors.routes;
+          const verified = captured.operation === 'pin'
+            ? pinsFresh && modelPins.length === 1 && modelPins[0].channelId === captured.channelId && modelPins[0].routeEffective === true
+            : captured.operation === 'unpin'
+              ? pinsFresh && !modelPins.some(pin => pin.channelId === captured.channelId)
+              : captured.operation === 'route'
+                ? routesFresh && modelRoutes.some(route => route.channelIds.includes(captured.channelId))
+                : routesFresh && !modelRoutes.some(route => route.channelIds.includes(captured.channelId));
+          const label = captured.operation === 'pin' ? '固定' : captured.operation === 'unpin' ? '解除固定' : captured.operation === 'route' ? '路由' : '移出路由';
+          feedback(key, verified ? {message: `${label}已读回确认 · Key #${captured.tokenId}`} : {error: '操作后尚未读回确认，请刷新对应关系；按钮保持未确认状态。'});
         } catch (error) {
           let mirrored = false;
           if (!disposed && epoch === generation) {
@@ -223,7 +232,7 @@ export function createA6InsightsDomain(transport: ModelIntelligenceTransport) {
           if (!disposed && epoch === generation) {
             if (!mirrored) store.setState(state => {
               if (!state.operations || (captured.operation !== 'restore' && state.operations.tokenId !== captured.tokenId)) return state;
-              const kind = captured.operation === 'route' ? 'routes' : 'pins';
+              const kind = captured.operation === 'route' || captured.operation === 'unroute' ? 'routes' : 'pins';
               return {operations: {...state.operations, errors: {...state.operations.errors, [kind]: '操作未确认，请显式刷新关系。'}}};
             });
             feedback(key, {error: message(error)});

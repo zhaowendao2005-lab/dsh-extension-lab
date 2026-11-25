@@ -54,7 +54,7 @@ const schemas = {
   a6OperationState: z.strictObject({ refreshTokens: z.boolean().optional(), refreshRelations: z.boolean().optional() }),
   a6OperationSelect: z.strictObject({ tokenId: z.number().int().positive().nullable() }),
   a6OperationRefresh: z.strictObject({ kind: z.enum(['pins', 'routes', 'all']) }),
-  a6ResultAction: z.strictObject({ recordId: id(), model: id(256), channelId: z.number().int().positive(), tokenId: z.number().int().positive(), operation: z.enum(['pin', 'route', 'restore']) }),
+  a6ResultAction: z.strictObject({ recordId: id(), model: id(256), channelId: z.number().int().positive(), tokenId: z.number().int().positive(), operation: z.enum(['pin', 'route', 'unpin', 'unroute', 'restore']) }),
   a6LedgerView: z.strictObject({ attemptId: id().optional(), recordId: id().optional(), refresh: z.boolean().optional() }).refine(value => value.attemptId || value.recordId, '缺少测试记录或轮次 ID'),
   a6KeyChannels: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
   a6Unpin: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),

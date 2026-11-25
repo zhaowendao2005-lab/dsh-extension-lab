@@ -24,19 +24,19 @@ export function ResultTarget({store,record,model}: {store:Workbench;record:Evalu
   const pinned = Boolean(pinsKnown && pin?.channelId === channel.channelId && pin.routeEffective === true);
   const routed = Boolean(routesKnown && view?.routes.some(item => item.model === model.id && item.channelIds.includes(channel.channelId)));
   const pending = Boolean(feedback?.pending);
-  const act = (operation: 'pin'|'route'): void => {
+  const act = (operation: 'pin'|'route'|'unpin'|'unroute'): void => {
     if (tokenId !== null && tokenId !== undefined) store.actions.a6ResultAction({recordId:record.id,model:model.id,channelId:channel.channelId,tokenId,operation});
   };
   return <div className="mit-a6-row-operations" aria-busy={pending}>
     <div className="mit-a6-actions">
-      <button type="button" className={`mit-button${pinned ? ' is-confirmed' : ''}`} aria-pressed={pinned} disabled={!pinsKnown || pending || pinned} title={pinned ? `Key #${tokenId} 已读回固定此渠道；再次点击不会解除` : `将 Key #${tokenId ?? '未选择'} 的 ${model.id} 固定至渠道 #${channel.channelId}，关闭智能兜底`} onClick={() => act('pin')}>固定</button>
-      <button type="button" className={`mit-button${routed ? ' is-confirmed' : ''}`} aria-pressed={routed} disabled={!routesKnown || pending || routed} title={routed ? `Key #${tokenId} 的此渠道已在路由中；再次点击不会移除` : `将渠道 #${channel.channelId} 加入 Key #${tokenId ?? '未选择'} 的 ${model.id} 路由`} onClick={() => act('route')}>加入路由</button>
+      <button type="button" className={`mit-button${pinned ? ' is-confirmed' : ''}`} aria-pressed={pinned} disabled={!pinsKnown || pending} title={pinned ? `解除 Key #${tokenId} 对 ${model.id} 的固定（渠道 #${channel.channelId}）` : `将 Key #${tokenId ?? '未选择'} 的 ${model.id} 固定至渠道 #${channel.channelId}，关闭智能兜底`} onClick={() => act(pinned ? 'unpin' : 'pin')}>{pinned ? '解除固定' : '固定'}</button>
+      <button type="button" className={`mit-button${routed ? ' is-confirmed' : ''}`} aria-pressed={routed} disabled={!routesKnown || pending} title={routed ? `把渠道 #${channel.channelId} 移出 Key #${tokenId} 的 ${model.id} 路由` : `将渠道 #${channel.channelId} 加入 Key #${tokenId ?? '未选择'} 的 ${model.id} 路由`} onClick={() => act(routed ? 'unroute' : 'route')}>{routed ? '移出路由' : '加入路由'}</button>
     </div>
     {!accountMatches ? <small className="mit-error">{!config?.configured ? '请先配置并验证账号' : view?.accountId ? '当前账号与此记录不符' : '操作状态尚未读取'}</small> : !selected ? <small className="mit-muted">请在上方选择操作 Key</small> : !usable ? <small className="mit-error">操作 Key 尚未确认或不可用，请在上方刷新或重选</small> : <>
       <small className="mit-muted">Key #{tokenId} · {pinsKnown ? pin ? pin.routeEffective ? `当前固定：渠道 #${pin.channelId}` : `固定尚未生效：渠道 #${pin.channelId}` : '此模型未固定' : pinsConflict ? '固定关系冲突，请刷新核对' : '固定关系未知，请刷新'}</small>
       <small className="mit-muted">{routesKnown ? routed ? '此渠道已加入路由' : '此渠道尚未加入路由' : '路由关系未知，请刷新'}</small>
     </>}
-    {pending && <small role="status">{feedback?.pending === 'pin' ? '固定并读取确认中…' : feedback?.pending === 'route' ? '加入路由并读取确认中…' : '恢复旧固定中…'}</small>}
+    {pending && <small role="status">{feedback?.pending === 'pin' ? '固定并读取确认中…' : feedback?.pending === 'unpin' ? '解除固定并读取确认中…' : feedback?.pending === 'route' ? '加入路由并读取确认中…' : feedback?.pending === 'unroute' ? '移出路由并读取确认中…' : '恢复旧固定中…'}</small>}
     {feedback?.error && <small className="mit-error" role="alert">{feedback.error}</small>}
     {feedback?.message && <small role="status">{feedback.message}</small>}
   </div>;

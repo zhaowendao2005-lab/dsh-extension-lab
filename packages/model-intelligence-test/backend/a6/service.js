@@ -372,7 +372,7 @@ export class A6Service {
   }
 
   async performAction(input, meta, validate) {
-    if (!['pin', 'route', 'restore'].includes(input.operation)) throw new A6Error('invalid-operation', '只支持固定、加入路由与旧租约恢复');
+    if (!['pin', 'route', 'unpin', 'unroute', 'restore'].includes(input.operation)) throw new A6Error('invalid-operation', '只支持固定、解除固定、加入路由、移出路由与旧租约恢复');
     this.assertAvailable();
     this.assertRecordActive(input.recordId);
     this.assertAccount(meta);
@@ -391,7 +391,7 @@ export class A6Service {
       if (generation !== this.generation) throw new A6Error('account-changed', '账号已切换，请刷新');
       if (input.operation !== 'restore') this.operations.assertSelected(account, input.tokenId, selectionVersion);
     };
-    const relationKind = input.operation === 'route' ? 'routes' : 'pins';
+    const relationKind = input.operation === 'route' || input.operation === 'unroute' ? 'routes' : 'pins';
     let written = false;
     try {
       await this.loadLeases();
@@ -415,15 +415,28 @@ export class A6Service {
       selectionVersion = account.selectionVersion;
       assertCurrent();
       if (input.operation === 'pin' && lease) throw new A6Error('lease-held', '此模型仍有旧固定恢复租约，请先恢复旧租约后再设置固定');
+      if (input.operation === 'unpin' && lease) throw new A6Error('lease-held', '此模型还有待恢复的旧固定租约，请先恢复旧租约后再解除固定');
       // Invalidate every relation read started before this write. New pins are permanent settings,
       // so neither a previous-channel snapshot nor a new recovery lease is created here.
       this.operations.beginWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion });
       assertCurrent();
       written = true;
-      const outcome = input.operation === 'pin'
-        ? await this.site.pin({ tokenId: input.tokenId, model: input.model, channelId: input.channelId, fallback: false })
-        : await this.site.addRoute({ tokenId: input.tokenId, model: input.model, channelId: input.channelId });
-      await this.operations.afterWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion }, input.operation === 'pin' ? outcome.pins : outcome.subscriptions);
+      let outcome;
+      let snapshot;
+      if (input.operation === 'pin') {
+        outcome = await this.site.pin({ tokenId: input.tokenId, model: input.model, channelId: input.channelId, fallback: false });
+        snapshot = outcome.pins;
+      } else if (input.operation === 'route') {
+        outcome = await this.site.addRoute({ tokenId: input.tokenId, model: input.model, channelId: input.channelId });
+        snapshot = outcome.subscriptions;
+      } else if (input.operation === 'unpin') {
+        await this.site.unpin({ tokenId: input.tokenId, model: input.model, channelId: input.channelId });
+        snapshot = await this.site.pins();
+      } else {
+        outcome = await this.site.removeRoute({ tokenId: input.tokenId, model: input.model, channelId: input.channelId });
+        snapshot = outcome.subscriptions;
+      }
+      await this.operations.afterWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion }, snapshot);
       written = false;
       if (account.selectionVersion !== selectionVersion) throw new A6Error('token-changed', '操作期间令牌选择已变更，请检查当前令牌的最新关系');
       if (input.operation === 'pin') {
@@ -432,11 +445,21 @@ export class A6Service {
             pins.length !== 1 || pins[0].channelId !== input.channelId || pins[0].routeEffective !== true) {
           throw new A6Error('pin-unverified', '站点固定读回未确认，请刷新固定关系检查实际状态');
         }
-      } else if (outcome?.verified !== true || account.tokenId !== input.tokenId || account.errors.routes ||
-          !account.routes.some(route => route.model === input.model && route.channelIds.includes(input.channelId))) {
-        throw new A6Error('route-unverified', '站点路由读回未确认，请刷新路由关系检查实际状态');
+      } else if (input.operation === 'route') {
+        if (outcome?.verified !== true || account.tokenId !== input.tokenId || account.errors.routes ||
+            !account.routes.some(route => route.model === input.model && route.channelIds.includes(input.channelId))) {
+          throw new A6Error('route-unverified', '站点路由读回未确认，请刷新路由关系检查实际状态');
+        }
+      } else if (input.operation === 'unpin') {
+        if (account.tokenId !== input.tokenId || account.errors.pins ||
+            account.pins.some(pin => pin.model === input.model && pin.channelId === input.channelId)) {
+          throw new A6Error('unpin-unverified', '未能读回解除固定结果，请刷新后检查');
+        }
+      } else if (account.tokenId !== input.tokenId || account.errors.routes ||
+          account.routes.some(route => route.model === input.model && route.channelIds.includes(input.channelId))) {
+        throw new A6Error('route-unverified', '未能读回移出路由结果，请刷新后检查');
       }
-      return { ok: true, result: { verified: true, operation: input.operation, tokenId: input.tokenId, model: input.model, channelId: input.channelId, ...(input.operation === 'pin' ? { supplierId: outcome.supplierId } : { subscriptionId: outcome.subscriptionId }) }, state: this.operations.snapshot(account) };
+      return { ok: true, result: { verified: true, operation: input.operation, tokenId: input.tokenId, model: input.model, channelId: input.channelId, ...(input.operation === 'pin' ? { supplierId: outcome.supplierId } : input.operation === 'route' ? { subscriptionId: outcome.subscriptionId } : {}) }, state: this.operations.snapshot(account) };
     } finally {
       try { if (written && account) await this.operations.afterWrite(account, relationKind, { tokenId: input.tokenId, selectionVersion }); }
       finally { this.engine.tokenSlots.release(identity); }
