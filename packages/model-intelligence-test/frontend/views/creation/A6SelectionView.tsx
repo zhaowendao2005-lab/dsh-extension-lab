@@ -4,7 +4,7 @@ import { a6ChannelKey } from '../../stores/a6api.stores';
 import { Empty,Icon } from '../../components/common';
 import {MarketPrice,MarketCache} from '../a6/MarketSnapshot';
 
-/** Opened from a selection the userscript pushed; the Host owns every a6api call from here on. */
+/** The Host owns all a6api calls after a channel selection is registered. */
 export function A6SelectionView({store,selectionId}: {store: Workbench; selectionId: string}) {
   const state=useStore(store.a6,value => value);
   const selection=state.selections.find(item => item.id===selectionId);
@@ -26,14 +26,14 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
       {state.error&&<p className="mit-error" role="alert">{state.error}</p>}
       <label className="mit-field">测试名称<input value={draft.name} maxLength={120} disabled={busy} onChange={event => store.actions.patchA6(selectionId,{name: event.currentTarget.value})} /></label>
       <section className="mit-a6-section" aria-labelledby={`${base}-models`}>
-        <div className="mit-label-row"><h3 id={`${base}-models`}>网页参测清单</h3><span className="mit-muted">{count} / 64 项</span></div>
+        <div className="mit-label-row"><h3 id={`${base}-models`}>{selection.source === 'key' ? 'Key 参测清单' : '网页参测清单'}</h3><span className="mit-muted">{count} / 64 项</span></div>
         {count>64&&<p className="mit-error" role="alert">清单超过 64 项，请移除多余渠道后开始。</p>}
         <div className="mit-a6-channel-list">{draft.models.map(row => <div className="mit-a6-channel-row" key={a6ChannelKey(row)}>
           <div><strong>{row.model}</strong><span className="mit-muted">{row.supplierName||`供应商 #${row.supplierId}`} · {row.channelName||`渠道 #${row.channelId}`}{row.channelName? ` (#${row.channelId})`:''}{row.brand? ` · ${row.brand}`:''}</span></div>
           <div className="mit-a6-channel-market"><MarketPrice market={row.market} /><MarketCache market={row.market} /></div>
           <button type="button" className="mit-icon-button" disabled={busy} aria-label={`移除 ${row.model} 渠道 ${row.channelId}`} onClick={() => store.actions.removeA6Model(selectionId,a6ChannelKey(row))}><Icon name="close" size={14} /></button>
         </div>)}</div>
-        {!count&&<p className="mit-muted">清单已清空。请从 a6api 网页发送新的选择。</p>}
+        {!count&&<p className="mit-muted">清单已清空。{selection.source === 'key' ? '请回到按 Key 查看重新选择渠道。' : '请从 a6api 网页发送新的选择。'}</p>}
       </section>
       <section className="mit-a6-section" aria-labelledby={`${base}-slots`}>
         <div className="mit-label-row"><h3 id={`${base}-slots`}>测试令牌与并发槽</h3><span className="mit-muted">{slots} 槽</span></div>
@@ -46,7 +46,7 @@ export function A6SelectionView({store,selectionId}: {store: Workbench; selectio
             <span className="mit-a6-slot-name"><strong>{token.name||`token #${token.id}`}</strong><small className="mit-muted">Token ID {token.id}{checked? ` · 槽位 ${order+1}`:''}</small></span>
           </label>;
         })}</div>
-        {!selection.tokens.length&&<p className="mit-error">这次网页选择没有令牌，请回到网页重新选择。</p>}
+        {!selection.tokens.length&&<p className="mit-error">这次选择没有可用的测试令牌。</p>}
         <label className="mit-field mit-a6-timeout">单请求最大时长（秒）<input type="number" min={1} step={30} value={draft.timeoutMs===undefined? '':draft.timeoutMs/1000} placeholder="使用 Host 默认时长" disabled={busy} onChange={event => store.actions.patchA6(selectionId,{timeoutMs: event.currentTarget.value===''? undefined:Number(event.currentTarget.value)*1000})} /></label>
       </section>
       <div className="mit-info"><strong>真实请求：</strong>{count} 项 · {slots} 槽 · {count*3} 次计划请求 · 最多 {maxRequests} 路并发。同一模型的 3 条挑战同时请求，每个槽位完成一项后领取下一项。每次换项前 Host 会先固定渠道、核对生效后才发采样请求，测完立刻恢复原固定。已发出的请求会产生费用。</div>

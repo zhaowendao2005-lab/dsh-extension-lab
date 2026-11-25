@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
-import type { A6Channel, A6Config, A6Draft, A6Selection, A6State, ModelIntelligenceTransport, StoredRecord } from '../types';
-import { copyIntakeToken, createA6Record, oneClickLink, readA6Config, readA6Selections, rotateA6Intake, writeA6Config } from './a6api.datasource';
+import type { A6Channel, A6Config, A6Draft, A6KeyTestSelectionInput, A6Selection, A6State, ModelIntelligenceTransport, StoredRecord } from '../types';
+import { copyIntakeToken, createA6Record, prepareKeyTestSelection, oneClickLink, readA6Config, readA6Selections, rotateA6Intake, writeA6Config } from './a6api.datasource';
 
 export const a6ChannelKey = (row: A6Channel): string => JSON.stringify([row.listingId, row.channelId, row.supplierId, row.model]);
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
@@ -14,10 +14,11 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
   open(selectionId: string): void;
   created(record: StoredRecord, attemptId: string): void;
 }) {
-  const store = createStore<A6State>(() => ({ selections: [], drafts: {}, loaded: false, config: null, configLoading: false, form: { accessToken: '', userId: '' }, saving: false, rotating: false, copying: false }));
+  const store = createStore<A6State>(() => ({ preparingKeyDraft: false, selections: [], drafts: {}, loaded: false, config: null, configLoading: false, form: { accessToken: '', userId: '' }, saving: false, rotating: false, copying: false }));
   const seen = new Set<string>();
   let primed = false;
   let revision = -1;
+  let registration = 0;
   let disposed = false;
   let polling = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -36,7 +37,7 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
     const draft: A6Draft = {
       name: `a6api 专项 · ${new Date(selection.createdAt).toLocaleString('zh-CN')}`,
       models: [...selection.models],
-      tokens: selection.tokens.map(token => token.id),
+      tokens: selection.source === 'key' ? [] : selection.tokens.map(token => token.id),
       creating: false,
     };
     store.setState(state => ({ drafts: { ...state.drafts, [id]: draft } }));
@@ -46,9 +47,10 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
   async function poll(): Promise<void> {
     if (disposed || polling) return;
     polling = true;
+    const startedAtRegistration = registration;
     try {
       const view = await readA6Selections(transport, revision);
-      if (disposed) return;
+      if (disposed || registration !== startedAtRegistration) return;
       revision = view.revision;
       if (!('unchanged' in view)) {
         const fresh: string[] = [];
@@ -56,7 +58,7 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
           if (seen.has(selection.id)) continue;
           seen.add(selection.id);
           // The first listing is history, not a push: only later arrivals steal focus.
-          if (primed) fresh.push(selection.id);
+          if (primed && selection.source !== 'key') fresh.push(selection.id);
         }
         primed = true;
         store.setState({ selections: view.selections, loaded: true, error: undefined });
@@ -84,6 +86,19 @@ export function createA6Domain(transport: ModelIntelligenceTransport, callbacks:
     dispose(): void {
       disposed = true;
       if (timer) clearTimeout(timer);
+    },
+    async prepareKeyDraft(input: A6KeyTestSelectionInput): Promise<string | undefined> {
+      if (disposed || store.getState().preparingKeyDraft) return;
+      store.setState({ preparingKeyDraft: true });
+      try {
+        const { selection } = await prepareKeyTestSelection(transport, input);
+        if (disposed) return;
+        registration += 1;
+        store.setState(state => ({ selections: [selection, ...state.selections.filter(item => item.id !== selection.id)] }));
+        return selection.id;
+      } finally {
+        if (!disposed) store.setState({ preparingKeyDraft: false });
+      }
     },
     open(selectionId: string): void {
       if (!ensureDraft(selectionId)) return;

@@ -85,13 +85,10 @@ var schemas = {
   a6KeyChannels: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
   a6Unpin: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
   a6KeyPin: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
-  a6KeyTest: z2.strictObject({
+  a6KeyTestSelection: z2.strictObject({
     kind: z2.enum(["fingerprint", "custom"]),
-    slots: a6Slots,
-    models: z2.array(a6Channel).min(1).max(64),
-    name: z2.string().max(120).optional(),
-    prompt: z2.string().max(2e5).optional(),
-    timeoutMs: timeoutMs.optional()
+    tokenId: z2.number().int().positive(),
+    channels: z2.array(z2.strictObject({ model: id(256), channelId: z2.number().int().positive() })).min(1).max(64)
   }),
   a6KeyChannelPrices: z2.strictObject({ tokenId: z2.number().int().positive(), refresh: z2.boolean().optional() }),
   a6RemoveRoute: z2.strictObject({ tokenId: z2.number().int().positive(), model: id(256), channelId: z2.number().int().positive() }),
@@ -119,7 +116,7 @@ var DESCRIPTIONS = {
   a6ConfigSave: "Verify and store the a6api access token plus user id in Host storage.",
   a6IntakeRotate: "Rotate the intake token the userscript uses; received selections stay valid.",
   a6Tokens: "List the account test tokens from a6api (id and name only, no key material).",
-  a6Selections: "Read selections sent by the a6api userscript. Does not start inference.",
+  a6Selections: "Read selections prepared for a6api test drafts. Does not start inference.",
   a6Create: "Create an a6api fingerprint or custom attempt using user-selected test token slots (real inference).",
   a6OperationState: "Read account token metadata and selected-key pin/route snapshots; only initial load or explicit refresh contacts the site.",
   a6OperationSelect: "Persist the account-wide operation key and read its pin and route state. No key plaintext is read.",
@@ -131,7 +128,7 @@ var DESCRIPTIONS = {
   a6Unpin: "Remove the a6api pin between one key and one channel for one model, verifying the pin is gone.",
   a6KeyChannelPrices: "Read the public market listing price of every channel bound to one a6api key; unknown prices stay absent.",
   a6KeyPin: "Pin one channel to one a6api key for one model from the key overview; verifies the pin by reading it back.",
-  a6KeyTest: "Create a fingerprint or custom attempt for channels picked in the key overview, using dedicated test slots (real inference).",
+  a6KeyTestSelection: "Prepare selected Key channels for an existing a6api test draft without starting inference.",
   channelTests: "List historical fingerprint and custom test runs for one model channel, newest first."
 };
 var json = (symbol) => ({ mode: "strict", typeSymbol: `model-intelligence-test#${symbol}`, create: () => z2.json() });
@@ -1427,8 +1424,8 @@ var ModelIntelligenceService = class extends Service {
   a6KeyPin(request) {
     return this.guard(() => this.a6.pin(request));
   }
-  a6KeyTest(request) {
-    return this.guard(() => this.a6.keyTest(request));
+  a6KeyTestSelection(request) {
+    return this.guard(() => this.a6.keyTestSelection(request));
   }
   a6KeyChannelPrices(request) {
     return this.guard(() => this.a6.channelPrices(request));
@@ -1519,7 +1516,7 @@ var REMOTE_METHODS = [
   "a6RemoveRoute",
   "a6Unpin",
   "a6KeyPin",
-  "a6KeyTest",
+  "a6KeyTestSelection",
   "a6KeyChannelPrices",
   "channelTests"
 ];
@@ -2453,7 +2450,7 @@ var A6Intake = class {
     if (!found) throw new A6Error("selection-missing", "\u9009\u62E9\u5DF2\u5931\u6548\uFF0C\u8BF7\u5728\u7F51\u9875\u91CD\u65B0\u52FE\u9009\u540E\u53D1\u9001");
     return found;
   }
-  submit(input2) {
+  submit(input2, { fromKey = false } = {}) {
     const siteOrigin = text2(input2?.siteOrigin, 120);
     if (!SITE_ORIGINS.has(siteOrigin)) throw new A6Error("wrong-site", "\u53EA\u63A5\u53D7 a6api \u7AD9\u70B9\u53D1\u6765\u7684\u9009\u62E9");
     const accountId = text2(input2?.accountId, 40);
@@ -2461,6 +2458,7 @@ var A6Intake = class {
     if (input2.kind !== void 0 && !["fingerprint", "custom"].includes(input2.kind)) throw new A6Error("invalid-input", "\u6D4B\u8BD5\u7C7B\u578B\u65E0\u6548");
     const selection = {
       kind: input2.kind ?? "fingerprint",
+      ...fromKey ? { source: "key" } : {},
       id: randomBytes(9).toString("base64url"),
       siteOrigin,
       accountId,
@@ -3288,15 +3286,12 @@ var A6Service = class {
     });
   }
   async create(input2) {
-    return this.createFromSelection(this.selection(input2.selectionId), input2);
-  }
-  /** Shared record-creation body: the web intake and the key-view batch both land here. */
-  async createFromSelection(selection, input2) {
     this.assertRecordActive();
     this.assertAvailable();
     await this.config();
     this.assertRecordActive();
     this.assertAvailable();
+    const selection = this.selection(input2.selectionId);
     this.assertAccount(selection);
     this.creating += 1;
     try {
@@ -3332,42 +3327,25 @@ var A6Service = class {
       this.creating -= 1;
     }
   }
-  /**
-   * Batch test straight from the key overview: the user picks channels from a key it already lists,
-   * and one dedicated slot token. The selection is built here instead of arriving from the web page.
-   */
-  async keyTest(input2) {
-    this.assertRecordActive();
+  async keyTestSelection({ tokenId, kind, channels }) {
     this.assertAvailable();
     await this.config();
     this.assertAvailable();
     if (!this.site.configured) throw new A6Error("auth-missing", "\u8BF7\u5148\u914D\u7F6E a6api \u8BBF\u95EE\u4EE4\u724C");
-    const slots = Array.isArray(input2?.slots) ? input2.slots : [];
-    if (!slots.length || slots.length > 6) throw new A6Error("invalid-slots", "\u8BF7\u9009\u62E9 1\u20136 \u4E2A\u6D4B\u8BD5\u4EE4\u724C");
-    const tokens2 = await this.site.tokens();
-    const chosen = slots.map((slot) => {
-      const token = tokens2.find((item) => item.id === Number(slot.tokenId));
-      if (!token) throw new A6Error("invalid-slots", "\u6D4B\u8BD5\u4EE4\u724C\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u5F53\u524D\u8D26\u53F7");
-      return { id: token.id, name: token.name };
+    const accountId = String(this.site.userId);
+    const generation = this.generation;
+    const [view, tokens2] = await Promise.all([this.operations.channels({ tokenId }), this.site.tokens()]);
+    this.assertAvailable();
+    if (generation !== this.generation || accountId !== String(this.site.userId)) throw new A6Error("account-mismatch", "a6api \u8D26\u53F7\u5DF2\u53D8\u66F4\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9\u6E20\u9053");
+    const key = ({ model, channelId }) => JSON.stringify([model, channelId]);
+    const available = new Map(view.channels.map((row) => [key(row), row]));
+    const models = channels.map((ref) => {
+      const row = available.get(key(ref));
+      if (!row) throw new A6Error("invalid-selection", "\u6240\u9009\u6E20\u9053\u5DF2\u4E0D\u5728\u8BE5 Key \u7684\u7ED1\u5B9A\u5217\u8868\u4E2D\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u9009");
+      return { listingId: 0, channelId: row.channelId, supplierId: row.supplierId ?? 0, model: row.model };
     });
-    if (new Set(chosen.map((token) => token.id)).size !== chosen.length) throw new A6Error("invalid-slots", "\u6D4B\u8BD5\u4EE4\u724C\u91CD\u590D");
-    const models = (Array.isArray(input2.models) ? input2.models : []).map(channelOf);
-    if (!models.length) throw new A6Error("invalid-selection", "\u8BF7\u5148\u52FE\u9009\u8981\u6D4B\u8BD5\u7684\u6E20\u9053");
-    if (models.length > 64) throw new A6Error("invalid-selection", "\u4E00\u6B21\u6700\u591A\u6D4B\u8BD5 64 \u4E2A\u6E20\u9053");
-    if (new Set(models.map(channelKey)).size !== models.length) throw new A6Error("invalid-selection", "\u5F85\u6D4B\u6E05\u5355\u91CD\u590D");
-    const kind = input2.kind === "custom" ? "custom" : "fingerprint";
-    if (kind === "custom" && !String(input2.prompt ?? "").trim()) throw new A6Error("invalid-prompt", "\u81EA\u5B9A\u4E49\u6D4B\u8BD5\u9700\u8981\u586B\u5199\u63D0\u793A\u8BCD");
-    const selection = {
-      kind,
-      id: `key:${this.site.userId}:${Date.now()}`,
-      siteOrigin: SITE_ORIGIN,
-      accountId: String(this.site.userId),
-      pageId: "",
-      createdAt: Date.now(),
-      models,
-      tokens: chosen
-    };
-    return this.createFromSelection(selection, { ...input2, kind, slots, models });
+    const result = this.intake.submit({ kind, accountId, siteOrigin: SITE_ORIGIN, models, tokens: tokens2 }, { fromKey: true });
+    return { selection: this.selection(result.selectionId), revision: result.revision };
   }
   async customFromRecord(input2) {
     this.assertRecordActive(input2.recordId);

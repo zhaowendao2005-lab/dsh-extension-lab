@@ -30,9 +30,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
   const evaluationsDomain = createEvaluationsDomain(transport);
   const customDomain = createCustomDomain(transport);
   const presentationDomain = createPresentationDomain();
-  const insightsDomain = createA6InsightsDomain(transport, {
-    created(record, attemptId) { evaluationsDomain.acceptCreated(record, attemptId ?? ''); openRecord(record.id); },
-  });
+  const insightsDomain = createA6InsightsDomain(transport);
   const a6Domain = createA6Domain(transport, {
     open(selectionId) {
       const selection = a6Domain.store.getState().selections.find(item => item.id === selectionId);
@@ -173,7 +171,7 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     const count = chosen.length + customDraft.a6Models.length;
     if (!value.body.trim()) { draft.setState({ error: '请填写自定义提示词。' }); return; }
     if (!count || count > 64) { draft.setState({ error: '自定义任务需选择 1–64 个 DSH/a6api 模型。' }); return; }
-    if (customDraft.a6Models.length && !customDraft.sourceSelectionId && !customDraft.sourceRecordId) { draft.setState({ error: 'a6api 渠道只能来自网页选择或已完成的指纹记录。' }); return; }
+    if (customDraft.a6Models.length && !customDraft.sourceSelectionId && !customDraft.sourceRecordId) { draft.setState({ error: 'a6api 渠道只能来自有效的渠道选择或已完成的指纹记录。' }); return; }
     if (customDraft.a6Models.length && !customDraft.tokens.length) { draft.setState({ error: '请至少选择一个 a6api 测试令牌槽位。' }); return; }
     // Concurrency is not a user setting: it is exactly the allocated a6api test tokens (or the target count for DSH-only tasks), capped by the Host.
     const concurrency = Math.max(1, Math.min(6, customDraft.a6Models.length ? customDraft.tokens.length : count));
@@ -312,7 +310,23 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     loadKeyChannelPrices: insightsDomain.loadKeyChannelPrices,
     unpinKeyChannel: insightsDomain.unpinKeyChannel,
     pinKeyChannel: insightsDomain.pinKeyChannel,
-    runKeyTest: insightsDomain.runKeyTest,
+    openKeyTestDraft(kind) {
+      const { keyView, keyChannels } = insightsDomain.store.getState();
+      const tab = workbench.getState().activeTab;
+      if (keyView.tokenId === null || keyChannels.loading || keyChannels.view?.tokenId !== keyView.tokenId || a6Domain.store.getState().preparingKeyDraft) return;
+      const selected = new Set(keyView.selected);
+      const channels = keyChannels.view.channels.filter(row => selected.has(JSON.stringify([row.model, row.channelId]))).map(({ model, channelId }) => ({ model, channelId }));
+      if (!channels.length) return;
+      if (channels.length > 64) { showError('无法打开测试草稿', '一次最多选择 64 个渠道。'); return; }
+      const tokenId = keyView.tokenId;
+      attempt('无法打开测试草稿', a6Domain.prepareKeyDraft({ tokenId, kind, channels }).then(selectionId => {
+        if (disposed || !selectionId || workbench.getState().activeTab !== tab || insightsDomain.store.getState().keyView.tokenId !== tokenId) return;
+        if (kind === 'custom') {
+          if (customDomain.store.getState().draft.creating) { showError('无法打开测试草稿', '当前自定义测试正在提交，请稍后再试。'); return; }
+          guardDirty(() => a6Domain.open(selectionId));
+        } else a6Domain.open(selectionId);
+      }));
+    },
     loadChannelTests: insightsDomain.loadChannelTests,
     removeKeyRoutes: insightsDomain.removeKeyRoutes,
     patchKeyView: insightsDomain.patchKeyView,

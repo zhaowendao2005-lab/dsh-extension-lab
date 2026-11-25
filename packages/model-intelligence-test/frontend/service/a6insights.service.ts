@@ -1,4 +1,4 @@
-import type { A6KeyTestInput, A6RelationKind, A6ResultActionInput, ModelIntelligenceTransport } from '../types';
+import type { A6RelationKind, A6ResultActionInput, ModelIntelligenceTransport } from '../types';
 
 export const readOperationState = (transport: ModelIntelligenceTransport, options: {refreshTokens?: boolean; refreshRelations?: boolean} = {}) => transport.a6OperationState(options);
 export const selectOperationToken = (transport: ModelIntelligenceTransport, tokenId: number | null) => transport.a6OperationSelect({tokenId});
@@ -9,6 +9,5 @@ export const keyChannels = (transport: ModelIntelligenceTransport, tokenId: numb
 export const removeRoute = (transport: ModelIntelligenceTransport, input: {tokenId: number; model: string; channelId: number}) => transport.a6RemoveRoute(input);
 export const unpinChannel = (transport: ModelIntelligenceTransport, input: {tokenId: number; model: string; channelId: number}) => transport.a6Unpin(input);
 export const pinChannel = (transport: ModelIntelligenceTransport, input: {tokenId: number; model: string; channelId: number}) => transport.a6KeyPin(input);
-export const keyTest = (transport: ModelIntelligenceTransport, input: A6KeyTestInput) => transport.a6KeyTest(input);
 export const keyChannelPrices = (transport: ModelIntelligenceTransport, tokenId: number, refresh = false) => transport.a6KeyChannelPrices({tokenId, ...(refresh ? {refresh} : {})});
 export const channelTests = (transport: ModelIntelligenceTransport, model: string, channelId: number, limit = 20) => transport.channelTests({model, channelId, limit});

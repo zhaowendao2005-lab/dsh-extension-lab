@@ -88,6 +88,7 @@ export function KeyView({ store }: { store: Workbench }) {
   const keyChannels = useStore(store.a6Insights, state => state.keyChannels);
   const channelTests = useStore(store.a6Insights, state => state.channelTests);
   const keyView = useStore(store.a6Insights, state => state.keyView);
+  const preparingTest = useStore(store.a6, state => state.preparingKeyDraft);
   const keyPrices = useStore(store.a6Insights, state => state.keyPrices);
 
   useEffect(() => { if (!operations) store.actions.loadA6Operations(); }, [operations, store]);
@@ -125,11 +126,8 @@ export function KeyView({ store }: { store: Workbench }) {
     store.actions.patchKeyView({expanded: next});
     if (next.includes(key) && !channelTests[key]?.view && !channelTests[key]?.loading) store.actions.loadChannelTests(channel.model, channel.channelId);
   };
-  useEffect(() => {
-    if (keyView.testTokenId !== null) return;
-    const candidate = tokens.find(item => item.id !== tokenId) ?? tokens[0];
-    if (candidate) store.actions.patchKeyView({testTokenId: candidate.id});
-  }, [tokens, tokenId, keyView.testTokenId, store]);
+  const selectedCount = keyChannels.view?.tokenId === tokenId ? keyChannels.view.channels.filter(channel => selectedSet.has(rowKey(channel))).length : 0;
+  const testDisabled = !selectedCount || keyChannels.loading || preparingTest;
   const selectedRouted = channels.filter(channel => keyView.selected.includes(rowKey(channel)) && channel.routed);
   const removeRoutes = (): void => {
     if (!selectedRouted.length) return;
@@ -178,28 +176,14 @@ export function KeyView({ store }: { store: Workbench }) {
           {!keyChannels.loading && !keyChannels.error && channels.length === 0 && <p className="mit-key-empty">这个 Key 目前没有固定的模型或路由池。</p>}
           {channels.length > 0 && <div className="mit-key-ops" aria-label="批量操作">
             <div className="mit-key-ops-row">
-              <span className="mit-key-ops-count">{keyView.selected.length > 0 ? `已选 ${keyView.selected.length} 个渠道` : '勾选左侧复选框后可批量操作'}</span>
+              <span className="mit-key-ops-count">{selectedCount > 0 ? `已选 ${selectedCount} 个渠道` : '勾选左侧复选框后可批量操作'}</span>
               <button type="button" className="mit-key-route-remove" disabled={!selectedRouted.length || keyChannels.loading} onClick={removeRoutes} title="把选中的渠道从模型路由池里移除"><Icon name="trash" size={12}/>取消路由{selectedRouted.length ? ` · ${selectedRouted.length}` : ''}</button>
             </div>
-            <div className="mit-key-ops-row">
-              <span className="mit-key-ops-label">批量测试</span>
-              <div className="mit-key-seg" role="group" aria-label="测试类型">
-                <button type="button" className={keyView.testKind === 'fingerprint' ? 'is-active' : ''} onClick={() => store.actions.patchKeyView({testKind: 'fingerprint'})}>指纹</button>
-                <button type="button" className={keyView.testKind === 'custom' ? 'is-active' : ''} onClick={() => store.actions.patchKeyView({testKind: 'custom'})}>自定义</button>
-              </div>
-              <label className="mit-key-slot">测试令牌
-                <select value={keyView.testTokenId ?? ''} onChange={event => store.actions.patchKeyView({testTokenId: event.target.value ? Number(event.target.value) : null})}>
-                  <option value="">选择令牌…</option>
-                  {tokens.map(item => <option key={item.id} value={item.id}>#{item.id} {item.name || '未命名'}{item.maskedKey ? ` · ${item.maskedKey}` : ''}</option>)}
-                </select>
-              </label>
-              {keyView.testKind === 'custom' && <label className="mit-key-prompt">提示词
-                <input value={keyView.testPrompt} onChange={event => store.actions.patchKeyView({testPrompt: event.target.value})} placeholder="这条自定义测试要发送的提示词"/>
-              </label>}
-              <button type="button" className="mit-key-start" disabled={!keyView.selected.length || keyView.testing || keyChannels.loading} onClick={() => store.actions.runKeyTest()}><Icon name="play" size={12}/>{keyView.testing ? '正在创建…' : `开始测试${keyView.selected.length ? ` · ${keyView.selected.length} 项` : ''}`}</button>
+            <div className="mit-key-ops-row" role="group" aria-label="新建测试" aria-busy={preparingTest}>
+              <button type="button" className="mit-button" disabled={testDisabled} onClick={() => store.actions.openKeyTestDraft('fingerprint')}><Icon name="plus" size={12}/>新建指纹测试</button>
+              <button type="button" className="mit-button" disabled={testDisabled} onClick={() => store.actions.openKeyTestDraft('custom')}><Icon name="plus" size={12}/>新建自定义测试</button>
+              {preparingTest && <span className="mit-muted" role="status">正在打开草稿…</span>}
             </div>
-            {keyView.testError && <p className="mit-key-error">{keyView.testError}</p>}
-            <p className="mit-key-ops-hint">测试令牌不能已有站点固定（否则会被站点拒绝），建议用专用测试 Key；测试结束后固定会自动恢复。</p>
           </div>}
           {channels.length > 0 && <div className="mit-key-table-scroll">
             <table className="mit-key-table">

@@ -43,19 +43,19 @@ export interface ChannelTestEntry {
   custom: {phase: string | null; outputState: string | null; outputPath: string | null; inputTokens: number | null; outputTokens: number | null; cost: number | null; ttftMs: number | null; modelTokensPerSecond: number | null; error: string | null} | null;
 }
 export interface ChannelTestsView { model: string; channelId: number; total: number; entries: ChannelTestEntry[] }
-export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'>; keyChannels: {tokenId: number | null; view: A6KeyChannelsView | null; loading: boolean; error?: string}; keyPrices: {tokenId: number | null; view: A6KeyChannelPricesView | null; loading: boolean; error?: string}; channelTests: Record<string,{view: ChannelTestsView | null; loading: boolean; error?: string}>; keyView: {tokenId: number | null; query: string; expanded: string[]; selected: string[]; testKind: TestKind; testTokenId: number | null; testPrompt: string; testing: boolean; testError?: string} }
+export interface A6InsightsState { operations: A6OperationView | null; loading: boolean; busy: number; query: string; error?: string; feedback?: string; results: Record<string,A6ResultFeedback>; ledgers: Record<string,A6LedgerEntry>; scopes: Record<string,'attempt'|'record'>; keyChannels: {tokenId: number | null; view: A6KeyChannelsView | null; loading: boolean; error?: string}; keyPrices: {tokenId: number | null; view: A6KeyChannelPricesView | null; loading: boolean; error?: string}; channelTests: Record<string,{view: ChannelTestsView | null; loading: boolean; error?: string}>; keyView: {tokenId: number | null; query: string; expanded: string[]; selected: string[]} }
 export interface A6Token { id: number; name: string }
 export interface A6Slot { tokenId: number; name?: string }
-export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; kind?: TestKind; models: A6Channel[]; tokens: A6Token[] }
+export interface A6Selection { id: string; accountId: string; siteOrigin: string; createdAt: number; kind?: TestKind; source?: 'key'; models: A6Channel[]; tokens: A6Token[] }
 /** Credential state as the panel sees it: the access token itself never leaves Host storage. */
 export interface A6Config { configured: boolean; mask: string; userId: string; intakeToken: string; origin: string; link?: string; userscript?: {version: string; protocolVersion: number; installUrl: string; updateUrl: string; networkInstallUrl?: string; networkUpdateUrl?: string; recent?: {version: string; protocolVersion: number | null; seenAt: number; accountId: string}} }
 export type A6SelectionsView = {revision: number; selections: A6Selection[]} | {revision: number; unchanged: true};
-export interface A6KeyTestInput { kind: TestKind; slots: A6Slot[]; models: A6Channel[]; name?: string; prompt?: string; timeoutMs?: number }
+export interface A6KeyTestSelectionInput { tokenId: number; kind: TestKind; channels: {model: string; channelId: number}[] }
 export interface A6KeyPinOutcome { verified: boolean; tokenId: number; model: string; channelId: number; supplierId: number; routeEffective: boolean }
 export interface A6CreateInput { selectionId: string; name: string; slots: A6Slot[]; timeoutMs?: number; models?: A6Channel[]; kind?: TestKind; prompt?: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; dshModels?: RecordModelRef[]; protocols?: {channelId: number; model: string; api: A6Protocol}[] }
 export interface A6Record { accountId: string; siteOrigin: string; selectionId: string; slots: A6Slot[] }
 export interface A6Draft { name: string; models: A6Channel[]; tokens: number[]; timeoutMs?: number; creating: boolean; error?: string; feedback?: string }
-export interface A6State { selections: A6Selection[]; drafts: Record<string, A6Draft>; loaded: boolean; error?: string; config: A6Config | null; configLoading: boolean; configError?: string; configFeedback?: string; form: {accessToken: string; userId: string}; saving: boolean; rotating: boolean; copying: boolean }
+export interface A6State { preparingKeyDraft: boolean; selections: A6Selection[]; drafts: Record<string, A6Draft>; loaded: boolean; error?: string; config: A6Config | null; configLoading: boolean; configError?: string; configFeedback?: string; form: {accessToken: string; userId: string}; saving: boolean; rotating: boolean; copying: boolean }
 export type RelayApi = 'chat' | 'responses' | 'messages' | A6Protocol;
 /** DSH-native wire protocols (dsh-llm-pi-ai PROTOCOLS); legacy chat/messages are read-compatible aliases. */
 export type A6Protocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai';
@@ -233,7 +233,7 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  a6KeyChannelPrices(request: {tokenId: number; refresh?: boolean}): Promise<A6KeyChannelPricesView>;
  a6Unpin(request: {tokenId: number; model: string; channelId: number}): Promise<{verified: boolean; channelId: number}>;
  a6KeyPin(request: {tokenId: number; model: string; channelId: number}): Promise<A6KeyPinOutcome>;
- a6KeyTest(request: A6KeyTestInput): Promise<{record: StoredRecord; attemptId: string | null}>;
+ a6KeyTestSelection(request: A6KeyTestSelectionInput): Promise<{selection: A6Selection; revision: number}>;
  a6RemoveRoute(request: {tokenId: number; model: string; channelId: number}): Promise<{verified: boolean; channelId: number}>;
  channelTests(request: {model: string; channelId: number; limit?: number}): Promise<ChannelTestsView>;
 }
@@ -277,7 +277,7 @@ export interface Workbench {
   removeA6Model(selectionId: string, key: string): void; toggleA6Token(selectionId: string, tokenId: number): void;
   submitA6(selectionId: string): void;
   loadA6Config(): void; patchA6Form(value: Partial<{accessToken: string; userId: string}>): void; saveA6Config(): void; rotateA6Intake(): void; copyA6Intake(): void;
-  loadA6Operations(): void; loadKeyChannels(tokenId: number, refresh?: boolean): void; loadKeyChannelPrices(tokenId: number, refresh?: boolean): void; removeKeyRoutes(items: Array<{model: string; channelId: number}>): void; unpinKeyChannel(item: {model: string; channelId: number}): void; pinKeyChannel(item: {model: string; channelId: number}): void; runKeyTest(): void; loadChannelTests(model: string, channelId: number, limit?: number): void; patchKeyView(value: Partial<{tokenId: number | null; query: string; expanded: string[]; selected: string[]; testKind: TestKind; testTokenId: number | null; testPrompt: string}>): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
+  loadA6Operations(): void; loadKeyChannels(tokenId: number, refresh?: boolean): void; loadKeyChannelPrices(tokenId: number, refresh?: boolean): void; removeKeyRoutes(items: Array<{model: string; channelId: number}>): void; unpinKeyChannel(item: {model: string; channelId: number}): void; pinKeyChannel(item: {model: string; channelId: number}): void; openKeyTestDraft(kind: TestKind): void; loadChannelTests(model: string, channelId: number, limit?: number): void; patchKeyView(value: Partial<{tokenId: number | null; query: string; expanded: string[]; selected: string[]}>): void; setA6OperationQuery(query: string): void; selectA6OperationToken(tokenId: number | null): void; refreshA6OperationTokens(): void; refreshA6Relations(kind: A6RelationKind): void;
   a6ResultAction(input: A6ResultActionInput): void;
   setA6LedgerScope(recordId: string, scope: 'attempt'|'record'): void; refreshA6Ledger(recordId: string): void;
   setFingerprintConfig(id: string, options: FingerprintOptions): void;

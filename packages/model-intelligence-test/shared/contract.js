@@ -59,13 +59,10 @@ const schemas = {
   a6KeyChannels: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
   a6Unpin: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
   a6KeyPin: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
-  a6KeyTest: z.strictObject({
+  a6KeyTestSelection: z.strictObject({
     kind: z.enum(['fingerprint', 'custom']),
-    slots: a6Slots,
-    models: z.array(a6Channel).min(1).max(64),
-    name: z.string().max(120).optional(),
-    prompt: z.string().max(200_000).optional(),
-    timeoutMs: timeoutMs.optional(),
+    tokenId: z.number().int().positive(),
+    channels: z.array(z.strictObject({ model: id(256), channelId: z.number().int().positive() })).min(1).max(64),
   }),
   a6KeyChannelPrices: z.strictObject({ tokenId: z.number().int().positive(), refresh: z.boolean().optional() }),
   a6RemoveRoute: z.strictObject({ tokenId: z.number().int().positive(), model: id(256), channelId: z.number().int().positive() }),
@@ -94,7 +91,7 @@ const DESCRIPTIONS = {
   a6ConfigSave: 'Verify and store the a6api access token plus user id in Host storage.',
   a6IntakeRotate: 'Rotate the intake token the userscript uses; received selections stay valid.',
   a6Tokens: 'List the account test tokens from a6api (id and name only, no key material).',
-  a6Selections: 'Read selections sent by the a6api userscript. Does not start inference.',
+  a6Selections: 'Read selections prepared for a6api test drafts. Does not start inference.',
   a6Create: 'Create an a6api fingerprint or custom attempt using user-selected test token slots (real inference).',
   a6OperationState: 'Read account token metadata and selected-key pin/route snapshots; only initial load or explicit refresh contacts the site.',
   a6OperationSelect: 'Persist the account-wide operation key and read its pin and route state. No key plaintext is read.',
@@ -106,7 +103,7 @@ const DESCRIPTIONS = {
   a6Unpin: 'Remove the a6api pin between one key and one channel for one model, verifying the pin is gone.',
   a6KeyChannelPrices: 'Read the public market listing price of every channel bound to one a6api key; unknown prices stay absent.',
   a6KeyPin: 'Pin one channel to one a6api key for one model from the key overview; verifies the pin by reading it back.',
-  a6KeyTest: 'Create a fingerprint or custom attempt for channels picked in the key overview, using dedicated test slots (real inference).',
+  a6KeyTestSelection: 'Prepare selected Key channels for an existing a6api test draft without starting inference.',
   channelTests: 'List historical fingerprint and custom test runs for one model channel, newest first.',
 };
 

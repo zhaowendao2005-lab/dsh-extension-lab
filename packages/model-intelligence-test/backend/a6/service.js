@@ -240,16 +240,12 @@ export class A6Service {
   }
 
   async create(input) {
-    return this.createFromSelection(this.selection(input.selectionId), input);
-  }
-
-  /** Shared record-creation body: the web intake and the key-view batch both land here. */
-  async createFromSelection(selection, input) {
     this.assertRecordActive();
     this.assertAvailable();
     await this.config();
     this.assertRecordActive();
     this.assertAvailable();
+    const selection = this.selection(input.selectionId);
     this.assertAccount(selection);
     this.creating += 1;
     try {
@@ -279,37 +275,25 @@ export class A6Service {
     } finally { this.creating -= 1; }
   }
 
-  /**
-   * Batch test straight from the key overview: the user picks channels from a key it already lists,
-   * and one dedicated slot token. The selection is built here instead of arriving from the web page.
-   */
-  async keyTest(input) {
-    this.assertRecordActive();
+  async keyTestSelection({ tokenId, kind, channels }) {
     this.assertAvailable();
     await this.config();
     this.assertAvailable();
     if (!this.site.configured) throw new A6Error('auth-missing', '请先配置 a6api 访问令牌');
-    const slots = Array.isArray(input?.slots) ? input.slots : [];
-    if (!slots.length || slots.length > 6) throw new A6Error('invalid-slots', '请选择 1–6 个测试令牌');
-    const tokens = await this.site.tokens();
-    const chosen = slots.map(slot => {
-      const token = tokens.find(item => item.id === Number(slot.tokenId));
-      if (!token) throw new A6Error('invalid-slots', '测试令牌不存在或不属于当前账号');
-      return { id: token.id, name: token.name };
+    const accountId = String(this.site.userId);
+    const generation = this.generation;
+    const [view, tokens] = await Promise.all([this.operations.channels({ tokenId }), this.site.tokens()]);
+    this.assertAvailable();
+    if (generation !== this.generation || accountId !== String(this.site.userId)) throw new A6Error('account-mismatch', 'a6api 账号已变更，请重新选择渠道');
+    const key = ({ model, channelId }) => JSON.stringify([model, channelId]);
+    const available = new Map(view.channels.map(row => [key(row), row]));
+    const models = channels.map(ref => {
+      const row = available.get(key(ref));
+      if (!row) throw new A6Error('invalid-selection', '所选渠道已不在该 Key 的绑定列表中，请刷新后重选');
+      return { listingId: 0, channelId: row.channelId, supplierId: row.supplierId ?? 0, model: row.model };
     });
-    if (new Set(chosen.map(token => token.id)).size !== chosen.length) throw new A6Error('invalid-slots', '测试令牌重复');
-    const models = (Array.isArray(input.models) ? input.models : []).map(channelOf);
-    if (!models.length) throw new A6Error('invalid-selection', '请先勾选要测试的渠道');
-    if (models.length > 64) throw new A6Error('invalid-selection', '一次最多测试 64 个渠道');
-    if (new Set(models.map(channelKey)).size !== models.length) throw new A6Error('invalid-selection', '待测清单重复');
-    const kind = input.kind === 'custom' ? 'custom' : 'fingerprint';
-    if (kind === 'custom' && !String(input.prompt ?? '').trim()) throw new A6Error('invalid-prompt', '自定义测试需要填写提示词');
-    const selection = {
-      kind, id: `key:${this.site.userId}:${Date.now()}`, siteOrigin: SITE_ORIGIN,
-      accountId: String(this.site.userId), pageId: '', createdAt: Date.now(),
-      models, tokens: chosen,
-    };
-    return this.createFromSelection(selection, { ...input, kind, slots, models });
+    const result = this.intake.submit({ kind, accountId, siteOrigin: SITE_ORIGIN, models, tokens }, { fromKey: true });
+    return { selection: this.selection(result.selectionId), revision: result.revision };
   }
 
   async customFromRecord(input) {

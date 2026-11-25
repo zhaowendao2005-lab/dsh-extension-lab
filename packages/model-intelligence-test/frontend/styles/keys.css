@@ -105,17 +105,6 @@
 .mit-workbench .mit-key-ops { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border:1px solid var(--mit-border); border-radius:var(--mit-radius-lg); background:var(--mit-layer-2); }
 .mit-workbench .mit-key-ops-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .mit-workbench .mit-key-ops-count { font-size:11.5px; color:var(--mit-text-secondary); min-width:150px; }
-.mit-workbench .mit-key-ops-label { font-size:10.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--mit-muted); }
-.mit-workbench .mit-key-ops-hint { margin:0; color:var(--mit-text-muted); font-size:10.5px; }
-.mit-workbench .mit-key-seg { display:inline-flex; border:1px solid var(--mit-border); border-radius:var(--mit-radius); overflow:hidden; }
-.mit-workbench .mit-key-seg button { height:24px; padding:0 10px; border:0; background:transparent; color:var(--mit-text-secondary); font-size:11px; cursor:pointer; }
-.mit-workbench .mit-key-seg button + button { border-left:1px solid var(--mit-border); }
-.mit-workbench .mit-key-seg button.is-active { background:var(--mit-accent-soft); color:var(--mit-brand); font-weight:600; }
-.mit-workbench .mit-key-slot, .mit-workbench .mit-key-prompt { display:inline-flex; align-items:center; gap:6px; font-size:10.5px; color:var(--mit-text-muted); }
-.mit-workbench .mit-key-slot select, .mit-workbench .mit-key-prompt input { height:24px; box-sizing:border-box; padding:0 6px; border:1px solid var(--mit-border); border-radius:var(--mit-radius); background:var(--mit-layer); color:var(--mit-text); font-size:11px; }
-.mit-workbench .mit-key-prompt input { width:220px; }
-.mit-workbench .mit-key-start { display:inline-flex; align-items:center; gap:4px; height:24px; padding:0 11px; border:1px solid var(--mit-brand); border-radius:var(--mit-radius); background:var(--mit-brand); color:#fff; font-size:11px; font-weight:600; cursor:pointer; }
-.mit-workbench .mit-key-start:disabled { opacity:.5; cursor:default; }
 /* The bind chip only appears while the row is hovered or focused, so the column stays quiet. */
 .mit-workbench .mit-key-bind-cta { opacity:0; transition:opacity .12s ease; }
 .mit-workbench tr:hover .mit-key-bind-cta, .mit-workbench tr:focus-within .mit-key-bind-cta { opacity:1; }

@@ -117,7 +117,7 @@ export class A6Intake {
     return found;
   }
 
-  submit(input) {
+  submit(input, { fromKey = false } = {}) {
     const siteOrigin = text(input?.siteOrigin, 120);
     if (!SITE_ORIGINS.has(siteOrigin)) throw new A6Error('wrong-site', '只接受 a6api 站点发来的选择');
     const accountId = text(input?.accountId, 40);
@@ -125,6 +125,7 @@ export class A6Intake {
     if (input.kind !== undefined && !['fingerprint', 'custom'].includes(input.kind)) throw new A6Error('invalid-input', '测试类型无效');
     const selection = {
       kind: input.kind ?? 'fingerprint',
+      ...(fromKey ? { source: 'key' } : {}),
       id: randomBytes(9).toString('base64url'),
       siteOrigin, accountId,
       pageId: text(input?.pageId, 120),
