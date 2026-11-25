@@ -2956,12 +2956,13 @@ var A6Operations = class {
   /** The site's own listed price for every channel of this key; unknown stays absent, never zero. */
   async channelPrices({ tokenId, refresh = false } = {}) {
     const view = await this.channels({ tokenId });
-    const channels = [...new Map(view.channels.map((channel) => [channel.channelId, channel])).values()];
+    const rowsByChannel = /* @__PURE__ */ new Map();
+    for (const channel of view.channels) if (!rowsByChannel.has(channel.channelId)) rowsByChannel.set(channel.channelId, this.marketRows(channel.channelId, refresh));
     const prices = {};
-    let failures = 0;
-    await Promise.all(channels.map(async (channel) => {
+    const failed = /* @__PURE__ */ new Set();
+    await Promise.all(view.channels.map(async (channel) => {
       try {
-        const rows = (await this.marketRows(channel.channelId, refresh)).filter((row) => row.model === channel.model);
+        const rows = (await rowsByChannel.get(channel.channelId)).filter((row) => row.model === channel.model);
         if (!rows.length) return;
         const available = rows.filter((row) => row.availability === void 0 || row.availability === 1);
         const pool = available.length ? available : rows;
@@ -2981,7 +2982,7 @@ var A6Operations = class {
           throughputTps: pick.throughputTps ?? null
         };
       } catch {
-        failures += 1;
+        failed.add(channel.channelId);
       }
     }));
     let exchangeRate = null;
@@ -2993,7 +2994,7 @@ var A6Operations = class {
       }
     }
     this.service.assertAvailable();
-    return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failures ? `\u6709 ${failures} \u4E2A\u6E20\u9053\u7684\u5E02\u573A\u62A5\u4EF7\u672A\u80FD\u8BFB\u53D6` : null };
+    return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failed.size ? `\u6709 ${failed.size} \u4E2A\u6E20\u9053\u7684\u5E02\u573A\u62A5\u4EF7\u672A\u80FD\u8BFB\u53D6` : null };
   }
   /** Bind one channel to one key for one model, then verify the site reports it as the route. */
   async pin({ tokenId, model, channelId } = {}) {

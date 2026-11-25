@@ -355,12 +355,15 @@ export class A6Operations {
   /** The site's own listed price for every channel of this key; unknown stays absent, never zero. */
   async channelPrices({ tokenId, refresh = false } = {}) {
     const view = await this.channels({ tokenId });
-    const channels = [...new Map(view.channels.map(channel => [channel.channelId, channel])).values()];
+    // One market request per channel id, but every (model, channel) pair gets its own row: a channel bound
+    // under several models of this key must not collapse to whichever model came last.
+    const rowsByChannel = new Map();
+    for (const channel of view.channels) if (!rowsByChannel.has(channel.channelId)) rowsByChannel.set(channel.channelId, this.marketRows(channel.channelId, refresh));
     const prices = {};
-    let failures = 0;
-    await Promise.all(channels.map(async channel => {
+    const failed = new Set();
+    await Promise.all(view.channels.map(async channel => {
       try {
-        const rows = (await this.marketRows(channel.channelId, refresh)).filter(row => row.model === channel.model);
+        const rows = (await rowsByChannel.get(channel.channelId)).filter(row => row.model === channel.model);
         if (!rows.length) return;
         const available = rows.filter(row => row.availability === undefined || row.availability === 1);
         const pool = available.length ? available : rows;
@@ -368,14 +371,14 @@ export class A6Operations {
         prices[priceKey(channel.model, channel.channelId)] = { currency: pick.currency ?? null, unit: pick.unit ?? null, chargeType: pick.chargeType ?? null,
           input: pick.input ?? null, output: pick.output ?? null, cacheRead: pick.cacheRead ?? null, cacheWrite: pick.cacheWrite ?? null, perRequest: pick.perRequest ?? null,
           cacheHitRate24h: pick.cacheHitRate24h ?? null, cacheHitState: pick.cacheHitState ?? null, ttftMs: pick.ttftMs ?? null, throughputTps: pick.throughputTps ?? null };
-      } catch { failures += 1; }
+      } catch { failed.add(channel.channelId); }
     }));
     let exchangeRate = null;
     if (Object.values(prices).some(price => price.currency === 'USD')) {
       try { exchangeRate = (await this.billing()).usdExchangeRate ?? null; } catch { exchangeRate = null; }
     }
     this.service.assertAvailable();
-    return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failures ? `有 ${failures} 个渠道的市场报价未能读取` : null };
+    return { tokenId, prices, exchangeRate, generatedAt: Date.now(), error: failed.size ? `有 ${failed.size} 个渠道的市场报价未能读取` : null };
   }
 
   /** Bind one channel to one key for one model, then verify the site reports it as the route. */
