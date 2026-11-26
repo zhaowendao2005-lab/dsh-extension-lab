@@ -398,13 +398,14 @@ export class RecordsService {
       return action(domain, attempt, { ...source, models: attempt.models ?? source.models });
     });
   }
-  async continueCustomRun({ attemptId, runId }) {
+  /** Shared by continue and in-place retry: one runnable run re-enters its original attempt. */
+  async requeueCustomRun(attemptId, runId, method) {
     return this.customMutation(attemptId, async (domain, attempt, record) => {
       const attempts = domain.table('attempts');
       if ([...attempts.entries()].some(([, item]) => item.recordId === record.id && item.id !== attemptId && item.status === 'running')) {
         throw new FingerprintError('task-busy', '该记录的另一个轮次正在运行，请先等待它结束');
       }
-      return this.custom.continueRun({ record, attempt, runId, bind: async (jobId, runs, revision) => {
+      return this.custom[method]({ record, attempt, runId, bind: async (jobId, runs, revision) => {
         if (this.closing) throw new FingerprintError('disposed', '插件正在卸载');
         await this.put(domain, 'attempts', attemptId, { ...attempt, status: 'running', finishedAt: null, jobId, view: null, custom: { runs, revision } });
         if (attempt.jobId && attempt.jobId !== jobId) this.byJob.delete(attempt.jobId);
@@ -414,6 +415,10 @@ export class RecordsService {
       } });
     });
   }
+  /** The run died mid-session: resume the same DSH session and sandbox with `continue`. */
+  continueCustomRun({ attemptId, runId }) { return this.requeueCustomRun(attemptId, runId, 'continueRun'); }
+  /** The run died before it could be resumed: restart it in place with a fresh session, like fingerprint retry. */
+  retryCustomRun({ attemptId, runId }) { return this.requeueCustomRun(attemptId, runId, 'rerunRun'); }
   async cancelCustomRun({ attemptId, runId }) {
     return this.customMutation(attemptId, (_domain, attempt) => this.custom.cancelRun({ attemptId, runId, jobId: attempt.jobId }));
   }
@@ -449,11 +454,11 @@ export class RecordsService {
     const attempt = await this.liveJob(attemptId);
     const record = (await this.ready).table('records').get(attempt.recordId);
     if (record?.kind === 'custom') {
-      if (['queued','running'].includes(attempt.status)) throw new FingerprintError('task-busy', '请先结束当前轮次再重试');
-      const selected = record.models.filter(row => row.provider === model.provider && row.id === model.id);
-      if (selected.length !== 1) throw new FingerprintError('invalid-model', '模型不属于该记录或渠道身份不唯一');
-      const created = await this.launch({...record, models:selected});
-      return this.attempt(created.id);
+      // Legacy model-addressed retry: resolve the single failed run and retry it in place.
+      const runs = (attempt.custom?.runs ?? []).filter(run => run.target?.providerId === model.provider && run.target?.modelId === model.id && ['failed','cancelled','interrupted'].includes(run.phase));
+      if (runs.length !== 1) throw new FingerprintError('invalid-model', '模型不属于该轮次或渠道身份不唯一，请从具体渠道行重试');
+      await this.retryCustomRun({ attemptId, runId: runs[0].id });
+      return this.attempt(attemptId);
     }
     // A finished attempt keeps its view on disk after a runtime restart; rebuild that job on demand
     // so retry keeps its meaning (re-sample only the failed challenges of one model).

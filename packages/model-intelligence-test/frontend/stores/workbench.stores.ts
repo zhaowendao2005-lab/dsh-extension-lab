@@ -376,7 +376,15 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     togglePresets() { presetsDomain.toggle(); },
     cancelRecord,
     setFingerprintConfig(id, options) { void evaluationsDomain.configure(id, options); },
-    retryFailedSample(id, runId) { void evaluationsDomain.retry(id, runId).then(nextRunId => { if (nextRunId) navigate({ runId: nextRunId, artifact: false }); }); },
+    retryFailedSample(id, runId) {
+      const context = customContext(runId);
+      if (!context) { void evaluationsDomain.retry(id, runId); return; }
+      // In-place restart, like fingerprint retry: same attempt and run, fresh session and sandbox.
+      const run = evaluations.getState().runs[runId]?.custom;
+      const start = (): void => customDomain.runAction(context.attemptId, runId, 'retry', () => evaluationsDomain.refreshAttempt(context.attemptId));
+      if (!run?.usage.requestCount) { start(); return; }
+      ask({ title: '原位重试此模型', message: '将清空该模型的会话与沙箱并从头运行；已产生的请求保留在账本中用于对账。若会话是中途中断，请改用「继续会话」。', choices: [{ id: 'retry', label: '从头重试' }, { id: 'cancel', label: '取消' }] }, choice => { if (choice === 'retry') start(); });
+    },
     renameRecord(id) {
       const item = evaluations.getState().records.find(record => record.id === id);
       if (!item) return;

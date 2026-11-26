@@ -1,8 +1,6 @@
 import React from '../../runtime';
 import type { CustomDetailTab, CustomErrorDetail, CustomFileReadResult, CustomOutputOpenResult, CustomRunDetail, CustomRunSummary, Model } from '../../types';
-import { buildChatRows, type ChatRow } from '../../chat/model';
-import { ChatFlow, ChatAssistantRowView, ChatErrorRowView, ChatReasoningRowView, ChatTurnRowView, ChatTurnUsageRowView, ChatUserRowView } from '../../chat/rows';
-import { ChatToolCall } from '../../chat/tools';
+import { ChatFlowView } from '../../chatflow/ChatFlowView';
 import { Empty, Icon } from '../../components/common';
 import { CustomMetricsChart } from '../../components/CustomMetricsChart';
 import { CustomOutputActions } from './CustomOutputActions';
@@ -29,37 +27,24 @@ export interface CustomTaskViewProps {
   onReadFile(path: string): void;
   onOpenOutput(mode: 'preview' | 'vscode' | 'reveal', application?: string): Promise<CustomOutputOpenResult>;
   onRetry(): void;
+  retrying?: boolean;
   onCancel(): void;
   onClose?(): void;
   compact?: boolean;
 }
 const TABS: { id: CustomDetailTab; label: string }[] = [{ id: 'chat', label: 'Chat' }, { id: 'steps', label: '步骤' }, { id: 'files', label: '文件' }, { id: 'metrics', label: '指标' }, { id: 'billing', label: '账单' }, { id: 'permissions', label: '权限' }];
-function ChatRowView({ row }: { row: ChatRow }) {
-  switch (row.kind) {
-    case 'user': return <ChatUserRowView row={row} />;
-    case 'assistant': return <ChatAssistantRowView row={row} />;
-    case 'reasoning': return <ChatReasoningRowView row={row} />;
-    case 'error': return <ChatErrorRowView row={row} />;
-    case 'turn': return <ChatTurnRowView row={row} />;
-    case 'turnUsage': return <ChatTurnUsageRowView row={row} />;
-    case 'tool': return <ChatToolCall name={row.name} status={row.status} arguments={row.arguments} content={row.content} />;
-  }
-}
 function Chat({ detail, summary }: { detail: CustomRunDetail; summary: CustomRunSummary }) {
-  const rows = React.useMemo(() => buildChatRows(detail.events, summary, detail.requests), [detail.events, summary, detail.requests]);
   const scroller = React.useRef<HTMLDivElement | null>(null);
   const stick = React.useRef(true);
-  const count = rows.length;
-  // 只在贴近底部时跟随，避免用户上翻查看历史被拽回（也避免每帧重排）。
+  // Follow growth only while the reader sits near the bottom; scrolling up to read history is never yanked back.
   React.useEffect(() => {
     const element = scroller.current;
     if (element && stick.current) element.scrollTop = element.scrollHeight;
-  }, [count]);
-  if (!rows.length) return <Empty title="暂无会话内容">{summary.phase === 'queued' ? '任务正在等待运行槽位。' : '会话开始后将在此镜像 DSH 原始会话。'}</Empty>;
+  }, [detail.revision]);
+  if (!detail.events.length && !detail.requests.length && !summary.retryHistory?.length && !['queued', 'preparing', 'running', 'tooling', 'validating'].includes(summary.phase)) return <Empty title="暂无会话内容">会话开始后将在此按步骤展示模型的思考、输出与工具调用。</Empty>;
   return <div className="mit-chat-mirror" aria-label="会话记录" ref={scroller}
     onScroll={(event) => { const element = event.currentTarget; stick.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48; }}>
-    {detail.eventsTruncated && <p className="mit-chat-mirror-note" role="note">Host 仅保留最近的会话事件，更早内容未展示。</p>}
-    <ChatFlow>{rows.map(row => <ChatRowView key={row.id} row={row} />)}</ChatFlow>
+    <ChatFlowView events={detail.events} requests={detail.requests} summary={summary} truncated={detail.eventsTruncated} />
   </div>;
 }
 /** Full failure detail: stack, cause chain, upstream HTTP status / body / request id. Native <details>, collapsed. */
@@ -111,7 +96,7 @@ function Permissions({ detail, summary }: { detail: CustomRunDetail; summary: Cu
   </div>;
 }
 export function CustomTaskView(props: CustomTaskViewProps) {
-  const { model, summary, detail, loading, error, actionError, cancelling, activeTab, file, fileLoading, canRetry, canCancel, canContinue, continuing, onContinue, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose } = props;
+  const { model, summary, detail, loading, error, actionError, cancelling, activeTab, file, fileLoading, canRetry, retrying, canCancel, canContinue, continuing, onContinue, onTabChange, onReadFile, onOpenOutput, onRetry, onCancel, onClose } = props;
   const tab = TABS.find(item => item.id === activeTab) || TABS[0];
   return <section className="mit-custom-detail" aria-label="自定义执行详情" aria-busy={loading}>
     <header className="mit-custom-detail-heading">
@@ -134,6 +119,6 @@ export function CustomTaskView(props: CustomTaskViewProps) {
     {actionError && <div className="mit-custom-error" role="alert">{actionError}</div>}
     {error && <div className="mit-custom-error" role="alert">{error}</div>}
     <div className="mit-custom-detail-body" aria-label={tab.label}>{!detail ? !loading && <Empty title="详情暂不可用">{summary.phase === 'cancelled' ? '任务已取消，等待 Host 返回已保留的执行记录。' : '连接恢复后会继续读取已有运行数据。'}</Empty> : tab.id === 'chat' ? <Chat detail={detail} summary={summary} /> : tab.id === 'steps' ? <CustomStepsView requests={detail.requests} events={detail.events} summary={summary} truncated={detail.requestsTruncated} /> : tab.id === 'files' ? <Files detail={detail} file={file} loading={fileLoading} onReadFile={onReadFile} summary={summary} onOpenOutput={onOpenOutput} /> : tab.id === 'metrics' ? <Metrics detail={detail} summary={summary} /> : tab.id === 'billing' ? <Billing detail={detail} summary={summary} /> : <Permissions detail={detail} summary={summary} />}</div>
-    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{summary.continuations ? ` · 已继续 ${summary.continuations} 次` : ''}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" disabled={cancelling || continuing} onClick={onCancel}><Icon name="stop" size={13} />{cancelling ? '正在取消…' : '取消此模型'}</button>}{canContinue && onContinue && <button type="button" className="mit-button" disabled={continuing} onClick={onContinue} title="在同一 DSH 会话中发送 continue，保留已有上下文与沙箱">{continuing ? '正在继续…' : '继续会话'}</button>}{canRetry && <button type="button" className="mit-button" onClick={onRetry} title="新建一轮与新沙箱重新运行"><Icon name="refresh" size={13} />重试模型</button>}</div></footer>
+    <footer className="mit-custom-detail-footer"><span>{summary.output.relativePath ? outputLabel(summary) : '成果尚未就绪'}{summary.continuations ? ` · 已继续 ${summary.continuations} 次` : ''}{summary.retries ? ` · 已重试 ${summary.retries} 次` : ''}{loading ? ' · 正在更新详情…' : ''}</span><div>{canCancel && <button type="button" className="mit-button mit-danger-text" disabled={cancelling || continuing} onClick={onCancel}><Icon name="stop" size={13} />{cancelling ? '正在取消…' : '取消此模型'}</button>}{canContinue && onContinue && <button type="button" className="mit-button" disabled={continuing} onClick={onContinue} title="在同一 DSH 会话中发送 continue，保留已有上下文与沙箱">{continuing ? '正在继续…' : '继续会话'}</button>}{canRetry && <button type="button" className="mit-button" disabled={retrying || continuing} onClick={onRetry} title="开头就失败时使用：同一轮次原位从头运行，新会话与新沙箱；旧请求保留在账本中"><Icon name="refresh" size={13} />{retrying ? '正在重试…' : '从头重试'}</button>}</div></footer>
   </section>;
 }

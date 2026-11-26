@@ -72,6 +72,7 @@ var schemas = {
   customFileRead: z2.strictObject({ ...customRun, path: z2.string().min(1).max(512) }),
   customOutputOpen: z2.strictObject({ ...customRun, mode: z2.enum(["preview", "vscode", "reveal", "browser", "webview"]).optional(), application: z2.string().min(1).max(512).optional(), title: z2.string().min(1).max(256).optional() }),
   customRunContinue: z2.strictObject({ ...customRun }),
+  customRunRetry: z2.strictObject({ ...customRun }),
   customRunCancel: z2.strictObject({ ...customRun }),
   a6ConfigSave: z2.strictObject({ accessToken: z2.string().max(512).optional(), userId: z2.string().max(40).optional() }),
   a6Selections: z2.strictObject({ revision: z2.number().int().nonnegative().optional() }),
@@ -110,6 +111,7 @@ var DESCRIPTIONS = {
   customFileRead: "Read a bounded relative file inside a verified custom-run sandbox.",
   customOutputOpen: "Preview a validated output, or open that exact file with the discovered VS Code application, a browser, or the desktop file manager.",
   customRunContinue: "Queue a failed, cancelled or interrupted custom run to resume its original DSH session and send a continue message (real inference).",
+  customRunRetry: "Re-run a failed, cancelled or interrupted custom run in place with a fresh session and sandbox; earlier requests stay in the ledger (real inference).",
   customRunCancel: "Cancel only the specified queued or running custom model; leave the other runs in its attempt alone.",
   a6CustomFromRecord: "Create custom sessions from channels of an existing fingerprint record; uses its account and dedicated test slots.",
   a6Config: "Read a6api credential state (masked access token, intake token, loopback origin); never returns the access token.",
@@ -1384,6 +1386,9 @@ var ModelIntelligenceService = class extends Service {
   customRunContinue(request) {
     return this.guard(() => this.records.continueCustomRun(request));
   }
+  customRunRetry(request) {
+    return this.guard(() => this.records.retryCustomRun(request));
+  }
   customRunCancel(request) {
     return this.guard(() => this.records.cancelCustomRun(request));
   }
@@ -1499,6 +1504,7 @@ var REMOTE_METHODS = [
   "customFileRead",
   "customOutputOpen",
   "customRunContinue",
+  "customRunRetry",
   "customRunCancel",
   "a6Config",
   "a6ConfigSave",
@@ -2011,13 +2017,14 @@ var RecordsService = class {
       return action(domain, attempt, { ...source, models: attempt.models ?? source.models });
     });
   }
-  async continueCustomRun({ attemptId, runId }) {
+  /** Shared by continue and in-place retry: one runnable run re-enters its original attempt. */
+  async requeueCustomRun(attemptId, runId, method) {
     return this.customMutation(attemptId, async (domain, attempt, record) => {
       const attempts = domain.table("attempts");
       if ([...attempts.entries()].some(([, item]) => item.recordId === record.id && item.id !== attemptId && item.status === "running")) {
         throw new FingerprintError("task-busy", "\u8BE5\u8BB0\u5F55\u7684\u53E6\u4E00\u4E2A\u8F6E\u6B21\u6B63\u5728\u8FD0\u884C\uFF0C\u8BF7\u5148\u7B49\u5F85\u5B83\u7ED3\u675F");
       }
-      return this.custom.continueRun({ record, attempt, runId, bind: async (jobId, runs, revision) => {
+      return this.custom[method]({ record, attempt, runId, bind: async (jobId, runs, revision) => {
         if (this.closing) throw new FingerprintError("disposed", "\u63D2\u4EF6\u6B63\u5728\u5378\u8F7D");
         await this.put(domain, "attempts", attemptId, { ...attempt, status: "running", finishedAt: null, jobId, view: null, custom: { runs, revision } });
         if (attempt.jobId && attempt.jobId !== jobId) this.byJob.delete(attempt.jobId);
@@ -2027,6 +2034,14 @@ var RecordsService = class {
         this.bump();
       } });
     });
+  }
+  /** The run died mid-session: resume the same DSH session and sandbox with `continue`. */
+  continueCustomRun({ attemptId, runId }) {
+    return this.requeueCustomRun(attemptId, runId, "continueRun");
+  }
+  /** The run died before it could be resumed: restart it in place with a fresh session, like fingerprint retry. */
+  retryCustomRun({ attemptId, runId }) {
+    return this.requeueCustomRun(attemptId, runId, "rerunRun");
   }
   async cancelCustomRun({ attemptId, runId }) {
     return this.customMutation(attemptId, (_domain, attempt) => this.custom.cancelRun({ attemptId, runId, jobId: attempt.jobId }));
@@ -2063,11 +2078,10 @@ var RecordsService = class {
     const attempt = await this.liveJob(attemptId);
     const record = (await this.ready).table("records").get(attempt.recordId);
     if (record?.kind === "custom") {
-      if (["queued", "running"].includes(attempt.status)) throw new FingerprintError("task-busy", "\u8BF7\u5148\u7ED3\u675F\u5F53\u524D\u8F6E\u6B21\u518D\u91CD\u8BD5");
-      const selected = record.models.filter((row) => row.provider === model.provider && row.id === model.id);
-      if (selected.length !== 1) throw new FingerprintError("invalid-model", "\u6A21\u578B\u4E0D\u5C5E\u4E8E\u8BE5\u8BB0\u5F55\u6216\u6E20\u9053\u8EAB\u4EFD\u4E0D\u552F\u4E00");
-      const created = await this.launch({ ...record, models: selected });
-      return this.attempt(created.id);
+      const runs = (attempt.custom?.runs ?? []).filter((run) => run.target?.providerId === model.provider && run.target?.modelId === model.id && ["failed", "cancelled", "interrupted"].includes(run.phase));
+      if (runs.length !== 1) throw new FingerprintError("invalid-model", "\u6A21\u578B\u4E0D\u5C5E\u4E8E\u8BE5\u8F6E\u6B21\u6216\u6E20\u9053\u8EAB\u4EFD\u4E0D\u552F\u4E00\uFF0C\u8BF7\u4ECE\u5177\u4F53\u6E20\u9053\u884C\u91CD\u8BD5");
+      await this.retryCustomRun({ attemptId, runId: runs[0].id });
+      return this.attempt(attemptId);
     }
     let live = Boolean(attempt.jobId && this.runner(attempt.jobId)?.has(attempt.jobId));
     if (!live && attempt.jobId && attempt.view && ["done", "failed"].includes(attempt.status)) {
@@ -6397,6 +6411,89 @@ var CustomCoordinator = class {
       this.touch(job);
     } catch (error) {
       await this.save(job.runs[index]).catch(() => {
+      });
+      throw error;
+    } finally {
+      job.admitting = false;
+      this.pump();
+    }
+    const accepted = publicRun(queued);
+    this.activate(job.id);
+    return accepted;
+  }
+  /**
+   * In-place retry for a run that died before (or instead of) producing a resumable session: the same
+   * run id is reset to a fresh session and sandbox inside its original attempt. Earlier requests stay in
+   * the ledger for reconciliation; only a short failure trail is kept on the summary.
+   * Called under the record's launch lock. Nothing is runnable until both snapshots are durable.
+   */
+  async rerunRun({ record, attempt, runId, bind }) {
+    const data = await this.load(attempt.id, runId);
+    const existing = attempt.jobId ? this.jobs.get(attempt.jobId) : null;
+    const blocked = (job2) => this.closing || this.disposed || this.removed.has(record.id) || job2?.active.has(runId) || job2?.controller.signal.aborted && job2.active.size;
+    if (blocked(existing) || !RESUMABLE.has(data.summary.phase)) throw err("not-retryable", "\u6B64\u6A21\u578B\u4ECD\u5728\u8FD0\u884C\u3001\u6E05\u7406\u6216\u5DF2\u7ECF\u6392\u961F\uFF0C\u6682\u4E0D\u80FD\u91CD\u8BD5");
+    const target = data.summary.target;
+    const model = record.models.find((item) => item.provider === target.providerId && item.id === target.modelId && (target.kind !== "a6api" || item.a6api?.channelId === target.channelId));
+    if (!model) throw err("invalid-model", "\u6A21\u578B\u4E0D\u5C5E\u4E8E\u8BE5\u8BB0\u5F55\u6216\u6E20\u9053\u8EAB\u4EFD\u4E0D\u552F\u4E00");
+    if (target.kind === "a6api" && !record.a6api?.slots.length) throw err("slot-missing", "\u539F\u8F6E\u6B21\u6CA1\u6709\u53EF\u7528\u7684\u6D4B\u8BD5\u4EE4\u724C");
+    const domain = await this.ready;
+    const rows = existing?.runs ?? [...domain.table("custom_runs").entries()].map(([, run]) => run).filter((run) => run.attemptId === attempt.id && run.recordId === record.id);
+    const job = existing ?? this.makeJob(`custom-${randomUUID5()}`, record, attempt, rows);
+    const index = job.runs.findIndex((item) => item.id === runId);
+    if (index < 0) throw err("not-found", "\u539F\u8F6E\u6B21\u672A\u627E\u5230\u6B64\u6A21\u578B\u8FD0\u884C");
+    if (blocked(job) || !RESUMABLE.has(job.runs[index].summary.phase)) throw err("not-retryable", "\u6B64\u6A21\u578B\u5F53\u524D\u4E0D\u80FD\u91CD\u8BD5");
+    const previous = job.runs[index];
+    try {
+      await removeSandbox({ root: previous.root || path3.join(await this.dataRoot(), runId), expectedRunId: runId });
+    } catch {
+      throw err("sandbox-cleanup-failed", "\u65E7\u6C99\u7BB1\u672A\u80FD\u6E05\u7406\uFF0C\u672A\u91CD\u65B0\u542F\u52A8\u6B64\u6A21\u578B");
+    }
+    const now = Date.now();
+    const failure2 = previous.summary.error ?? previous.summary.resumeError ?? null;
+    const trail = { at: now, phase: previous.summary.phase, code: failure2?.code ?? null, message: failure2?.message ?? null, startedAt: previous.summary.startedAt, finishedAt: previous.summary.finishedAt, requestCount: previous.requests.length, executionIds: previous.requests.map((row) => row.executionId).filter(Boolean).slice(-24) };
+    const queued = copy(previous);
+    delete queued.resumeQueued;
+    Object.assign(queued, { jobId: job.id, root: null, events: [], requests: [], revision: queued.revision + 1 });
+    queued.summary = {
+      ...queued.summary,
+      phase: "queued",
+      sessionId: null,
+      sandboxState: "preparing",
+      eventCount: 0,
+      startedAt: null,
+      updatedAt: now,
+      finishedAt: null,
+      output: { state: "none", relativePath: null, size: null, modifiedAt: null, validation: "pending" },
+      usage: emptyUsage(),
+      metrics: emptyMetrics(),
+      error: null,
+      resumeError: null,
+      canContinue: false,
+      continuations: 0,
+      retries: (queued.summary.retries ?? 0) + 1,
+      retryHistory: [...queued.summary.retryHistory ?? [], trail].slice(-10)
+    };
+    const wasAborted = job.controller.signal.aborted;
+    job.admitting = true;
+    try {
+      await this.save(queued);
+      if (!wasAborted && job.controller.signal.aborted) throw err("task-cancelled", "\u672C\u8F6E\u5DF2\u505C\u6B62\uFF0C\u672A\u91CD\u65B0\u542F\u52A8\u6B64\u6A21\u578B");
+      await bind(job.id, job.runs.map((item, i) => publicRun(i === index ? queued : item)), job.revision + 1);
+      job.runs[index] = queued;
+      job.record = record;
+      job.options = { ...job.options, ...record.options };
+      if (wasAborted) job.controller = new AbortController();
+      job.status = "running";
+      job.finishedAt = null;
+      this.jobs.set(job.id, job);
+      if (job.controller.signal.aborted) await this.cancelQueued(job, queued).catch(() => {
+      });
+      this.touch(job);
+    } catch (error) {
+      previous.root = null;
+      previous.summary.sandboxState = "unknown";
+      previous.summary.canContinue = false;
+      await this.save(previous).catch(() => {
       });
       throw error;
     } finally {

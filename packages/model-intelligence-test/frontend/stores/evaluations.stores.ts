@@ -283,30 +283,18 @@ export function createEvaluationsDomain(transport: ModelIntelligenceTransport) {
       catch (error) { busy(attemptId, undefined, `配置更新失败：${message(error, 'Host 未接受配置变更')}`); }
       refreshSoon();
     },
-    async retry(recordId: string, runId: string): Promise<string | undefined> {
+    async retry(recordId: string, runId: string): Promise<void> {
       const attemptId = selectedAttemptId(recordId);
       const run = store.getState().runs[runId];
-      if (!attemptId || !run || entries.get(attemptId)?.busy || !(run.custom ? ['failed','cancelled','interrupted'].includes(run.custom.phase) : run.fingerprint?.samples.some(sample => sample.state === 'failed'))) return undefined;
+      // Custom runs retry in place through the custom domain; this path is fingerprint-only.
+      if (!attemptId || !run || run.custom || entries.get(attemptId)?.busy || !run.fingerprint?.samples.some(sample => sample.state === 'failed')) return;
       busy(attemptId, 'retry', '');
       try {
         const result = await retryAttempt(transport, attemptId, { provider: run.model.provider, id: run.model.id });
-        if (run.custom && !('unchanged' in result)) {
-          if (result.id === attemptId) throw new Error('Host 未返回新的自定义测试轮次');
-          const nextAttempt: AttemptSummary = { id: result.id, recordId: result.recordId, number: result.number, status: result.status, createdAt: result.createdAt, startedAt: result.startedAt, finishedAt: result.finishedAt, error: result.error, summary: result.summary };
-          const oldEntry = entries.get(attemptId);
-          if (oldEntry) { oldEntry.busy = undefined; oldEntry.error = undefined; }
-          entries.set(result.id, { revision: result.revision, result, loading: false, seenStatus: result.status });
-          selected.set(recordId, result.id);
-          stored = stored.map(record => record.id === recordId ? { ...record, attempts: [...record.attempts.filter(item => item.id !== result.id), nextAttempt] } : record);
-          rebuild();
-          refreshSoon();
-          return result.custom?.runs.find(item => item.target.modelId === run.model.id && (item.target.kind === 'a6api' ? item.target.channelId === run.model.a6api?.channelId : item.target.providerId === run.model.provider))?.id;
-        }
         absorb(attemptId, result);
         busy(attemptId, undefined);
       } catch (error) { busy(attemptId, undefined, `重试失败样本失败：${message(error, 'Host 未接受重试请求')}`); }
       refreshSoon();
-      return undefined;
     },
     async remove(recordId: string): Promise<void> {
       await deleteRecord(transport, recordId);

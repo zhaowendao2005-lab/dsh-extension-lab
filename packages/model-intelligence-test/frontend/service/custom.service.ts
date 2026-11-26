@@ -61,6 +61,7 @@ export const readCustomRunDetail = (transport: ModelIntelligenceTransport, reque
 export const readCustomFile = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; path: string}) => transport.customFileRead(request);
 export const openCustomOutput = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal' | 'browser' | 'webview'; application?: string; title?: string}) => transport.customOutputOpen(request);
 export const continueCustomRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => transport.customRunContinue(request);
+export const retryCustomRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => transport.customRunRetry(request);
 export const cancelCustomRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => transport.customRunCancel(request);
 export const customPrompt = (body: string): string => body + FIXED_FOOTER;
 export type CustomCreateResult = Awaited<ReturnType<typeof createCustomTask>>;

@@ -42,7 +42,7 @@ export function CustomRunPage({ store,recordId,runId }: {
     </nav>
     <CustomTaskView model={run.model} summary={summary} detail={entry?.detail} loading={entry?.loading??true} error={entry?.error} actionError={entry?.actionError}
       activeTab={entry?.tab??'chat'} file={entry?.file} fileLoading={Boolean(entry?.fileLoading)}
-      canRetry={CONTINUABLE.includes(phase)&&!entry?.action} canCancel={!TERMINAL.includes(phase)}
+      canRetry={CONTINUABLE.includes(phase)&&!entry?.action} retrying={entry?.action==='retry'} canCancel={!TERMINAL.includes(phase)}
       canContinue={CONTINUABLE.includes(phase)&&summary.canContinue===true} continuing={entry?.action==='continue'} cancelling={entry?.action==='cancel'||Boolean(entry?.cancelRequested)}
       onTabChange={tab => store.actions.setCustomDetailTab(runId,tab)}
       onReadFile={path => store.actions.readCustomFile(runId,path)}

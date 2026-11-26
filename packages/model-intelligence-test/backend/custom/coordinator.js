@@ -518,6 +518,70 @@ export class CustomCoordinator {
     this.activate(job.id);
     return accepted;
   }
+  /**
+   * In-place retry for a run that died before (or instead of) producing a resumable session: the same
+   * run id is reset to a fresh session and sandbox inside its original attempt. Earlier requests stay in
+   * the ledger for reconciliation; only a short failure trail is kept on the summary.
+   * Called under the record's launch lock. Nothing is runnable until both snapshots are durable.
+   */
+  async rerunRun({ record, attempt, runId, bind }) {
+    const data = await this.load(attempt.id, runId);
+    const existing = attempt.jobId ? this.jobs.get(attempt.jobId) : null;
+    const blocked = job => this.closing || this.disposed || this.removed.has(record.id) || job?.active.has(runId) || (job?.controller.signal.aborted && job.active.size);
+    if (blocked(existing) || !RESUMABLE.has(data.summary.phase)) throw err('not-retryable', '此模型仍在运行、清理或已经排队，暂不能重试');
+    const target = data.summary.target;
+    const model = record.models.find(item => item.provider === target.providerId && item.id === target.modelId && (target.kind !== 'a6api' || item.a6api?.channelId === target.channelId));
+    if (!model) throw err('invalid-model', '模型不属于该记录或渠道身份不唯一');
+    if (target.kind === 'a6api' && !record.a6api?.slots.length) throw err('slot-missing', '原轮次没有可用的测试令牌');
+    const domain = await this.ready;
+    const rows = existing?.runs ?? [...domain.table('custom_runs').entries()].map(([, run]) => run).filter(run => run.attemptId === attempt.id && run.recordId === record.id);
+    const job = existing ?? this.makeJob(`custom-${randomUUID()}`, record, attempt, rows);
+    const index = job.runs.findIndex(item => item.id === runId);
+    if (index < 0) throw err('not-found', '原轮次未找到此模型运行');
+    if (blocked(job) || !RESUMABLE.has(job.runs[index].summary.phase)) throw err('not-retryable', '此模型当前不能重试');
+    const previous = job.runs[index];
+    // The sandbox directory is named after the run id, so the old one must go before a fresh one can exist.
+    try { await removeSandbox({ root: previous.root || path.join(await this.dataRoot(), runId), expectedRunId: runId }); }
+    catch { throw err('sandbox-cleanup-failed', '旧沙箱未能清理，未重新启动此模型'); }
+    const now = Date.now();
+    const failure = previous.summary.error ?? previous.summary.resumeError ?? null;
+    const trail = { at: now, phase: previous.summary.phase, code: failure?.code ?? null, message: failure?.message ?? null, startedAt: previous.summary.startedAt, finishedAt: previous.summary.finishedAt, requestCount: previous.requests.length, executionIds: previous.requests.map(row => row.executionId).filter(Boolean).slice(-24) };
+    const queued = copy(previous);
+    delete queued.resumeQueued;
+    Object.assign(queued, { jobId: job.id, root: null, events: [], requests: [], revision: queued.revision + 1 });
+    queued.summary = {
+      ...queued.summary, phase: 'queued', sessionId: null, sandboxState: 'preparing', eventCount: 0, startedAt: null, updatedAt: now, finishedAt: null,
+      output: { state: 'none', relativePath: null, size: null, modifiedAt: null, validation: 'pending' }, usage: emptyUsage(), metrics: emptyMetrics(),
+      error: null, resumeError: null, canContinue: false, continuations: 0, retries: (queued.summary.retries ?? 0) + 1, retryHistory: [...(queued.summary.retryHistory ?? []), trail].slice(-10),
+    };
+    const wasAborted = job.controller.signal.aborted;
+    job.admitting = true;
+    try {
+      await this.save(queued);
+      if (!wasAborted && job.controller.signal.aborted) throw err('task-cancelled', '本轮已停止，未重新启动此模型');
+      await bind(job.id, job.runs.map((item, i) => publicRun(i === index ? queued : item)), job.revision + 1);
+      job.runs[index] = queued;
+      job.record = record;
+      job.options = { ...job.options, ...record.options };
+      if (wasAborted) job.controller = new AbortController();
+      job.status = 'running'; job.finishedAt = null;
+      this.jobs.set(job.id, job);
+      if (job.controller.signal.aborted) await this.cancelQueued(job, queued).catch(() => {});
+      this.touch(job);
+    } catch (error) {
+      // A saved queue entry is never dispatched if the attempt binding failed; keep the old failure visible.
+      // The old sandbox is already gone, so the run can no longer be continued either.
+      previous.root = null; previous.summary.sandboxState = 'unknown'; previous.summary.canContinue = false;
+      await this.save(previous).catch(() => {});
+      throw error;
+    } finally {
+      job.admitting = false;
+      this.pump();
+    }
+    const accepted = publicRun(queued);
+    this.activate(job.id);
+    return accepted;
+  }
   cancelQueued(job, data) {
     delete data.resumeQueued;
     data.summary.finishedAt = Date.now();

@@ -17,6 +17,8 @@ export interface CustomMonitorViewProps {
   onFilter(value: string): void;
   onSelectRun(runId: string): void;
   onRetry(runId: string): void;
+  /** Runs with a retry/continue/cancel request in flight; their row actions stay disabled. */
+  pendingRunIds?: string[];
   onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser'): Promise<CustomOutputOpenResult>;
   renderChannelActions?(model: Model): ReactNode;
   widths?: Record<string, number>;
@@ -26,7 +28,7 @@ const marketOf = (model: Model, summary: CustomRunSummary): A6MarketSnapshot | u
 // Defaults mirror `.mit-col-*` in styles/custom.css so a fresh table matches the previous layout.
 const CUSTOM_WIDTHS: Record<string, number> = { model: 185, 'channel-actions': 216, phase: 105, req: 48, tokens: 80, ttft: 95, 'model-tps': 95, e2e: 95, cache: 65, 'input-price': 92, 'output-price': 92, cache24h: 92, cost: 105, output: 92, actions: 100 };
 const columnWidth = (widths: Record<string, number> | undefined, column: string): number => widths?.[`custom:${column}`] ?? CUSTOM_WIDTHS[column];
-export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, onOpenOutput, renderChannelActions, widths, onResize }: CustomMonitorViewProps) {
+export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, filter, onFilter, onSelectRun, onRetry, pendingRunIds, onOpenOutput, renderChannelActions, widths, onResize }: CustomMonitorViewProps) {
   const needle = filter.trim().toLowerCase();
   const visible = rows.filter(row => (!resultOnly || ended(row.summary.phase)) && (!needle || `${modelLabel(row.model)} ${providerLabel(row.model)} ${row.summary.target.displayName} ${row.summary.target.channelId ?? ''}`.toLowerCase().includes(needle)));
   const active = rows.filter(row => !ended(row.summary.phase)).length;
@@ -85,7 +87,7 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
           {withMarket && <td className="mit-col-price" title={marketTitle(market, '渠道近 24h 缓存率')}>{marketCacheCell(market)}</td>}
           <td className="mit-col-cost"><span>{cost(summary.usage.cost, summary.usage.currency)}</span><span className="mit-custom-cell-sub">{CUSTOM_BILLING_LABELS[summary.usage.billingState]}</span></td>
           <td className="mit-col-output mit-sticky-output" style={{ right: actionsWidth }}>{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ? `在浏览器中打开 ${summary.output.relativePath}` : '在浏览器中打开成果'} onClick={() => { onOpenOutput(id, 'browser').catch(() => {}); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
-          <td className="mit-col-actions mit-sticky-actions"><div className="mit-custom-row-actions"><button type="button" className="mit-text-button" onClick={() => onSelectRun(id)}>详情<Icon name="chevron" size={12} /></button>{['failed', 'cancelled', 'interrupted'].includes(summary.phase) && <button type="button" className="mit-text-button" onClick={() => onRetry(id)}>重试</button>}</div></td>
+          <td className="mit-col-actions mit-sticky-actions"><div className="mit-custom-row-actions"><button type="button" className="mit-text-button" onClick={() => onSelectRun(id)}>详情<Icon name="chevron" size={12} /></button>{['failed', 'cancelled', 'interrupted'].includes(summary.phase) && <button type="button" className="mit-text-button" disabled={pendingRunIds?.includes(id)} title={summary.retries ? `原位从头重试（已重试 ${summary.retries} 次）；旧请求保留在账本中` : '原位从头重试：同一轮次、新会话与沙箱；旧请求保留在账本中'} onClick={() => onRetry(id)}>{pendingRunIds?.includes(id) ? '重试中…' : '重试'}</button>}</div></td>
         </tr>;})}</tbody>
       </table>
       {!visible.length && <Empty title={filter ? '没有匹配的模型' : resultOnly ? '还没有已结束的运行' : '等待运行摘要'}>{filter ? '调整筛选条件后查看。' : resultOnly ? '运行结束后会出现在这里。' : '摘要由 Host 返回，连接恢复后会继续更新。'}</Empty>}

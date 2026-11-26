@@ -98,7 +98,11 @@ export interface CustomRunSummary {
  canContinue?: boolean;
  cleanupPending?: boolean;
  continuations?: number;
+ /** In-place retries of this run; each earlier failure stays in the ledger for reconciliation. */
+ retries?: number;
+ retryHistory?: CustomRetryTrail[];
 }
+export interface CustomRetryTrail { at: number; phase: string; code: string | null; message: string | null; startedAt: number | null; finishedAt: number | null; requestCount: number; executionIds?: string[] }
 export interface CustomEvent {
  id: string;
  type: 'message' | 'reasoning' | 'tool' | 'phase' | 'error';
@@ -179,7 +183,7 @@ export interface CustomRunDetailEntry {
  previewOpen?: boolean;
  previewPath?: string;
  previewLoading?: boolean;
- action?: 'continue' | 'cancel';
+ action?: 'continue' | 'retry' | 'cancel';
  actionError?: string;
  cancelRequested?: boolean;
  tab: CustomDetailTab;
@@ -216,6 +220,7 @@ export interface ModelIntelligenceTransport extends CatalogTransport {
  customFileRead(request: {attemptId: string; runId: string; path: string}): Promise<CustomFileReadResult>;
  customOutputOpen(request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal' | 'browser' | 'webview'; application?: string; title?: string}): Promise<CustomOutputOpenResult>;
  customRunContinue(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
+ customRunRetry(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  customRunCancel(request: {attemptId: string; runId: string}): Promise<CustomRunSummary>;
  a6CustomFromRecord(request: {recordId: string; name: string; models: CustomA6ModelRef[]; slots?: A6Slot[]; dshModels?: RecordModelRef[]; prompt: string; footerVersion?: string; preset?: Preset | null; concurrency?: number; timeoutMs?: number}): Promise<{record: StoredRecord; attemptId: string}>;
  a6Config(): Promise<A6Config>;

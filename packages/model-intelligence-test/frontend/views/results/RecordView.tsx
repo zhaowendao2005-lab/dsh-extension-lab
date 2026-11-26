@@ -1,5 +1,5 @@
 import React,{ useStore } from '../../runtime';
-import type { Evaluation,Workbench } from '../../types';
+import type { CustomRunDetailEntry,Evaluation,Workbench } from '../../types';
 import { Empty,Icon } from '../../components/common';
 import { MenuSelect } from '../../components/MenuSelect';
 import type { MenuOption } from '../../components/MenuSelect';
@@ -12,6 +12,18 @@ import { ATTEMPT_STATUS_LABELS,currentAttempt } from './modelLabel';
 import { CustomMonitorView, type CustomMonitorRow } from '../custom/CustomMonitorView';
 import { CustomOutputPreview } from '../custom/CustomOutputPreview';
 
+const EMPTY_IDS: string[] = [];
+const pendingCache=new Map<string,string[]>();
+/** Run ids of one attempt with an in-flight row action; the cached array keeps useStore snapshots stable. */
+function pendingOf(details: Record<string,CustomRunDetailEntry>,attemptId: string): string[] {
+  const prefix=`${attemptId}:`;
+  const ids=Object.entries(details).filter(([key,entry]) => key.startsWith(prefix)&&entry.action).map(([key]) => key.slice(prefix.length));
+  const previous=pendingCache.get(attemptId);
+  if(previous&&previous.length===ids.length&&previous.every((id,index) => id===ids[index])) return previous;
+  const next=ids.length? ids:EMPTY_IDS;
+  pendingCache.set(attemptId,next);
+  return next;
+}
 const VIEW_OPTIONS: MenuOption<'progress'|'results'>[] = [
   { value: 'progress',label: '实时进度' },
   { value: 'results',label: '测试结果' },
@@ -105,9 +117,10 @@ function CustomResults({ store,record,resultOnly }: {
   const rows=useStore(store.evaluations,state => record.runIds.flatMap(id => {
     const run=state.runs[id]; return run?.custom? [{id,model:run.model,summary:run.custom}]:[];
   }));
+  const pendingRunIds=useStore(store.custom,state => record.attemptId? pendingOf(state.details,record.attemptId):EMPTY_IDS);
   // Selecting a row only records navigation; Panel renders the run as its own content sub-page.
   return <>
-    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} widths={widths} onResize={store.actions.resizeColumn} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} renderChannelActions={record.a6api ? model => model.a6api ? <ResultTarget store={store} record={record} model={model} /> : null : undefined} />
+    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} widths={widths} onResize={store.actions.resizeColumn} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} pendingRunIds={pendingRunIds} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} renderChannelActions={record.a6api ? model => model.a6api ? <ResultTarget store={store} record={record} model={model} /> : null : undefined} />
     <CustomOutputPreview store={store} />
   </>;
 }

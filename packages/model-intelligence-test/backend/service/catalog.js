@@ -50,6 +50,7 @@ export class ModelIntelligenceService extends Service {
   customFileRead(request) { return this.guard(() => this.records.custom.read(request)); }
   customOutputOpen(request) { return this.guard(() => this.records.custom.open(request)); }
   customRunContinue(request) { return this.guard(() => this.records.continueCustomRun(request)); }
+  customRunRetry(request) { return this.guard(() => this.records.retryCustomRun(request)); }
   customRunCancel(request) { return this.guard(() => this.records.cancelCustomRun(request)); }
 
   // Owner-only control plane. The only page-facing surface is the one-way selection intake.
@@ -113,7 +114,7 @@ export class ModelIntelligenceService extends Service {
 export const REMOTE_METHODS = [
   'catalog',
   'recordsList', 'recordCreate', 'recordRerun', 'recordRename', 'recordDelete', 'recordsClear',
-  'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen', 'customRunContinue', 'customRunCancel',
+  'attemptView', 'attemptCancel', 'attemptConfigure', 'attemptRetry', 'customRunDetail', 'customFileRead', 'customOutputOpen', 'customRunContinue', 'customRunRetry', 'customRunCancel',
   'a6Config', 'a6ConfigSave', 'a6IntakeRotate', 'a6Tokens', 'a6Selections', 'a6Create', 'a6CustomFromRecord',
   'a6OperationState', 'a6OperationSelect', 'a6OperationRefresh', 'a6ResultAction', 'a6LedgerView', 'a6KeyChannels', 'a6RemoveRoute', 'a6Unpin', 'a6KeyPin', 'a6KeyTestSelection', 'a6KeyChannelPrices', 'channelTests',
 ];

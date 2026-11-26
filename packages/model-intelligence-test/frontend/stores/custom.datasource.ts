@@ -1,5 +1,5 @@
 import type { ModelIntelligenceTransport } from '../types';
-import { readCustomRunDetail, readCustomFile, openCustomOutput, continueCustomRun, cancelCustomRun } from '../service/custom.service';
+import { readCustomRunDetail, readCustomFile, openCustomOutput, continueCustomRun, retryCustomRun, cancelCustomRun } from '../service/custom.service';
 
 export { applyCustomRun, createCustomTask, customPrompt } from '../service/custom.service';
 
@@ -7,4 +7,5 @@ export const loadRunDetail = (transport: ModelIntelligenceTransport, request: {a
 export const readFile = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; path: string}) => readCustomFile(transport, request);
 export const openOutput = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string; mode?: 'preview' | 'vscode' | 'reveal' | 'browser' | 'webview'; application?: string; title?: string}) => openCustomOutput(transport, request);
 export const continueRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => continueCustomRun(transport, request);
+export const retryRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => retryCustomRun(transport, request);
 export const cancelRun = (transport: ModelIntelligenceTransport, request: {attemptId: string; runId: string}) => cancelCustomRun(transport, request);

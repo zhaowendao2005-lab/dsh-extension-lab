@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
 import type { A6Protocol, A6Draft, A6Selection, CustomDetailTab, CustomRunDetailEntry, CustomState, ModelIntelligenceTransport } from '../types';
-import { cancelRun, continueRun, createCustomTask as createCustomTaskService, loadRunDetail, openOutput, readFile } from './custom.datasource';
+import { cancelRun, continueRun, retryRun, createCustomTask as createCustomTaskService, loadRunDetail, openOutput, readFile } from './custom.datasource';
 
 const ACTIVE = new Set(['queued', 'preparing', 'running', 'tooling', 'validating']);
 const BILLING_PENDING = new Set(['pending', 'observed', 'partial']);
@@ -121,12 +121,12 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
         throw error;
       }
     },
-    runAction(attemptId: string, runId: string, action: 'continue' | 'cancel', onSettled: () => void): void {
+    runAction(attemptId: string, runId: string, action: 'continue' | 'retry' | 'cancel', onSettled: () => void): void {
       const id = keyOf(attemptId, runId);
       if (disposed || store.getState().details[id]?.action) return;
       requests.set(id, (requests.get(id) ?? 0) + 1);
       setEntry(id, { action, actionError: undefined, loading: false });
-      const mutate = action === 'continue' ? continueRun : cancelRun;
+      const mutate = action === 'continue' ? continueRun : action === 'retry' ? retryRun : cancelRun;
       void (async () => {
         try {
           const run = await mutate(transport, { attemptId, runId });
@@ -134,7 +134,7 @@ export function createCustomDomain(transport: ModelIntelligenceTransport) {
           const detail = store.getState().details[id]?.detail;
           setEntry(id, { cancelRequested: action === 'cancel' && ACTIVE.has(run.phase), ...(detail ? { detail: { ...detail, run } } : {}) });
         } catch (error) {
-          setEntry(id, { actionError: error instanceof Error ? error.message : action === 'continue' ? '继续会话失败' : '取消运行失败' });
+          setEntry(id, { actionError: error instanceof Error ? error.message : action === 'continue' ? '继续会话失败' : action === 'retry' ? '重试失败' : '取消运行失败' });
         } finally {
           if (!disposed) {
             onSettled();
