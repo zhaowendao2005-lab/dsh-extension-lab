@@ -264,7 +264,21 @@ export function createWorkbench(sessionId: string, transport: ModelIntelligenceT
     resetCustomSource: customDomain.resetSource,
     setCustomDetailTab(runId, tab) { const context = customContext(runId); if (context) customDomain.setTab(context.attemptId, runId, tab); },
     readCustomFile(runId, path) { const context = customContext(runId); if (context) void customDomain.readFile(context.attemptId, runId, path); },
-    openCustomOutput(runId, mode, application) { const context = customContext(runId); return context ? customDomain.openOutput(context.attemptId, runId, mode, application) : Promise.reject(new Error('自定义运行已不可用')); },
+    openCustomOutput(runId, mode, application, title) {
+      const context = customContext(runId);
+      if (!context) return Promise.reject(new Error('自定义运行已不可用'));
+      const run = evaluations.getState().runs[runId];
+      const resolvedTitle = title ?? (run ? `${run.model.a6api ? 'a6api' : run.model.provider}-${run.model.name || run.model.id}` : runId);
+      const work = customDomain.openOutput(context.attemptId, runId, mode, application, mode === 'webview' ? resolvedTitle : undefined).then(result => {
+        if (mode === 'webview' && !result.opened && window.openWebView) {
+          window.openWebView({ attemptId: context.attemptId, runId, title: resolvedTitle });
+          return { ...result, opened: true };
+        }
+        return result;
+      });
+      if (mode === 'webview') attempt('打开成果失败', work);
+      return work;
+    },
     fetchCustomPreview(attemptId, runId) { return customDomain.openOutput(attemptId, runId, 'preview'); },
     openChannelInBrowser(attemptId, runId) { return customDomain.openOutput(attemptId, runId, 'browser'); },
     continueCustomRun(runId) { const context = customContext(runId); if (context) customDomain.runAction(context.attemptId, runId, 'continue', () => evaluationsDomain.refreshAttempt(context.attemptId)); },

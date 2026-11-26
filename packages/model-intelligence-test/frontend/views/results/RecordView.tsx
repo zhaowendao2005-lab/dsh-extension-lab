@@ -120,7 +120,7 @@ function CustomResults({ store,record,resultOnly }: {
   const pendingRunIds=useStore(store.custom,state => record.attemptId? pendingOf(state.details,record.attemptId):EMPTY_IDS);
   // Selecting a row only records navigation; Panel renders the run as its own content sub-page.
   return <>
-    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} widths={widths} onResize={store.actions.resizeColumn} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} pendingRunIds={pendingRunIds} onOpenOutput={(runId,mode) => store.actions.openCustomOutput(runId,mode)} renderChannelActions={record.a6api ? model => model.a6api ? <ResultTarget store={store} record={record} model={model} /> : null : undefined} />
+    <CustomMonitorView record={record} rows={rows} resultOnly={resultOnly} filter={filter} widths={widths} onResize={store.actions.resizeColumn} onFilter={store.actions.setFilter} onSelectRun={runId => store.actions.navigate({runId})} onRetry={runId => store.actions.retryFailedSample(record.id,runId)} pendingRunIds={pendingRunIds} onOpenOutput={store.actions.openCustomOutput} renderChannelActions={record.a6api ? model => model.a6api ? <ResultTarget store={store} record={record} model={model} /> : null : undefined} />
     <CustomOutputPreview store={store} />
   </>;
 }

@@ -3,7 +3,7 @@ import type { Workbench } from '../../types';
 import { Icon } from '../../components/common';
 
 /**
- * 成果隔离预览对话框。列表行的「可查看」现在直接交给系统浏览器打开，
+ * 成果隔离预览对话框。列表行的「可查看」现在走 WebView 路线打开，
  * 这里留给执行详情页的「预览成果」入口；iframe 与 Files 页保持同一隔离约定（无 same-origin）。
  */
 export function CustomOutputPreview({ store }: { store: Workbench }) {

@@ -19,7 +19,7 @@ export interface CustomMonitorViewProps {
   onRetry(runId: string): void;
   /** Runs with a retry/continue/cancel request in flight; their row actions stay disabled. */
   pendingRunIds?: string[];
-  onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser'): Promise<CustomOutputOpenResult>;
+  onOpenOutput?(runId: string, mode: 'preview' | 'vscode' | 'reveal' | 'browser' | 'webview', application?: string, title?: string): Promise<CustomOutputOpenResult>;
   renderChannelActions?(model: Model): ReactNode;
   widths?: Record<string, number>;
   onResize?(column: string, width: number): void;
@@ -86,7 +86,7 @@ export function CustomMonitorView({ record, rows, selectedRunId, resultOnly, fil
           {withMarket && <td className="mit-col-price" title={marketTitle(market, '输出价')}>{marketPriceCell(market, 'output')}</td>}
           {withMarket && <td className="mit-col-price" title={marketTitle(market, '渠道近 24h 缓存率')}>{marketCacheCell(market)}</td>}
           <td className="mit-col-cost"><span>{cost(summary.usage.cost, summary.usage.currency)}</span><span className="mit-custom-cell-sub">{CUSTOM_BILLING_LABELS[summary.usage.billingState]}</span></td>
-          <td className="mit-col-output mit-sticky-output" style={{ right: actionsWidth }}>{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ? `在浏览器中打开 ${summary.output.relativePath}` : '在浏览器中打开成果'} onClick={() => { onOpenOutput(id, 'browser').catch(() => {}); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
+          <td className="mit-col-output mit-sticky-output" style={{ right: actionsWidth }}>{summary.output.state === 'ready' && summary.output.validation === 'valid' && onOpenOutput ? <button type="button" className="mit-custom-output-button" title={summary.output.relativePath ? `在 WebView 中查看 ${summary.output.relativePath}` : '在 WebView 中查看成果'} onClick={() => { onOpenOutput(id, 'webview', undefined, `${summary.target.kind === 'a6api' ? `a6api #${summary.target.channelId ?? ''}` : providerLabel(model)}-${summary.target.displayName || modelLabel(model)}`).catch(() => {}); }}>可查看<Icon name="chevron" size={12} /></button> : <span className={`mit-custom-output-state is-${summary.output.state}`}>{outputLabel(summary)}</span>}</td>
           <td className="mit-col-actions mit-sticky-actions"><div className="mit-custom-row-actions"><button type="button" className="mit-text-button" onClick={() => onSelectRun(id)}>详情<Icon name="chevron" size={12} /></button>{['failed', 'cancelled', 'interrupted'].includes(summary.phase) && <button type="button" className="mit-text-button" disabled={pendingRunIds?.includes(id)} title={summary.retries ? `原位从头重试（已重试 ${summary.retries} 次）；旧请求保留在账本中` : '原位从头重试：同一轮次、新会话与沙箱；旧请求保留在账本中'} onClick={() => onRetry(id)}>{pendingRunIds?.includes(id) ? '重试中…' : '重试'}</button>}</div></td>
         </tr>;})}</tbody>
       </table>
